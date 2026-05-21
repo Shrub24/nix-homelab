@@ -109,7 +109,7 @@ in
             dup_sig=$(echo "$dup_output" | sha256sum | cut -d' ' -f1)
             prev_sig="$(cat "$state_file" 2>/dev/null || echo "")"
             if [ "$dup_sig" != "$prev_sig" ]; then
-              echo "$dup_output" | apprise-notify info "Beets duplicates found - action required"
+              echo "$dup_output" | notify info "Beets duplicates found - action required" "warning" "music"
               mkdir -p "$state_dir"
               echo "$dup_sig" > "$state_file"
             fi

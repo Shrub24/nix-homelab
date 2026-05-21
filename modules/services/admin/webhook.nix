@@ -20,9 +20,11 @@ in
       enable = true;
       ip = "127.0.0.1";
       openFirewall = false;
-      hooks.health = {
-        execute-command = "${pkgs.coreutils}/bin/true";
-        response-message = "ok";
+      hooks = {
+        health = {
+          execute-command = "${pkgs.coreutils}/bin/true";
+          response-message = "ok";
+        };
       };
     };
   };

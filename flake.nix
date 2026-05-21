@@ -47,7 +47,17 @@
             nixfmt
             statix
             ssh-to-age
+            self.packages.${system}.notification-daemon
+            self.packages.${system}.notify
           ];
+          shellHook = ''
+            if [ -f /tmp/notification-daemon.json ]; then
+              NOTIFICATION_DAEMON_CONFIG=/tmp/notification-daemon.json notification-daemon &
+              DAEMON_PID=$!
+              trap "kill $DAEMON_PID 2>/dev/null; echo 'notification-daemon stopped'" EXIT TERM INT
+              echo "notification-daemon started (PID: $DAEMON_PID)"
+            fi
+          '';
         };
 
       deployConfig = import ./lib/deploy {
@@ -61,9 +71,16 @@
         default = mkDevShell system;
       });
 
-      packages = nixpkgs.lib.genAttrs devShellSystems (system: {
-        deploy-rs = deploy-rs.packages.${system}.default;
-      });
+      packages = nixpkgs.lib.genAttrs devShellSystems (system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in
+        {
+          deploy-rs = deploy-rs.packages.${system}.default;
+          notification-daemon = pkgs.callPackage ./pkgs/notification-daemon { };
+          notify = pkgs.callPackage ./pkgs/notify { };
+        }
+      );
 
       formatter = nixpkgs.lib.genAttrs devShellSystems (
         system: (import nixpkgs { inherit system; }).nixfmt

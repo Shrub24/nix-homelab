@@ -13,3 +13,5 @@ result
 .codenomad/
 *.token
 .pi/
+.jcodemunch.jsonc
+.opencode/

@@ -189,6 +189,7 @@
           };
           category = "admin";
           health.path = "/v1/health";
+          access.requireCloudflareAccess = false;
         };
 
         syncthing-oci-melb-1 = {

@@ -18,7 +18,6 @@ in
       default = "beszel";
       description = "SOPS key prefix for Beszel agent secrets.";
     };
-
   };
 
   config = lib.mkIf cfg.enable {

@@ -42,6 +42,17 @@ creation_rules:
           - *oci_melb_1_age
           - *do_admin_1_age
   # Service scopes (standalone leaf services)
+  - path_regex: ^secrets/services/notification-daemon\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
+          - *do_admin_1_age
+  - path_regex: ^secrets/services/ntfy\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *do_admin_1_age
   - path_regex: ^secrets/services/apprise\.ya?ml$
     key_groups:
       - age:
@@ -99,7 +110,7 @@ creation_rules:
           - *do_admin_1_age
           - *oci_melb_1_age
   # Firebase service key
-  - path_regex: ^secrets/services/firebase-key\.json$
+  - path_regex: ^secrets/services/ntfy-firebase-key\.json$
     key_groups:
       - age:
           - *owner_age

@@ -11,7 +11,8 @@
     ../../modules/shared/web-policy.nix
     ../../modules/shared/kanidm-host-auth.nix
     ../../modules/applications/admin/default.nix
-    ../../modules/services/apprise.nix
+    ../../modules/services/notification-daemon
+    ../../modules/services/ntfy.nix
     ../../modules/applications/edge-ingress.nix
     ../../modules/providers/digitalocean/default.nix
     ../../modules/storage/disko-single-disk.nix
@@ -52,9 +53,23 @@
   disko-root-extra = "100%";
   applications.admin.enable = true;
   applications.admin.dataRoot = "/srv/data";
-  services.apprise = {
+  services.notification-daemon = {
     enable = true;
-    secretFiles.host = ../../secrets/services/apprise.yaml;
+    secretFiles.host = ../../secrets/services/notification-daemon.yaml;
+
+    ntfy = {
+      enable = true;
+      serverUrl = "http://127.0.0.1:2586";
+    };
+  };
+
+  services.ntfy = {
+    enable = true;
+    secretFiles.firebase = ../../secrets/services/ntfy-firebase-key.json;
+    auth = {
+      access = [ "service:*:write-only" ];
+      secretFiles.auth = ../../secrets/services/ntfy.yaml;
+    };
   };
 
   applications.admin.secretFiles.host = ../../secrets/applications/admin.yaml;

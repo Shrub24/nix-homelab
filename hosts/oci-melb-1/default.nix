@@ -23,7 +23,7 @@ in
     ../../modules/storage/disko-single-disk-split.nix
     ../../modules/core/users.nix
     ../../modules/services/admin/cockpit.nix
-    ../../modules/services/apprise.nix
+    ../../modules/services/notification-daemon
     ../../modules/services/bifrost-gateway.nix
     ../../modules/services/karakeep.nix
     ../../modules/services/niks3.nix
@@ -216,9 +216,14 @@ in
     ];
   };
 
-  services.apprise = {
+  services.notification-daemon = {
     enable = true;
-    secretFiles.host = ../../secrets/services/apprise.yaml;
+    secretFiles.host = ../../secrets/services/notification-daemon.yaml;
+
+    ntfy = {
+      enable = true;
+      serverUrl = "https://ntfy.shrublab.xyz";
+    };
   };
 
   system.stateVersion = "25.11";

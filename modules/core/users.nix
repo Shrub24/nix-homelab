@@ -20,7 +20,6 @@ in
     description = "Dev User";
     extraGroups = [
       "wheel"
-      "apprise"
     ];
     openssh.authorizedKeys.keys = sshKeys;
   };

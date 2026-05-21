@@ -11,9 +11,7 @@ let
 
   # Concrete media paths derived at the application layer.
   mediaPaths = rec {
-    inboxDir = cfg.inboxDir;
-    libraryDir = cfg.libraryDir;
-    quarantineDir = cfg.quarantineDir;
+    inherit (cfg) inboxDir libraryDir quarantineDir;
     untaggedDir = "${quarantineDir}/untagged";
     approvedDir = "${quarantineDir}/approved";
   };

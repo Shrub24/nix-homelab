@@ -35,16 +35,16 @@ Beets execution SHALL support operator-controlled manual rescue processing after
 - **THEN** processing occurs within declared boundary checks and logs are emitted to state paths
 - **AND** this execution is fallback-oriented rather than the canonical default ingest path
 
-### Requirement: Beets failure notification uses apprise
+### Requirement: Beets failure notification uses notify CLI
 
-The Beets automation system SHALL notify operators of runner failures via the apprise notification CLI, using the `music` notification tier.
+The Beets automation system SHALL notify operators of runner failures via the `notify` CLI, using the `music` notification tier.
 
 #### Scenario: Beets runner fails
 
 - **WHEN** a `beets-*` systemd service fails
 - **THEN** the `beets-notify-failure@` template unit is triggered via `OnFailure=`
 - **AND** the notification script gathers the last 20 log lines from the failed service via `journalctl`
-- **AND** pipes the log output to `apprise-notify music "Beets runner beets-$runner failed on $hostname"`
+- **AND** pipes the log output to `notify music "Beets runner beets-$runner failed on $hostname"`
 - **AND** if journalctl produces no output, the message body is `(no journal output)`
 
 #### Scenario: Beets notification targets correct Telegram topic
@@ -53,19 +53,19 @@ The Beets automation system SHALL notify operators of runner failures via the ap
 - **THEN** the notification arrives in the Telegram topic mapped to the `music` tier
 - **AND** the notification does NOT appear in system warning or critical topics
 
-### Requirement: Beets notification script has no direct apprise or secret access
+### Requirement: Beets notification script has no direct telegram or ntfy access
 
-The Beets notification script SHALL NOT construct apprise URLs, read token files, or reference chat/topic IDs directly. It SHALL only call `apprise-notify` with a tier and title.
+The Beets notification script SHALL NOT construct telegram URLs, read token files, or reference chat/topic IDs directly. It SHALL only call `notify` with a tier, title, and message body.
 
 #### Scenario: Notification script is inspected
 
 - **WHEN** an operator reads the generated `beets-notify-failure` script
-- **THEN** the script contains no references to `tgram://`, `/run/secrets/apprise/`, or raw apprise flags beyond the `apprise-notify` invocation
-- **AND** the script's runtime dependencies are `pkgs.systemd` only (apprise and jq are provided by the apprise module)
+- **THEN** the script contains no references to `tgram://`, `http://`, ntfy URLs, or token paths beyond the `notify` invocation
+- **AND** the script's runtime dependencies are `pkgs.systemd` only (the `notify` command is available from `systemPackages`)
 
 ### Requirement: Beets notification configuration uses tier abstraction
 
-The Beets notify configuration SHALL expose a single `tier` option that references an apprise notification tier, replacing the previous ntfy-specific options.
+The Beets notify configuration SHALL expose a single `tier` option that references a notification-daemon tier, replacing the previous ntfy-specific options.
 
 #### Scenario: Operator configures beets notifications
 

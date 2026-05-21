@@ -22,11 +22,17 @@ bootstrap host target:
 
 [arg("rollback", long)]
 deploy host="oci-melb-1" rollback="true":
-  @HOST="{{host}}"; ROLLBACK="{{rollback}}"; \
+  @HOST="{{host}}"; ROLLBACK="{{rollback}}"; EXIT=0; \
   if [[ -z "$HOST" ]]; then echo "Error: host required (use --host <nixosConfiguration>)"; exit 1; fi; \
   ARGS=(--skip-checks); \
   [[ "$ROLLBACK" != "false" ]] || ARGS+=(--auto-rollback false); \
-  nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST"
+  nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST" || EXIT=$?; \
+  if [ "$EXIT" -eq 0 ]; then \
+    printf 'deploy-rs succeeded for %s' "$HOST" | notify info "Deploy $HOST" deploy system; \
+  else \
+    printf 'deploy-rs failed for %s (exit %d)' "$HOST" "$EXIT" | notify warning "Deploy $HOST" deploy system; \
+  fi; \
+  exit "$EXIT"
 
 host host:
   @nix run .#deploy-rs -- --skip-checks ".#{{host}}"

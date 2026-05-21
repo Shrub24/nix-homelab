@@ -1,7 +1,8 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
+set no-cd
 
-default:
-  @just --list
+default host="oci-melb-1":
+  deploy {{host}}
 
 bootstrap host target:
   @TARGET="{{target}}"; \
@@ -20,23 +21,20 @@ bootstrap host target:
     --flake "$FLAKE" \
     "$@"
 
-[arg("rollback", long)]
-deploy host="oci-melb-1" rollback="true":
-  @HOST="{{host}}"; ROLLBACK="{{rollback}}"; \
-  if [[ -z "$HOST" ]]; then echo "Error: host required (use --host <nixosConfiguration>)"; exit 1; fi; \
-  ARGS=(--skip-checks); \
-  [[ "$ROLLBACK" != "false" ]] || ARGS+=(--auto-rollback false); \
-  nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST"
-
-host host:
-  @nix run .#deploy-rs -- --skip-checks ".#{{host}}"
-
 _preflight host:
   @HOST="{{host}}"; \
   nix eval --no-write-lock-file --apply 'cfg: if cfg.services.openssh.enable then true else throw "openssh is disabled"' "path:.#nixosConfigurations.${HOST}.config" >/dev/null; \
   nix eval --no-write-lock-file --apply 'cfg: let ports = cfg.networking.firewall.allowedTCPPorts or [ ]; in if builtins.elem 22 ports then true else throw "firewall does not allow tcp/22"' "path:.#nixosConfigurations.${HOST}.config" >/dev/null; \
   nix eval --no-write-lock-file --apply 'cfg: let devKeys = cfg.users.users.dev.openssh.authorizedKeys.keys or [ ]; rootKeys = cfg.users.users.root.openssh.authorizedKeys.keys or [ ]; in if (builtins.length devKeys > 0) && (builtins.length rootKeys > 0) then true else throw "missing declarative dev/root SSH keys"' "path:.#nixosConfigurations.${HOST}.config" >/dev/null; \
   echo "preflight PASS: ${HOST} (openssh, tcp/22, dev+root keys)"
+
+[arg("rollback", long)]
+deploy host rollback="true":
+  @HOST="{{host}}"; ROLLBACK="{{rollback}}"; \
+  if [[ -z "$HOST" ]]; then echo "Error: host required (use --host <nixosConfiguration>)"; exit 1; fi; \
+  ARGS=(--skip-checks); \
+  [[ "$ROLLBACK" != "false" ]] || ARGS+=(--auto-rollback false); \
+  nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST"
 
 _activate host:
   @HOST="{{host}}"; \
@@ -45,14 +43,3 @@ _activate host:
 
 _build host="oci-melb-1":
   @nix build --no-link --no-write-lock-file "path:.#nixosConfigurations.{{host}}.config.system.build.toplevel"
-
-# Cross-cutting repo orchestration
-mod ops '.just/ops.just'
-mod checks '.just/checks.just'
-mod backups '.just/backups.just'
-mod host-age '.just/host-age.just'
-mod dev '.just/dev.just'
-
-# Domain-colocated modules
-mod tofu 'opentofu'
-mod secrets 'secrets'

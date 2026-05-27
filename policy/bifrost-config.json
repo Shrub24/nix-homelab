@@ -36,6 +36,37 @@
           "models": ["*"]
         }
       ]
+    },
+    "crofai": {
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "list_models": true,
+          "chat_completion": true,
+          "chat_completion_stream": true
+        }
+      },
+      "network_config": {
+        "base_url": "https://crof.ai"
+      },
+      "keys": [
+        {
+          "name": "crofai-primary",
+          "value": "env.CROFAI_API_KEY",
+          "weight": 1,
+          "models": ["*"]
+        }
+      ]
+    },
+    "openrouter": {
+      "keys": [
+        {
+          "name": "openrouter-primary",
+          "value": "env.OPENROUTER_API_KEY",
+          "weight": 1,
+          "models": ["*"]
+        }
+      ]
     }
   },
   "governance": {
@@ -62,8 +93,8 @@
         "cel_expression": "model == 'shrublab-image'",
         "targets": [
           {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite-preview",
+            "provider": "openrouter",
+            "model": "qwen/qwen3.5-flash-02-23",
             "weight": 1.0
           }
         ]
@@ -76,8 +107,8 @@
         "cel_expression": "model == 'shrublab-embedding'",
         "targets": [
           {
-            "provider": "gemini",
-            "model": "gemini-embedding-2",
+            "provider": "openrouter",
+            "model": "qwen/qwen3-embedding-8b",
             "weight": 1.0
           }
         ]

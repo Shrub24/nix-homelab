@@ -6,18 +6,15 @@ sync host="do-admin-1":
   @./tests/check-web-services-policy.sh {{host}}
 
 _runtime:
-  @./scripts/render-opentofu-cloudflare-runtime.sh
+    @PYTHONHASHSEED=random ./scripts/render-opentofu-cloudflare-runtime.sh
 
-init:
-  @_runtime
-  @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
+init: _runtime
+    @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
 
-plan:
-  @_runtime
-  @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
-  @tofu -chdir=opentofu/cloudflare plan
+plan: _runtime
+    @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
+    @tofu -chdir=opentofu/cloudflare plan
 
-apply:
-  @_runtime
-  @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
-  @tofu -chdir=opentofu/cloudflare apply
+apply: _runtime
+    @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
+    @tofu -chdir=opentofu/cloudflare apply

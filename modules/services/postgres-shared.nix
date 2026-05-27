@@ -20,6 +20,10 @@ in
     niks3 = {
       enable = lib.mkEnableOption "dedicated niks3 database and user on the shared PostgreSQL instance";
     };
+
+    paperless = {
+      enable = lib.mkEnableOption "dedicated paperless database and user on the shared PostgreSQL instance";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -27,19 +31,28 @@ in
       enable = true;
       dataDir = cfg.dataDir;
 
-      # Let niks3 create its database on first connection.
-      ensureDatabases = lib.mkIf cfg.niks3.enable [ "niks3" ];
-      ensureUsers = lib.mkIf cfg.niks3.enable [
-        {
-          name = "niks3";
-          ensureDBOwnership = true;
-        }
-      ];
+      ensureDatabases =
+        lib.optionals cfg.niks3.enable [ "niks3" ]
+        ++ lib.optionals cfg.paperless.enable [ "paperless" ];
 
-      authentication = lib.mkIf cfg.niks3.enable (
-        lib.mkBefore ''
-          local niks3 niks3 peer
-        '');
+      ensureUsers =
+        lib.optionals cfg.niks3.enable [
+          {
+            name = "niks3";
+            ensureDBOwnership = true;
+          }
+        ]
+        ++ lib.optionals cfg.paperless.enable [
+          {
+            name = "paperless";
+            ensureDBOwnership = true;
+          }
+        ];
+
+      authentication = lib.mkBefore ''
+        ${lib.optionalString cfg.niks3.enable "local niks3 niks3 peer"}
+        ${lib.optionalString cfg.paperless.enable "local paperless paperless peer"}
+      '';
 
       settings = {
         max_connections = "20";

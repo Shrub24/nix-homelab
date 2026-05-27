@@ -88,6 +88,7 @@
     beszel = ../../secrets/hosts/do-admin-1/oidc.yaml;
     quantum = ../../secrets/hosts/do-admin-1/oidc.yaml;
     karakeep = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+    paperless = ../../secrets/hosts/oci-melb-1/oidc.yaml;
     cloudflare-access = ../../secrets/opentofu/oidc.yaml;
   };
   applications.edge-ingress.enable = true;
@@ -98,7 +99,7 @@
   services.identity.hostAuth = {
     enable = true;
     sshIntegration = true;
-    pamAllowedLoginGroups = [ "shrublab-admins" ];
+    pamAllowedLoginGroups = [ "admins" ];
   };
   services.hostRecovery = {
     enable = true;

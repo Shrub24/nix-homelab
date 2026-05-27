@@ -4,13 +4,18 @@
 
 ```
 dev-vps/
-├── .github/         # CI/CD workflows and actions
+├── .github/         # CI/CD workflows, actions, and skill prompts
+│   ├── actions/     # Composite GitHub Actions (setup-nixbuild)
+│   ├── prompts/     # OpenAgentsControl skill prompts (opsx-*)
+│   ├── skills/      # OpenAgentsControl skill definitions
+│   └── workflows/   # CI/CD pipeline definitions
+├── .just/           # Modular justfile includes (deploy, ops, checks, backups, host-age, dev)
 ├── docs/            # Human-facing architecture and planning docs
 ├── generated/       # Committed generated artifacts (e.g., web policy JSON)
 ├── hosts/           # Per-host NixOS configuration entrypoints
 ├── lib/             # Reusable Nix library functions
-├── modules/         # NixOS modules (applications, services, profiles, providers, storage)
-├── pkgs/            # Custom Nix packages/derivations
+├── modules/         # NixOS modules (applications, services, profiles, providers, storage, core, shared)
+├── pkgs/            # Custom Nix packages/derivations (notification-daemon, notify CLI)
 ├── openspec/        # OpenSpec change management artifacts
 ├── opentofu/        # OpenTofu infrastructure-as-code (Cloudflare)
 ├── policy/          # Canonical fleet-wide defaults and web service policy
@@ -21,7 +26,7 @@ dev-vps/
 ├── flake.nix        # Flake entrypoint: defines all outputs
 ├── flake.lock       # Pinned flake input revisions
 ├── .sops.yaml       # Central SOPS recipient policy with path-scoped rules
-├── justfile         # Task runner for bootstrap, deploy, backups, secrets
+├── justfile         # Task runner with modular sub-module imports
 ├── deploy.sh        # nixos-anywhere bootstrap script
 ├── CONVENTIONS.md   # Module structure and naming conventions
 ├── ARCHITECTURE.md  # Architecture documentation (this file)
@@ -31,6 +36,30 @@ dev-vps/
 
 ## Directory Purposes
 
+**`.github/workflows/`:**
+- Purpose: CI/CD automation
+- Contains: `ci.yml` (PR validation), `deploy.yml` (push-to-main deploy pipeline), `deploy-host.yml` (reusable host deploy)
+- Key files: `.github/workflows/deploy.yml`, `.github/workflows/ci.yml`
+
+**`.github/actions/`:**
+- Purpose: Reusable composite GitHub Actions
+- Contains: `setup-nixbuild/` — configures nixbuild.net SSH key and remote builder for CI
+- Key files: `.github/actions/setup-nixbuild/action.yml`
+
+**`.github/prompts/`:**
+- Purpose: OpenAgentsControl skill prompts for agent workflows
+- Contains: `opsx-propose.prompt.md`, `opsx-explore.prompt.md`, `opsx-archive.prompt.md`, `opsx-apply.prompt.md`
+- Used by: OpenAgentsControl agent execution flows
+
+**`.github/skills/`:**
+- Purpose: OpenAgentsControl skill definitions for spec-driven change workflows
+- Contains: `openspec-apply-change/`, `openspec-archive-change/`, `openspec-explore/`, `openspec-propose/`
+
+**`.just/`:**
+- Purpose: Modular justfile includes — each file covers one domain
+- Contains: `deploy.just`, `ops.just`, `checks.just`, `backups.just`, `host-age.just`, `dev.just`
+- Imported by: `justfile` via `mod` directives
+
 **`hosts/`:**
 - Purpose: Per-host NixOS configuration entrypoints — thin assembly of modules
 - Contains: `default.nix`, `hardware-configuration.nix`, `bootstrap-config.nix`, host-specific overlays
@@ -39,22 +68,22 @@ dev-vps/
 **`modules/applications/`:**
 - Purpose: Composition roots for multi-service feature stacks
 - Contains: Application modules with `enable` flags, sub-service wiring, shared paths, ACLs
-- Key files: `modules/applications/music/default.nix`, `modules/applications/admin/default.nix`, `modules/applications/edge-ingress.nix`
+- Key files: `modules/applications/music/default.nix`, `modules/applications/admin/default.nix`, `modules/applications/paperless/default.nix`, `modules/applications/edge-ingress.nix`
 
 **`modules/services/`:**
 - Purpose: Leaf service implementation modules — individual workloads with enable flags and secrets
-- Contains: Service configs for niks3, Tailscale, Syncthing, Navidrome, Beets, SoulSync, slskd, Tagr, Bifrost, Karakeep, Postgres, notification-daemon, edge proxy, admin services
-- Key files: `modules/services/tailscale.nix`, `modules/services/syncthing.nix`, `modules/services/navidrome.nix`, `modules/services/beets/default.nix`, `modules/services/bifrost-gateway.nix`, `modules/services/admin/cockpit.nix`
+- Contains: Service configs for niks3, Tailscale, Syncthing, Navidrome, Beets, SoulSync, slskd, Tagr, Bifrost, Karakeep, ntfy, notification-daemon, paperless, paperless-gpt, postgres-shared, edge proxy, admin services (Cockpit, Kanidm, Vaultwarden, Quantum, Termix, Beszel, Gatus, Homepage, Webhook)
+- Key files: `modules/services/tailscale.nix`, `modules/services/syncthing.nix`, `modules/services/navidrome.nix`, `modules/services/ntfy.nix`, `modules/services/beets/default.nix`, `modules/services/bifrost-gateway.nix`, `modules/services/paperless/default.nix`, `modules/services/paperless/paperless-gpt.nix`, `modules/services/postgres-shared.nix`, `modules/services/admin/cockpit.nix`
 
 **`modules/services/notification-daemon/`:**
 - Purpose: NixOS module for the notification dispatch daemon
-- Contains: `default.nix` (service options, systemd unit, CLI wrappers, monitor)
+- Contains: `default.nix` (service options, systemd unit, `svc-monitor` script, CLI wrappers)
 - Key files: `default.nix`
 
 **`pkgs/`:**
 - Purpose: Custom Nix packages/derivations
-- Contains: `notification-daemon/` (Python FastAPI daemon source, `pyproject.toml`, `default.nix`)
-- Key files: `pkgs/notification-daemon/default.nix`, `pkgs/notify/default.nix`
+- Contains: `default.nix` (package set aggregator), `notification-daemon/` (Python FastAPI daemon source, `pyproject.toml`, `default.nix`), `notify/` (CLI wrapper that POSTs to the daemon)
+- Key files: `pkgs/default.nix`, `pkgs/notification-daemon/default.nix`, `pkgs/notify/default.nix`
 
 **`modules/profiles/`:**
 - Purpose: Host baseline profiles — common config imported by all hosts
@@ -78,11 +107,11 @@ dev-vps/
 
 **`modules/shared/`:**
 - Purpose: Shared cross-cutting modules — host recovery, identity OIDC, Kanidm auth, niks3 post-deploy, nixbuild SSH, web policy
-- Key files: `modules/shared/host-recovery.nix`, `modules/shared/identity-oidc.nix`, `modules/shared/kanidm-host-auth.nix`
+- Key files: `modules/shared/host-recovery.nix`, `modules/shared/identity-oidc.nix`, `modules/shared/kanidm-host-auth.nix`, `modules/shared/niks3-post-deploy.nix`, `modules/shared/nixbuild-ssh.nix`, `modules/shared/web-policy.nix`
 
 **`policy/`:**
 - Purpose: Canonical source of truth for fleet-wide non-secret defaults and web service definitions
-- Contains: `globals.nix` (S3, Nix substituters, AI gateway, music/admin defaults), `web-services.nix` (SSOT endpoint routing), `identity.json` (Kanidm OIDC client config), `bifrost-config.json` (AI gateway model config)
+- Contains: `globals.nix` (S3, Nix substituters, AI gateway, music/admin/defaults), `web-services.nix` (SSOT endpoint routing), `identity.json` (Kanidm OIDC client config), `bifrost-config.json` (AI gateway model config)
 - Key files: `policy/globals.nix`, `policy/web-services.nix`
 
 **`lib/`:**
@@ -102,18 +131,13 @@ dev-vps/
 
 **`tests/`:**
 - Purpose: Contract validation scripts
-- Contains: `check-secret-scope.sh`, `check-web-services-policy.sh`, phase contract tests (`phase-*.sh`), `fixtures/`
+- Contains: `check-secret-scope.sh`, `check-web-services-policy.sh`, phase contract tests (`phase-*.sh`), `fixtures/` (test fixture data including `secret-scope.nix` — canonical scope definitions for secret scope validation)
 - Key files: `tests/check-secret-scope.sh`, `tests/check-web-services-policy.sh`
 
 **`opentofu/`:**
 - Purpose: Infrastructure-as-code for Cloudflare DNS and Access
 - Contains: `cloudflare/` directory with OpenTofu config and backend
 - Key files: `opentofu/cloudflare/`
-
-**`.github/workflows/`:**
-- Purpose: CI/CD automation
-- Contains: `ci.yml` (PR validation), `deploy.yml` (push-to-main deploy pipeline), `deploy-host.yml` (reusable host deploy)
-- Key files: `.github/workflows/deploy.yml`, `.github/workflows/ci.yml`
 
 ## Key File Locations
 
@@ -131,9 +155,13 @@ dev-vps/
 
 **Secrets Policy:** `.sops.yaml`: Path-scoped age recipient rules for encrypting/decrypting all secret files
 
-**Task Runner:** `justfile`: All operator commands — bootstrap, deploy, SSH, logs, backups, secrets, checks, OpenTofu
+**Task Runner:** `justfile`: All operator commands — bootstrap, deploy, SSH, logs, backups, secrets, checks, OpenTofu. Modular structure delegates domains to `.just/*.just`, `opentofu/justfile`, and `secrets/justfile`.
 
 **Bootstrap Script:** `deploy.sh`: nixos-anywhere bootstrap driver with host config resolution and age recipient derivation
+
+**Notification Daemon:** `pkgs/notification-daemon/notification_api/main.py`: FastAPI app with `/health`, `/notify`, `/debug/test-notify` endpoints
+
+**Notify CLI:** `pkgs/notify/default.nix`: Python stdin-pipe wrapper that POSTs to the notification daemon
 
 ## Naming Conventions
 
@@ -163,6 +191,10 @@ dev-vps/
 
 **New application stack:** `modules/applications/<name>/default.nix` — composition root with `enable` flag, shared paths, and sub-service wiring. Use `secretFiles.host` for secret passthrough.
 
+**New edge ingress host:** `modules/applications/edge-ingress.nix` — role-based (edge/origin/none), imports `modules/services/edge-proxy-ingress.nix`.
+
+**New paperless stack deployment:** `hosts/<host>/default.nix` — set `services.paperless.enable = true` and bind `services.paperless.secretFiles.host` and `.oidc` to host-scoped secret files. Optionally set `services.paperless.enableAI = true` for paperless-gpt/docling-serve. Ensure `services.postgres-shared.enable = true` on the target host.
+
 **New service:** `modules/services/<name>.nix` (standalone) or `modules/services/<domain>/<name>.nix` (grouped) — leaf module with `enable` flag, `secretFiles.*` contracts, and `sops.secrets` ownership. Use `lib/secrets.nix` helpers.
 
 **New profile:** `modules/profiles/<name>.nix` — add to `base-server.nix` imports if it should apply to all hosts.
@@ -175,18 +207,23 @@ dev-vps/
 
 **New secret file:** `secrets/<scope>/<name>.yaml` — add corresponding path-scoped rule in `.sops.yaml`. Encrypt with `sops`.
 
-**New script:** `scripts/<name>.sh` — operator-facing utility. Add `just` recipe in `justfile`.
+**New script:** `scripts/<name>.sh` — operator-facing utility. Add `just` recipe in `justfile` or a `.just/<domain>.just` module.
 
 **New CI workflow:** `.github/workflows/<name>.yml` — add job with nixbuild setup and Tailscale connectivity.
 
-**New test:** `tests/<name>.sh` — contract validation script with clear pass/fail output. Add to `just check` if it should run in CI.
+**New GitHub Action:** `.github/actions/<name>/action.yml` — reusable composite action. Reference the `setup-nixbuild` action for the nixbuild SSH key pattern.
 
-**New custom package:** `pkgs/<name>/default.nix` — standard `callPackage`-compatible derivation with source alongside it. Add entry in `flake.nix` packages output via `pkgs.callPackage ./pkgs/<name> { }`.
+**New test:** `tests/<name>.sh` — contract validation script with clear pass/fail output. Add to `just checks all` if it should run in CI. Add fixture data to `tests/fixtures/` if needed.
+
+**New custom package:** `pkgs/<name>/default.nix` — standard `callPackage`-compatible derivation with source alongside it. Register in `pkgs/default.nix` (the package set aggregator). Add entry in `flake.nix` packages output via `pkgs.callPackage ./pkgs/<name> { }`.
 
 **New notification daemon feature:** `pkgs/notification-daemon/notification_api/main.py` — add new handler or endpoint in the FastAPI app. Update `pkgs/notification-daemon/pyproject.toml` for new dependencies.
 
+**New justfile module:** `.just/<domain>.just` — create domain-specific recipe file. Import in main `justfile` with `mod <name> '.just/<name>.just'`.
+
 **Local dev workflow:**
-1. Create a local config: `just devshell-setup` (decrypts to `/tmp/notification-daemon.json`)
+1. Create a local config: `just dev setup` (decrypts to `/tmp/notification-daemon.json`)
 2. Enter the devShell: `nix develop` (daemon auto-starts if config exists)
 3. Use `notify` CLI directly: `echo "test" | notify info "test" test system`
 4. Exit the devShell — daemon auto-stops via trap
+

@@ -255,6 +255,25 @@
           health.path = "/";
         };
 
+        paperless = {
+          subdomain = "paper";
+          origin = {
+            scheme = "http";
+            host = "oci-melb-1.tail0fe19b.ts.net";
+            port = 8080;
+          };
+          exposureMode = "tailscale-upstream";
+          declarePublic = true;
+          category = "app";
+          access.oidc.enabled = true;
+          access.requireCloudflareAccess = false;
+          cloudflare = {
+            proxied = true;
+            authenticatedOriginPulls = true;
+          };
+          health.path = "/";
+        };
+
         webhook-admin = {
           subdomain = "webhook";
           origin = {

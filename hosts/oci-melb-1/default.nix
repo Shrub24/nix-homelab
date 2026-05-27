@@ -18,6 +18,7 @@ in
     ../../modules/shared/kanidm-host-auth.nix
     ../../modules/shared/identity-oidc.nix
     ../../modules/applications/music
+    ../../modules/services/paperless
     ../../modules/applications/edge-ingress.nix
     ../../modules/providers/oci/default.nix
     ../../modules/storage/disko-single-disk-split.nix
@@ -50,6 +51,14 @@ in
   applications.music.dataRoot = "/srv/data";
   applications.music.mediaRoot = "/srv/media";
   applications.music.secretFiles.host = ../../secrets/applications/music.yaml;
+
+  services.paperless = {
+    enable = true;
+    dataRoot = "/srv/data";
+    secretFiles.host = ../../secrets/services/paperless.yaml;
+    secretFiles.oidc = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+    enableAI = false; # set to true after adding paperless-gpt/api_token to secrets
+  };
 
   boot.loader.grub.configurationLimit = 10;
 
@@ -101,7 +110,7 @@ in
   services.identity.hostAuth = {
     enable = true;
     sshIntegration = true;
-    pamAllowedLoginGroups = [ "shrublab-admins" ];
+    pamAllowedLoginGroups = [ "admins" ];
   };
 
   services.bifrost-gateway = {
@@ -189,6 +198,7 @@ in
   services.postgres-shared = {
     enable = true;
     niks3.enable = true;
+    paperless.enable = true;
   };
 
   services.niks3-auto-upload = {

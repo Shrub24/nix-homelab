@@ -39,7 +39,7 @@
 **Service Layer (`modules/services/`):**
 - Purpose: Leaf implementation modules for individual workloads — systemd services, Podman containers, runtime config
 - Location: `modules/services/<name>.nix` or `modules/services/<domain>/<name>.nix`
-- Contains: Service enable flags, `sops.secrets` registrations, `sops.templates`, systemd units, assertions, restart semantics
+- Contains: Service enable flags, `sops.secrets` registrations, `sops.templates`, systemd units, assertions, restart semantics, multi-instance patterns (e.g., paperless-gpt with llm/docling OCR isolates)
 - Depends on: `lib/secrets.nix`, runtime paths from application layer
 - Used by: Application modules or directly by hosts
 
@@ -48,13 +48,14 @@
 - Location: `modules/profiles/base-server.nix`
 - Contains: Base server profile importing `core/base.nix`, `shell-profile.nix`, `host-recovery.nix`, `tailscale`, `beszel-agent-auth`, `state-backups`
 - Depends on: Core modules, shared modules
-- Used by: Host modules (imported, no enable flags)
 
 **Provider Layer (`modules/providers/`):**
 - Purpose: Isolate cloud/platform-specific hardware, kernel, and network defaults
 - Location: `modules/providers/<provider>/default.nix`
 - Contains: OCI-specific and DigitalOcean-specific safe defaults
 - Used by: Host modules
+
+- **Bifrost Gateway:** `modules/services/bifrost-gateway.nix` — AI gateway service with OpenRouter and CrofAI provider support; exposes container-base URLs for LLM provider endpoints
 
 **Storage Layer (`modules/storage/`):**
 - Purpose: Declarative disk partitioning and filesystem layout via `disko`
@@ -86,8 +87,6 @@
 - Purpose: HTTP notification dispatch with dual-channel delivery (Telegram via apprise, UnifiedPush via ntfy), plus a `notify` CLI wrapper and a systemd service monitor
 - Location: `modules/services/notification-daemon/default.nix`, `pkgs/notification-daemon/`, `pkgs/notify/`
 - Contains: `pkgs/notification-daemon/notification_api/main.py` (FastAPI app with `/health`, `/notify`, and `/debug/test-notify` endpoints), tier-to-topic mapping, dual-dispatch to apprise + ntfy; `pkgs/notify/default.nix` (CLI wrapper that POSTs to the daemon); `svc-monitor` Python script for automated systemd OnFailure/ExecStopPost notification hooks
-- Depends on: Python packages (apprise, fastapi, uvicorn), yq-go for ntfy config merge, SOPS-decrypted config at `/etc/notification-daemon/config.json`
-- Used by: All hosts via `services.notification-daemon.enable` (deploy notifications, music ingest, systemd monitor)
 
 **CI/CD Layer (`.github/workflows/` + `.github/actions/`):**
 - Purpose: GitHub Actions automation for validation and deployment
@@ -158,6 +157,14 @@
 4. Both services connect through a shared PostgreSQL instance (`modules/services/postgres-shared.nix`) with niks3-managed backup
 5. Post-consume hook triggers a notification via the notification daemon on new document ingestion
 
+**Bifrost AI Gateway Flow:**
+
+1. `services.bifrost-gateway.enable` toggles the Bifrost AI gateway
+2. `modules/services/bifrost-gateway.nix` manages the gateway with OpenRouter and CrofAI provider support
+3. Provider endpoints are exposed via container-base URLs configured in `policy/bifrost-config.json`
+4. API keys for Gemini, DeepSeek, CrofAI, and OpenRouter are encrypted in `secrets/services/bifrost-gateway.yaml`
+5. Paperless-gpt instances use the bifrost endpoint for LLM OCR provider
+
 ## Key Abstractions
 
 **Host Identity:**
@@ -179,6 +186,11 @@
 - Purpose: Document management stack with Paperless core, OIDC auth, and optional AI enhancement
 - Location: `modules/services/paperless/default.nix` (imports `paperless-gpt.nix` submodule)
 - Pattern: Enable flag + dataRoot + two secret files (host/oidc); `enableAI` toggle gates paperless-gpt/docling-serve; seeds Django groups for OIDC sync
+
+**Bifrost Gateway Service:**
+- Purpose: AI gateway service with OpenRouter and CrofAI provider support
+- Location: `modules/services/bifrost-gateway.nix`
+- Pattern: Enable flag + dataRoot + encrypted API keys; exposes container-base URLs for LLM provider endpoints; uses `policy/bifrost-config.json` for configuration
 
 **Service Module:**
 - Purpose: Single workload with enable flag, runtime config, secrets, and systemd integration

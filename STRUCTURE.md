@@ -7,9 +7,9 @@ dev-vps/
 ├── .github/         # CI/CD workflows, actions, and skill prompts
 │   ├── actions/     # Composite GitHub Actions (setup-nixbuild)
 │   ├── prompts/     # OpenAgentsControl skill prompts (opsx-*)
-│   ├── skills/      # OpenAgentsControl skill definitions
+│   ├── skills/     # OpenAgentsControl skill definitions
 │   └── workflows/   # CI/CD pipeline definitions
-├── .just/           # Modular justfile includes (deploy, ops, checks, backups, host-age, dev)
+├── .just/          # Modular justfile includes (deploy, ops, checks, backups, host-age, dev)
 ├── docs/            # Human-facing architecture and planning docs
 ├── generated/       # Committed generated artifacts (e.g., web policy JSON)
 ├── hosts/           # Per-host NixOS configuration entrypoints
@@ -22,16 +22,16 @@ dev-vps/
 ├── scripts/         # Operator-facing shell utilities
 ├── secrets/         # SOPS-encrypted secrets with blast-radius scoping
 ├── tests/           # Validation scripts and contract checks
-├── certs/           # TLS certificate material
+├── certs/          # TLS certificate material
 ├── flake.nix        # Flake entrypoint: defines all outputs
-├── flake.lock       # Pinned flake input revisions
-├── .sops.yaml       # Central SOPS recipient policy with path-scoped rules
-├── justfile         # Task runner with modular sub-module imports
-├── deploy.sh        # nixos-anywhere bootstrap script
-├── CONVENTIONS.md   # Module structure and naming conventions
-├── ARCHITECTURE.md  # Architecture documentation (this file)
+├── flake.lock      # Pinned flake input revisions
+├── .sops.yaml      # Central SOPS recipient policy with path-scoped rules
+├── justfile        # Task runner with modular sub-module imports
+├── deploy.sh       # nixos-anywhere bootstrap script
+├── CONVENTIONS.md  # Module structure and naming conventions
+├── ARCHITECTURE.md # Architecture documentation (this file)
 ├── STRUCTURE.md     # Codebase structure documentation (this file)
-└── README.md        # Project orientation
+└── README.md       # Project orientation
 ```
 
 ## Directory Purposes
@@ -68,12 +68,14 @@ dev-vps/
 **`modules/applications/`:**
 - Purpose: Composition roots for multi-service feature stacks
 - Contains: Application modules with `enable` flags, sub-service wiring, shared paths, ACLs
-- Key files: `modules/applications/music/default.nix`, `modules/applications/admin/default.nix`, `modules/applications/paperless/default.nix`, `modules/applications/edge-ingress.nix`
+- Key files: `modules/applications/music/default.nix`, `modules/applications/admin/default.nix`, `modules/applications/edge-ingress.nix`
 
 **`modules/services/`:**
 - Purpose: Leaf service implementation modules — individual workloads with enable flags and secrets
-- Contains: Service configs for niks3, Tailscale, Syncthing, Navidrome, Beets, SoulSync, slskd, Tagr, Bifrost, Karakeep, ntfy, notification-daemon, paperless, paperless-gpt, postgres-shared, edge proxy, admin services (Cockpit, Kanidm, Vaultwarden, Quantum, Termix, Beszel, Gatus, Homepage, Webhook)
+- Contains: Service configs for niks3, Tailscale, Syncthing, Navidrome, Beets, SoulSync, slskd, Tagr, Bifrost, Karakeep, ntfy, notification-daemon, paperless (includes paperless-gpt submodule with multi-instance llm/docling OCR), postgres-shared, edge proxy, admin services (Cockpit, Kanidm, Vaultwarden, Quantum, Termix, Beszel, Gatus, Homepage, Webhook)
 - Key files: `modules/services/tailscale.nix`, `modules/services/syncthing.nix`, `modules/services/navidrome.nix`, `modules/services/ntfy.nix`, `modules/services/beets/default.nix`, `modules/services/bifrost-gateway.nix`, `modules/services/paperless/default.nix`, `modules/services/paperless/paperless-gpt.nix`, `modules/services/postgres-shared.nix`, `modules/services/admin/cockpit.nix`
+- **apprise.nix**: Apprise-specific secrets and client wiring
+- **bifrost-gateway.nix**: AI gateway service with OpenRouter and CrofAI provider support
 
 **`modules/services/notification-daemon/`:**
 - Purpose: NixOS module for the notification dispatch daemon
@@ -226,4 +228,3 @@ dev-vps/
 2. Enter the devShell: `nix develop` (daemon auto-starts if config exists)
 3. Use `notify` CLI directly: `echo "test" | notify info "test" test system`
 4. Exit the devShell — daemon auto-stops via trap
-

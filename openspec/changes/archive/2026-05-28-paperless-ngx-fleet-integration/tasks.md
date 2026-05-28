@@ -59,22 +59,26 @@
 
 ## Phase 4 — AI Enhancement Stack
 
-- [x] **4.1** — Deploy docling-serve as native NixOS service
-  - Systemd service using `pkgs.docling-serve`, single worker, memory-constrained
-  - Binds to `127.0.0.1:8070`
-  - Restart on failure
+- [x] **4.1** — Deploy docling-serve as shared OCI container
+  - Podman container using `quay.io/docling-project/docling-serve:v1.20.0`
+  - Shared single instance on `127.0.0.1:8070` serving all paperless-gpt instances
+  - Memory-constrained via podman `--memory=1024M`
+  - Health checks, tmpfiles for model/scratch dirs
+  - Pinned by version tag (Renovate handles nix inputs only, not docker)
 
-- [x] **4.2** — Deploy paperless-gpt as Podman sidecar container
-  - Module: `modules/services/paperless/paperless-gpt.nix`
-  - Podman container (OCI image), systemd-managed
-  - Depends on paperless-web.service
-  - Configures `PAPERLESS_BASE_URL=http://host.containers.internal:8080`, `OPENAI_BASE_URL` (bifrost gateway container endpoint), `OCR_PROVIDER=docling`, `DOCLING_URL=http://host.containers.internal:8070`, `LLM_PROVIDER=openai`, `LLM_MODEL`, `OPENAI_API_KEY`
-  - *Note:* paperless-gpt UI defaults to port 8080 (same as Paperless) — explicitly bind paperless-gpt to a different loopback port (for example via `LISTEN_INTERFACE=127.0.0.1:5050`) to avoid collision
+- [x] **4.2** — Deploy paperless-gpt as multi-instance Podman sidecar
+  - Module: `modules/services/paperless/paperless-gpt.nix` defines reusable instance submodule
+  - Two instances defined in `modules/services/paperless/default.nix`:
+    - `llm` (port 5051): handles manual (`paperless-gpt`), auto, and `ocr-llm` tags
+    - `docling` (port 5052): `ocr-docling` only, inert manual/auto tags
+  - Each instance is an independent Podman container with isolated state dir, tag routing, and OCR provider env
+  - Both depend on paperless-web.service and docling-serve; share same Paperless API token via SOPS
+  - LLMs via bifrost gateway (`OPENAI_BASE_URL`), Docling OCR via `DOCLING_URL=http://host.containers.internal:8070`
 
 - [x] **4.3** — Wire paperless-gpt environment file
-  - Create the scaffold/template path for a SOPS-backed paperless-gpt environment file
-  - API token for paperless-gpt to talk to Paperless remains a later user action from the Paperless web UI, consumed via `PAPERLESS_API_TOKEN`
-  - All secrets/runtime vars flow through the environment file
+  - Single `paperless-gpt/api_token` key in `secrets/services/paperless.yaml`
+  - Per-instance SOPS template: `paperless-gpt-<name>.environment`
+  - API token is a later user action from Paperless web UI
 
 ## Phase 5 — Host Integration
 

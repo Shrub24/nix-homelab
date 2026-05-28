@@ -37,8 +37,8 @@ let
       socialAccountProvidersJson;
 
   postConsumeScript = pkgs.writeShellScriptBin "paperless-post-consume" ''
-    DOCUMENT_TITLE="''${DOCUMENT_TITLE:-Unknown}"
-    echo "New document: $DOCUMENT_TITLE" | ${fqPackage.notify}/bin/notify info "Paperless" "info" "services"
+    DOCUMENT_TITLE="''${2:-Unknown}"
+    echo "New document: $DOCUMENT_TITLE" | ${fqPackage.notify}/bin/notify info "Paperless" "info" "services" || true
   '';
 
   # Python seed script for OIDC sync groups
@@ -67,8 +67,6 @@ in
       default = "/srv/data";
       description = "Top-level data root for Paperless dirs (data, media, consumption, paperless-gpt, docling).";
     };
-
-    enableAI = lib.mkEnableOption "paperless-gpt AI enhancement stack (docling-serve + paperless-gpt)";
 
     secretFiles.host = secretHelpers.mkSecretFileOption "paperless-host-secrets";
 
@@ -173,10 +171,28 @@ in
       consumptionDir = lib.mkDefault "${cfg.dataDir}/consume";
 
       paperless-gpt = {
-        enable = cfg.enableAI;
-        dataDir = "${cfg.dataRoot}/paperless-gpt";
-        docling.dataDir = "${cfg.dataRoot}/docling";
+        docling.dataDir = lib.mkDefault "${cfg.dataRoot}/docling";
         secretFiles.host = cfg.secretFiles.host;
+        instances = {
+          llm = {
+            dataDir = lib.mkDefault "${cfg.dataRoot}/paperless-gpt-llm";
+            port = lib.mkDefault 5051;
+            manualTag = lib.mkDefault "paperless-gpt";
+            autoTag = lib.mkDefault "paperless-gpt-auto";
+            autoOcrTag = lib.mkDefault "ocr-llm";
+            pdfOcrCompleteTag = lib.mkDefault "ocr-llm-complete";
+            environment.OCR_PROVIDER = lib.mkDefault "llm";
+          };
+          docling = {
+            dataDir = lib.mkDefault "${cfg.dataRoot}/paperless-gpt-docling";
+            port = lib.mkDefault 5052;
+            manualTag = lib.mkDefault "paperless-gpt-docling-manual-unused";
+            autoTag = lib.mkDefault "paperless-gpt-docling-auto-unused";
+            autoOcrTag = lib.mkDefault "ocr-docling";
+            pdfOcrCompleteTag = lib.mkDefault "ocr-docling-complete";
+            environment.OCR_PROVIDER = lib.mkDefault "docling";
+          };
+        };
       };
 
       environmentFile = lib.mkDefault config.sops.templates."paperless-environment".path;

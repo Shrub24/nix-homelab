@@ -24,14 +24,17 @@ The fleet has identity (Kanidm), edge ingress (Caddy on do-admin-1), notificatio
 
 ## Decisions
 
+### D9: Flat service module (no application wrapper)
+Paperless was initially split into an application wrapper (`modules/applications/paperless/`) and a service module (`modules/services/paperless/`). The application wrapper added `dataRoot` and `enableAI` convenience options but was a thin pass-through. Following the Karakeep and ntfy pattern, paperless is now a single flat service module at `modules/services/paperless/`. The host imports it directly with `services.paperless.*` options. The `enableAI` option is replaced by explicit `paperless-gpt` instance enablement (`services.paperless.paperless-gpt.instances.llm.enable`).
+
 ### D1: Direct port binding over nginx reverse proxy
 Paperless supports `configureNginx` which defaults to `127.0.0.1`. Binding to `0.0.0.0` on port 8080 matches the Karakeep container pattern — Caddy on do-admin-1 proxies directly via Tailscale. No nginx layer to maintain, no TLS termination at the origin.
 
-### D2: paperless-gpt as Podman sidecar (not native service)
-paperless-gpt is a Go binary with its own web UI, distributed only as a container image. Running it as a Podman container matches the established Karakeep pattern (systemd-managed, tmpfiles for state, explicit dependencies). It communicates with host-local Paperless and docling-serve via `host.containers.internal` and with LLMs via the bifrost gateway's container-facing endpoint.
+### D2: paperless-gpt as multi-instance Podman sidecar
+paperless-gpt is a Go binary with its own web UI, distributed only as a container image. A single paperless-gpt instance has a fixed OCR provider configuration (LLM or Docling). To support both paths without dynamic routing, we run two instances (`llm` and `docling`) as Podman containers, each watching distinct OCR tags. Tag routing: `ocr-llm` → LLM OCR instance, `ocr-docling` → Docling OCR instance. Both share the same Paperless API token but have isolated state dirs (prompts, DB, hOCR, PDF output). The `llm` instance also handles manual and non-OCR auto-tagging (tags: `paperless-gpt`, `paperless-gpt-auto`). The `docling` instance uses inert manual/auto tags and only processes through `AUTO_OCR_TAG=ocr-docling`. paperless-gpt instances communicate with host-local Paperless via `host.containers.internal`, with the bifrost gateway for LLM providers, and with docling-serve for Docling OCR.
 
-### D3: docling-serve as native NixOS service (not container)
-`pkgs.docling-serve` (v1.10.0) is available in nixpkgs. Running it as a native systemd service avoids unnecessary container overhead. paperless-gpt supports Docling Server as an OCR provider via `OCR_PROVIDER: "docling"`.
+### D3: docling-serve as shared OCI container (not native NixOS service)
+`pkgs.docling-serve` is available in nixpkgs but its transitive dependency `python3.13-docling-parse` is marked broken, making the package unevaluable. Upstream docling-serve publishes multi-arch OCI images including `linux/arm64`. Running it as a Podman container (pinned to `quay.io/docling-project/docling-serve:v1.20.0`) avoids the broken nixpkgs dependency chain while remaining consistent with the repo's existing OCI container pattern. A single shared docling-serve instance serves all paperless-gpt instances.
 
 ### D4: Bifrost gateway as LLM provider (no separate Ollama)
 paperless-gpt uses OpenAI-compatible API. The bifrost gateway already provides this for Karakeep. Using it avoids deploying and maintaining a separate Ollama instance. paperless-gpt's `OPENAI_BASE_URL` points to the same gateway endpoint.

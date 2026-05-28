@@ -6,166 +6,208 @@
 }:
 let
   cfg = config.services.paperless.paperless-gpt;
-  globals = import ../../../policy/globals.nix;
-  secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
   bifrostBaseUrl = config.services.bifrost-gateway.endpoint.containerBaseUrl;
-  environmentFile = config.sops.templates."paperless-gpt.environment".path;
-  envDir = builtins.dirOf environmentFile;
 
-  doclingPort = 8070;
-  doclingAddress = "127.0.0.1";
-  gptPort = 5050;
+  enabledInstances = lib.filterAttrs (n: v: v.enable) cfg.instances;
+  hasDocling = cfg.docling.enable;
 in
 {
   options.services.paperless.paperless-gpt = {
-    enable = lib.mkEnableOption "paperless-gpt AI enhancement stack";
-
     docling = {
       enable = lib.mkOption {
         type = lib.types.bool;
-        default = true;
-        description = "Enable docling-serve OCR alongside paperless-gpt.";
+        default = false;
+        description = "Enable docling-serve OCR service shared across paperless-gpt instances.";
       };
       dataDir = lib.mkOption {
         type = lib.types.str;
         default = "/srv/data/docling";
       };
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 8070;
+      };
+      address = lib.mkOption {
+        type = lib.types.str;
+        default = "127.0.0.1";
+      };
     };
 
-    dataDir = lib.mkOption {
-      type = lib.types.str;
-      default = "/srv/data/paperless-gpt";
-    };
+    secretFiles.host = (import ../../../lib/secrets.nix { inherit lib; }).mkSecretFileOption "paperless-gpt-host-secrets";
 
-    secretFiles.host = secretHelpers.mkSecretFileOption "paperless-gpt-host-secrets";
+    instances = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule {
+        options = {
+          enable = lib.mkEnableOption "this paperless-gpt instance";
+
+          port = lib.mkOption {
+            type = lib.types.port;
+            default = 5050;
+          };
+
+          dataDir = lib.mkOption {
+            type = lib.types.str;
+            default = "/srv/data/paperless-gpt";
+          };
+
+          manualTag = lib.mkOption {
+            type = lib.types.str;
+            default = "paperless-gpt";
+          };
+
+          autoTag = lib.mkOption {
+            type = lib.types.str;
+            default = "paperless-gpt-auto";
+          };
+
+          autoOcrTag = lib.mkOption {
+            type = lib.types.str;
+            default = "paperless-gpt-ocr-auto";
+          };
+
+          pdfOcrCompleteTag = lib.mkOption {
+            type = lib.types.str;
+            default = "paperless-gpt-ocr-complete";
+          };
+
+          environment = lib.mkOption {
+            type = lib.types.attrsOf lib.types.str;
+            default = {};
+            description = "Additional environment variables merged into the container. Use for OCR_PROVIDER, LLM_MODEL, etc.";
+          };
+        };
+      });
+      default = {};
+      description = "Named paperless-gpt instances. Each is an independent container with its own port, state dir, and tag routing.";
+    };
   };
 
-  config = lib.mkIf cfg.enable {
-    assertions = [
-      (secretHelpers.mkRequiredSecretAssertion {
-        inherit (cfg) enable;
-        file = cfg.secretFiles.host;
-        feature = "services.paperless.paperless-gpt";
-        label = "secretFiles.host";
-      })
-      {
-        assertion = config.services.bifrost-gateway.enable;
-        message = "services.paperless.paperless-gpt requires services.bifrost-gateway.";
-      }
-    ];
-
-    sops.secrets = secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
+  config = lib.mkIf (hasDocling || enabledInstances != {}) {
+    sops.secrets = (import ../../../lib/secrets.nix { inherit lib; }).mkSecretsFromMap cfg.secretFiles.host {
       paperless_gpt_api_token = {
         key = "paperless-gpt/api_token";
         path = "/run/secrets/paperless-gpt.api_token";
       };
     };
 
-    sops.templates."paperless-gpt.environment" = {
+    sops.templates = lib.mapAttrs' (name: inst: lib.nameValuePair "paperless-gpt-${name}.environment" {
       owner = "root";
       group = "root";
       mode = "0400";
       content = ''
         PAPERLESS_API_TOKEN=${config.sops.placeholder.paperless_gpt_api_token}
       '';
-    };
-
-    systemd.services.docling-serve = lib.mkIf cfg.docling.enable {
-      description = "Docling Serve — AI document OCR API";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network.target" ];
-      serviceConfig = {
-        Type = "simple";
-        ExecStart = "${pkgs.docling-serve}/bin/docling-serve";
-        Restart = "on-failure";
-        RestartSec = "5s";
-        Environment = [
-          "UVICORN_HOST=${doclingAddress}"
-          "UVICORN_PORT=${toString doclingPort}"
-          "UVICORN_WORKERS=1"
-          "DOCLING_SERVE_ARTIFACTS_PATH=${cfg.docling.dataDir}/models"
-          "DOCLING_SERVE_SCRATCH_PATH=${cfg.docling.dataDir}/scratch"
-          "DOCLING_SERVE_LOG_LEVEL=WARNING"
-          "DOCLING_NUM_THREADS=2"
-        ];
-        MemoryMax = "1024M";
-        MemoryHigh = "768M";
-        OOMScoreAdjust = 200;
-        NoNewPrivileges = true;
-        ProtectHome = true;
-        ProtectSystem = "strict";
-        PrivateTmp = true;
-        ReadWritePaths = [ cfg.docling.dataDir ];
-      };
-      unitConfig.RequiresMountsFor = [ cfg.docling.dataDir ];
-    };
+    }) enabledInstances;
 
     systemd.tmpfiles.rules =
-      (lib.optionals cfg.docling.enable [
+      lib.flatten (lib.mapAttrsToList (name: inst: [
+        "d ${inst.dataDir} 0750 root root - -"
+        "d ${inst.dataDir}/prompts 0750 root root - -"
+        "d ${inst.dataDir}/db 0750 root root - -"
+        "d ${inst.dataDir}/hocr 0750 root root - -"
+        "d ${inst.dataDir}/pdf 0750 root root - -"
+      ]) enabledInstances)
+      ++ lib.optionals hasDocling [
         "d ${cfg.docling.dataDir} 0750 root root - -"
         "d ${cfg.docling.dataDir}/models 0750 root root - -"
         "d ${cfg.docling.dataDir}/scratch 0750 root root - -"
-      ])
-      ++ [
-        "d ${cfg.dataDir} 0750 root root - -"
-        "d ${cfg.dataDir}/prompts 0750 root root - -"
-        "d ${cfg.dataDir}/db 0750 root root - -"
-        "d ${cfg.dataDir}/hocr 0750 root root - -"
-        "d ${cfg.dataDir}/pdf 0750 root root - -"
-        "d ${envDir} 0750 root root - -"
-        "f ${environmentFile} 0640 root root - -"
       ];
 
     virtualisation.podman.enable = true;
     virtualisation.podman.autoPrune.enable = lib.mkDefault true;
 
-    virtualisation.oci-containers.containers.paperless-gpt = {
-      autoStart = true;
-      image = "ghcr.io/icereed/paperless-gpt:latest";
-      ports = [ "127.0.0.1:${toString gptPort}:8080" ];
-      environment = {
-        LISTEN_INTERFACE = ":8080";
-        PAPERLESS_BASE_URL = "http://host.containers.internal:8080";
-        OCR_PROVIDER = "docling";
-        DOCLING_URL = "http://host.containers.internal:${toString doclingPort}";
-        LLM_PROVIDER = "openai";
-        LLM_MODEL = globals.aiGateway.aliases.image;
-        OPENAI_BASE_URL = bifrostBaseUrl;
-        OPENAI_API_KEY = "bifrost-local";
-        LOG_LEVEL = "info";
-      };
-      environmentFiles = [ environmentFile ];
-      volumes = [
-        "${cfg.dataDir}/prompts:/app/prompts"
-        "${cfg.dataDir}/db:/app/db"
-        "${cfg.dataDir}/hocr:/app/hocr"
-        "${cfg.dataDir}/pdf:/app/pdf"
-      ];
-    };
+    virtualisation.oci-containers.containers = lib.mkMerge [
+      (lib.optionalAttrs hasDocling {
+        docling-serve = {
+          autoStart = true;
+          image = "quay.io/docling-project/docling-serve:v1.20.0";
+          ports = [ "${cfg.docling.address}:${toString cfg.docling.port}:5001" ];
+          environment = {
+            DOCLING_SERVE_LOG_LEVEL = "WARNING";
+            DOCLING_SERVE_ARTIFACTS_PATH = "/models";
+            DOCLING_SERVE_SCRATCH_PATH = "/scratch";
+            DOCLING_SERVE_ENABLE_UI = "0";
+          };
+          volumes = [
+            "${cfg.docling.dataDir}/models:/models:Z"
+            "${cfg.docling.dataDir}/scratch:/scratch:Z"
+          ];
+          extraOptions = [
+            "--memory=1024M"
+            "--health-cmd=curl -sf http://127.0.0.1:5001/health || exit 1"
+            "--health-interval=30s"
+            "--health-retries=3"
+          ];
+        };
+      })
+      (lib.mapAttrs' (name: inst:
+      lib.nameValuePair "paperless-gpt-${name}" {
+        autoStart = true;
+        image = "ghcr.io/icereed/paperless-gpt:latest";
+        ports = [ "127.0.0.1:${toString inst.port}:8080" ];
+        environment = {
+          LISTEN_INTERFACE = ":8080";
+          PAPERLESS_BASE_URL = "http://host.containers.internal:8080";
+          MANUAL_TAG = inst.manualTag;
+          AUTO_TAG = inst.autoTag;
+          AUTO_OCR_TAG = inst.autoOcrTag;
+          PDF_OCR_COMPLETE_TAG = inst.pdfOcrCompleteTag;
+          LLM_PROVIDER = "openai";
+          OPENAI_BASE_URL = bifrostBaseUrl;
+          OPENAI_API_KEY = "bifrost-local";
+          LOG_LEVEL = "info";
+        } // lib.optionalAttrs (hasDocling) {
+          DOCLING_URL = "http://host.containers.internal:${toString cfg.docling.port}";
+        } // inst.environment;
+        environmentFiles = [ config.sops.templates."paperless-gpt-${name}.environment".path ];
+        volumes = [
+          "${inst.dataDir}/prompts:/app/prompts"
+          "${inst.dataDir}/db:/app/db"
+          "${inst.dataDir}/hocr:/app/hocr"
+          "${inst.dataDir}/pdf:/app/pdf"
+        ];
+      }
+    ) enabledInstances)
+    ];
 
-    services.state-backups.services.paperless-gpt = {
-      enable = true;
-      mode = "live";
-      paths = [ cfg.dataDir ] ++ lib.optionals cfg.docling.enable [ cfg.docling.dataDir ];
-    };
+    services.state-backups.services = lib.mkMerge [
+      (lib.mapAttrs' (name: inst: lib.nameValuePair "paperless-gpt-${name}" {
+        enable = true;
+        mode = "live";
+        paths = [ inst.dataDir ];
+      }) enabledInstances)
+      (lib.optionalAttrs hasDocling {
+        paperless-gpt-docling = {
+          enable = true;
+          mode = "live";
+          paths = [ cfg.docling.dataDir ];
+        };
+      })
+    ];
 
-    systemd.services."podman-paperless-gpt" = {
-      description = "paperless-gpt Podman container service wrapper";
-      wants = [ "network-online.target" ];
-      after =
-        [
-          "network-online.target"
-          "paperless-web.service"
-        ]
-        ++ lib.optionals cfg.docling.enable [ "docling-serve.service" ];
-      requires =
-        [ "paperless-web.service" ]
-        ++ lib.optionals cfg.docling.enable [ "docling-serve.service" ];
-      unitConfig.RequiresMountsFor = [
-        cfg.dataDir
-        envDir
-      ];
-      restartTriggers = [ environmentFile ];
-    };
+    systemd.services = lib.mkMerge [
+      (lib.mapAttrs' (name: inst:
+        lib.nameValuePair "podman-paperless-gpt-${name}" {
+          description = "paperless-gpt (${name}) Podman container service wrapper";
+          wants = [ "network-online.target" ];
+          after = [
+            "network-online.target"
+            "paperless-web.service"
+          ] ++ lib.optionals (hasDocling) [
+            "podman-docling-serve.service"
+          ];
+          requires = [
+            "paperless-web.service"
+          ] ++ lib.optionals (hasDocling) [
+            "podman-docling-serve.service"
+          ];
+          unitConfig.RequiresMountsFor = [
+            inst.dataDir
+            (builtins.dirOf config.sops.templates."paperless-gpt-${name}.environment".path)
+          ];
+          restartTriggers = [ config.sops.templates."paperless-gpt-${name}.environment".path ];
+        }
+      ) enabledInstances)
+    ];
   };
 }

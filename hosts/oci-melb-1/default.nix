@@ -57,15 +57,27 @@ in
     dataRoot = "/srv/data";
     secretFiles.host = ../../secrets/services/paperless.yaml;
     secretFiles.oidc = ../../secrets/hosts/oci-melb-1/oidc.yaml;
-    enableAI = false; # set to true after adding paperless-gpt/api_token to secrets
+    oidc = {
+      enable = config.repo.web.hosts.do-admin-1.services.paperless.access.oidc.enabled;
+      clientId = config.services.identity.oidc.clients.paperless.clientId;
+      wellknownUrl = config.services.identity.oidc.clients.paperless.wellknownUrl;
+    };
+    paperless-gpt = {
+      docling.enable = true;
+      instances.llm.enable = true;
+      instances.docling.enable = true;
+    };
   };
 
   boot.loader.grub.configurationLimit = 10;
 
-  nix.gc = {
-    automatic = true;
-    dates = "daily";
-    options = "--delete-older-than 14d";
+  programs.nh = {
+    enable = true;
+    clean = {
+      enable = true;
+      dates = "daily";
+      extraArgs = "--keep 3";
+    };
   };
 
   services.journald.extraConfig = ''
@@ -233,6 +245,18 @@ in
     ntfy = {
       enable = true;
       serverUrl = "https://ntfy.shrublab.xyz";
+    };
+
+    monitor = {
+      enable = true;
+      services = [
+        "beets-import-inbox"
+        "beets-reconcile-discovery"
+        "beets-duplicates-check"
+        "podman-storage-prune"
+        "nh-clean-all"
+        "beszel-agent"
+      ];
     };
   };
 

@@ -35,7 +35,7 @@ jobs:
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
           ping: ${{ inputs.host }}
-      - name: Prebuild ${{ inputs.host }} generation
+      - name: Prebuild ${{ inputs.host }} deploy profile
         run: |
           nix build \
             --no-link \
@@ -43,11 +43,24 @@ jobs:
             --print-build-logs \
             --eval-store auto \
             --store "$NIXBUILD_STORE" \
-            path:.#nixosConfigurations.${{ inputs.host }}.config.system.build.toplevel
+            path:.#deploy.nodes.${{ inputs.host }}.profiles.system.path
+      - name: Resolve host deploy policy
+        id: policy
+        run: |
+          STRICT=$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' path:.#deployHosts.\"${{ inputs.host }}\".strictSubstituteOnly)
+          echo "strict=$STRICT" >> "$GITHUB_OUTPUT"
       - name: Deploy ${{ inputs.host }}
         run: |
+          ARGS=(
+            --skip-checks
+            --remote-build
+            --ssh-opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+          )
+          NIX_ARGS=()
+          if [[ "${{ steps.policy.outputs.strict }}" == "true" ]]; then
+            NIX_ARGS=(-- --option max-jobs 0 --option builders "")
+          fi
           nix run path:.#deploy-rs -- \
-            --skip-checks \
-            --remote-build \
-            --ssh-opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-            .#${{ inputs.host }}
+            "${ARGS[@]}" \
+            .#${{ inputs.host }} \
+            "${NIX_ARGS[@]}"

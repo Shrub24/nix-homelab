@@ -5,6 +5,7 @@
     sshUser = "dev";
     system = "aarch64-linux";
     remoteBuild = true;
+    strictSubstituteOnly = false;
   };
 
   do-admin-1 = {
@@ -12,6 +13,7 @@
     # hostName = "139.59.199.81";
     sshUser = "dev";
     system = "x86_64-linux";
-    remoteBuild = false;
+    remoteBuild = true;
+    strictSubstituteOnly = true;
   };
 }

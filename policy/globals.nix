@@ -46,12 +46,12 @@
   services = {
     nix = {
       substituters = [
-        "ssh-ng://eu.nixbuild.net?priority=0"
         "https://nix-community.cachix.org"
         "https://cache.shrublab.xyz"
+        "ssh-ng://eu.nixbuild.net"
       ];
       trustedSubstituters = [
-        "ssh-ng://eu.nixbuild.net?priority=0"
+        "ssh-ng://eu.nixbuild.net"
         "https://nix-community.cachix.org"
         "https://cache.shrublab.xyz"
       ];

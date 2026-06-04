@@ -2,16 +2,18 @@
   config,
   lib,
   pkgs,
+  self,
   ...
 }:
 let
   cfg = config.services.niks3-post-deploy;
   hook = config.services.niks3-auto-upload;
   hookPkg = hook.package;
+  filterPkg = self.packages.${pkgs.stdenv.hostPlatform.system}.nix-path-filter;
 in
 {
   options.services.niks3-post-deploy = {
-    enable = lib.mkEnableOption "post-deploy push of system closure deltas to niks3";
+    enable = lib.mkEnableOption "post-deploy push of filtered system closure to niks3";
 
     excludePublicKeys = lib.mkOption {
       type = lib.types.listOf lib.types.str;
@@ -33,7 +35,7 @@ in
 
     systemd.services.niks3-post-deploy = {
       description = "Queue system closure delta for niks3 upload";
-      path = [ hookPkg pkgs.jq ];
+      path = [ hookPkg filterPkg ];
       serviceConfig = {
         Type = "oneshot";
         ProtectSystem = "strict";
@@ -46,22 +48,13 @@ in
 
       script = ''
         set -euo pipefail
-        DIFF="$(nix store diff-closures /run/booted-system /run/current-system)"
-        if [ -z "$DIFF" ]; then
-          echo "Nothing changed, skipping push"
-          exit 0
-        fi
-        # Build regex alternation from excluded key prefixes.
-        EXCLUDE_RE="^($(echo "$EXCLUDE_PUBLIC_KEYS" | tr ' ' '|'))-"
-        OUR_PATHS="$(echo "$DIFF" \
-          | xargs nix path-info --json --sigs 2>/dev/null \
-          | jq -r --arg re "$EXCLUDE_RE" '.[] | select(.sigs | any(test($re)) | not) | .path' \
-          | tr '\n' ' ')"
+        SYSTEM=$(readlink -f /run/current-system)
+        OUR_PATHS=$(${filterPkg}/bin/nix-path-filter --exclude "$EXCLUDE_PUBLIC_KEYS" "$SYSTEM" 2>/dev/null || true)
         if [ -z "$OUR_PATHS" ]; then
           echo "No paths to push after filtering, skipping"
           exit 0
         fi
-        export OUT_PATHS="$OUR_PATHS"
+        export OUT_PATHS="$(echo "$OUR_PATHS" | tr '\n' ' ')"
         exec ${lib.getExe' hookPkg "niks3-hook"} send
       '';
     };

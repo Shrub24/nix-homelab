@@ -42,4 +42,4 @@ _activate host:
   nix run .#deploy-rs -- --skip-checks --dry-activate ".#$HOST"
 
 _build host="oci-melb-1":
-  @nix build --no-link --no-write-lock-file "path:.#nixosConfigurations.{{host}}.config.system.build.toplevel"
+  @nix build --no-link --no-write-lock-file "path:.#deploy.nodes.{{host}}.profiles.system.path"

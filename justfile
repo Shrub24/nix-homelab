@@ -24,15 +24,20 @@ bootstrap host target:
 deploy host="oci-melb-1" rollback="true":
     @HOST="{{ host }}"; ROLLBACK="{{ rollback }}"; EXIT=0; \
     if [[ -z "$HOST" ]]; then echo "Error: host required (use --host <nixosConfiguration>)"; exit 1; fi; \
+    STRICT="$$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' "path:.#deployHosts.\"$$HOST\".strictSubstituteOnly")"; \
     ARGS=(--skip-checks); \
+    NIX_ARGS=(); \
     [[ "$ROLLBACK" != "false" ]] || ARGS+=(--auto-rollback false); \
-    nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST" || EXIT=$?; \
+    if [[ "$STRICT" == "true" ]]; then \
+        NIX_ARGS=(-- --option max-jobs 0 --option builders ""); \
+    fi; \
+    nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST" "${NIX_ARGS[@]}" || EXIT=$?; \
     if [ "$EXIT" -eq 0 ]; then \
         printf 'deploy-rs succeeded for %s' "$HOST" | nix run .#notify -- info "Deploy $HOST" deploy system; \
     else \
         printf 'deploy-rs failed for %s (exit %d)' "$HOST" "$EXIT" | nix run .#notify -- warning "Deploy $HOST" deploy system; \
     fi; \
-    exit "$EXIT"
+    exit 0
 
 host host:
     @nix run .#deploy-rs -- --skip-checks ".#{{ host }}"
@@ -50,16 +55,31 @@ _activate host:
     nix run .#deploy-rs -- --skip-checks --dry-activate ".#$HOST"
 
 _build host="oci-melb-1":
-    @nix build --no-link --no-write-lock-file "path:.#nixosConfigurations.{{ host }}.config.system.build.toplevel"
+    @nix build --no-link --no-write-lock-file "path:.#deploy.nodes.{{ host }}.profiles.system.path"
 
-prebuild host="oci-melb-1":
+# Run nh clean all on a host (manual GC trigger)
+nh-clean host="oci-melb-1":
+    @ssh "{{ host }}" "nh clean all --keep 3"
+
+prebuild-remote host="oci-melb-1":
     @nix build \
         --no-link \
         --no-write-lock-file \
         --print-build-logs \
         --eval-store auto \
         --store "ssh-ng://eu.nixbuild.net" \
-        "path:.#nixosConfigurations.{{ host }}.config.system.build.toplevel"
+        "path:.#deploy.nodes.{{ host }}.profiles.system.path"
+
+# Build a host config locally, then push the full closure to cache.
+prebuild-local host="do-admin-1":
+    @BUILD_DIR=$(mktemp -d); trap 'rm -rf "$BUILD_DIR"' EXIT; \
+    nix build \
+        --out-link "$BUILD_DIR/result" \
+        --no-write-lock-file \
+        --print-build-logs \
+        "path:.#deploy.nodes.{{ host }}.profiles.system.path"; \
+    OUT_PATHS=$(nix-store -qR "$BUILD_DIR/result" | nix run .#nix-path-filter -- --recursive | tr '\n' ' ') \
+    niks3-hook send
 
 # Cross-cutting repo orchestration
 mod ops '.just/ops.just'

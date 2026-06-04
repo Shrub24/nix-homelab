@@ -1,8 +1,10 @@
 {
   pkgs,
   lib,
+  beets,
   mediaPaths,
   dataDir,
+  notify,
 }:
 
 let
@@ -65,7 +67,7 @@ let
         ''
       )
       [
-        pkgs.beets
+        beets
         pkgs.coreutils
         pkgs.findutils
       ];
@@ -82,7 +84,7 @@ in
     mkRunnerBin "beets-runner-quarantine-interactive"
       (sharedEnv + ''exec beet -c "$CONFIG" import "''${1:-${mediaPaths.untaggedDir}}"'')
       [
-        pkgs.beets
+        beets
         pkgs.coreutils
         pkgs.chromaprint
       ];
@@ -91,7 +93,7 @@ in
     mkSimpleRunner "beets-runner-reconcile"
       ''beet -c "$CONFIG" update -a && beet -c "$CONFIG" convert --yes && beet -c "$CONFIG" duplicates -a && beet -c "$CONFIG" move''
       [
-        pkgs.beets
+        beets
         pkgs.coreutils
         pkgs.ffmpeg
       ];
@@ -118,8 +120,9 @@ in
         ''
       )
       [
-        pkgs.beets
+        beets
         pkgs.coreutils
+        notify
       ];
 
   "permission-reconcile" =

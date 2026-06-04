@@ -153,7 +153,7 @@
 
 1. `services.paperless.enable` toggles the Paperless document management stack
 2. Paperless core (`modules/services/paperless/`) runs the Django-based document management system with OIDC authentication via Kanidm
-3. Paperless-GPT (`modules/services/paperless/paperless-gpt.nix`) provides AI document enhancement with a docling-serve sidecar for OCR and document analysis (imported as a submodule of `services.paperless`, gated by `services.paperless.enableAI`)
+3. Paperless-GPT (`modules/services/paperless/paperless-gpt.nix`) provides AI document enhancement with a docling-serve sidecar for OCR and document analysis (imported as a submodule of `services.paperless`, gated by `applications.paperless.enableAI` at the application layer, with per-instance enables (`instances.llm.enable`, `instances.docling.enable`))
 4. Both services connect through a shared PostgreSQL instance (`modules/services/postgres-shared.nix`) with niks3-managed backup
 5. Post-consume hook triggers a notification via the notification daemon on new document ingestion
 
@@ -185,7 +185,7 @@
 **Paperless Service:**
 - Purpose: Document management stack with Paperless core, OIDC auth, and optional AI enhancement
 - Location: `modules/services/paperless/default.nix` (imports `paperless-gpt.nix` submodule)
-- Pattern: Enable flag + dataRoot + two secret files (host/oidc); `enableAI` toggle gates paperless-gpt/docling-serve; seeds Django groups for OIDC sync
+- Pattern: Enable flag + dataRoot + two secret files (host/oidc); `paperless-gpt.enable` (set by the application layer), with multi-instance enables (`instances.llm.enable`, `instances.docling.enable`); seeds Django groups for OIDC sync
 
 **Bifrost Gateway Service:**
 - Purpose: AI gateway service with OpenRouter and CrofAI provider support

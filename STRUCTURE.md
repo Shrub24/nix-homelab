@@ -195,7 +195,7 @@ dev-vps/
 
 **New edge ingress host:** `modules/applications/edge-ingress.nix` — role-based (edge/origin/none), imports `modules/services/edge-proxy-ingress.nix`.
 
-**New paperless stack deployment:** `hosts/<host>/default.nix` — set `services.paperless.enable = true` and bind `services.paperless.secretFiles.host` and `.oidc` to host-scoped secret files. Optionally set `services.paperless.enableAI = true` for paperless-gpt/docling-serve. Ensure `services.postgres-shared.enable = true` on the target host.
+**New paperless stack deployment:** `hosts/<host>/default.nix` — set `services.paperless.enable = true` and bind `services.paperless.secretFiles.host` and `.oidc` to host-scoped secret files. Optionally enable paperless-gpt via `services.paperless.paperless-gpt = { docling.enable = true; instances.llm.enable = true; instances.docling.enable = true; }` for AI document enhancement with docling-serve sidecar. Ensure `services.postgres-shared.enable = true` on the target host.
 
 **New service:** `modules/services/<name>.nix` (standalone) or `modules/services/<domain>/<name>.nix` (grouped) — leaf module with `enable` flag, `secretFiles.*` contracts, and `sops.secrets` ownership. Use `lib/secrets.nix` helpers.
 

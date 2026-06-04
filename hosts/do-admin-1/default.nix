@@ -118,10 +118,13 @@
     secretFile = ../../secrets/hosts/do-admin-1/system.yaml;
     bucket = "shrublab-backup-do-admin-1";
   };
-  nix.gc = {
-    automatic = true;
-    dates = "daily";
-    options = "--delete-older-than 14d";
+  programs.nh = {
+    enable = true;
+    clean = {
+      enable = true;
+      dates = "daily";
+      extraArgs = "--keep 3";
+    };
   };
 
   services.niks3-auto-upload = {

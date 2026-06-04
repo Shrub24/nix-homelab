@@ -37,6 +37,26 @@ in
         web.address = webAddress;
         web.port = webPort;
         inherit endpoints;
+        alerting.custom = {
+          url = "http://127.0.0.1:5555/notify";
+          method = "POST";
+          headers = {
+            Content-Type = "application/json";
+          };
+          placeholders = {
+            ALERT_TRIGGERED_OR_RESOLVED = {
+              TRIGGERED = "warning";
+              RESOLVED = "info";
+            };
+          };
+          body = builtins.toJSON {
+            tier = "[ALERT_TRIGGERED_OR_RESOLVED]";
+            title = "Gatus: [ENDPOINT_NAME]";
+            type = "[ALERT_TRIGGERED_OR_RESOLVED]";
+            message = "[ALERT_DESCRIPTION]";
+            topic = "web";
+          };
+        };
       };
     };
   };

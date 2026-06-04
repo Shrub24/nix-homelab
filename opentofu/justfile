@@ -1,0 +1,23 @@
+set shell := ["bash", "-euo", "pipefail", "-c"]
+set no-cd
+
+sync host="do-admin-1":
+  @./scripts/export-web-services-policy.sh {{host}}
+  @./tests/check-web-services-policy.sh {{host}}
+
+_runtime:
+  @./scripts/render-opentofu-cloudflare-runtime.sh
+
+init:
+  @_runtime
+  @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
+
+plan:
+  @_runtime
+  @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
+  @tofu -chdir=opentofu/cloudflare plan
+
+apply:
+  @_runtime
+  @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
+  @tofu -chdir=opentofu/cloudflare apply

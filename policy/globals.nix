@@ -38,9 +38,11 @@
         warning = "3";
         info = "4";
         music = "5";
+        system = "6";
       };
     };
   };
+
   services = {
     nix = {
       substituters = [

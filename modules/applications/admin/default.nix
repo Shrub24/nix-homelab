@@ -28,7 +28,6 @@ in
     ../../services/admin/kanidm.nix
     ../../services/admin/cockpit.nix
     ../../services/admin/webhook.nix
-    ../../services/admin/ntfy.nix
     ../../services/admin/gatus.nix
     ../../services/admin/vaultwarden.nix
     ../../services/admin/quantum.nix
@@ -84,7 +83,6 @@ in
         services.admin.kanidm.enable = lib.mkDefault true;
         services.admin.cockpit.enable = lib.mkDefault true;
         services.admin.webhook.enable = lib.mkDefault true;
-        services.admin.ntfy.enable = lib.mkDefault true;
         services.admin.gatus.enable = lib.mkDefault true;
         services.admin.vaultwarden.enable = lib.mkDefault true;
         services.admin.quantum.enable = lib.mkDefault false;
@@ -229,19 +227,6 @@ in
           };
         };
       })
-
-      # ntfy Firebase FCM key — whole-file sops decrypt, no wrapper key
-      {
-        sops.secrets."ntfy-firebase-key" = {
-          sopsFile = ../../../secrets/services/firebase-key.json;
-          format = "json";
-          key = "";
-          path = "/run/secrets/ntfy/firebase-key.json";
-          mode = "0400";
-          owner = "ntfy-sh";
-        };
-        services.admin.ntfy.firebaseKeyFile = lib.mkDefault "/run/secrets/ntfy/firebase-key.json";
-      }
     ]
   );
 }

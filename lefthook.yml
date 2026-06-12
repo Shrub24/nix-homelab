@@ -4,6 +4,9 @@ pre-commit:
       glob: "flake.nix"
       run: nix flake lock
       stage_fixed: true
+    regen-web-policy:
+      run: ./scripts/export-web-services-policy.sh
+      stage_fixed: true
     test-secret-scope:
       run: ./tests/check-secret-scope.sh
     test-web-policy:

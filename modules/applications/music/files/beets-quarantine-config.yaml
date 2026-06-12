@@ -1,6 +1,6 @@
 directory: /srv/media/library
 library: /srv/data/beets/state/library.db
-plugins: bandcamp chroma discogs fetchart embedart fromfilename inline duplicates spotify deezer convert beatport4
+plugins: bandcamp chroma discogs fetchart embedart fromfilename inline duplicates spotify deezer convert
 item_fields:
   source_filename: |
     import os
@@ -80,8 +80,3 @@ bandcamp:
   art: true
 chroma:
   auto: yes
-beatport4:
-  username: REPLACE_WITH_BEATPORT_USERNAME
-  password: REPLACE_WITH_BEATPORT_PASSWORD
-  art: yes
-  art_overwrite: no

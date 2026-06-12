@@ -1,0 +1,20 @@
+collections:
+  openspec:
+    path: ./openspec
+    pattern: "**/*.md"
+    context:
+      "": openspec documentation and artifacts, including current and archived changes and repo spec state
+  docs:
+    path: ./docs
+    pattern: "**/*.md"
+    context:
+      "": high level canonical repo documentation
+  project:
+    path: .
+    pattern: "**/*.md"
+    context:
+      "": top level project docs - repo root
+models:
+  embed: hf://Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-f16.gguf
+  generate: hf:tobil/qmd-query-expansion-1.7B-gguf/qmd-query-expansion-1.7B-q4_k_m.gguf
+  rerank: hf:ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF/qwen3-reranker-0.6b-q8_0.gguf

@@ -18,6 +18,7 @@ in
     ../../modules/shared/kanidm-host-auth.nix
     ../../modules/shared/identity-oidc.nix
     ../../modules/applications/music
+    ../../modules/services/paperless
     ../../modules/applications/edge-ingress.nix
     ../../modules/providers/oci/default.nix
     ../../modules/storage/disko-single-disk-split.nix
@@ -51,12 +52,32 @@ in
   applications.music.mediaRoot = "/srv/media";
   applications.music.secretFiles.host = ../../secrets/applications/music.yaml;
 
+  services.paperless = {
+    enable = true;
+    dataRoot = "/srv/data";
+    secretFiles.host = ../../secrets/services/paperless.yaml;
+    secretFiles.oidc = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+    oidc = {
+      enable = config.repo.web.hosts.do-admin-1.services.paperless.access.oidc.enabled;
+      clientId = config.services.identity.oidc.clients.paperless.clientId;
+      wellknownUrl = config.services.identity.oidc.clients.paperless.wellknownUrl;
+    };
+    paperless-gpt = {
+      docling.enable = true;
+      instances.llm.enable = true;
+      instances.docling.enable = true;
+    };
+  };
+
   boot.loader.grub.configurationLimit = 10;
 
-  nix.gc = {
-    automatic = true;
-    dates = "daily";
-    options = "--delete-older-than 14d";
+  programs.nh = {
+    enable = true;
+    clean = {
+      enable = true;
+      dates = "daily";
+      extraArgs = "--keep 3";
+    };
   };
 
   services.journald.extraConfig = ''
@@ -101,7 +122,7 @@ in
   services.identity.hostAuth = {
     enable = true;
     sshIntegration = true;
-    pamAllowedLoginGroups = [ "shrublab-admins" ];
+    pamAllowedLoginGroups = [ "admins" ];
   };
 
   services.bifrost-gateway = {
@@ -189,6 +210,7 @@ in
   services.postgres-shared = {
     enable = true;
     niks3.enable = true;
+    paperless.enable = true;
   };
 
   services.niks3-auto-upload = {
@@ -223,6 +245,18 @@ in
     ntfy = {
       enable = true;
       serverUrl = "https://ntfy.shrublab.xyz";
+    };
+
+    monitor = {
+      enable = true;
+      services = [
+        "beets-import-inbox"
+        "beets-reconcile-discovery"
+        "beets-duplicates-check"
+        "podman-storage-prune"
+        "nh-clean-all"
+        "beszel-agent"
+      ];
     };
   };
 

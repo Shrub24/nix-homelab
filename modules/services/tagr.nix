@@ -42,7 +42,7 @@ in
 
     port = lib.mkOption {
       type = lib.types.port;
-      default = 3000;
+      default = 3003;
       description = "Tagr web UI port on the host.";
     };
 

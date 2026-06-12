@@ -36,16 +36,48 @@
           "models": ["*"]
         }
       ]
+    },
+    "crofai": {
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "list_models": true,
+          "chat_completion": true,
+          "chat_completion_stream": true
+        }
+      },
+      "network_config": {
+        "base_url": "https://crof.ai"
+      },
+      "keys": [
+        {
+          "name": "crofai-primary",
+          "value": "env.CROFAI_API_KEY",
+          "weight": 1,
+          "models": ["*"]
+        }
+      ]
+    },
+    "openrouter": {
+      "keys": [
+        {
+          "name": "openrouter-primary",
+          "value": "env.OPENROUTER_API_KEY",
+          "weight": 1,
+          "models": ["*"]
+        }
+      ]
     }
   },
   "governance": {
     "routing_rules": [
       {
-        "id": "alias-text",
-        "name": "alias-text",
+        "id": "summariser",
+        "name": "summariser",
         "priority": 10,
         "scope": "global",
         "cel_expression": "model == 'shrublab-text'",
+        "fallbacks": ["crofai/deepseek-v4-pro-precision"],
         "targets": [
           {
             "provider": "deepseek",
@@ -55,42 +87,44 @@
         ]
       },
       {
-        "id": "alias-image",
-        "name": "alias-image",
+        "id": "image",
+        "name": "image",
         "priority": 20,
         "scope": "global",
         "cel_expression": "model == 'shrublab-image'",
+        "fallbacks": ["moonshotai/kimi-k2.6:free", "qwen/qwen3.5-flash-02-23"],
         "targets": [
           {
-            "provider": "gemini",
-            "model": "gemini-3.1-flash-lite-preview",
+            "provider": "openrouter",
+            "model": "xiaomi/mimo-v2.5",
             "weight": 1.0
           }
         ]
       },
       {
-        "id": "alias-embedding",
-        "name": "alias-embedding",
+        "id": "embedding",
+        "name": "embedding",
+        "cel_expression": "model == 'shrublab-embedding'",
         "priority": 30,
         "scope": "global",
-        "cel_expression": "model == 'shrublab-embedding'",
         "targets": [
           {
-            "provider": "gemini",
-            "model": "gemini-embedding-2",
+            "provider": "openrouter",
+            "model": "qwen/qwen3-embedding-8b",
             "weight": 1.0
           }
         ]
       },
       {
-        "id": "alias-fallback",
-        "name": "alias-fallback",
+        "id": "budget",
+        "name": "budget",
         "priority": 40,
         "scope": "global",
         "cel_expression": "model == 'shrublab-fallback'",
+        "fallbacks": ["deepseek/deepseek-v4-flash"],
         "targets": [
           {
-            "provider": "deepseek",
+            "provider": "crofai",
             "model": "deepseek-v4-flash",
             "weight": 1.0
           }

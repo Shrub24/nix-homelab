@@ -14,6 +14,9 @@ let
       user = "root";
       remoteBuild = host.remoteBuild or false;
       path = deploy-rs.lib.${host.system}.activate.nixos self.nixosConfigurations.${name};
+      postDeploy = ''
+        ssh ${host.sshUser}@${host.hostName} "apprise-notify warning 'Deploy to ${name} completed successfully'" 2>/dev/null || true
+      '';
     };
   };
 

@@ -67,7 +67,7 @@ jobs:
         uses: ./.github/actions/setup-nixbuild
         with:
           nixbuild_token: ${{ secrets.NIXBUILD_TOKEN }}
-      - name: Remote-build ${{ matrix.host }} toplevel
+      - name: Remote-build ${{ matrix.host }} deploy profile
         run: |
           nix build \
             --no-link \
@@ -75,7 +75,7 @@ jobs:
             --print-build-logs \
             --eval-store auto \
             --store "$NIXBUILD_STORE" \
-            path:.#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel
+            path:.#deploy.nodes.${{ matrix.host }}.profiles.system.path
       - name: Summarize validation
         run: |
           {

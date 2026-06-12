@@ -10,6 +10,7 @@
 
     programs.ssh.extraConfig = ''
       Host eu.nixbuild.net
+        IPQoS throughput
         PubkeyAcceptedKeyTypes ssh-ed25519
         ServerAliveInterval 60
     '';

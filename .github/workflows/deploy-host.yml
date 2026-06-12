@@ -21,9 +21,25 @@ jobs:
       id-token: write
     env:
       NIXBUILD_STORE: ssh-ng://eu.nixbuild.net
+      DEPLOY_HOST: ${{ inputs.host }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+      - name: Validate host input
+        run: |
+          case "$DEPLOY_HOST" in
+            ""|*[!a-z0-9-]*)
+              echo "::error::Invalid host '$DEPLOY_HOST'"
+              exit 1
+              ;;
+          esac
+
+          nix eval \
+            --raw \
+            --no-write-lock-file \
+            --apply 'value: if value then "true" else "false"' \
+            "path:.#deployHosts.\"$DEPLOY_HOST\".strictSubstituteOnly" \
+            >/dev/null
       - name: Setup nixbuild
         uses: ./.github/actions/setup-nixbuild
         with:
@@ -35,7 +51,7 @@ jobs:
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
           ping: ${{ inputs.host }}
-      - name: Prebuild ${{ inputs.host }} generation
+      - name: Prebuild ${{ inputs.host }} deploy profile
         run: |
           nix build \
             --no-link \
@@ -43,11 +59,24 @@ jobs:
             --print-build-logs \
             --eval-store auto \
             --store "$NIXBUILD_STORE" \
-            path:.#nixosConfigurations.${{ inputs.host }}.config.system.build.toplevel
+            "path:.#deploy.nodes.\"$DEPLOY_HOST\".profiles.system.path"
+      - name: Resolve host deploy policy
+        id: policy
+        run: |
+          STRICT=$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' "path:.#deployHosts.\"$DEPLOY_HOST\".strictSubstituteOnly")
+          echo "strict=$STRICT" >> "$GITHUB_OUTPUT"
       - name: Deploy ${{ inputs.host }}
         run: |
+          ARGS=(
+            --skip-checks
+            --remote-build
+            --ssh-opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+          )
+          NIX_ARGS=()
+          if [[ "${{ steps.policy.outputs.strict }}" == "true" ]]; then
+            NIX_ARGS=(-- --option max-jobs 0 --option builders "")
+          fi
           nix run path:.#deploy-rs -- \
-            --skip-checks \
-            --remote-build \
-            --ssh-opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-            .#${{ inputs.host }}
+            "${ARGS[@]}" \
+            ".#$DEPLOY_HOST" \
+            "${NIX_ARGS[@]}"

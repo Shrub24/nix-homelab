@@ -8,7 +8,7 @@
         "routeKey": "beszel-admin",
         "callbackPath": "/api/oauth2-redirect",
         "scopeMaps": {
-          "shrublab-admins": ["openid", "profile", "email"]
+          "admins": ["openid", "profile", "email"]
         }
       },
       "termix": {
@@ -19,7 +19,7 @@
         "callbackPath": "/users/oidc/callback",
         "allowInsecureClientDisablePkce": true,
         "scopeMaps": {
-          "shrublab-admins": ["openid", "profile", "email"]
+          "admins": ["openid", "profile", "email"]
         }
       },
       "quantum": {
@@ -31,7 +31,7 @@
         "preferShortUsername": true,
         "allowInsecureClientDisablePkce": true,
         "scopeMaps": {
-          "shrublab-admins": ["openid", "profile", "email"]
+          "admins": ["openid", "profile", "email"]
         }
       },
       "karakeep": {
@@ -42,8 +42,19 @@
         "callbackPath": "/api/auth/callback/custom",
         "enableLegacyCrypto": true,
         "scopeMaps": {
-          "shrublab-admins": ["openid", "profile", "email"],
-          "shrublab-users": ["openid", "profile", "email"]
+          "service-admins": ["openid", "profile", "email"],
+          "users": ["openid", "profile", "email"]
+        }
+      },
+      "paperless": {
+        "enable": true,
+        "displayName": "Paperless",
+        "secretKeyPrefix": "paperless",
+        "routeKey": "paperless",
+        "callbackPath": "/accounts/oidc/kanidm/login/callback/",
+        "scopeMaps": {
+          "service-admins": ["openid", "profile", "email", "groups_name"],
+          "users": ["openid", "profile", "email", "groups_name"]
         }
       },
       "cloudflare-access": {
@@ -52,8 +63,8 @@
         "secretKeyPrefix": "cloudflare-access",
         "originUrl": "https://shrublab.cloudflareaccess.com/cdn-cgi/access/callback",
         "scopeMaps": {
-          "shrublab-admins": ["openid", "profile", "email"],
-          "shrublab-users": ["openid", "profile", "email"]
+          "admins": ["openid", "profile", "email"],
+          "users": ["openid", "profile", "email"]
         }
       }
     }

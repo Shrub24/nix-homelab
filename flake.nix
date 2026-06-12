@@ -42,14 +42,15 @@
             sops
             age
             nixos-anywhere
-            deploy-rs.packages.${system}.default
             nix-output-monitor
             nixfmt
             statix
             ssh-to-age
             self.packages.${system}.notification-daemon
             self.packages.${system}.notify
-          ];
+            self.packages.${system}.niks3
+            self.packages.${system}.nix-path-filter
+          ] ++ [ pkgs.deploy-rs ];
           shellHook = ''
             if [ -f /tmp/notification-daemon.json ]; then
               NOTIFICATION_DAEMON_CONFIG=/tmp/notification-daemon.json notification-daemon &
@@ -76,11 +77,15 @@
           pkgs = import nixpkgs { inherit system; };
         in
         {
-          deploy-rs = deploy-rs.packages.${system}.default;
+          deploy-rs = pkgs.deploy-rs;
+          niks3 = niks3.packages.${system}.niks3;
+          nix-path-filter = pkgs.callPackage ./pkgs/nix-path-filter { };
           notification-daemon = pkgs.callPackage ./pkgs/notification-daemon { };
           notify = pkgs.callPackage ./pkgs/notify { };
         }
       );
+
+      deployHosts = import ./lib/deploy/hosts.nix;
 
       formatter = nixpkgs.lib.genAttrs devShellSystems (
         system: (import nixpkgs { inherit system; }).nixfmt

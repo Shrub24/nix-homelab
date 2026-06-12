@@ -2,11 +2,13 @@
   config,
   lib,
   pkgs,
+  self,
   ...
 }:
 let
   cfg = config.services.beets;
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
+  notifyPkg = self.packages.${pkgs.stdenv.hostPlatform.system}.notify;
 
   # Shared hardened oneshot service defaults for generated beets units.
   hardenedServiceDefaults = {
@@ -72,6 +74,8 @@ let
 
   runnerKinds = import ./runners.nix {
     inherit pkgs lib;
+    beets = beetsRuntime;
+    notify = notifyPkg;
     mediaPaths = mediaPaths;
     dataDir = cfg.dataDir;
   };
@@ -357,6 +361,7 @@ in
                   name = "beets-notify-failure";
                   runtimeInputs = [
                     pkgs.systemd
+                    notifyPkg
                   ];
                   text = ''
                     set -euo pipefail

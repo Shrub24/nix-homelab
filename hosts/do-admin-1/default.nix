@@ -88,6 +88,7 @@
     beszel = ../../secrets/hosts/do-admin-1/oidc.yaml;
     quantum = ../../secrets/hosts/do-admin-1/oidc.yaml;
     karakeep = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+    paperless = ../../secrets/hosts/oci-melb-1/oidc.yaml;
     cloudflare-access = ../../secrets/opentofu/oidc.yaml;
   };
   applications.edge-ingress.enable = true;
@@ -98,7 +99,7 @@
   services.identity.hostAuth = {
     enable = true;
     sshIntegration = true;
-    pamAllowedLoginGroups = [ "shrublab-admins" ];
+    pamAllowedLoginGroups = [ "admins" ];
   };
   services.hostRecovery = {
     enable = true;
@@ -117,10 +118,13 @@
     secretFile = ../../secrets/hosts/do-admin-1/system.yaml;
     bucket = "shrublab-backup-do-admin-1";
   };
-  nix.gc = {
-    automatic = true;
-    dates = "daily";
-    options = "--delete-older-than 14d";
+  programs.nh = {
+    enable = true;
+    clean = {
+      enable = true;
+      dates = "daily";
+      extraArgs = "--keep 3";
+    };
   };
 
   services.niks3-auto-upload = {

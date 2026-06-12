@@ -2,6 +2,7 @@
   lib,
   config,
   pkgs,
+  ociImages,
   ...
 }:
 let
@@ -16,19 +17,19 @@ in
 
     webImage = lib.mkOption {
       type = lib.types.str;
-      default = "ghcr.io/karakeep-app/karakeep:release";
+      default = ociImages.karakeepWeb;
       description = "Karakeep web container image.";
     };
 
     chromeImage = lib.mkOption {
       type = lib.types.str;
-      default = "gcr.io/zenika-hub/alpine-chrome:124";
+      default = ociImages.karakeepChrome;
       description = "Headless Chrome container image for link preview rendering.";
     };
 
     meilisearchImage = lib.mkOption {
       type = lib.types.str;
-      default = "getmeili/meilisearch:v1.41.0";
+      default = ociImages.karakeepMeilisearch;
       description = "Meilisearch container image for full-text search.";
     };
 

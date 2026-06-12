@@ -1,8 +1,15 @@
-{ writeShellApplication, nix, jq }:
+{
+  writeShellApplication,
+  nix,
+  jq,
+}:
 
 writeShellApplication {
   name = "nix-path-filter";
-  runtimeInputs = [ nix jq ];
+  runtimeInputs = [
+    nix
+    jq
+  ];
 
   text = ''
     set -euo pipefail
@@ -42,11 +49,11 @@ writeShellApplication {
       set -- "''${STORE_PATHS[@]}"
     fi
 
-    PATH_INFO_FLAGS="--recursive --json --json-format 2 --sigs"
+    PATH_INFO_FLAGS="--recursive --json-format 1 --json --sigs"
 
     # shellcheck disable=SC2086 # word splitting is intentional for multiple flags
     nix path-info $PATH_INFO_FLAGS "$@" \
       | jq -r --arg re "$EXCLUDE_PATTERN" \
-        '.storeDir as $storeDir | .info | to_entries[] | select((.value.signatures // []) | any(test($re)) | not) | "\($storeDir)/\(.key)"'
+        'to_entries[] | select(.value.signatures // [] | any(test($re)) | not) | .key'
   '';
 }

@@ -274,6 +274,37 @@ Write path:
 - Consumers trust the public key from `policy/globals.nix`
 - Reference-tracking GC runs daily, 30-day retention
 
+## Dependency Management
+
+Ownership model:
+
+- **Renovate** owns flake input updates (`flake.lock` via the `nix` manager) and OCI image reference updates (`policy/oci-images.nix` via a custom regex manager matching tag+digest form).
+- **nvfetcher** owns non-flake upstream source metadata for custom package derivations (version, hash, source URL). Generated outputs land in `pkgs/_sources/generated.nix`, configured from `nvfetcher.toml` at the repo root.
+- OCI image refs are centralized in `policy/oci-images.nix` and consumed by service modules as projections.
+- Non-flake package source metadata is consumed by package code from `pkgs/_sources/generated.nix` (nvfetcher-generated; no wrapper needed).
+
+Automation boundaries:
+
+- Renovate runs on a schedule and opens PRs for flake input and OCI image updates.
+- `nvfetcher-refresh` (GitHub Actions, `.github/workflows/nvfetcher-refresh.yml`) runs weekly and on manual dispatch, regenerates `pkgs/_sources/generated.nix`, and opens or updates a PR when changes are detected.
+- Neither tool pushes dependency updates directly to `main`.
+
+Operator commands:
+
+- `just deps-refresh` — regenerate nvfetcher-managed source metadata locally.
+
+Adding a new non-flake upstream source:
+
+1. Add a `[[package]]` section to `nvfetcher.toml` with the source name, fetcher, and version query.
+2. Run `just deps-refresh` to regenerate `pkgs/_sources/generated.nix`.
+3. Import the generated metadata from `pkgs/_sources/generated.nix` in the consuming derivation.
+
+Adding a new OCI image:
+
+1. Add the image reference in `image:tag@sha256:digest` form to `policy/oci-images.nix`.
+2. The image is available to service modules via `ociImages.<name>` (passed through `specialArgs`).
+3. Renovate will propose digest and tag updates on its next scheduled run.
+
 ## Network and Access Model
 
 Current model:

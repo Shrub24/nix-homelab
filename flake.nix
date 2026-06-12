@@ -33,24 +33,27 @@
           pkgs = import nixpkgs { inherit system; };
         in
         pkgs.mkShell {
-          packages = with pkgs; [
-            just
-            git
-            jq
-            yq
-            opentofu
-            sops
-            age
-            nixos-anywhere
-            nix-output-monitor
-            nixfmt
-            statix
-            ssh-to-age
-            self.packages.${system}.notification-daemon
-            self.packages.${system}.notify
-            self.packages.${system}.niks3
-            self.packages.${system}.nix-path-filter
-          ] ++ [ pkgs.deploy-rs ];
+          packages =
+            with pkgs;
+            [
+              just
+              git
+              jq
+              yq
+              opentofu
+              sops
+              age
+              nixos-anywhere
+              nix-output-monitor
+              nixfmt
+              statix
+              ssh-to-age
+              self.packages.${system}.notification-daemon
+              self.packages.${system}.notify
+              self.packages.${system}.niks3
+              self.packages.${system}.nix-path-filter
+            ]
+            ++ [ pkgs.deploy-rs ];
           shellHook = ''
             if [ -f /tmp/notification-daemon.json ]; then
               NOTIFICATION_DAEMON_CONFIG=/tmp/notification-daemon.json notification-daemon &
@@ -60,6 +63,8 @@
             fi
           '';
         };
+
+      ociImages = import ./policy/oci-images.nix;
 
       deployConfig = import ./lib/deploy {
         inherit self nixpkgs deploy-rs;
@@ -72,7 +77,8 @@
         default = mkDevShell system;
       });
 
-      packages = nixpkgs.lib.genAttrs devShellSystems (system:
+      packages = nixpkgs.lib.genAttrs devShellSystems (
+        system:
         let
           pkgs = import nixpkgs { inherit system; };
         in
@@ -82,6 +88,8 @@
           nix-path-filter = pkgs.callPackage ./pkgs/nix-path-filter { };
           notification-daemon = pkgs.callPackage ./pkgs/notification-daemon { };
           notify = pkgs.callPackage ./pkgs/notify { };
+          host-do-admin-1 = deployConfig.deploy.nodes.do-admin-1.profiles.system.path;
+          host-oci-melb-1 = deployConfig.deploy.nodes.oci-melb-1.profiles.system.path;
         }
       );
 
@@ -99,7 +107,7 @@
           niks3.nixosModules.niks3-auto-upload
           ./hosts/oci-melb-1/default.nix
         ];
-        specialArgs = { inherit self inputs; };
+        specialArgs = { inherit self inputs ociImages; };
       };
 
       nixosConfigurations.do-admin-1 = nixpkgs.lib.nixosSystem {
@@ -109,7 +117,7 @@
           niks3.nixosModules.niks3-auto-upload
           ./hosts/do-admin-1/default.nix
         ];
-        specialArgs = { inherit self inputs; };
+        specialArgs = { inherit self inputs ociImages; };
       };
 
       deploy = deployConfig.deploy;

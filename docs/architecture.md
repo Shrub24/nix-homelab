@@ -345,9 +345,8 @@ Fleet tooling posture:
 - keep `nixos-anywhere` for bootstrap and break-glass flows; use `deploy-rs` for regular host updates
 - GitHub Actions is the canonical hosted validation and deploy automation surface:
   - lightweight validation runs on PRs to `main` and pushes to non-`main`
-  - exact deploy-profile remote-build validation is reserved for PRs to `main` and manual `workflow_dispatch` runs
-  - pushes to `main` run validation first, then serial fail-fast deploys (`do-admin-1` before `oci-melb-1`)
-  - operators may also run the deploy workflow manually from any selected branch via `workflow_dispatch`; that manual path still uses the same validation and serial deploy ordering
+  - exact deploy-profile remote-build validation is reserved for manual `workflow_dispatch` runs
+  - full deploys are manual-only via `workflow_dispatch`, with validation first and serial deploy order (`do-admin-1` before `oci-melb-1`)
   - CI joins the tailnet temporarily with `tailscale/github-action@v4` and reaches hosts over Tailscale-only addresses
   - the top-level deploy workflow keeps shared validation and explicit ordering logic, while the reusable per-host deploy workflow owns host prebuild + deploy steps
   - deploy workflow structure keeps shared nixbuild and per-host deploy logic in reusable GitHub Actions surfaces rather than duplicating job steps for each host

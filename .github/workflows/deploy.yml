@@ -1,8 +1,5 @@
 name: deploy
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 concurrency:
   group: deploy-${{ github.workflow }}-${{ github.ref }}
@@ -46,6 +43,7 @@ jobs:
             echo "- SHA: ${{ github.sha }}"
             echo "- Trigger: ${{ github.event_name }}"
             echo "- Ref: ${{ github.ref }}"
+            echo "- Full deploys are manual-only via workflow_dispatch"
             echo "- Serial deploy order: do-admin-1 -> oci-melb-1"
             echo "- Host prebuilds run inside the reusable deploy-host workflow"
             echo "- Manual workflow_dispatch may deploy from any selected branch ref"

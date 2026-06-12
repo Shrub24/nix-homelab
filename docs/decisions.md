@@ -607,7 +607,7 @@ Decision:
 - GitHub Actions is the canonical hosted validation surface for this repository
 - CI installs Nix with `nixbuild/nix-quick-install-action` and configures nixbuild with `nixbuild/nixbuild-action`
 - nixbuild authentication in CI uses GitHub OIDC plus an attenuated `NIXBUILD_TOKEN`
-- validation workflows reserve host toplevel remote-build checks for pull requests targeting `main` and manual `workflow_dispatch` runs; routine pushes to non-`main` stay on lightweight validation only
+- validation workflows reserve host toplevel remote-build checks for manual `workflow_dispatch` runs only; automatic PRs to `main` and pushes to non-`main` stay on lightweight validation only
 - OpenTofu validation is intentionally deferred from CI in this change until a separate CI credential model is introduced
 
 Rationale:
@@ -623,8 +623,7 @@ Status: Accepted
 Decision:
 
 - deploy workflows join the tailnet temporarily with `tailscale/github-action@v4` using GitHub OIDC workload identity
-- pushes to `main` deploy serially and fail fast in the order `do-admin-1` then `oci-melb-1`
-- operators may also invoke the deploy workflow manually from any selected branch ref via `workflow_dispatch`, using the same canonical deploy entrypoints and ordering
+- full deploys run only when operators invoke the deploy workflow manually via `workflow_dispatch`, using the canonical serial order `do-admin-1` then `oci-melb-1`
 - deploy auth is intended to succeed via Tailscale SSH policy for the `dev` user rather than a repository-stored CI deploy SSH private key
 - workflow structure keeps shared deploy logic in reusable GitHub Actions surfaces so host changes do not require copying large job blocks, with host prebuild + deploy owned by the reusable per-host workflow
 - CI-specific SSH client relaxations are passed inline to `deploy-rs` rather than written to a generated SSH config file

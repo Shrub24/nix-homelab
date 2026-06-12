@@ -38,7 +38,7 @@ dev-vps/
 
 **`.github/workflows/`:**
 - Purpose: CI/CD automation
-- Contains: `ci.yml` (PR validation), `deploy.yml` (push-to-main deploy pipeline), `deploy-host.yml` (reusable host deploy)
+- Contains: `ci.yml` (lightweight automatic validation plus manual host remote-builds), `deploy.yml` (manual full deploy pipeline), `deploy-host.yml` (reusable host deploy)
 - Key files: `.github/workflows/deploy.yml`, `.github/workflows/ci.yml`
 
 **`.github/actions/`:**

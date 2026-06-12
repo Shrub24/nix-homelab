@@ -91,7 +91,7 @@
 **CI/CD Layer (`.github/workflows/` + `.github/actions/`):**
 - Purpose: GitHub Actions automation for validation and deployment
 - Location: `.github/workflows/`, `.github/actions/`
-- Contains: `ci.yml` (PR validation), `deploy.yml` (push-to-main deploy pipeline), `deploy-host.yml` (reusable host deploy), `actions/setup-nixbuild/` (composite action for nixbuild.net setup)
+- Contains: `ci.yml` (lightweight automatic validation plus manual host remote-builds), `deploy.yml` (manual full deploy pipeline), `deploy-host.yml` (reusable host deploy), `actions/setup-nixbuild/` (composite action for nixbuild.net setup)
 - Depends on: nixbuild.net, Tailscale GitHub Action for tailnet access
 - Used by: Repository automation
 

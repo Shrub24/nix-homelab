@@ -223,7 +223,7 @@
           origin = {
             scheme = "http";
             host = "oci-melb-1.tail0fe19b.ts.net";
-            port = 3000;
+            port = 3003;
           };
           exposureMode = "tailscale-upstream";
           declarePublic = true;

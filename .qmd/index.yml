@@ -1,16 +1,16 @@
 collections:
   openspec:
-    path: /mnt/LinuxData/Projects/dev/dev-vps/openspec
+    path: ./openspec
     pattern: "**/*.md"
     context:
       "": openspec documentation and artifacts, including current and archived changes and repo spec state
   docs:
-    path: /mnt/LinuxData/Projects/dev/dev-vps/docs
+    path: ./docs
     pattern: "**/*.md"
     context:
       "": high level canonical repo documentation
   project:
-    path: /home/saurabhj/Projects/dev/dev-vps
+    path: .
     pattern: "**/*.md"
     context:
       "": top level project docs - repo root

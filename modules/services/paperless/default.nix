@@ -37,7 +37,11 @@ let
       socialAccountProvidersJson;
 
   postConsumeScript = pkgs.writeShellScriptBin "paperless-post-consume" ''
-    DOCUMENT_TITLE="''${2:-Unknown}"
+    DOCUMENT_TITLE="''${DOCUMENT_TITLE:-}"
+    if [ -z "$DOCUMENT_TITLE" ]; then
+      DOCUMENT_TITLE="''${DOCUMENT_FILE_NAME:-Unknown}"
+    fi
+
     echo "New document: $DOCUMENT_TITLE" | ${fqPackage.notify}/bin/notify info "Paperless" "info" "services" || true
   '';
 

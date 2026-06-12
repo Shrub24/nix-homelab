@@ -33,11 +33,11 @@ deploy host="oci-melb-1" rollback="true":
     fi; \
     nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST" "${NIX_ARGS[@]}" || EXIT=$?; \
     if [ "$EXIT" -eq 0 ]; then \
-        printf 'deploy-rs succeeded for %s' "$HOST" | nix run .#notify -- info "Deploy $HOST" deploy system; \
+        printf 'deploy-rs succeeded for %s' "$HOST" | nix run .#notify -- info "Deploy $HOST" deploy system || true; \
     else \
-        printf 'deploy-rs failed for %s (exit %d)' "$HOST" "$EXIT" | nix run .#notify -- warning "Deploy $HOST" deploy system; \
+        printf 'deploy-rs failed for %s (exit %d)' "$HOST" "$EXIT" | nix run .#notify -- warning "Deploy $HOST" deploy system || true; \
     fi; \
-    exit 0
+    exit "$EXIT"
 
 host host:
     @nix run .#deploy-rs -- --skip-checks ".#{{ host }}"
@@ -78,7 +78,7 @@ prebuild-local host="do-admin-1":
         --no-write-lock-file \
         --print-build-logs \
         "path:.#deploy.nodes.{{ host }}.profiles.system.path"; \
-    OUT_PATHS=$(nix-store -qR "$BUILD_DIR/result" | nix run .#nix-path-filter -- --recursive | tr '\n' ' ') \
+    export OUT_PATHS="$(nix-store -qR "$BUILD_DIR/result" | nix run .#nix-path-filter -- | tr '\n' ' ')"; \
     niks3-hook send
 
 # Cross-cutting repo orchestration

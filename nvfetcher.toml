@@ -8,6 +8,6 @@
 #   Renovate  -> flake inputs (flake.lock) and OCI image refs (policy/oci-images.nix)
 #
 # To add a new non-flake source, add a [[package]] section here.
-# Then run: just deps-refresh
+# Then run: just deps refresh
 #
 # Docs: https://github.com/berberman/nvfetcher

@@ -27,33 +27,33 @@
 
 ## 3. nvfetcher-owned non-flake source generation
 
-- [ ] 3.1 Add nvfetcher configuration for the current non-flake package sources that require generated version/hash metadata.
+- [x] 3.1 Add nvfetcher configuration for the current non-flake package sources that require generated version/hash metadata.
   - refs: current custom derivations under `pkgs/`
   - criteria: nvfetcher scope excludes flake inputs and OCI refs
   - verify: nvfetcher configuration clearly maps to non-flake source consumers only
 
-- [ ] 3.2 Add committed conventional generated outputs for nvfetcher-managed sources and wire affected package code to consume them.
+- [x] 3.2 Add committed conventional generated outputs for nvfetcher-managed sources and wire affected package code to consume them.
   - refs: `pkgs/_sources/` or equivalent conventional output path, affected derivation files
   - criteria: package code reads generated metadata instead of hand-maintained version/hash pairs
   - verify: `nix flake check --no-build`
 
 ## 4. Scheduled refresh and PR automation
 
-- [ ] 4.1 Add scheduled CI automation that regenerates nvfetcher outputs and opens or updates a pull request when generated files change.
+- [x] 4.1 Add scheduled CI automation that regenerates nvfetcher outputs and opens or updates a pull request when generated files change.
   - refs: `.github/workflows/`
   - criteria: workflow is scheduled, reviewable, and does not push source updates directly to `main`
   - verify: inspect workflow triggers, branch/PR flow, and generated-file change detection
 
-- [ ] 4.2 Document or encode the operator workflow boundaries so manual refresh/debugging makes clear which dependency classes belong to Renovate versus nvfetcher automation.
+- [x] 4.2 Document or encode the operator workflow boundaries so manual refresh/debugging makes clear which dependency classes belong to Renovate versus nvfetcher automation.
   - refs: relevant docs or workflow/readme surfaces touched by the implementation
   - criteria: operators have one clear update path per dependency class
   - verify: docs/workflow diff review
 
 ## 5. Validation
 
-- [ ] 5.1 Run repository formatting and validation checks for the dependency-management rollout.
+- [x] 5.1 Run repository formatting and validation checks for the dependency-management rollout.
   - verify: `nix fmt` and `nix flake check --no-build`
 
-- [ ] 5.2 Perform targeted sanity checks on the migrated OCI manifest consumers and nvfetcher-generated package consumers.
+- [x] 5.2 Perform targeted sanity checks on the migrated OCI manifest consumers and nvfetcher-generated package consumers.
   - criteria: affected service and package entrypoints evaluate with the new source-of-truth model
   - verify: run the narrowest relevant build/eval checks discovered during implementation

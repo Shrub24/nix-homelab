@@ -291,12 +291,12 @@ Automation boundaries:
 
 Operator commands:
 
-- `just deps-refresh` — regenerate nvfetcher-managed source metadata locally.
+- `just deps refresh` — regenerate nvfetcher-managed source metadata locally.
 
 Adding a new non-flake upstream source:
 
 1. Add a `[[package]]` section to `nvfetcher.toml` with the source name, fetcher, and version query.
-2. Run `just deps-refresh` to regenerate `pkgs/_sources/generated.nix`.
+2. Run `just deps refresh` to regenerate `pkgs/_sources/generated.nix`.
 3. Import the generated metadata from `pkgs/_sources/generated.nix` in the consuming derivation.
 
 Adding a new OCI image:

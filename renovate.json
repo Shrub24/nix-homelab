@@ -24,8 +24,8 @@
     {
       "customType": "regex",
       "description": "Update OCI image refs (tag + digest) in policy/oci-images.nix",
-      "fileMatch": [
-        "policy/oci-images\\.nix$"
+      "managerFilePatterns": [
+        "/policy/oci-images\\.nix$/"
       ],
       "matchStrings": [
         "\"(?<depName>[^\"]+):(?<currentValue>[^\"]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""

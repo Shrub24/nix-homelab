@@ -2,6 +2,7 @@
   lib,
   config,
   pkgs,
+  ociImages,
   ...
 }:
 let
@@ -20,7 +21,7 @@ in
 
     image = lib.mkOption {
       type = lib.types.str;
-      default = "docker.io/boulderbadgedad/soulsync:2.3";
+      default = ociImages.soulsync;
       description = "Pinned SoulSync container image.";
     };
 

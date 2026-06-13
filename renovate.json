@@ -14,7 +14,22 @@
   ],
   "enabledManagers": [
     "nix",
-    "github-actions"
+    "github-actions",
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update OCI image refs (tag + digest) in policy/oci-images.nix",
+      "fileMatch": [
+        "policy/oci-images\\.nix$"
+      ],
+      "matchStrings": [
+        "\"(?<depName>[^\"]+):(?<currentValue>[^\"]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
   ],
   "packageRules": [
     {
@@ -22,6 +37,13 @@
         "nix"
       ],
       "groupName": "nix flake inputs"
+    },
+    {
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "groupName": "OCI image refs",
+      "commitMessageTopic": "OCI image refs"
     }
   ]
 }

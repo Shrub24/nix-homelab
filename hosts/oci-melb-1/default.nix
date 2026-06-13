@@ -241,6 +241,7 @@ in
   services.notification-daemon = {
     enable = true;
     secretFiles.host = ../../secrets/services/notification-daemon.yaml;
+    secretFiles.hostSystem = ../../secrets/hosts/oci-melb-1/system.yaml;
 
     ntfy = {
       enable = true;

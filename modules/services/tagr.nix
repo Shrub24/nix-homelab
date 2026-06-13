@@ -2,6 +2,7 @@
   lib,
   config,
   pkgs,
+  ociImages,
   ...
 }:
 let
@@ -100,7 +101,7 @@ in
 
     virtualisation.oci-containers.containers.tagr = {
       autoStart = true;
-      image = "ghcr.io/shrub24/tagr:latest";
+      image = ociImages.tagr;
       ports = [ "${cfg.listenAddress}:${toString cfg.port}:3000" ];
       environment = {
         DATABASE_URL = "file:/data/tagr.db";

@@ -2,6 +2,7 @@
   lib,
   config,
   pkgs,
+  ociImages,
   ...
 }:
 let
@@ -103,7 +104,7 @@ in
 
     image = lib.mkOption {
       type = lib.types.str;
-      default = "ghcr.io/gtsteffaniak/filebrowser:stable";
+      default = ociImages.quantum;
       description = "Pinned Quantum container image.";
     };
 

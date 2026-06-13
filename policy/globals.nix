@@ -48,17 +48,19 @@
       substituters = [
         "https://nix-community.cachix.org"
         "https://cache.shrublab.xyz"
-        "ssh-ng://eu.nixbuild.net"
+        "https://cache.numtide.com"
       ];
       trustedSubstituters = [
-        "ssh-ng://eu.nixbuild.net"
         "https://nix-community.cachix.org"
         "https://cache.shrublab.xyz"
+        "https://cache.numtide.com"
+        "ssh-ng://eu.nixbuild.net"
       ];
       trustedPublicKeys = [
-        "nixbuild.net/HWWKWC-1:dnSfpPDHQN/U9wexkK6r3GTaYrwqNwKS70SNGXistKg="
         "nix-cache-1:FW0bJll9BP5ch0mHI+bXOImcD0RKLrH117WfQC+CU4A="
         "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+        "nixbuild.net/HWWKWC-1:dnSfpPDHQN/U9wexkK6r3GTaYrwqNwKS70SNGXistKg="
+        "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
       ];
     };
 
@@ -66,6 +68,10 @@
       dataDir = "/srv/data/karakeep";
       port = 3010;
       s3.bucket = "karakeep";
+    };
+    trek = {
+      dataDir = "/srv/data/trek";
+      port = 3020;
     };
     bifrost-gateway = {
       dataDir = "/srv/data/bifrost";

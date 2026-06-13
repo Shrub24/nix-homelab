@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  ociImages,
   ...
 }:
 let
@@ -12,6 +13,7 @@ let
   containerBase = "http://host.containers.internal:${toString cfg.port}";
   appDir = "${cfg.dataDir}/app";
   configPath = "${appDir}/config.json";
+  configDbPath = "${appDir}/config.db";
   parsedConfig = builtins.fromJSON (builtins.readFile cfg.configFile);
 
   runtimeUid = 1000;
@@ -27,7 +29,7 @@ in
 
     image = lib.mkOption {
       type = lib.types.str;
-      default = "docker.io/maximhq/bifrost:v1.5.0-prerelease8";
+      default = ociImages.bifrost;
     };
 
     dataDir = lib.mkOption {
@@ -138,6 +140,8 @@ in
           install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${logsDir}"
           install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${cacheDir}"
           install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${vectorDir}"
+          # Bifrost prefers the imperative SQLite config store over config.json when present.
+          rm -f "${configDbPath}"
           install -m 0644 -o ${toString runtimeUid} -g ${toString runtimeGid} "${cfg.configFile}" "${configPath}"
         '';
       };

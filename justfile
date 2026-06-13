@@ -55,7 +55,7 @@ _activate host:
     nix run .#deploy-rs -- --skip-checks --dry-activate ".#$HOST"
 
 _build host="oci-melb-1":
-    @nix build --no-link --no-write-lock-file "path:.#deploy.nodes.{{ host }}.profiles.system.path"
+    @nix build --no-link --no-write-lock-file ".#deploy.nodes.{{ host }}.profiles.system.path"
 
 # Run nh clean all on a host (manual GC trigger)
 nh-clean host="oci-melb-1":
@@ -68,7 +68,7 @@ prebuild-remote host="oci-melb-1":
         --print-build-logs \
         --eval-store auto \
         --store "ssh-ng://eu.nixbuild.net" \
-        "path:.#deploy.nodes.{{ host }}.profiles.system.path"
+        ".#host-{{ host }}"
 
 # Build a host config locally, then push the full closure to cache.
 prebuild-local host="do-admin-1":
@@ -77,15 +77,17 @@ prebuild-local host="do-admin-1":
         --out-link "$BUILD_DIR/result" \
         --no-write-lock-file \
         --print-build-logs \
-        "path:.#deploy.nodes.{{ host }}.profiles.system.path"; \
-    export OUT_PATHS="$(nix-store -qR "$BUILD_DIR/result" | nix run .#nix-path-filter -- | tr '\n' ' ')"; \
-    niks3-hook send
+        ".#host-{{ host }}"; \
+    RESULT=$(readlink -f "$BUILD_DIR/result"); \
+    OUT_PATHS=$(nix run .#nix-path-filter -- "$RESULT" | tr '\n' ' ') \
+    niks3-hook send --socket=/run/user/1000/niks3-upload-to-cache.sock
 
 # Cross-cutting repo orchestration
 mod ops '.just/ops.just'
 mod checks '.just/checks.just'
 mod backups '.just/backups.just'
 mod host-age '.just/host-age.just'
+mod deps '.just/deps.just'
 mod dev '.just/dev.just'
 
 # Domain-colocated modules

@@ -673,6 +673,26 @@ Rationale:
 - server-side signing reduces key exposure vs per-pusher keys
 - niks3's GC and signing provide governance that plain S3 lacks
 
+## D-039: Dependency management ownership split between Renovate and nvfetcher
+
+Status: Accepted
+
+Decision:
+
+- Renovate owns flake input updates (`flake.lock`) and OCI image reference updates (`policy/oci-images.nix`); both are human-authored dependency references that benefit from Renovate's PR update model with changelog context.
+- nvfetcher owns non-flake upstream source metadata for custom package derivations (`pkgs/_sources/generated.nix`, configured from `nvfetcher.toml`); these need generated version/hash metadata that fits nvfetcher's source-generation model.
+- OCI image references are centralized in `policy/oci-images.nix` in `image:tag@sha256:digest` form and consumed by service modules via `ociImages.<name>` (passed through `specialArgs`).
+- Scheduled CI automation (`.github/workflows/nvfetcher-refresh.yml`) regenerates nvfetcher outputs weekly and opens or updates a PR; generated source updates never push directly to `main`.
+- Each tool has one clear ownership boundary with no overlap on the same dependency class.
+
+Rationale:
+
+- split ownership by dependency type avoids overlapping automation and keeps each source of truth unambiguous
+- centralized OCI manifest gives Renovate a single target and makes image auditing routine
+- digest-pinned OCI references from the first rollout ensure reproducible image pulls
+- PR-based nvfetcher automation preserves reviewability and mirrors Renovate's update model
+- documented operator workflow ensures one clear update path per dependency class
+
 ## Open Questions (Intentional)
 
 These are known but intentionally unresolved until implementation and operational learning justify final decisions.

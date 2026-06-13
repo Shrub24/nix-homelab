@@ -74,6 +74,7 @@ in
     };
 
     secretFiles.host = secretHelpers.mkSecretFileOption "notification-daemon-secrets";
+    secretFiles.hostSystem = secretHelpers.mkSecretFileOption "notification-daemon-host-system";
 
     telegram = {
       chatId = lib.mkOption {
@@ -152,10 +153,19 @@ in
         assertion = cfg.telegram.topics != { };
         message = "services.notification-daemon.telegram.topics must be configured with at least one tier.";
       }
-    ] ++ lib.optional (cfg.ntfy.enable && cfg.ntfy.serverUrl == "") {
+    ]
+    ++ lib.optional (cfg.ntfy.enable && cfg.ntfy.serverUrl == "") {
       assertion = false;
       message = "services.notification-daemon.ntfy.serverUrl must be set when ntfy is enabled.";
-    };
+    }
+    ++ lib.optional cfg.ntfy.enable (
+      secretHelpers.mkRequiredSecretAssertion {
+        enable = cfg.ntfy.enable;
+        file = cfg.secretFiles.hostSystem;
+        feature = "services.notification-daemon.ntfy";
+        label = "secretFiles.hostSystem";
+      }
+    );
 
     environment.etc."notification-daemon/config.json" = {
       mode = "0444";
@@ -166,7 +176,8 @@ in
       cfg.package
       pkgs.apprise
       notifyPackage
-    ] ++ lib.optionals cfg.monitor.enable [ monitorScript ];
+    ]
+    ++ lib.optionals cfg.monitor.enable [ monitorScript ];
 
     systemd.services = {
       notification-daemon = {
@@ -192,7 +203,8 @@ in
           ];
         };
       };
-    } // lib.optionalAttrs cfg.monitor.enable (
+    }
+    // lib.optionalAttrs cfg.monitor.enable (
       let
         mon = "svc-monitor@";
         injectOnFailure = name: {
@@ -201,11 +213,12 @@ in
         injectExecHooks = name: {
           "${name}" = {
             serviceConfig = {
+              # Notification delivery is best-effort and must not decide unit health.
               ExecStartPost = lib.mkBefore [
-                "${monitorScript}/bin/svc-monitor ${name} onStart"
+                "-${monitorScript}/bin/svc-monitor ${name} onStart"
               ];
               ExecStopPost = lib.mkAfter [
-                "${monitorScript}/bin/svc-monitor ${name} onSuccess"
+                "-${monitorScript}/bin/svc-monitor ${name} onSuccess"
               ];
             };
           };
@@ -216,13 +229,15 @@ in
           description = "Notification monitor for %I";
           serviceConfig = {
             Type = "oneshot";
-            ExecStart = "${monitorScript}/bin/svc-monitor %I onFailure";
+            ExecStart = "-${monitorScript}/bin/svc-monitor %I onFailure";
             User = "root";
             Group = "root";
           };
         };
       }
-      // builtins.foldl' (acc: name: acc // injectOnFailure name // injectExecHooks name) { } cfg.monitor.services
+      // builtins.foldl' (
+        acc: name: acc // injectOnFailure name // injectExecHooks name
+      ) { } cfg.monitor.services
     );
 
     sops.secrets."notification-daemon/telegram_bot_token" = {
@@ -235,7 +250,7 @@ in
     };
 
     sops.secrets."notification-daemon/ntfy_token" = lib.mkIf cfg.ntfy.enable {
-      sopsFile = cfg.secretFiles.host;
+      sopsFile = cfg.secretFiles.hostSystem;
       key = "ntfy_token";
       path = "/run/secrets/notification-daemon/ntfy_token";
       owner = "root";

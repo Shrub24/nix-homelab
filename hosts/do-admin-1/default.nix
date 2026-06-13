@@ -56,6 +56,7 @@
   services.notification-daemon = {
     enable = true;
     secretFiles.host = ../../secrets/services/notification-daemon.yaml;
+    secretFiles.hostSystem = ../../secrets/hosts/do-admin-1/system.yaml;
 
     ntfy = {
       enable = true;
@@ -67,7 +68,10 @@
     enable = true;
     secretFiles.firebase = ../../secrets/services/ntfy-firebase-key.json;
     auth = {
-      access = [ "service:*:write-only" ];
+      access = [
+        "notify-oci-melb-1:*:write-only"
+        "notify-do-admin-1:*:write-only"
+      ];
       secretFiles.auth = ../../secrets/services/ntfy.yaml;
     };
   };

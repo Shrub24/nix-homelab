@@ -1,6 +1,7 @@
 {
   lib,
   config,
+  ociImages,
   ...
 }:
 let
@@ -135,7 +136,7 @@ in
     virtualisation.oci-containers.containers = {
       guacd = {
         autoStart = true;
-        image = "docker.io/guacamole/guacd:1.6.0";
+        image = ociImages.guacd;
         volumes = [
           "${cfg.dataDir}/guacd:/var/lib/guacd"
         ];
@@ -143,7 +144,7 @@ in
 
       termix = {
         autoStart = true;
-        image = "ghcr.io/lukegus/termix:release-2.1.0";
+        image = ociImages.termix;
         dependsOn = [ "guacd" ];
         environment = {
           GUACD_HOST = "127.0.0.1";

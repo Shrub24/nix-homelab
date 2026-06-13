@@ -1,0 +1,48 @@
+name: nvfetcher-refresh
+on:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: nvfetcher-refresh
+  cancel-in-progress: true
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Regenerate nvfetcher sources
+        run: nix run nixpkgs#nvfetcher -- -o pkgs/_sources
+      - name: Validate flake after regeneration
+        run: nix flake check --no-build --no-write-lock-file path:.
+      - name: Check for generated-file changes
+        id: diff
+        run: |
+          if git diff --quiet pkgs/_sources/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Create or update PR
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/nvfetcher-refresh
+          commit-message: "chore(deps): regenerate nvfetcher source metadata"
+          title: "chore(deps): regenerate nvfetcher source metadata"
+          body: |
+            Automated regeneration of nvfetcher-managed source metadata.
+
+            This PR was created by the `nvfetcher-refresh` workflow.
+            Review the generated-file diff, then merge when ready.
+          labels: |
+            dependencies
+            automated

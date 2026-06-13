@@ -13,11 +13,9 @@
     yq-go
     ripgrep
     zoxide
-    pay-respects
     zsh-autosuggestions
-    zsh-completions
-    zsh-fzf-tab
     zsh-powerlevel10k
+    wezterm
   ];
 
   environment.shellAliases = {
@@ -30,6 +28,7 @@
   };
 
   users.defaultUserShell = pkgs.zsh;
+  programs.mosh.enable = true;
 
   programs.zsh = {
     enable = true;
@@ -39,14 +38,9 @@
 
     interactiveShellInit = ''
       source ${pkgs.zsh-powerlevel10k}/share/zsh-powerlevel10k/powerlevel10k.zsh-theme
-      source ${pkgs.zsh-fzf-tab}/share/fzf-tab/fzf-tab.plugin.zsh
 
       if command -v zoxide >/dev/null 2>&1; then
         eval "$(zoxide init zsh)"
-      fi
-
-      if command -v pay-respects >/dev/null 2>&1; then
-        eval "$(pay-respects zsh)"
       fi
 
       if [ -f /etc/zsh/p10k.zsh ]; then

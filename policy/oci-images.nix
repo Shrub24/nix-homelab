@@ -9,7 +9,7 @@
 
   trek = "docker.io/mauriceboe/trek:latest@sha256:abc478bce15f58d3357a4077133f874a54fab75aee507f6513bb1ab24294c33f";
 
-  doclingServe = "quay.io/docling-project/docling-serve:v1.20.0@sha256:be409c69590e9346ba1b7f1827b02248ccb47629f2e6de2a641171e76ae84fff";
+  doclingServe = "quay.io/docling-project/docling-serve:v1.23.0@sha256:0c75a9c098ce0d06af240fd4f79fe6afc77df2e4ac30de680ae0522ef62eae69";
 
   paperlessGpt = "ghcr.io/icereed/paperless-gpt:latest@sha256:c0ce6186028911101a2cfe68353f14a9dbb2653596f3f1cff94de4b6db3114ff";
 
@@ -17,7 +17,7 @@
 
   karakeepChrome = "gcr.io/zenika-hub/alpine-chrome:124@sha256:1a0046448e0bb6c275c88f86e01faf0de62b02ec8572901256ada0a8c08be23f";
 
-  karakeepMeilisearch = "getmeili/meilisearch:v1.41.0@sha256:860fa4baed04ae1c235de870edab0c8006227546dea1bbb6411fbfc5e27cf1db";
+  karakeepMeilisearch = "getmeili/meilisearch:v1.46.1@sha256:cbe0e500a5fc04397dfe0245cf143fee40658b26470daaf549f0a6927c5c08dc";
 
   guacd = "docker.io/guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f";
 

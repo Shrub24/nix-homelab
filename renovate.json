@@ -17,6 +17,9 @@
     "github-actions",
     "custom.regex"
   ],
+  "nix": {
+    "enabled": true
+  },
   "customManagers": [
     {
       "customType": "regex",

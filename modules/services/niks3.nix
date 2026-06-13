@@ -55,6 +55,14 @@ in
       httpAddr = "0.0.0.0:5751";
       database.createLocally = true;
 
+      gc = {
+        enable = true; # Default: true
+        olderThan = "720h"; # 30 days (default)
+        failedUploadsOlderThan = "6h"; # 6 hours (default)
+        schedule = "daily"; # Run at midnight daily (default)
+        randomizedDelaySec = 1800; # Add 0-30 min random delay (default)
+      };
+
       s3 = {
         endpoint = cfg.s3Endpoint;
         bucket = cfg.s3Bucket;

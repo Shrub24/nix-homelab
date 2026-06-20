@@ -1,5 +1,9 @@
 pre-commit:
   commands:
+    fmt:
+      glob: "**/*.{nix,yaml,yml,toml,md,sh,json,tf,tfvars,py}"
+      run: treefmt --allow-missing-formatter {staged_files}
+      stage_fixed: true
     regen-flake-lock:
       glob: "flake.nix"
       run: nix flake lock

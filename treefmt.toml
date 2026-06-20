@@ -1,0 +1,50 @@
+# Canonical multi-language formatter configuration.
+# Run `treefmt` for repo-wide formatting or `treefmt --fail-on-change` to check.
+# Nix-only formatting remains available via `nix fmt` (the flake formatter output).
+
+[formatter.nix]
+command = "nixfmt"
+includes = ["*.nix"]
+
+[formatter.yaml]
+command = "prettier"
+includes = ["*.yaml", "*.yml"]
+options = ["--parser", "yaml"]
+
+[formatter.toml]
+command = "taplo"
+includes = ["*.toml"]
+options = ["format"]
+
+[formatter.markdown]
+command = "prettier"
+includes = ["*.md"]
+options = ["--parser", "markdown"]
+
+[formatter.shell]
+command = "shfmt"
+includes = ["*.sh", "*.bash"]
+
+[formatter.json]
+command = "prettier"
+includes = ["*.json"]
+options = ["--parser", "json"]
+
+[formatter.python]
+command = "black"
+includes = ["*.py"]
+
+[formatter.terraform]
+command = "tofu"
+includes = ["*.tf", "*.tfvars"]
+options = ["fmt"]
+
+# SSOT — treefmt.toml is the canonical exclusion source.
+excludes = [
+  "secrets/**",
+  "generated/**",
+  "pkgs/_sources/generated.*",
+  "pkgs/_sources/generated/**",
+  "flake.lock",
+  ".terraform.lock.hcl",
+]

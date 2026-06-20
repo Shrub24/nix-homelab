@@ -41,11 +41,16 @@
               jq
               yq
               opentofu
+              prettier
+              shfmt
+              taplo
+              treefmt
               sops
               age
               nixos-anywhere
               nix-output-monitor
               nixfmt
+              black
               statix
               ssh-to-age
               self.packages.${system}.notification-daemon

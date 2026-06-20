@@ -45,6 +45,8 @@ jobs:
           echo "version=${{ steps.meta.outputs.version }}"
           echo "ref_slug=${{ steps.meta.outputs.ref_slug }}"
           echo "short_sha=${{ steps.meta.outputs.short_sha }}"
+      - name: Check cross-language formatting
+        run: nix develop --command treefmt --fail-on-change
       - name: Validate flake wiring
         run: nix flake check --no-build --no-write-lock-file --refresh path:.
   build-hosts:

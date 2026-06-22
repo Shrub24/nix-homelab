@@ -41,13 +41,19 @@
               jq
               yq
               opentofu
+              prettier
+              shfmt
+              taplo
+              treefmt
               sops
               age
               nixos-anywhere
               nix-output-monitor
               nixfmt
+              ruff
               statix
               ssh-to-age
+              lefthook
               self.packages.${system}.notification-daemon
               self.packages.${system}.notify
               self.packages.${system}.niks3

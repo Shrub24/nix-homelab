@@ -32,8 +32,7 @@ in
       dataDir = cfg.dataDir;
 
       ensureDatabases =
-        lib.optionals cfg.niks3.enable [ "niks3" ]
-        ++ lib.optionals cfg.paperless.enable [ "paperless" ];
+        lib.optionals cfg.niks3.enable [ "niks3" ] ++ lib.optionals cfg.paperless.enable [ "paperless" ];
 
       ensureUsers =
         lib.optionals cfg.niks3.enable [

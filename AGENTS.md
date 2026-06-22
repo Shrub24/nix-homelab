@@ -55,7 +55,9 @@ Canonical human-facing architecture and migration guidance lives under `docs/` (
 
 | Tool                          | Purpose                           | Notes                                                                                            |
 | ----------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `nix fmt`                     | Format Nix code                   | Make this the default formatter gate before deploys.                                             |
+| `treefmt`                     | Format/repo-wide check for all languages | Runs `nixfmt`, `prettier`, `taplo`, `shfmt`, `tofu fmt` via `treefmt.toml`. Use `--fail-on-change` for CI. |
+| `just fmt` / `just fmt-check` | Shortcut for `treefmt` / `treefmt --fail-on-change` | Same as above via `just` recipes. |
+| `nix fmt`                     | Format Nix files only            | Stays as the dedicated Nix-only formatter backed by `nixfmt`. `treefmt` wraps it internally so both produce identical results on `.nix` files. |
 | `nix flake check`             | Validate flake outputs and checks | Run locally and in CI before applying host changes.                                              |
 | `deploy-rs` checks            | Deployment schema validation      | Wire `deploy-rs.lib.<system>.deployChecks` into `flake checks` once you introduce `deploy-rs`.   |
 | `nixos-rebuild --target-host` | First-host iteration tool         | Use this before introducing fleet-wide deployment commands; it keeps the early workflow obvious. |
@@ -197,6 +199,17 @@ semble find-related src/auth.py 42 ./my-project
 `path` defaults to the current directory when omitted; git URLs are accepted.
 
 If `semble` is not on `$PATH`, use `uvx --from "semble[mcp]" semble` in its place.
+
+## Formatting
+
+Use `treefmt` for cross-language formatting (covers Nix, YAML, TOML, Markdown, shell, JSON, OpenTofu, Python).
+Use `nix fmt` for Nix-only formatting (backed by `nixfmt`; `treefmt` wraps it internally so both produce identical results on `.nix` files).
+
+- **Format all:** `treefmt`
+- **Check only:** `treefmt --fail-on-change`
+- **Nix only:** `nix fmt`
+
+Exclusion SSOT lives in `treefmt.toml` — all managed paths (`secrets/**`, `generated/**`, `pkgs/_sources/generated.*`, `flake.lock`) are defined there.
 
 ## Workflow
 

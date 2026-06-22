@@ -71,30 +71,40 @@ in
       enable = lib.mkEnableOption "systemd service lifecycle monitoring via apprise";
 
       services = lib.mkOption {
-        type = lib.types.attrsOf (lib.types.submodule {
-          options = {
-            onStart = lib.mkOption {
-              type = lib.types.bool;
-              default = false;
-              description = "Notify when the service starts.";
+        type = lib.types.attrsOf (
+          lib.types.submodule {
+            options = {
+              onStart = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "Notify when the service starts.";
+              };
+              onSuccess = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "Notify when the service completes successfully.";
+              };
+              onFailure = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "Notify when the service fails (includes journald context).";
+              };
             };
-            onSuccess = lib.mkOption {
-              type = lib.types.bool;
-              default = false;
-              description = "Notify when the service completes successfully.";
-            };
-            onFailure = lib.mkOption {
-              type = lib.types.bool;
-              default = false;
-              description = "Notify when the service fails (includes journald context).";
-            };
-          };
-        });
+          }
+        );
         default = { };
         example = {
-          "beets-import" = { onStart = true; onFailure = true; onSuccess = true; };
-          "nix-gc" = { onFailure = true; };
-          "podman-cleanup" = { onFailure = true; };
+          "beets-import" = {
+            onStart = true;
+            onFailure = true;
+            onSuccess = true;
+          };
+          "nix-gc" = {
+            onFailure = true;
+          };
+          "podman-cleanup" = {
+            onFailure = true;
+          };
         };
         description = "Systemd services to monitor. Each key is a systemd unit name.";
       };
@@ -184,12 +194,17 @@ in
       (lib.mkIf cfg.daemon.enable {
         apprise-webhook = {
           description = "Apprise notification webhook daemon";
-          after = [ "sops-nix.service" "network.target" ];
+          after = [
+            "sops-nix.service"
+            "network.target"
+          ];
           wants = [ "sops-nix.service" ];
           wantedBy = [ "multi-user.target" ];
           serviceConfig = {
             Type = "simple";
-            ExecStart = "${self.packages.${pkgs.stdenv.hostPlatform.system}.apprise-webhook}/bin/apprise-webhook";
+            ExecStart = "${
+              self.packages.${pkgs.stdenv.hostPlatform.system}.apprise-webhook
+            }/bin/apprise-webhook";
             Restart = "on-failure";
             RestartSec = "5s";
             User = "root";
@@ -204,13 +219,15 @@ in
           description = "Apprise notification on service failure (%i)";
           serviceConfig = {
             Type = "oneshot";
-            ExecStart = let
-              script = pkgs.writeShellScript "apprise-monitor" ''
-                set -euo pipefail
-                unit="$1"
-                ${mkFailureNotify "$unit"}
-              '';
-            in "${script} %i";
+            ExecStart =
+              let
+                script = pkgs.writeShellScript "apprise-monitor" ''
+                  set -euo pipefail
+                  unit="$1"
+                  ${mkFailureNotify "$unit"}
+                '';
+              in
+              "${script} %i";
           };
         };
       })
@@ -231,11 +248,14 @@ in
             # onStart: notify when the service starts.
             (lib.mkIf opts.onStart {
               ExecStartPost = lib.mkAfter [
-                (let
-                  script = pkgs.writeShellScript "notify-start-${name}" ''
-                    apprise-notify info "${name} started" info <<<""
-                  '';
-                in "${script}")
+                (
+                  let
+                    script = pkgs.writeShellScript "notify-start-${name}" ''
+                      apprise-notify info "${name} started" info <<<""
+                    '';
+                  in
+                  "${script}"
+                )
               ];
             })
 

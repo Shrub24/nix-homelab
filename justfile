@@ -3,6 +3,14 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
+# Format all non-excluded files across the repo
+fmt:
+    treefmt
+
+# Check formatting without modifying files
+fmt-check:
+    treefmt --fail-on-change
+
 bootstrap host target:
     @TARGET="{{ target }}"; \
     echo "Checking port 22 on $TARGET..."; \

@@ -245,23 +245,21 @@ in
       ];
     };
 
-    systemd.services.paperless-group-seed =
-      lib.mkIf (cfg.socialGroups != [ ])
-        {
-          description = "Seed Paperless Django groups for OIDC sync";
-          after = [ "paperless-scheduler.service" ];
-          requires = [ "paperless-scheduler.service" ];
-          wantedBy = [ "multi-user.target" ];
-          serviceConfig = {
-            Type = "oneshot";
-            User = "paperless";
-            Group = "paperless";
-            RemainAfterExit = true;
-            Restart = "no";
-          };
-          script = ''
-            exec /run/current-system/sw/bin/paperless-manage shell < ${groupSeedScript}
-          '';
-        };
+    systemd.services.paperless-group-seed = lib.mkIf (cfg.socialGroups != [ ]) {
+      description = "Seed Paperless Django groups for OIDC sync";
+      after = [ "paperless-scheduler.service" ];
+      requires = [ "paperless-scheduler.service" ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        User = "paperless";
+        Group = "paperless";
+        RemainAfterExit = true;
+        Restart = "no";
+      };
+      script = ''
+        exec /run/current-system/sw/bin/paperless-manage shell < ${groupSeedScript}
+      '';
+    };
   };
 }

@@ -26,6 +26,7 @@ in
     ../../modules/services/admin/cockpit.nix
     ../../modules/services/notification-daemon
     ../../modules/services/bifrost-gateway.nix
+    ../../modules/services/phoenix.nix
     ../../modules/services/karakeep.nix
     ../../modules/services/niks3.nix
     ../../modules/services/postgres-shared.nix
@@ -43,6 +44,10 @@ in
   ];
   networking.firewall.interfaces.podman0.allowedTCPPorts = [
     5030
+    4533
+  ];
+  networking.firewall.interfaces.podman2.allowedTCPPorts = [
+    5432
     4533
   ];
 
@@ -132,6 +137,10 @@ in
     secretFiles.host = ../../secrets/services/bifrost-gateway.yaml;
   };
 
+  services.phoenix = {
+    enable = true;
+  };
+
   services.karakeep-pod = {
     enable = true;
     oidc = {
@@ -209,8 +218,10 @@ in
 
   services.postgres-shared = {
     enable = true;
+    secretFile = ../../secrets/services/postgres-shared.yaml;
     niks3.enable = true;
     paperless.enable = true;
+    litellm.enable = true;
   };
 
   services.niks3-auto-upload = {

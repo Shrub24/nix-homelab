@@ -285,6 +285,32 @@
           category = "admin";
           health.path = "/hooks/health";
         };
+
+        phoenix = {
+          subdomain = "phoenix";
+          origin = {
+            scheme = "http";
+            host = "oci-melb-1.tail0fe19b.ts.net";
+            port = 6006;
+          };
+          exposureMode = "tailscale-only";
+          declarePublic = false;
+          category = "admin";
+          health.path = "/";
+        };
+
+        bifrost = {
+          subdomain = "bifrost";
+          origin = {
+            scheme = "http";
+            host = "oci-melb-1.tail0fe19b.ts.net";
+            port = 7411;
+          };
+          exposureMode = "tailscale-only";
+          declarePublic = false;
+          category = "admin";
+          health.path = "/v1/models";
+        };
       };
     };
   };

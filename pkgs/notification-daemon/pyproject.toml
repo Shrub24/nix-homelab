@@ -3,11 +3,7 @@ name = "notification-daemon"
 version = "1.0"
 description = "Generic HTTP notification dispatch daemon"
 requires-python = ">=3.10"
-dependencies = [
-    "apprise",
-    "fastapi",
-    "uvicorn",
-]
+dependencies = ["apprise", "fastapi", "uvicorn"]
 
 [project.scripts]
 notification-daemon = "notification_api.__main__:run"

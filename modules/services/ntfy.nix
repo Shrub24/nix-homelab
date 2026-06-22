@@ -45,7 +45,13 @@ in
     };
 
     logLevel = lib.mkOption {
-      type = lib.types.enum [ "INFO" "DEBUG" "TRACE" "WARN" "ERROR" ];
+      type = lib.types.enum [
+        "INFO"
+        "DEBUG"
+        "TRACE"
+        "WARN"
+        "ERROR"
+      ];
       default = "INFO";
       description = "ntfy log level. Set to DEBUG or TRACE for verbose request logging.";
     };
@@ -62,7 +68,12 @@ in
       };
 
       defaultAccess = lib.mkOption {
-        type = lib.types.enum [ "read-write" "read-only" "write-only" "deny-all" ];
+        type = lib.types.enum [
+          "read-write"
+          "read-only"
+          "write-only"
+          "deny-all"
+        ];
         default = "deny-all";
         description = "Default access policy when no ACL entry matches.";
       };
@@ -105,27 +116,32 @@ in
           "d ${dataDir}/attachments 0750 ntfy-sh ntfy-sh - -"
         ];
 
-          systemd.services.ntfy-sh = {
-            unitConfig.RequiresMountsFor = [ dataDir ];
-            serviceConfig = {
-              DynamicUser = lib.mkForce false;
-              User = "ntfy-sh";
-              Group = "ntfy-sh";
+        systemd.services.ntfy-sh = {
+          unitConfig.RequiresMountsFor = [ dataDir ];
+          serviceConfig = {
+            DynamicUser = lib.mkForce false;
+            User = "ntfy-sh";
+            Group = "ntfy-sh";
             StateDirectory = lib.mkForce "";
-              RuntimeDirectory = "ntfy-sh";
-              RuntimeDirectoryMode = "0755";
-              ReadWritePaths = [ dataDir ];
-            };
+            RuntimeDirectory = "ntfy-sh";
+            RuntimeDirectoryMode = "0755";
+            ReadWritePaths = [ dataDir ];
           };
+        };
       }
 
       # Path A: No auth — use upstream module settings
       (lib.mkIf (!cfg.auth.enable) {
         services.ntfy-sh = {
           enable = true;
-          settings = baseSettings // lib.optionalAttrs (cfg.secretFiles.firebase != null) {
-            "firebase-key-file" = "/run/secrets/ntfy/firebase-key.json";
-          } // { "log-level" = cfg.logLevel; };
+          settings =
+            baseSettings
+            // lib.optionalAttrs (cfg.secretFiles.firebase != null) {
+              "firebase-key-file" = "/run/secrets/ntfy/firebase-key.json";
+            }
+            // {
+              "log-level" = cfg.logLevel;
+            };
         };
       })
 
@@ -168,7 +184,8 @@ in
             attachment-cache-dir: ${dataDir}/attachments
             enable-login: true
             enable-signup: false
-          '' + lib.optionalString (cfg.secretFiles.firebase != null) ''
+          ''
+          + lib.optionalString (cfg.secretFiles.firebase != null) ''
             firebase-key-file: /run/secrets/ntfy/firebase-key.json
           '';
           owner = "ntfy-sh";
@@ -179,9 +196,11 @@ in
         systemd.services.ntfy-sh = {
           restartTriggers = [
             config.sops.templates."ntfy-base-config".path
-          ] ++ lib.optionals (cfg.auth.secretFiles.auth != null) [
+          ]
+          ++ lib.optionals (cfg.auth.secretFiles.auth != null) [
             cfg.auth.secretFiles.auth
-          ] ++ lib.optionals (cfg.secretFiles.firebase != null) [
+          ]
+          ++ lib.optionals (cfg.secretFiles.firebase != null) [
             cfg.secretFiles.firebase
           ];
           preStart = ''
@@ -193,7 +212,8 @@ in
             install -m 0440 "$tmp" /run/ntfy-sh/server.yml
           '';
           serviceConfig.ExecStart = lib.mkForce [
-            "" "${pkgs.ntfy-sh}/bin/ntfy serve -c /run/ntfy-sh/server.yml --log-level ${cfg.logLevel}"
+            ""
+            "${pkgs.ntfy-sh}/bin/ntfy serve -c /run/ntfy-sh/server.yml --log-level ${cfg.logLevel}"
           ];
         };
       })

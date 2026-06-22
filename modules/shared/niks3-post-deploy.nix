@@ -17,7 +17,10 @@ in
 
     excludePublicKeys = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ "cache.nixos.org" "nix-community.cachix.org" ];
+      default = [
+        "cache.nixos.org"
+        "nix-community.cachix.org"
+      ];
       description = "Signing key prefixes to exclude from push. Paths signed only by these keys are skipped.";
     };
   };
@@ -35,7 +38,10 @@ in
 
     systemd.services.niks3-post-deploy = {
       description = "Queue system closure delta for niks3 upload";
-      path = [ hookPkg filterPkg ];
+      path = [
+        hookPkg
+        filterPkg
+      ];
       serviceConfig = {
         Type = "oneshot";
         ProtectSystem = "strict";

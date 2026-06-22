@@ -118,7 +118,9 @@ let
             "BEETSDIR=${cfg.dataDir}"
             "BEETS_CONFIG_SOURCE=${runnerInstance.configSource}"
           ];
-          ExecStart = "${runnerBin}/bin/${runnerBin.name} ${lib.escapeShellArgs (runnerInstance.args ++ [ runnerInstance.targetPath ])}";
+          ExecStart = "${runnerBin}/bin/${runnerBin.name} ${
+            lib.escapeShellArgs (runnerInstance.args ++ [ runnerInstance.targetPath ])
+          }";
           ReadWritePaths = runnerInstance.writePaths ++ [ "/run/secrets/rendered" ];
           ReadPaths = runnerInstance.readPaths;
         }

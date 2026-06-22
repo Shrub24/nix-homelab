@@ -105,18 +105,22 @@ def _send_apprise(config, labelled_title, message, notify_type, tier):
     apobj = apprise.Apprise()
     apobj.add(url)
     apprise_type = TYPE_MAP.get(notify_type, apprise.NotifyType.INFO)
-    if not apobj.notify(title=labelled_title, body=message or "(no body)",
-                        notify_type=apprise_type):
+    if not apobj.notify(
+        title=labelled_title, body=message or "(no body)", notify_type=apprise_type
+    ):
         return False, "apprise dispatch returned False"
     return True, None
 
 
-def _send_ntfy(server_url, topics, token, tier, title, message, notify_type, topic=None):
+def _send_ntfy(
+    server_url, topics, token, tier, title, message, notify_type, topic=None
+):
     topic_name = topic or TOPIC_FALLBACK.get(tier, "system")
     ntfy_topic = topics.get(topic_name)
     if not ntfy_topic:
-        logger.warning("ntfy: unknown topic '%s' (known: %s)", topic_name,
-                       ", ".join(topics.keys()))
+        logger.warning(
+            "ntfy: unknown topic '%s' (known: %s)", topic_name, ", ".join(topics.keys())
+        )
         return False, "unknown ntfy topic '%s'" % topic_name
     url = "%s/%s" % (server_url.rstrip("/"), ntfy_topic)
     priority = NTFY_PRIORITY_MAP.get(notify_type, 3)
@@ -131,8 +135,14 @@ def _send_ntfy(server_url, topics, token, tier, title, message, notify_type, top
     req = urllib.request.Request(url, data=data, headers=headers)
     try:
         resp = urllib.request.urlopen(req, timeout=10)
-        logger.info("ntfy sent: topic=%s ntfy_topic=%s tier=%s priority=%d status=%d",
-                    topic_name, ntfy_topic, tier, priority, resp.status)
+        logger.info(
+            "ntfy sent: topic=%s ntfy_topic=%s tier=%s priority=%d status=%d",
+            topic_name,
+            ntfy_topic,
+            tier,
+            priority,
+            resp.status,
+        )
         return True, None
     except urllib.error.HTTPError as exc:
         body = exc.read().decode()
@@ -149,8 +159,9 @@ def _dispatch_notification(config, tier, title, message, notify_type, topic):
     apprise_ok = apprise_err = None
     ntfy_ok = ntfy_err = None
 
-    apprise_ok, apprise_err = _send_apprise(config, labelled_title, message,
-                                            notify_type, tier)
+    apprise_ok, apprise_err = _send_apprise(
+        config, labelled_title, message, notify_type, tier
+    )
     if apprise_err:
         logger.error("apprise: %s", apprise_err)
 
@@ -213,9 +224,7 @@ async def notify(request: Request):
 
     config = load_config()
     if config is None:
-        return JSONResponse(
-            {"error": "notification config not found"}, status_code=503
-        )
+        return JSONResponse({"error": "notification config not found"}, status_code=503)
 
     errors = _dispatch_notification(config, tier, title, message, notify_type, topic)
 
@@ -229,9 +238,7 @@ async def notify(request: Request):
 async def test_notify():
     config = load_config()
     if config is None:
-        return JSONResponse(
-            {"error": "notification config not found"}, status_code=503
-        )
+        return JSONResponse({"error": "notification config not found"}, status_code=503)
 
     errors = _dispatch_notification(
         config,
@@ -243,7 +250,5 @@ async def test_notify():
     )
 
     if errors:
-        return JSONResponse(
-            {"test_result": "fail", "errors": errors}, status_code=500
-        )
+        return JSONResponse({"test_result": "fail", "errors": errors}, status_code=500)
     return JSONResponse({"test_result": "ok"})

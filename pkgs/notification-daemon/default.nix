@@ -1,5 +1,6 @@
-{ lib
-, python3Packages
+{
+  lib,
+  python3Packages,
 }:
 
 python3Packages.buildPythonApplication {
@@ -8,5 +9,9 @@ python3Packages.buildPythonApplication {
   src = ./.;
   format = "pyproject";
   nativeBuildInputs = with python3Packages; [ setuptools ];
-  propagatedBuildInputs = with python3Packages; [ apprise fastapi uvicorn ];
+  propagatedBuildInputs = with python3Packages; [
+    apprise
+    fastapi
+    uvicorn
+  ];
 }

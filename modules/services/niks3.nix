@@ -74,8 +74,7 @@ in
 
       cacheUrl = cfg.cacheUrl;
       signKeyFiles = [ "/run/secrets/niks3.signing_key" ];
-      apiTokenFile = lib.mkIf (cfg.hostSecretFile != null)
-        "/run/secrets/niks3.api_token";
+      apiTokenFile = lib.mkIf (cfg.hostSecretFile != null) "/run/secrets/niks3.api_token";
     };
 
     sops.secrets = {
@@ -103,7 +102,8 @@ in
         group = "niks3";
         mode = "0400";
       };
-    } // lib.optionalAttrs (cfg.hostSecretFile != null) {
+    }
+    // lib.optionalAttrs (cfg.hostSecretFile != null) {
       niks3_api_token = {
         sopsFile = cfg.hostSecretFile;
         key = "niks3/api_token";

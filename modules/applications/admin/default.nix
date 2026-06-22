@@ -14,7 +14,8 @@ let
   termixRoute = cfg.policyServices.${oauth2Policy.termix.routeKey};
   quantumRoute = cfg.policyServices.${oauth2Policy.quantum.routeKey};
 
-  oidcRuntimeEnabled = clientPolicy:
+  oidcRuntimeEnabled =
+    clientPolicy:
     if clientPolicy ? routeKey then
       cfg.policyServices.${clientPolicy.routeKey}.access.oidc.enabled
     else
@@ -69,15 +70,15 @@ in
         };
 
         assertions = [
-          ]
-          ++ [
-            (secretHelpers.mkRequiredSecretAssertion {
-              enable = cfg.enable;
-              file = cfg.secretFiles.host;
-              feature = "applications.admin";
-              label = "secretFiles.host";
-            })
-          ];
+        ]
+        ++ [
+          (secretHelpers.mkRequiredSecretAssertion {
+            enable = cfg.enable;
+            file = cfg.secretFiles.host;
+            feature = "applications.admin";
+            label = "secretFiles.host";
+          })
+        ];
 
         services.admin.termix.enable = lib.mkDefault true;
         services.admin.kanidm.enable = lib.mkDefault true;
@@ -168,7 +169,11 @@ in
             authorizationUrl = config.services.identity.oidc.clients.termix.authorizationUrl;
             tokenUrl = config.services.identity.oidc.clients.termix.tokenUrl;
             userinfoUrl = config.services.identity.oidc.clients.termix.userinfoUrl;
-            environmentFile = if oidcRuntimeEnabled oauth2Policy.termix then config.sops.templates."termix-oidc.env".path else null;
+            environmentFile =
+              if oidcRuntimeEnabled oauth2Policy.termix then
+                config.sops.templates."termix-oidc.env".path
+              else
+                null;
           };
         };
 
@@ -223,7 +228,10 @@ in
             issuerUrl = config.services.identity.oidc.clients.quantum.issuerUrl;
             clientId = config.services.identity.oidc.clients.quantum.clientId;
             environmentFile =
-              if oidcRuntimeEnabled oauth2Policy.quantum then config.sops.templates."quantum-oidc.env".path else null;
+              if oidcRuntimeEnabled oauth2Policy.quantum then
+                config.sops.templates."quantum-oidc.env".path
+              else
+                null;
           };
         };
       })

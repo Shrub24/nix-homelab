@@ -74,6 +74,28 @@ Repository structure SHALL place canonical OCI image metadata and nvfetcher-gene
 - **THEN** those artifacts are stored in canonical repo-level paths rather than host-local files
 - **AND** service and package consumers can import those paths without redefining equivalent literals
 
+### Requirement: `.editorconfig` SHALL be present at repo root
+
+The repository SHALL include an `.editorconfig` file at the repository root declaring baseline editor behavior (charset, indentation style/size, line endings) for all file classes the repository uses.
+
+#### Scenario: Repository structure is audited
+
+- **WHEN** the repository root is inspected
+- **THEN** `.editorconfig` is present as a committed file
+- **AND** it contains settings for every file class the repository uses day-to-day (.nix, YAML, TOML, Markdown, shell, JSON, Python, and editor-only `.hcl` indentation if needed)
+- **AND** it does **not** carry path-specific exclusion sections
+
+### Requirement: `treefmt.toml` SHALL be present at repo root
+
+The repository SHALL include a `treefmt.toml` file at the repository root declaring the canonical cross-language formatter configuration and exclusion patterns.
+
+#### Scenario: Repository structure is audited
+
+- **WHEN** the repository root is inspected
+- **THEN** `treefmt.toml` is present as a committed file
+- **AND** it declares formatter entries for `.nix`, YAML, TOML, Markdown, shell scripts, JSON, Python, and OpenTofu (`.tf`/`.tfvars` only)
+- **AND** its `excludes` list is the sole exclusion SSOT, rather than matching `.editorconfig` at a second reference point
+
 ### Requirement: Generated source artifacts SHALL remain safe to commit
 
 Committed generated dependency metadata SHALL be limited to reproducible source information required for evaluation and packaging, without embedding secrets or host-specific runtime state.

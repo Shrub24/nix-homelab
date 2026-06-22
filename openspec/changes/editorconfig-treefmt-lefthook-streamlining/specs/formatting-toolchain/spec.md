@@ -4,7 +4,7 @@
 
 Define the formatting toolchain contracts for multi-language code formatting across the repository: editor baseline, CLI formatter, pre-commit enforcement, and CI validation.
 
-## Requirements
+## ADDED Requirements
 
 ### Requirement: Editor behavior SHALL be guided by repo-root `.editorconfig` (editor baseline only)
 

@@ -19,6 +19,8 @@
 
 - [x] 4.1 Add a `Check formatting` step to `.github/workflows/ci.yml` in the `validate` job, after the `Validate flake wiring` step — runs `nix develop --command treefmt --fail-on-change` (or equivalent devShell-entering invocation). Confirm it fails with non-zero exit when unformatted files exist and prints paths.
 
+- [x] 4.2 Keep formatting validation local-only in CI — the `validate` job installs Nix without invoking `.github/actions/setup-nixbuild`, and nixbuild.net setup remains limited to jobs that actually build/deploy host profiles.
+
 ## 5. Just command surface
 
 - [x] 5.1 Add `just fmt` target — runs `treefmt` (repo-wide format) and `just fmt-check` target — runs `treefmt --fail-on-change` (read-only check). Place in the root `justfile` with a brief comment describing each.
@@ -35,13 +37,13 @@
 
 ## 8. One-shot repo reformat
 
-- [ ] 8.1 Run `treefmt` across the full repo (exclusions active). Review the diff — verify `secrets/`, `generated/`, `pkgs/_sources/generated.*`, `flake.lock`, `.terraform.lock.hcl` are untouched. Commit the baseline reformat as part of this change.
+- [x] 8.1 Run `treefmt` across the full repo (exclusions active). Review the diff — verify `secrets/`, `generated/`, `pkgs/_sources/generated.*`, `flake.lock`, `.terraform.lock.hcl` are untouched. Commit the baseline reformat as part of this change.
 
 ## 9. Validation
 
-- [ ] 9.1 Run `treefmt --fail-on-change` — confirm zero unformatted files post-reformat.
+- [x] 9.1 Run `treefmt --fail-on-change` — confirm zero unformatted files post-reformat.
 
-- [ ] 9.2 Run `nix flake check --no-build` — confirm evaluation passes (flake checks, formatter output, devShell evaluation).
+- [x] 9.2 Run `nix flake check --no-build` — confirm evaluation passes (flake checks, formatter output, devShell evaluation).
 
 - [ ] 9.3 Test pre-commit hook: stage an intentionally unformatted file (`*.nix`, YAML, or `*.py`), run `lefthook run pre-commit`, confirm it formats and re-stages. Then test bypass with `--no-verify` — confirm CI catch.
 

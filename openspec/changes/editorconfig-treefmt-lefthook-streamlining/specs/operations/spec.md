@@ -24,6 +24,12 @@ CI validation workflows SHALL include a formatting check step that runs `treefmt
 - **THEN** all formatter packages declared in `treefmt.toml` are available via the devShell
 - **AND** no additional CI-level tool installation is required beyond entering the devShell
 
+#### Scenario: Formatting validation avoids remote builder setup
+
+- **WHEN** the `validate` job runs formatting validation
+- **THEN** Nix is installed without configuring nixbuild.net or a remote store
+- **AND** nixbuild.net setup is reserved for host build/deploy jobs that actually realize derivations
+
 ### Requirement: Operator workflow references SHALL reflect the expanded toolchain
 
 Operator-facing documentation (`AGENTS.md`, `justfile` entries, architecture docs) SHALL reference `treefmt` as the canonical cross-language formatting command alongside the existing `nix fmt` for Nix-only formatting.

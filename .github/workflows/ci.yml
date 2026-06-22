@@ -36,10 +36,8 @@ jobs:
           echo "ref_slug=$ref_slug" >> "$GITHUB_OUTPUT"
           echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - name: Setup nixbuild
-        uses: ./.github/actions/setup-nixbuild
-        with:
-          nixbuild_token: ${{ secrets.NIXBUILD_TOKEN }}
+      - name: Install Nix for local validation
+        uses: nixbuild/nix-quick-install-action@v34
       - name: Show build metadata
         run: |
           echo "version=${{ steps.meta.outputs.version }}"

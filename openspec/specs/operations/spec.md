@@ -167,6 +167,46 @@ CI workflows SHALL include OpenTofu validation checks while leaving infrastructu
 - **AND** no automated OpenTofu apply is performed
 - **AND** the workflow documentation MUST note that OpenTofu CI validation remains out of scope for the current change
 
+### Requirement: CI SHALL validate cross-language formatting via `treefmt`
+
+CI validation workflows SHALL include a formatting check step that runs `treefmt --fail-on-change` across the repository and fails the workflow if any formatted file class has unformatted content.
+
+#### Scenario: Formatting check passes in CI
+
+- **WHEN** CI runs on a pull request or push to any branch class
+- **THEN** the formatting check step runs `treefmt --fail-on-change` across the working tree
+- **AND** the step exits successfully if all formatted files are clean
+
+#### Scenario: Formatting check fails in CI
+
+- **WHEN** CI runs on a pull request or push containing unformatted files
+- **THEN** the formatting check step exits non-zero and lists unformatted file paths
+- **AND** the step output is actionable — the contributor can reproduce locally with `treefmt --fail-on-change`
+
+#### Scenario: Formatter packages are available in CI
+
+- **WHEN** CI runner executes the formatting check step
+- **THEN** all formatter packages declared in `treefmt.toml` (`nixfmt`, `prettier`, `taplo`, `shfmt`, `tofu`, `black`) are available via the devShell
+- **AND** no additional CI-level tool installation is required beyond entering the devShell
+
+#### Scenario: Formatting validation avoids remote builder setup
+
+- **WHEN** the `validate` job runs formatting validation
+- **THEN** Nix is installed without configuring nixbuild.net or a remote store
+- **AND** nixbuild.net setup is reserved for host build/deploy jobs that actually realize derivations
+
+### Requirement: Operator workflow references SHALL reflect the expanded toolchain
+
+Operator-facing documentation (`AGENTS.md`, `justfile` entries, architecture docs) SHALL reference `treefmt` as the canonical cross-language formatting command alongside the existing `nix fmt` for Nix-only formatting.
+
+#### Scenario: Operator reads formatting workflow in `AGENTS.md`
+
+- **WHEN** an operator reviews `AGENTS.md` for repository formatting guidance
+- **THEN** the documented formatting commands include `treefmt` (repo-wide) and `nix fmt` (Nix-only)
+- **AND** the relationship between the two commands is explained:
+  - `treefmt` covers Nix, YAML, TOML, Markdown, shell, JSON, OpenTofu, and Python
+  - `nix fmt` remains the canonical Nix-only formatter backed by `nixfmt`
+
 ### Requirement: Dependency refresh automation SHALL follow canonical tool boundaries
 
 Operational automation SHALL preserve the canonical boundary where Renovate manages flake-input and OCI-reference updates, and scheduled nvfetcher automation manages non-flake generated source refreshes.
@@ -198,4 +238,3 @@ Operations documentation and commands SHALL distinguish the canonical update pat
 - **WHEN** an operator follows repository runbooks or commands to refresh a dependency
 - **THEN** the workflow makes clear whether the dependency is expected to move through Renovate or nvfetcher automation
 - **AND** the operator does not need to infer ownership from implementation details scattered across the repo
-

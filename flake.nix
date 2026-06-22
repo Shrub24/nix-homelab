@@ -50,9 +50,10 @@
               nixos-anywhere
               nix-output-monitor
               nixfmt
-              black
+              ruff
               statix
               ssh-to-age
+              lefthook
               self.packages.${system}.notification-daemon
               self.packages.${system}.notify
               self.packages.${system}.niks3

@@ -31,8 +31,9 @@ includes = ["*.json"]
 options = ["--parser", "json"]
 
 [formatter.python]
-command = "black"
+command = "ruff"
 includes = ["*.py"]
+options = ["format"]
 
 [formatter.terraform]
 command = "tofu"

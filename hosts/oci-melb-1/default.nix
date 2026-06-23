@@ -68,9 +68,13 @@ in
       wellknownUrl = config.services.identity.oidc.clients.paperless.wellknownUrl;
     };
     paperless-gpt = {
-      docling.enable = true;
-      instances.llm.enable = true;
-      instances.docling.enable = true;
+      docling.enable = false;
+      instances.llm = {
+        enable = true;
+        environment.LLM_MODEL = globals.aiGateway.aliases.text;
+        environment.VISION_LLM_MODEL = globals.aiGateway.aliases.image;
+      };
+      instances.docling.enable = false;
     };
   };
 

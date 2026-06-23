@@ -80,8 +80,8 @@
         "fallbacks": ["crofai/deepseek-v4-pro-precision"],
         "targets": [
           {
-            "provider": "deepseek",
-            "model": "deepseek-v4-pro",
+            "provider": "openrouter",
+            "model": "xiaomi/mimo-v2.5",
             "weight": 1.0
           }
         ]

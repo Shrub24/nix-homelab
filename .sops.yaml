@@ -84,6 +84,11 @@ creation_rules:
       - age:
           - *owner_age
           - *oci_melb_1_age
+  - path_regex: ^secrets/services/postgres-shared\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
   # Identity scopes
   - path_regex: ^secrets/identity/kanidm\.ya?ml$
     key_groups:

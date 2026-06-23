@@ -82,8 +82,10 @@ Track D: Service baseline
 - deploy private-only Tailscale access model
 - deploy bidirectional Syncthing with safety controls
 - deploy Navidrome reading direct sync path
+- deploy AudioMuse as an optional Navidrome similarity extension (Podman containers, Postgres, Navidrome plugin); deployment lifecycle distinguishes infrastructure deployed from E2E Symfonium-validated behavior
 - keep quarantine in synced scope and visible playback surface while library remains canonical promotion target
 - keep music service composition explicit through `modules/applications/music.nix`
+- keep music service modules regrouped under `modules/services/music/` for navigability without changing option namespaces
 - keep private admin service composition explicit through `modules/applications/admin/default.nix`
 - keep the admin surface split between reusable service modules and host-owned source/route inputs (for example Quantum sources and Cockpit host overlays)
 - evolve Beets via native systemd-based inbox-to-library promotion under `/srv/media/library` while keeping `/srv/media` playback visibility
@@ -126,8 +128,9 @@ Active implementation anchor paths that must stay reflected in docs:
 
 - `hosts/oci-melb-1/default.nix`
 - `hosts/do-admin-1/default.nix`
-- `modules/applications/music.nix`
+- `modules/applications/music.nix` (or `modules/applications/music/default.nix` as sub-module root)
 - `modules/applications/admin/default.nix`
+- `modules/services/music/` (canonical music service module subtree: `navidrome.nix`, `audiomuse.nix`, `syncthing.nix`, `beets/`, `slskd.nix`, `soulsync.nix`, `tagr.nix`)
 - `modules/core/base.nix`
 - `modules/profiles/base-server.nix`
 - `modules/services/tailscale.nix`
@@ -135,7 +138,7 @@ Active implementation anchor paths that must stay reflected in docs:
 - `modules/services/admin/quantum.nix`
 - `modules/services/admin/cockpit.nix`
 
-Maintenance requirement: changes to active architecture paths, trust boundaries, or operator/CI commands must update canonical docs in the same change window.
+Maintenance requirement: changes to active architecture paths, trust boundaries, or operator/CI commands must update canonical docs in the same change window. For features that distinguish deployed infrastructure from end-to-end validated behavior (e.g. AudioMuse first-run setup, Navidrome plugin configuration, Symfonium validation), docs must clearly separate the deployment-complete state from the E2E-accepted state.
 
 Current operator/validation entrypoints that docs should track when they change:
 

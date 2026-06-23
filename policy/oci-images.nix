@@ -24,4 +24,6 @@
   termix = "ghcr.io/lukegus/termix:release-2.1.0@sha256:52e45c1ea3fb85be5b3ade5ff42eed0946fe81131cbd834f6960e00797f17f86";
 
   quantum = "ghcr.io/gtsteffaniak/filebrowser:stable@sha256:eb3733681db8757412632c61a99ad656f0d94ed6781bb2ea114b4d70babab78c";
+
+  phoenix = "docker.io/arizephoenix/phoenix:latest@sha256:103f5e61cf23c56a69b864f5ad2b3f307a7f55827d53fad8aeb2a07289223987";
 }

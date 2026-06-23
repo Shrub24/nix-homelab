@@ -1,8 +1,8 @@
 import json
 import logging
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 
 import apprise
 from fastapi import FastAPI, Request
@@ -235,20 +235,203 @@ async def notify(request: Request):
 
 
 @app.post("/debug/test-notify")
-async def test_notify():
+async def test_notify(request: Request):
     config = load_config()
     if config is None:
         return JSONResponse({"error": "notification config not found"}, status_code=503)
 
-    errors = _dispatch_notification(
-        config,
-        tier="info",
-        title="[test] notification pipeline",
-        message="Daemon debug test notification",
-        notify_type="info",
-        topic="system",
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    topic = body.get("topic", "system")
+    tier = body.get("tier", "info")
+
+    steps = []
+    all_ok = True
+
+    steps.append({"label": "config loaded", "ok": True, "detail": CONFIG_PATH})
+
+    ntfy_cfg = config.get("ntfy", {})
+    ntfy_enabled = bool(ntfy_cfg.get("server_url") and ntfy_cfg.get("topics"))
+    steps.append(
+        {
+            "label": "ntfy configured",
+            "ok": ntfy_enabled,
+            "detail": (
+                ntfy_cfg.get("server_url", "(not set)")
+                if ntfy_enabled
+                else "server_url or topics missing"
+            ),
+        }
     )
 
+    apprise_cfg = (
+        config.get("topics") and config.get("chat_id") and config.get("token_file")
+    )
+    steps.append(
+        {
+            "label": "telegram configured",
+            "ok": bool(apprise_cfg),
+            "detail": (
+                "chat_id=%s" % config.get("chat_id", "(not set)")
+                if apprise_cfg
+                else "missing chat_id or token_file"
+            ),
+        }
+    )
+
+    if not ntfy_enabled:
+        all_ok = False
+
+    errors = _dispatch_notification(
+        config,
+        tier=tier,
+        title="[test] notification pipeline",
+        message="Daemon debug test notification (topic=%s, tier=%s)" % (topic, tier),
+        notify_type="info",
+        topic=topic,
+    )
+
+    steps.append(
+        {
+            "label": "dispatch",
+            "ok": not errors,
+            "detail": "; ".join(errors) if errors else "all channels succeeded",
+        }
+    )
     if errors:
-        return JSONResponse({"test_result": "fail", "errors": errors}, status_code=500)
-    return JSONResponse({"test_result": "ok"})
+        all_ok = False
+
+    result = {"test_result": "ok" if all_ok else "fail", "steps": steps}
+    if errors:
+        result["errors"] = errors
+    return JSONResponse(result, status_code=200 if all_ok else 500)
+
+
+@app.get("/debug/ntfy-check")
+async def ntfy_check(topic: str = "system"):
+    """Step-by-step ntfy connectivity and auth diagnostics."""
+    config = load_config()
+    if config is None:
+        return JSONResponse({"error": "config not found"}, status_code=503)
+
+    steps = []
+    all_ok = True
+
+    ntfy_cfg = config.get("ntfy", {})
+    server_url = ntfy_cfg.get("server_url", "")
+    topics = ntfy_cfg.get("topics", {})
+    token_file = ntfy_cfg.get("token_file", "")
+
+    steps.append({"label": "config", "ok": True, "detail": CONFIG_PATH})
+
+    steps.append(
+        {
+            "label": "server_url",
+            "ok": bool(server_url),
+            "detail": server_url or "(not set)",
+        }
+    )
+    if not server_url:
+        all_ok = False
+
+    steps.append(
+        {
+            "label": "topics",
+            "ok": bool(topics),
+            "detail": (
+                ", ".join("%s=%s" % (k, v) for k, v in topics.items())
+                if topics
+                else "(empty)"
+            ),
+        }
+    )
+
+    token = None
+    if token_file:
+        try:
+            token = open(token_file).read().strip()
+            steps.append(
+                {
+                    "label": "token_file",
+                    "ok": True,
+                    "detail": "%s (%d bytes)" % (token_file, len(token)),
+                }
+            )
+        except (FileNotFoundError, PermissionError) as exc:
+            steps.append({"label": "token_file", "ok": False, "detail": str(exc)})
+            all_ok = False
+    else:
+        steps.append({"label": "token_file", "ok": False, "detail": "(not configured)"})
+        all_ok = False
+
+    if token:
+        steps.append(
+            {
+                "label": "token format",
+                "ok": token.startswith("tk_") and len(token) >= 10,
+                "detail": "prefix=%s len=%d" % (token[:3], len(token)),
+            }
+        )
+
+    ntfy_topic_name = topics.get(topic, topic)
+    if not server_url or not ntfy_topic_name:
+        steps.append(
+            {
+                "label": "topic resolve",
+                "ok": False,
+                "detail": "cannot resolve without server_url",
+            }
+        )
+        all_ok = False
+        return JSONResponse(
+            {"result": "fail" if all_ok else "incomplete", "steps": steps},
+            status_code=200 if all_ok else 500,
+        )
+
+    pub_url = "%s/%s" % (server_url.rstrip("/"), ntfy_topic_name)
+    steps.append({"label": "publish url", "ok": True, "detail": pub_url})
+
+    headers = {
+        "Title": "[ntfy-check] connectivity test",
+        "Priority": "1",
+        "Tags": "white_check_mark",
+    }
+    if token:
+        headers["Authorization"] = "Bearer %s" % token
+
+    try:
+        resp = urllib.request.urlopen(
+            urllib.request.Request(
+                pub_url, data=b"ntfy connectivity check", headers=headers
+            ),
+            timeout=10,
+        )
+        steps.append(
+            {
+                "label": "publish",
+                "ok": True,
+                "detail": "HTTP %d" % resp.status,
+            }
+        )
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode()
+        steps.append(
+            {
+                "label": "publish",
+                "ok": False,
+                "detail": "HTTP %d: %s" % (exc.code, body.strip()),
+            }
+        )
+        all_ok = False
+    except urllib.error.URLError as exc:
+        steps.append({"label": "publish", "ok": False, "detail": str(exc.reason)})
+        all_ok = False
+
+    return JSONResponse(
+        {"result": "ok" if all_ok else "fail", "steps": steps},
+        status_code=200,
+    )

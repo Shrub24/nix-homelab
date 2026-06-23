@@ -69,8 +69,8 @@
     secretFiles.firebase = ../../secrets/services/ntfy-firebase-key.json;
     auth = {
       access = [
-        "notify-oci-melb-1:*:write-only"
-        "notify-do-admin-1:*:write-only"
+        "oci-melb-1:*:write-only"
+        "do-admin-1:*:write-only"
       ];
       secretFiles.auth = ../../secrets/services/ntfy.yaml;
     };

@@ -7,7 +7,7 @@
 }:
 let
   cfg = config.services.beets;
-  secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
+  secretHelpers = import ../../../../lib/secrets.nix { inherit lib; };
   notifyPkg = self.packages.${pkgs.stdenv.hostPlatform.system}.notify;
 
   # Shared hardened oneshot service defaults for generated beets units.
@@ -132,8 +132,6 @@ let
         };
     };
 
-  permissionReconcileBin = runnerKinds.permission-reconcile;
-
 in
 {
   options.services.beets = {
@@ -169,6 +167,12 @@ in
 
     secretFiles.host = secretHelpers.mkSecretFileOption "beets-host-secrets";
 
+    onSuccessUnits = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "Systemd units to trigger via OnSuccess= on all beets runner services. Set from the application composition layer.";
+    };
+
     notify = lib.mkOption {
       type = lib.types.submodule {
         options = {
@@ -198,7 +202,6 @@ in
                 "import"
                 "quarantine-interactive"
                 "reconcile"
-                "permission-reconcile"
                 "duplicates"
               ];
               description = "Built-in runner behavior.";
@@ -330,7 +333,7 @@ in
         in
         lib.nameValuePair "beets-${runnerName}" (
           baseUnit
-          // lib.optionalAttrs (onFailureUnits != [ ] || kind == "import") {
+          // {
             unitConfig =
               (baseUnit.unitConfig or { })
               // lib.optionalAttrs (onFailureUnits != [ ]) {
@@ -339,12 +342,11 @@ in
               // lib.optionalAttrs (kind == "import") {
                 StartLimitBurst = "3";
                 StartLimitIntervalSec = "1800";
+              }
+              // {
+                OnSuccess = cfg.onSuccessUnits;
               };
-          }
-          // {
-            serviceConfig = (baseUnit.serviceConfig or { }) // {
-              ExecStartPost = [ "+${permissionReconcileBin}/bin/beets-runner-permission-reconcile" ];
-            };
+            serviceConfig = (baseUnit.serviceConfig or { });
           }
         )
       ) cfg.runners)

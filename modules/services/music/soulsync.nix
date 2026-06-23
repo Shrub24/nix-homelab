@@ -7,7 +7,7 @@
 }:
 let
   cfg = config.services.soulsync;
-  secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+  secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
   inherit (lib)
     mkIf
     optionalAttrs

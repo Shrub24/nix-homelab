@@ -55,33 +55,47 @@ let
     name = "beets-interactive";
     runtimeInputs = [
       pkgs.coreutils
-      pkgs.shadow
+      pkgs.systemd
     ];
     text = ''
       set -euo pipefail
 
-      # Path to the low-level runner binary (installed with beets runners).
       RUNNER="/run/current-system/sw/bin/beets-runner-quarantine-interactive"
-
-      # Target dir: argument or default to untagged.
       TARGET="''${1:-${mediaPaths.untaggedDir}}"
+      UNIT="beets-interactive-$(date -u +"%Y%m%dT%H%M%SZ")"
 
-      # Run as beets user so DB/library writes succeed without root ownership.
-      exec sudo -u beets -H env \
-        BEETSDIR="${config.services.beets.dataDir}" \
-        BEETS_CONFIG_SOURCE="${beetsRenderedConfigs.quarantine}" \
+      set +e
+      systemd-run --pipe --wait \
+        --unit="$UNIT" \
+        -p User=beets \
+        -p Group=beets \
+        -p SupplementaryGroups="music-ingest media" \
+        -p ReadWritePaths="/srv/data/beets ${mediaPaths.inboxDir} ${mediaPaths.libraryDir} ${mediaPaths.quarantineDir} ${mediaPaths.untaggedDir} ${mediaPaths.approvedDir} /run/secrets/rendered" \
+        -p WorkingDirectory="${config.services.beets.dataDir}" \
+        --setenv=BEETSDIR="${config.services.beets.dataDir}" \
+        --setenv=BEETS_CONFIG_SOURCE="${beetsRenderedConfigs.quarantine}" \
+        --setenv=HOME="${config.services.beets.dataDir}" \
+        -- \
         "$RUNNER" "$TARGET"
+      RC=$?
+      set -e
+
+      if [ $RC -eq 0 ]; then
+        systemctl start media-permission-reconcile.service
+        systemctl start navidrome-scan.service
+      fi
+
+      exit $RC
     '';
   };
 
-  # Permission reconciliation wrapper — fixes ACLs/ownership on all media dirs.
-  # Needs root for setfacl/chgrp/chmod, so runs directly (not as beets user).
-  beetsFixPermsBin = pkgs.writeShellApplication {
-    name = "beets-fixperms";
-    runtimeInputs = [ ];
+  # Permission reconciliation wrapper — triggers the standalone systemd service.
+  mediaFixPermsBin = pkgs.writeShellApplication {
+    name = "media-fixperms";
+    runtimeInputs = [ pkgs.systemd ];
     text = ''
       set -euo pipefail
-      exec /run/current-system/sw/bin/beets-runner-permission-reconcile "$@"
+      systemctl start media-permission-reconcile.service
     '';
   };
 
@@ -91,16 +105,65 @@ let
     name = "beets-dupes";
     runtimeInputs = [
       pkgs.coreutils
-      pkgs.shadow
+      pkgs.systemd
     ];
     text = ''
       set -euo pipefail
-      exec sudo -u beets -H env \
-        BEETSDIR="${config.services.beets.dataDir}" \
-        BEETS_CONFIG_SOURCE="${beetsRenderedConfigs.standard}" \
+      exec systemd-run --pipe --wait \
+        -p User=beets \
+        -p Group=beets \
+        -p SupplementaryGroups="music-ingest media" \
+        -p ReadWritePaths="/srv/data/beets ${mediaPaths.libraryDir} /run/secrets/rendered" \
+        -p WorkingDirectory="${config.services.beets.dataDir}" \
+        --setenv=BEETSDIR="${config.services.beets.dataDir}" \
+        --setenv=BEETS_CONFIG_SOURCE="${beetsRenderedConfigs.standard}" \
+        --setenv=HOME="${config.services.beets.dataDir}" \
+        -- \
         /run/current-system/sw/bin/beets-runner-duplicates "$@"
     '';
   };
+
+  # Debounced slskd download-complete hook.
+  # slskd calls this per DownloadDirectoryComplete event (runs as slskd user).
+  # Uses a lockfile and 30s settle window so rapid successive album completions
+  # coalesce into a single trigger. Touches a marker file in /tmp/ that the
+  # slskd-download-trigger.path unit watches to start ffmpeg-preprocess.
+  slskdDownloadCompleteHook = pkgs.writeShellScript "slskd-download-complete" ''
+    export PATH="/run/current-system/sw/bin:$PATH"
+    lockfile="/tmp/slskd-beets-debounce.lock"
+    trigger="/tmp/slskd-download-trigger"
+
+    # If the import pipeline is currently running, skip — it will pick up new files.
+    if systemctl is-active --quiet beets-inbox.service || \
+       systemctl is-active --quiet ffmpeg-preprocess.service; then
+      exit 0
+    fi
+
+    (
+      # If another debounce is already sleeping, let it handle it.
+      if ! mkdir "$lockfile" 2>/dev/null; then
+        exit 0
+      fi
+      trap 'rmdir "$lockfile" 2>/dev/null' EXIT
+
+      # Wait for all concurrent downloads to settle.
+      while true; do
+        sleep 30
+        # Re-check: if pipeline started while we slept, done.
+        if systemctl is-active --quiet beets-inbox.service || \
+           systemctl is-active --quiet ffmpeg-preprocess.service; then
+          exit 0
+        fi
+        # If no more recent download events happened, fire.
+        if [ ! -f "$lockfile/.trigger" ]; then
+          break
+        fi
+        rm -f "$lockfile/.trigger"
+      done
+
+      touch "$trigger"
+    ) &
+  '';
 
   # SOPS secret entries for Beets plugin credentials.
   beetsSecretEntries = [
@@ -235,30 +298,6 @@ let
       # No timer - operator-invoked for maintenance.
     };
 
-    permission-reconcile = {
-      runnerKind = "permission-reconcile";
-      description = "Beets media permission reconciliation worker";
-      targetPath = mediaPaths.libraryDir;
-      configSource = beetsRenderedConfigs.standard;
-      mediaRoot = cfg.mediaRoot;
-      dataDir = "${cfg.dataRoot}/beets";
-      writePaths = [
-        mediaPaths.libraryDir
-        mediaPaths.quarantineDir
-        mediaPaths.untaggedDir
-        mediaPaths.approvedDir
-      ];
-      mountFor = [
-        cfg.mediaRoot
-        mediaPaths.libraryDir
-        mediaPaths.quarantineDir
-        mediaPaths.untaggedDir
-        mediaPaths.approvedDir
-      ];
-      conditionDir = cfg.mediaRoot;
-      # No timer - operator-invoked for ACL repairs.
-    };
-
     duplicates = {
       runnerKind = "duplicates";
       description = "Beets duplicate detection and cleanup (interactive)";
@@ -281,12 +320,13 @@ let
 in
 {
   imports = [
-    ../../services/syncthing.nix
-    ../../services/navidrome.nix
-    ../../services/slskd.nix
-    ../../services/beets/default.nix
-    ../../services/soulsync.nix
-    ../../services/tagr.nix
+    ../../services/music/audiomuse.nix
+    ../../services/music/syncthing.nix
+    ../../services/music/navidrome.nix
+    ../../services/music/slskd.nix
+    ../../services/music/beets/default.nix
+    ../../services/music/soulsync.nix
+    ../../services/music/tagr.nix
   ];
 
   options.applications.music = {
@@ -334,6 +374,9 @@ in
         arch = {
           id = "L43OT2A-IULZ4LG-YRFMARJ-EX2CDF3-ZYTXGEX-UGWAYE6-K46I3BA-3KZF2AE";
         };
+        windows = {
+          id = "XDJJL7S-JM2SOTY-XFAMJ36-DJPKKPP-SEYNXXO-CDKRXUR-HF6XCEZ-44U4CQR";
+        };
       };
       description = "Syncthing device map for this application composition.";
     };
@@ -354,7 +397,10 @@ in
           ensureDir = true;
           ensureMarker = true;
           ensureAcl = true;
-          devices = [ "arch" ];
+          devices = [
+            "arch"
+            "windows"
+          ];
         };
         quarantine = {
           path = cfg.quarantineDir;
@@ -373,6 +419,13 @@ in
         };
       };
       description = "Syncthing folder map for this application composition.";
+    };
+
+    audiomuse = {
+      enable = lib.mkEnableOption "AudioMuseAI Navidrome similarity extension" // {
+        default = false;
+        description = "Enable AudioMuseAI as an optional Navidrome similarity extension. When enabled, composes the AudioMuse core service and Navidrome plugin wiring.";
+      };
     };
 
     secretFiles.host = secretHelpers.mkSecretFileOption "music-host-secrets";
@@ -402,6 +455,17 @@ in
         label = "secretFiles.host";
       })
     ];
+
+    sops.templates = {
+      "beets-config.yaml" = _mkBeetsSopsTemplate "standard";
+      "beets-quarantine-config.yaml" = _mkBeetsSopsTemplate "quarantine";
+    };
+    sops.secrets = lib.listToAttrs (
+      map (e: {
+        name = e.secretName;
+        value = _mkBeetsSopsSecret e;
+      }) beetsSecretEntries
+    );
 
     users.groups.music-ingest.gid = 990;
     users.groups.media.gid = 987;
@@ -435,12 +499,20 @@ in
       libraryDir = cfg.libraryDir;
       quarantineDir = cfg.quarantineDir;
       dataDir = "${cfg.dataRoot}/navidrome";
+      audiomuse.enable = cfg.audiomuse.enable;
     };
 
     services.state-backups.services.navidrome = {
       enable = true;
       mode = "live";
       paths = [ "${cfg.dataRoot}/navidrome" ];
+    };
+
+    services.audiomuse = lib.mkIf cfg.audiomuse.enable {
+      enable = true;
+      dataDir = "${cfg.dataRoot}/audiomuse";
+      timeZone = config.time.timeZone;
+      secretFiles.host = cfg.secretFiles.host;
     };
 
     services.beets = {
@@ -467,12 +539,54 @@ in
       paths = [ "${cfg.dataRoot}/beets" ];
     };
 
+    systemd.services.media-permission-reconcile = {
+      description = "Reconcile ACLs and ownership on media directories";
+      after = [ "local-fs.target" ];
+      unitConfig.RequiresMountsFor = [ cfg.mediaRoot ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart =
+          let
+            fixupScript = pkgs.writeShellApplication {
+              name = "media-permission-reconcile";
+              runtimeInputs = [
+                pkgs.coreutils
+                pkgs.findutils
+                pkgs.acl
+              ];
+              text = ''
+                set -euo pipefail
+                fixup() { local d="$1"; [ -d "$d" ] || return 0
+                  find "$d" -type d -exec chgrp music-ingest {} + -exec chmod 2775 {} +
+                  find "$d" -type f -exec chgrp music-ingest {} + -exec chmod 0664 {} +
+                  setfacl -R -m g:music-ingest:rwx "$d"
+                  find "$d" -type d -exec setfacl -m d:g:music-ingest:rwX {} +
+                  setfacl -R -m g:media:r-X "$d"
+                  find "$d" -type d -exec setfacl -m d:g:media:r-X {} +
+                }
+                fixup "${mediaPaths.libraryDir}"
+                fixup "${mediaPaths.quarantineDir}"
+                fixup "${mediaPaths.untaggedDir}"
+                fixup "${mediaPaths.approvedDir}"
+              '';
+            };
+          in
+          "${fixupScript}/bin/media-permission-reconcile";
+      };
+    };
+
+    services.beets.onSuccessUnits = [
+      "media-permission-reconcile.service"
+      "navidrome-scan.service"
+    ];
+
     # ---------------------------------------------------------------------- #
     # ffmpeg-preprocess: pre-import lossless → AIFF conversion
     #
     # Event-driven trigger architecture:
     #
-    #   dropbox/ dir → PathModified (flat dirs from Syncthing/manual)
+    #   dropbox/ dir     → PathModified (flat dirs from Syncthing/manual)
+    #   slskd downloads  → DownloadDirectoryComplete hook (native slskd event)
     #
     # Both converge on ffmpeg-preprocess.service → beets-inbox.service.
     # ---------------------------------------------------------------------- #
@@ -516,11 +630,24 @@ in
       };
     };
 
+    # slskd downloads: native hook touches trigger file after debounce.
+    systemd.paths.slskd-download-trigger = {
+      enable = true;
+      wantedBy = [ "multi-user.target" ];
+      unitConfig = {
+        RequiresMountsFor = cfg.mediaRoot;
+        Unit = "ffmpeg-preprocess.service";
+      };
+      pathConfig = {
+        PathChanged = "/tmp/slskd-download-trigger";
+      };
+    };
+
     environment.systemPackages = [
       ffmpegPreprocessBin
       beetsInteractiveBin
       beetsDupesBin
-      beetsFixPermsBin
+      mediaFixPermsBin
     ];
 
     services.state-backups.services.media = {
@@ -538,6 +665,7 @@ in
       incompletePath = "${cfg.mediaRoot}/slskd-incomplete";
       domain = "oci-melb-1";
       secretFiles.host = cfg.secretFiles.host;
+      downloadCompleteScript = slskdDownloadCompleteHook;
     };
 
     services.soulsync = {

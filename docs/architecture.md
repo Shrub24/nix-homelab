@@ -18,6 +18,8 @@ In scope now:
 - DigitalOcean host `do-admin-1` as the second fleet node
 - private-first service topology with a designated public edge bastion (Cloudflare + Caddy)
 - native NixOS services: `navidrome` and `syncthing`
+- optional Navidrome extension services: `audiomuse` (PostgreSQL + Redis + Flask/worker, managed via Podman containers) as a Navidrome-facing music-intelligence layer for Symfonium similar/radio behavior
+- music service modules regrouped under `modules/services/music/` as a coherent feature subtree
 - modular host and service design for future multi-host growth
 
 Out of scope for now:
@@ -85,9 +87,9 @@ The exact file tree can evolve, but the intended shape is:
 - `hosts/<host>/default.nix` for host identity, facts, feature enables, and narrow overrides
 - `hosts/<host>/hardware-configuration.nix` for auto-detected hardware facts
 - `hosts/<host>/<component>.nix` for host-specific component overlays
-- `modules/applications/<name>/default.nix` for feature composition roots (multi-service stacks)
-- `modules/services/<domain>/<name>.nix` for reusable service modules with enable flags and secret contracts
-- `modules/services/<name>.nix` for standalone leaf service modules
+- `modules/applications/<name>/default.nix` for feature composition roots (multi-service stacks), e.g. `modules/applications/music.nix`
+- `modules/services/<domain>/<name>.nix` for reusable service modules grouped by domain (e.g. `modules/services/music/navidrome.nix`, `modules/services/music/audiomuse.nix`, `modules/services/music/syncthing.nix`)
+- `modules/services/<name>.nix` for standalone leaf service modules outside a domain subtree
 - `modules/core/base.nix` for shared baseline NixOS policy
 - `modules/core/users.nix` for shared user declarations
 - `modules/profiles/base-server.nix` for common host profile composition, including shared Nix substitute/trust defaults
@@ -198,7 +200,7 @@ Initial media/data flow:
 - SoulSync is the primary ingest and promotion control-plane service
 - Tagr is available as an operator-invoked manual metadata/cover fallback editor against canonical media paths
 - `/srv/media` remains the authoritative shared media root
-- `/srv/data` remains the service-state mount (`/srv/data/syncthing/config`, `/srv/data/navidrome`, `/srv/data/soulsync`, `/srv/data/tagr`, `/srv/data/karakeep`, `/srv/data/bifrost`)
+- `/srv/data` remains the service-state mount (`/srv/data/syncthing/config`, `/srv/data/navidrome`, `/srv/data/soulsync`, `/srv/data/tagr`, `/srv/data/audiomuse`, `/srv/data/karakeep`, `/srv/data/bifrost`)
 - canonical ingest/promotion paths:
   - download inbox: `/srv/media/inbox/slskd`
   - canonical library: `/srv/media/library`
@@ -243,6 +245,7 @@ Current export-first services:
 Current live-state services:
 
 - Syncthing, Navidrome, Beets state, SoulSync state, Termix, Beszel hub, Karakeep, and Bifrost app state
+- AudioMuse — Postgres-only backup scope (durable app state); Redis queue/cache and temp audio working files are excluded from canonical backup scope per spec
 - optional Cockpit loopback TLS material when enabled
 
 Operator workflow:
@@ -415,6 +418,56 @@ Recovery verification checklist:
 - confirm `host-recovery-reboot.timer` is present with the expected weekly cadence
 - keep provider/serial console access available until the new generation has been verified
 - for `oci-melb-1`, note that some local builds on the x86_64 admin machine remain limited by non-substitutable `aarch64-linux` derivations; use remote/host-side validation when a full local build cannot complete
+
+## AudioMuse Deployment Lifecycle
+
+AudioMuseAI is an optional Navidrome similarity extension composed from `applications.music.audiomuse.enable`. The feature toggle deploys infrastructure; E2E validation requires additional operator steps.
+
+### Lifecycle stages
+
+| Stage | What happens | Who completes it |
+|---|---|---|
+| **1. Deploy toggle** | Set `applications.music.audiomuse.enable = true` in host config, add SOPS secret keys (see secret template), deploy with `just deploy <host>`. AudioMuse Podman containers, Postgres, Redis, Navidrome plugin binary, and runtime flags are placed. Service is deployable but not usable end-to-end. | Operator (repo config) |
+| **2. First-run AudioMuse setup** | Reach the AudioMuse web UI on `<host-tailscale-ip>:8000` (or the port configured in `services.audiomuse.port` via Tailscale). Complete the upstream setup wizard: create admin user, configure Navidrome base URL if not auto-detected. Wizard populates the AudioMuse application database. | Operator (SSH + browser over Tailscale) |
+| **3. Navidrome plugin enablement** | In the Navidrome Admin UI (`<host>:4533` over Tailscale), navigate to Plugins → audiomuse.ai. Enable the plugin, set API URL to the AudioMuse web container address, and supply the API token matching the SOPS `audiomuse/api_token` key. | Operator (browser over Tailscale) |
+| **4. Similar/radio validation (E2E)** | On a Symfonium client connected to the Navidrome/OpenSubsonic endpoint over Tailscale, select a track and invoke similar or radio. Confirm results are returned and reflect AudioMuse-backed similarity (not Navidrome's fallback). | Operator (Symfonium client on tailnet) |
+
+### Infrastructure vs. validation distinction
+
+- **Deployed infrastructure** (stage 1): Podman containers running, plugin binary installed, Postgres persisting, Navidrome flags active. Verified by `systemctl status podman-audiomuse-*`, container health, and Navidrome plugin directory inspection.
+- **E2E validated** (stage 4): Symfonium actually returns similar/radio results sourced from AudioMuse. Verified by end-user playback test.
+
+The feature is not accepted as working until stage 4 is confirmed. Stages 2–4 cannot be fully automated because upstream AudioMuse persists setup state in application-managed data (not a declarative import/export interface).
+
+### Exposure and access
+
+- AudioMuse follows the current repo exposure model: internal-service-first, private over Tailscale. Do not add a new public ingress route for AudioMuse unless the existing edge policy explicitly composes one.
+- Default Navidrome plugin URL for AudioMuse is `http://host.containers.internal:8000` (via the Podman host bridge interface).
+- Operator bootstrap access to the AudioMuse web UI is over Tailscale to the host port (`<tailscale-ip>:8000`).
+- Navidrome admin UI is already available over Tailscale (`<tailscale-ip>:4533` or the declared edge route if configured).
+
+### Secrets contract
+
+AudioMuse registers these SOPS-backed keys through `services.audiomuse.secretFiles.host` (consumed from the existing music application host secret file):
+
+| Key | Purpose |
+|---|---|
+| `audiomuse/user` | AudioMuse admin username (wizard pre-fill) |
+| `audiomuse/password` | AudioMuse admin password (wizard pre-fill / first-run auth) |
+| `audiomuse/api_token` | API token shared with the Navidrome plugin |
+| `audiomuse/jwt_secret` | JWT signing secret for the AudioMuse API |
+| `audiomuse/postgres_password` | Password for the `audiomuse` Postgres role |
+
+Add these keys to the music application secrets file (`secrets/applications/music.yaml`) using the standard SOPS workflow. Do not manually decrypt or edit encrypted secret payloads.
+
+### Backup scope
+
+AudioMuse durable state is Postgres only (`/srv/data/audiomuse/postgres` by default). Redis queue/cache and `/srv/data/audiomuse/temp` audio working files are intentionally excluded from canonical backup scope. Restoring AudioMuse from backup requires:
+1. Confirm Postgres data directory is intact from the restic snapshot.
+2. Start containers (Postgres boots with the restored data, Redis and worker re-populate from the API).
+3. Re-run setup wizard if application-level records were stored only in the database after the snapshot time.
+
+Known gap: AudioMuse's own application-level records (users, keys, Navidrome binding metadata) live in Postgres and are only as current as the last backup. Navidrome plugin configuration (enablement, API URL, token) is stored in the Navidrome application database and backed up as part of the Navidrome live-state backup.
 
 Note: `just deploy` takes positional host arguments (`just deploy oci-melb-1`), not `host=...`.
 

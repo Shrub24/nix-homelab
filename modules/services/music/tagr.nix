@@ -7,7 +7,7 @@
 }:
 let
   cfg = config.services.tagr;
-  secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+  secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
   libraryPath = "${cfg.mediaRoot}/library";
   quarantinePath = "${cfg.mediaRoot}/quarantine";
   ingestGid = toString config.users.groups.music-ingest.gid;

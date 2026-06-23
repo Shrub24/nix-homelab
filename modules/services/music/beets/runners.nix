@@ -31,16 +31,34 @@ let
     (( SETTLE )) && { sleep "$SETTLE"; find "${dir}" -type f -name '*.tmp' -print -quit | grep -q . && { echo ".tmp after settle — skip"; exit 0; }; }
   '';
 
-  mkDemote = dir: ''
+  mkDemote = sourceDir: destDir: ''
+    mkdir -p "${destDir}"
     count=0
+    renamed=0
     while IFS= read -r -d $'\0' f; do
-      mv "$f" "${dir}/$(basename "$f")"
+      base="$(basename "$f")"
+      dest="${destDir}/$base"
+      if [ -e "$dest" ]; then
+        stem="''${base%.*}"
+        ext=""
+        if [ "$stem" != "$base" ]; then
+          ext=".''${base##*.}"
+        fi
+        n=1
+        while [ -e "${destDir}/''${stem}.demoted-''${n}''${ext}" ]; do
+          n=$((n + 1))
+        done
+        dest="${destDir}/''${stem}.demoted-''${n}''${ext}"
+        renamed=$((renamed + 1))
+      fi
+      mv "$f" "$dest"
       count=$((count+1))
-    done < <(find "${dir}" -type f \( -iname '*.mp3' -o -iname '*.flac' -o -iname '*.m4a' \
-      -o -iname '*.aac' -o -iname '*.ogg' -o -iname '*.wav' -o -iname '*.aiff' \
+    done < <(find "${sourceDir}" -type f \( -iname '*.mp3' -o -iname '*.flac' -o -iname '*.m4a' \
+      -o -iname '*.aac' -o -iname '*.ogg' -o -iname '*.opus' -o -iname '*.wav' -o -iname '*.aiff' \
+      -o -iname '*.aif' \
     \) -print0)
-    echo "demoted $count to ${dir}"
-    find "${dir}" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+    echo "demoted $count from ${sourceDir} to ${destDir} (renamed=$renamed)"
+    find "${sourceDir}" -mindepth 1 -type d -empty -delete 2>/dev/null || true
   '';
 
   sharedEnv = ''
@@ -62,7 +80,7 @@ let
           ${mkMediaCheck targetPath}
           ${mkSettleCheck targetPath}
           beet -c "$CONFIG" import -q -C "$TARGET"
-          ${mkDemote targetPath}
+          ${mkDemote targetPath mediaPaths.untaggedDir}
           find "$BEETSDIR/logs" -type f -name '*-runner.log' -mtime +30 -delete 2>/dev/null || true
         ''
       )
@@ -82,11 +100,32 @@ in
 
   quarantine-interactive =
     mkRunnerBin "beets-runner-quarantine-interactive"
-      (sharedEnv + ''exec beet -c "$CONFIG" import "''${1:-${mediaPaths.untaggedDir}}"'')
+      (
+        ''
+          export BEETSDIR="${dataDir}"
+          export HOME="$BEETSDIR"
+          mkdir -p "$BEETSDIR/state" "$BEETSDIR/logs"
+          CONFIG="''${BEETS_CONFIG_SOURCE:?BEETS_CONFIG_SOURCE must be set}"
+          TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
+          exec > >(tee -a "$BEETSDIR/logs/$TIMESTAMP-runner.log" >(systemd-cat --identifier="beets-interactive")) 2>&1
+        ''
+        + ''
+          TARGET="''${1:-${mediaPaths.untaggedDir}}"
+          ${mkMediaCheck "$TARGET"}
+          ${mkSettleCheck "$TARGET"}
+          beet -c "$CONFIG" import "$TARGET"
+          if [ "$TARGET" != "${mediaPaths.untaggedDir}" ]; then
+            ${mkDemote "$TARGET" mediaPaths.untaggedDir}
+          fi
+          find "$BEETSDIR/logs" -type f -name '*-runner.log' -mtime +30 -delete 2>/dev/null || true
+        ''
+      )
       [
         beets
         pkgs.coreutils
+        pkgs.findutils
         pkgs.chromaprint
+        pkgs.systemd
       ];
 
   reconcile =
@@ -125,25 +164,4 @@ in
         notify
       ];
 
-  "permission-reconcile" =
-    mkRunnerBin "beets-runner-permission-reconcile"
-      (''
-        fixup() { local d="$1"; [ -d "$d" ] || return 0
-          find "$d" -type d -exec chgrp music-ingest {} + -exec chmod 2775 {} +
-          find "$d" -type f -exec chgrp music-ingest {} + -exec chmod 0664 {} +
-          setfacl -R -m g:music-ingest:rwx "$d"
-          find "$d" -type d -exec setfacl -m d:g:music-ingest:rwX {} +
-          setfacl -R -m g:media:r-X "$d"
-          find "$d" -type d -exec setfacl -m d:g:media:r-X {} +
-        }
-        fixup "${mediaPaths.libraryDir}"
-        fixup "${mediaPaths.quarantineDir}"
-        fixup "${mediaPaths.untaggedDir}"
-        fixup "${mediaPaths.approvedDir}"
-      '')
-      [
-        pkgs.coreutils
-        pkgs.findutils
-        pkgs.acl
-      ];
 }

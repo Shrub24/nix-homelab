@@ -1,11 +1,12 @@
 {
   lib,
   config,
+  pkgs,
   ...
 }:
 let
   cfg = config.services.slskd;
-  secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+  secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
   downloadsParent = builtins.dirOf cfg.downloadsPath;
   incompleteParent = builtins.dirOf cfg.incompletePath;
 in
@@ -23,6 +24,12 @@ in
   };
 
   options.services.slskd.secretFiles.host = secretHelpers.mkSecretFileOption "slskd-host-secrets";
+
+  options.services.slskd.downloadCompleteScript = lib.mkOption {
+    type = lib.types.nullOr lib.types.path;
+    default = null;
+    description = "Script to run on slskd DownloadDirectoryComplete events (debounced).";
+  };
 
   config = lib.mkIf (cfg.secretFiles.host != null) {
     assertions = [
@@ -85,6 +92,17 @@ in
         shares.directories = [
           "/srv/media/library"
         ];
+      }
+      // lib.optionalAttrs (cfg.downloadCompleteScript != null) {
+        integration.scripts.download_complete = {
+          on = [ "DownloadDirectoryComplete" ];
+          run = {
+            executable = "${pkgs.bash}/bin/bash";
+            arglist = [
+              cfg.downloadCompleteScript
+            ];
+          };
+        };
       };
       environmentFile = config.sops.templates."slskd.env".path;
     };

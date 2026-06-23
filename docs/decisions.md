@@ -693,7 +693,34 @@ Rationale:
 - PR-based nvfetcher automation preserves reviewability and mirrors Renovate's update model
 - documented operator workflow ensures one clear update path per dependency class
 
-## Open Questions (Intentional)
+## D-040: AudioMuse is optional Navidrome extension with music-service file rehome and Postgres-only backup
+
+Status: Accepted
+
+Decision:
+
+- AudioMuseAI is added as an explicit optional Navidrome similarity extension under `applications.music.audiomuse.enable`; it is not an implicit always-on dependency of the music stack
+- The repository owns declarative service topology, OCI container images, SOPS-backed bootstrap secrets, plugin binary placement (`audiomuseai.ndp` release v8), and Navidrome runtime flags; remaining AudioMuse setup wizard and Navidrome plugin UI configuration are documented as operator steps
+- Music service modules are regrouped under `modules/services/music/` as a file-layout-only move; existing option paths (`services.navidrome`, `services.beets`, `services.slskd`, etc.) remain unchanged
+- AudioMuse durable state scope is Postgres-only (`/srv/data/audiomuse/postgres`); Redis queue/cache and temp audio working files are excluded from canonical backup scope
+- AudioMuse follows the current internal-service-first exposure model; no new public ingress route is added unless existing edge policy explicitly composes one
+- Infrastructure deployed (containers running, plugin binary placed, flags active) is distinguished from E2E validated (Symfonium actual similar/radio behavior); the feature is not accepted as working until E2E validation passes
+
+Rationale:
+
+- AudioMuse is a supporting music-intelligence service for the Navidrome listening path, not a standalone app surface; making it optional avoids unnecessary deployment coupling
+- Upstream AudioMuse persists setup in application-managed database state and Navidrome plugin configuration in Navidrome-managed state; full declarative state injection is not practical without a stable upstream import/export interface
+- A file move improves navigability for the now-substantial music stack without multiplying risk through option namespace migration
+- Excluding Redis/temp from backup preserves meaningful backup scope and avoids promoting cache/queue/temp data as authoritative recovery state
+
+Supersedes/updates:
+
+- updates the music service module layout under `modules/services/music/` without changing any public option namespace
+- documents AudioMuse backup scope separately from other music stack services (Postgres-only vs. full state backup)
+
+References:
+
+- AM-1, AM-2, AM-3, AM-5 from audiomuse-navidrome-integration design
 
 These are known but intentionally unresolved until implementation and operational learning justify final decisions.
 

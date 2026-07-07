@@ -7,9 +7,9 @@
 
   tagr = "ghcr.io/shrub24/tagr:latest@sha256:4b1844cc648e7ab83a14208fa15d68fd49d79f43c7403f87fe3139fed114c243";
 
-  trek = "docker.io/mauriceboe/trek:latest@sha256:fdd4bbc3b38c50744fd506d26766560633e902a4782f89f9756b9231d94b918a";
+  trek = "docker.io/mauriceboe/trek:latest@sha256:e1611b225e4401a7bd03b9cd6763ff5ba3c18c9f93bc972a8c2b0de4353275db";
 
-  doclingServe = "quay.io/docling-project/docling-serve:v1.24.0@sha256:045e7a14c32b3a5cc78c6fd0deac15fde196ec62d1325a553f98221a57480174";
+  doclingServe = "quay.io/docling-project/docling-serve:v1.26.0@sha256:56189f190892cc03a4a5c10ba9e56c421ac2524554aa2d36f0f4bb6564132524";
 
   paperlessGpt = "ghcr.io/icereed/paperless-gpt:latest@sha256:c0ce6186028911101a2cfe68353f14a9dbb2653596f3f1cff94de4b6db3114ff";
 
@@ -17,13 +17,13 @@
 
   karakeepChrome = "gcr.io/zenika-hub/alpine-chrome:124@sha256:1a0046448e0bb6c275c88f86e01faf0de62b02ec8572901256ada0a8c08be23f";
 
-  karakeepMeilisearch = "getmeili/meilisearch:v1.47.0@sha256:4931c0afd68b12d3db4a608268c6785bba26d3f3b43a228eff62ec38d5a47d8d";
+  karakeepMeilisearch = "getmeili/meilisearch:v1.49.0@sha256:bdc7d7e7939911c40d88d6bcd01f9c72c81f7293135916d48bce241569f721bd";
 
   guacd = "docker.io/guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f";
 
   termix = "ghcr.io/lukegus/termix:release-2.1.0@sha256:52e45c1ea3fb85be5b3ade5ff42eed0946fe81131cbd834f6960e00797f17f86";
 
-  quantum = "ghcr.io/gtsteffaniak/filebrowser:stable@sha256:eb3733681db8757412632c61a99ad656f0d94ed6781bb2ea114b4d70babab78c";
+  quantum = "ghcr.io/gtsteffaniak/filebrowser:stable@sha256:2cd949cd06c058576773c5b8400c854478a64c4f364b1e2bea275819847f099b";
 
-  phoenix = "docker.io/arizephoenix/phoenix:latest@sha256:103f5e61cf23c56a69b864f5ad2b3f307a7f55827d53fad8aeb2a07289223987";
+  phoenix = "docker.io/arizephoenix/phoenix:latest@sha256:7eee4177732e6cba269f83071b869c5e37a86b47ba2ba8c6bef246273bee501d";
 }

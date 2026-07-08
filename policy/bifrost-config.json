@@ -37,7 +37,7 @@
         }
       ]
     },
-    "crofai": {
+    "opencode-go": {
       "custom_provider_config": {
         "base_provider_type": "openai",
         "allowed_requests": {
@@ -47,12 +47,12 @@
         }
       },
       "network_config": {
-        "base_url": "https://crof.ai"
+        "base_url": "https://opencode.ai/zen/go/v1"
       },
       "keys": [
         {
-          "name": "crofai-primary",
-          "value": "env.CROFAI_API_KEY",
+          "name": "opencode-go-primary",
+          "value": "env.OPENCODE_API_KEY",
           "weight": 1,
           "models": ["*"]
         }
@@ -77,7 +77,7 @@
         "priority": 10,
         "scope": "global",
         "cel_expression": "model == 'shrublab-text'",
-        "fallbacks": ["crofai/deepseek-v4-pro-precision"],
+        "fallbacks": ["opencode-go/mimo-v2.5"],
         "targets": [
           {
             "provider": "openrouter",
@@ -124,7 +124,7 @@
         "fallbacks": ["deepseek/deepseek-v4-flash"],
         "targets": [
           {
-            "provider": "crofai",
+            "provider": "opencode-go",
             "model": "deepseek-v4-flash",
             "weight": 1.0
           }

@@ -84,7 +84,7 @@ in
         BIFROST_ENCRYPTION_KEY=${config.sops.placeholder.bifrost_encryption_key}
         GEMINI_API_KEY=${config.sops.placeholder.bifrost_gemini_api_key}
         DEEPSEEK_API_KEY=${config.sops.placeholder.bifrost_deepseek_api_key}
-        CROFAI_API_KEY=${config.sops.placeholder.bifrost_crofai_api_key}
+        OPENCODE_API_KEY=${config.sops.placeholder.bifrost_opencode_api_key}
         OPENROUTER_API_KEY=${config.sops.placeholder.bifrost_openrouter_api_key}
       '';
     };
@@ -102,9 +102,9 @@ in
         key = "bifrost/deepseek_api_key";
         path = "/run/secrets/bifrost.deepseek_api_key";
       };
-      bifrost_crofai_api_key = {
-        key = "bifrost/crofai_api_key";
-        path = "/run/secrets/bifrost.crofai_api_key";
+      bifrost_opencode_api_key = {
+        key = "bifrost/opencode_api_key";
+        path = "/run/secrets/bifrost.opencode_api_key";
       };
       bifrost_openrouter_api_key = {
         key = "bifrost/openrouter_api_key";

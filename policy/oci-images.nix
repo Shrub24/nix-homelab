@@ -5,7 +5,7 @@
 
   soulsync = "docker.io/boulderbadgedad/soulsync:2.3@sha256:b66edfd3991f1c21e4c28a8bbe71acc998cc156c78e36eb86dd1375667ccd5c7";
 
-  tagr = "ghcr.io/shrub24/tagr:latest@sha256:4b1844cc648e7ab83a14208fa15d68fd49d79f43c7403f87fe3139fed114c243";
+  tagr = "ghcr.io/suitux/tagr:sha-4ce3078@sha256:4dede3f8220e874fbfefecc0806f0ac427505de3de1d8f08922a117b70dccbd7";
 
   trek = "docker.io/mauriceboe/trek:latest@sha256:e1611b225e4401a7bd03b9cd6763ff5ba3c18c9f93bc972a8c2b0de4353275db";
 

@@ -50,6 +50,9 @@ in
     5432
     4533
   ];
+  networking.firewall.interfaces.audiomuse0.allowedTCPPorts = [
+    5432
+  ];
 
   disko.devices.disk.main.device = "/dev/sda";
   applications.music.enable = true;

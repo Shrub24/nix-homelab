@@ -69,6 +69,7 @@ in
           TranscodingCacheSize = "2GB";
           FFmpegPath = "${pkgs.ffmpeg}/bin/ffmpeg";
           Address = "0.0.0.0";
+          PID.Album = "albumartistid,album";
         }
         (lib.mkIf cfg.audiomuse.enable {
           Plugins = {

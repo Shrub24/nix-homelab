@@ -563,6 +563,8 @@ in
                   find "$d" -type d -exec setfacl -m d:g:music-ingest:rwX {} +
                   setfacl -R -m g:media:r-X "$d"
                   find "$d" -type d -exec setfacl -m d:g:media:r-X {} +
+                  setfacl -R -m u:syncthing:rwx "$d"
+                  find "$d" -type d -exec setfacl -m d:u:syncthing:rwX {} +
                 }
                 fixup "${mediaPaths.libraryDir}"
                 fixup "${mediaPaths.quarantineDir}"
@@ -656,7 +658,6 @@ in
       paths = [ cfg.mediaRoot ];
       exclude = [
         cfg.versionArchiveRoot
-        "${cfg.mediaRoot}/.stversions"
       ];
     };
 
@@ -703,7 +704,11 @@ in
       "z ${cfg.mediaRoot} 0755 root root - -"
       "d ${cfg.versionArchiveRoot} 2775 root media - -"
       "d ${cfg.versionArchiveRoot}/library 2775 root media - -"
+      "a+ ${cfg.versionArchiveRoot}/library - - - - user:syncthing:rwx"
+      "a+ ${cfg.versionArchiveRoot}/library - - - - default:user:syncthing:rwX"
       "d ${cfg.versionArchiveRoot}/quarantine 2775 root media - -"
+      "a+ ${cfg.versionArchiveRoot}/quarantine - - - - user:syncthing:rwx"
+      "a+ ${cfg.versionArchiveRoot}/quarantine - - - - default:user:syncthing:rwX"
       "d ${cfg.libraryDir} 2775 root music-ingest - -"
       "a+ ${cfg.libraryDir} - - - - group:music-ingest:rwX"
       "a+ ${cfg.libraryDir} - - - - default:group:music-ingest:rwX"

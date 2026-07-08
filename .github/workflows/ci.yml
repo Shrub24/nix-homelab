@@ -37,7 +37,7 @@ jobs:
           echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Install Nix for local validation
-        uses: nixbuild/nix-quick-install-action@v34
+        uses: nixbuild/nix-quick-install-action@v35
       - name: Show build metadata
         run: |
           echo "version=${{ steps.meta.outputs.version }}"

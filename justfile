@@ -29,15 +29,19 @@ bootstrap host target:
         "$@"
 
 [arg("rollback", long="rollback")]
-deploy host="oci-melb-1" rollback="true":
-    @HOST="{{ host }}"; ROLLBACK="{{ rollback }}"; EXIT=0; \
+[arg("verbose", long="verbose")]
+deploy host="oci-melb-1" rollback="true" verbose="false":
+    @HOST="{{ host }}"; ROLLBACK="{{ rollback }}"; VERBOSE="{{ verbose }}"; EXIT=0; \
     if [[ -z "$HOST" ]]; then echo "Error: host required (use --host <nixosConfiguration>)"; exit 1; fi; \
-    STRICT="$$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' "path:.#deployHosts.\"$$HOST\".strictSubstituteOnly")"; \
+    STRICT="$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' "path:.#deployHosts.\"$HOST\".strictSubstituteOnly")"; \
     ARGS=(--skip-checks); \
     NIX_ARGS=(); \
     [[ "$ROLLBACK" != "false" ]] || ARGS+=(--auto-rollback false); \
-    if [[ "$STRICT" == "true" ]]; then \
-        NIX_ARGS=(-- --option max-jobs 0 --option builders ""); \
+    if [[ "$VERBOSE" == "true" ]]; then ARGS+=(--debug-logs); fi; \
+    if [[ "$STRICT" == "true" || "$VERBOSE" == "true" ]]; then \
+        NIX_ARGS=(--); \
+        if [[ "$STRICT" == "true" ]]; then NIX_ARGS+=(--option max-jobs 0 --option builders ""); fi; \
+        if [[ "$VERBOSE" == "true" ]]; then NIX_ARGS+=(-v); fi; \
     fi; \
     nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST" "${NIX_ARGS[@]}" || EXIT=$?; \
     if [ "$EXIT" -eq 0 ]; then \

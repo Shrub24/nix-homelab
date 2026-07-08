@@ -13,6 +13,11 @@
         IPQoS throughput
         PubkeyAcceptedKeyTypes ssh-ed25519
         ServerAliveInterval 60
+        TCPKeepAlive no
+        Compression no
+        ControlMaster auto
+        ControlPath /tmp/nixbuild-%r@%h:%p
+        ControlPersist 10m
     '';
   };
 }

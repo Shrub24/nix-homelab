@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     disko.url = "github:nix-community/disko";
+    disko.inputs.nixpkgs.follows = "nixpkgs";
     sops-nix.url = "github:Mic92/sops-nix";
     sops-nix.inputs.nixpkgs.follows = "nixpkgs";
     deploy-rs.url = "github:serokell/deploy-rs";
@@ -113,7 +114,13 @@
           niks3.nixosModules.niks3-auto-upload
           ./hosts/oci-melb-1/default.nix
         ];
-        specialArgs = { inherit self inputs ociImages; };
+        specialArgs = {
+          inherit
+            self
+            inputs
+            ociImages
+            ;
+        };
       };
 
       nixosConfigurations.do-admin-1 = nixpkgs.lib.nixosSystem {
@@ -123,7 +130,13 @@
           niks3.nixosModules.niks3-auto-upload
           ./hosts/do-admin-1/default.nix
         ];
-        specialArgs = { inherit self inputs ociImages; };
+        specialArgs = {
+          inherit
+            self
+            inputs
+            ociImages
+            ;
+        };
       };
 
       deploy = deployConfig.deploy;

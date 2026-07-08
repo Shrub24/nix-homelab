@@ -47,8 +47,9 @@
     nix = {
       substituters = [
         "https://nix-community.cachix.org"
-        "https://cache.shrublab.xyz"
         "https://cache.numtide.com"
+        "https://cache.shrublab.xyz"
+        "https://build-cache.shrublab.xyz"
       ];
       trustedSubstituters = [
         "https://nix-community.cachix.org"

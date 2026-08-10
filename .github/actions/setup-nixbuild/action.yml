@@ -10,7 +10,7 @@ runs:
     - name: Install Nix
       uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
     - name: Configure nixbuild.net
-      uses: nixbuild/nixbuild-action@edba7779b0a251b622d4250d263540f50c0f1a0b # v25
+      uses: nixbuild/nixbuild-action@dea5d365a01d55dc038487801216ea5983c8b9c8 # v26
       with:
         nixbuild_token: ${{ inputs.nixbuild_token }}
         oidc: true

@@ -36,6 +36,25 @@ jobs:
           audience: ${{ secrets.TS_AUDIENCE }}
           tags: tag:ci
           ping: ${{ inputs.host }}
+      - name: Derive verified known_hosts for ${{ inputs.host }}
+        id: known-hosts
+        run: |
+          set -euo pipefail
+          # Only hosts with a source-controlled hostKeyFingerprint get a
+          # dedicated known_hosts file, and only after the discovered ed25519
+          # key matches that fingerprint exactly. Hosts without a declared
+          # fingerprint never receive an insecure host-checking override; they
+          # keep normal SSH verification (which fails safely in a fresh runner).
+          FINGERPRINT="$(nix eval --raw --no-write-lock-file --apply "t: let f = t.nodes.\"$DEPLOY_HOST\".hostKeyFingerprint or null; in if f == null then \"\" else f" path:.#deployHosts)"
+          if [[ -n "$FINGERPRINT" ]]; then
+            KNOWN_HOSTS="${RUNNER_TEMP}/known_hosts_${DEPLOY_HOST}"
+            scripts/ssh-known-hosts.sh emit "$DEPLOY_HOST" "$FINGERPRINT" "$KNOWN_HOSTS"
+            echo "known_hosts=$KNOWN_HOSTS" >> "$GITHUB_OUTPUT"
+            echo "fingerprint=$FINGERPRINT" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No hostKeyFingerprint declared for $DEPLOY_HOST; deploying with normal SSH host-key verification"
+            echo "known_hosts=" >> "$GITHUB_OUTPUT"
+          fi
       - name: Prebuild ${{ inputs.host }} deploy profile
         run: |
           nix build \
@@ -48,14 +67,27 @@ jobs:
       - name: Resolve host deploy policy
         id: policy
         run: |
-          STRICT=$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' "path:.#deployHosts.\"$DEPLOY_HOST\".strictSubstituteOnly")
+          STRICT=$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' "path:.#deployHosts.nodes.\"$DEPLOY_HOST\".strictSubstituteOnly")
           echo "strict=$STRICT" >> "$GITHUB_OUTPUT"
+      - name: Configure SSH for ${{ inputs.host }}
+        run: |
+          # Verified known_hosts and strict host checking are configured through
+          # an ephemeral ~/.ssh/config Host entry rather than a CLI ssh-opts
+          # override, so host checking is never disabled, never auto-accepted.
+          KNOWN_HOSTS="${{ steps.known-hosts.outputs.known_hosts }}"
+          if [[ -n "$KNOWN_HOSTS" ]]; then
+            mkdir -p ~/.ssh
+            {
+              echo "Host $DEPLOY_HOST"
+              echo "  UserKnownHostsFile $KNOWN_HOSTS"
+              echo "  StrictHostKeyChecking yes"
+            } >> ~/.ssh/config
+          fi
       - name: Deploy ${{ inputs.host }}
         run: |
           ARGS=(
             --skip-checks
             --remote-build
-            --ssh-opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
           )
           NIX_ARGS=()
           if [[ "${{ steps.policy.outputs.strict }}" == "true" ]]; then

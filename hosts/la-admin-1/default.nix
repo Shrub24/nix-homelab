@@ -118,6 +118,7 @@
       access = [
         "oci-melb-1:*:write-only"
         "la-admin-1:*:write-only"
+        "home-forge:*:write-only"
       ];
       secretFiles.auth = ../../secrets/services/ntfy.yaml;
     };

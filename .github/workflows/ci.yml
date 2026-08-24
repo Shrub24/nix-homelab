@@ -86,10 +86,10 @@ jobs:
             echo "- Build store: $NIXBUILD_STORE"
             echo "- OpenTofu CI: intentionally deferred in this change"
           } >> "$GITHUB_STEP_SUMMARY"
-  # home-forge is a non-deployable physical host (excluded from the serial cloud
-  # deploy chain in deploy.yml). CI still evaluates/builds it directly via its
-  # nixosConfiguration to catch regressions; deploys are local
-  # (`nixos-rebuild --target-host` over LAN).
+  # home-forge is a deploy-rs node, but it is excluded from the ordered fleet
+  # serial deploy chain (deployOrder / deploy.yml). CI still evaluates/builds it
+  # directly via its nixosConfiguration to catch regressions; operator deploys
+  # target it individually via `just deploy home-forge` (deploy-rs).
   build-home-forge:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
@@ -116,8 +116,8 @@ jobs:
       - name: Summarize validation
         run: |
           {
-            echo "## home-forge (non-deployable) build"
+            echo "## home-forge (deploy-rs node, outside serial chain) build"
             echo "- Architecture: x86_64-linux"
-            echo "- Deployed locally via nixos-rebuild --target-host, not the cloud deploy chain"
+            echo "- Deployable via deploy-rs: 'just deploy home-forge'; not part of the ordered fleet/CI serial deploy chain"
             echo "- Build store: $NIXBUILD_STORE"
           } >> "$GITHUB_STEP_SUMMARY"

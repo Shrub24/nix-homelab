@@ -20,16 +20,16 @@ if grep -Eq 'disko|nixos-anywhere|modules/providers/digitalocean|networking\.(in
   exit 1
 fi
 
-# Transition: both old and new admin hosts plus OCI may publish to LA ntfy.
-# ACL subjects are the bare-hostname publisher users declared in the
-# plain-text template (secrets/.templates/services/ntfy.yaml is ciphertext-free
-# source); ntfy ACLs match user names, and publish auth resolves to the user
-# that owns the token. The transition contract pins exactly two write-only
-# publishers.
+# Transition: all publisher hosts (oci-melb-1, la-admin-1, home-forge) plus
+# admin may publish to LA ntfy. ACL subjects are the bare-hostname publisher
+# users declared in the plain-text template (secrets/.templates/services/ntfy.yaml
+# is ciphertext-free source); ntfy ACLs match user names, and publish auth
+# resolves to the user that owns the token. The transition contract pins
+# exactly three write-only publishers.
 TEMPLATE="secrets/.templates/services/ntfy.yaml"
-TEMPLATE_USERS=$(awk -F'"' '/^auth-users:/{u=1; next} /^auth-tokens:/{u=0} u && /^  - "(oci-melb-1|la-admin-1):/{split($2, f, ":"); print f[1]}' "$TEMPLATE")
-if [ "$(printf '%s\n' "$TEMPLATE_USERS" | wc -l)" -ne 2 ]; then
-  echo "la-admin-1: ntfy template must declare exactly two bare-hostname token users" >&2
+TEMPLATE_USERS=$(awk -F'"' '/^auth-users:/{u=1; next} /^auth-tokens:/{u=0} u && /^  - "(oci-melb-1|la-admin-1|home-forge):/{split($2, f, ":"); print f[1]}' "$TEMPLATE")
+if [ "$(printf '%s\n' "$TEMPLATE_USERS" | wc -l)" -ne 3 ]; then
+  echo "la-admin-1: ntfy template must declare exactly three bare-hostname token users" >&2
   exit 1
 fi
 

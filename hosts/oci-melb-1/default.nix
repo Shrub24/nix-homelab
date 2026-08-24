@@ -50,9 +50,14 @@ in
     5432
     4533
   ];
+  networking.firewall.interfaces.audiomuse0.allowedTCPPorts = [
+    5432
+  ];
 
   disko.devices.disk.main.device = "/dev/sda";
   applications.music.enable = true;
+  applications.music.audiomuse.enable = true;
+  applications.music.traktorM3uSync.enable = false;
   applications.music.dataRoot = "/srv/data";
   applications.music.mediaRoot = "/srv/media";
   applications.music.secretFiles.host = ../../secrets/applications/music.yaml;
@@ -225,6 +230,7 @@ in
     secretFile = ../../secrets/services/postgres-shared.yaml;
     niks3.enable = true;
     paperless.enable = true;
+    audiomuse.enable = true;
     litellm.enable = true;
   };
 
@@ -266,9 +272,9 @@ in
     monitor = {
       enable = true;
       services = [
-        "beets-import-inbox"
-        "beets-reconcile-discovery"
-        "beets-duplicates-check"
+        "beets-inbox"
+        "beets-reconcile"
+        "beets-duplicates"
         "podman-storage-prune"
         "nh-clean-all"
         "beszel-agent"

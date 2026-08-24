@@ -44,18 +44,18 @@ jobs:
             echo "- Trigger: ${{ github.event_name }}"
             echo "- Ref: ${{ github.ref }}"
             echo "- Full deploys are manual-only via workflow_dispatch"
-            echo "- Serial deploy order: do-admin-1 -> oci-melb-1"
+            echo "- Serial deploy order: la-admin-1 -> oci-melb-1"
             echo "- Host prebuilds run inside the reusable deploy-host workflow"
             echo "- Manual workflow_dispatch may deploy from any selected branch ref"
           } >> "$GITHUB_STEP_SUMMARY"
-  deploy-do-admin-1:
+  deploy-la-admin-1:
     needs: validate
     uses: ./.github/workflows/deploy-host.yml
     with:
-      host: do-admin-1
+      host: la-admin-1
     secrets: inherit
   deploy-oci-melb-1:
-    needs: deploy-do-admin-1
+    needs: deploy-la-admin-1
     uses: ./.github/workflows/deploy-host.yml
     with:
       host: oci-melb-1

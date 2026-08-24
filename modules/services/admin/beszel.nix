@@ -32,7 +32,8 @@ in
     services.state-backups.services.beszel = {
       enable = true;
       mode = "live";
-      paths = [ config.services.beszel.hub.dataDir ];
+      # dataDir is a symlink -> /var/lib/private/<basename> (systemd DynamicUser/StateDirectory remap); restic does not follow symlinks.
+      paths = [ "/var/lib/private/${baseNameOf config.services.beszel.hub.dataDir}" ];
     };
   };
 }

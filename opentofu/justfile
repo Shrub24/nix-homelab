@@ -1,7 +1,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set no-cd
 
-sync host="do-admin-1":
+sync host="la-admin-1":
   @./scripts/export-web-services-policy.sh {{host}}
   @./tests/check-web-services-policy.sh {{host}}
 

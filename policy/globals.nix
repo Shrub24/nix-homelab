@@ -49,7 +49,7 @@
         "https://nix-community.cachix.org"
         "https://cache.numtide.com"
         "https://cache.shrublab.xyz"
-        "https://build-cache.shrublab.xyz"
+        # "https://build-cache.shrublab.xyz" # dormant: expected to return
       ];
       trustedSubstituters = [
         "https://nix-community.cachix.org"
@@ -60,9 +60,9 @@
       trustedPublicKeys = [
         "nix-cache-1:FW0bJll9BP5ch0mHI+bXOImcD0RKLrH117WfQC+CU4A="
         "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-        "nix-build-cache-1:cSuMcBA2kLuq+mWBrlxgK7Ij///iZelC/uzBZA8KVFg="
         "nixbuild.net/HWWKWC-1:dnSfpPDHQN/U9wexkK6r3GTaYrwqNwKS70SNGXistKg="
         "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
+        # "nix-build-cache-1:cSuMcBA2kLuq+mWBrlxgK7Ij///iZelC/uzBZA8KVFg=" # dormant
       ];
     };
 

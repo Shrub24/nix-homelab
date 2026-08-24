@@ -14,6 +14,10 @@ CONFIG_PATH = os.environ.get(
 )
 HOST = os.environ.get("NOTIFICATION_DAEMON_HOST", "127.0.0.1")
 PORT = int(os.environ.get("NOTIFICATION_DAEMON_PORT", "5555"))
+# Cloudflare Browser Integrity Check blocks the urllib default
+# "Python-urllib/3.x" User-Agent, so every ntfy HTTP request carries an
+# explicit application User-Agent.
+USER_AGENT = "notification-daemon/1.0"
 NTFY_PRIORITY_MAP = {
     "info": 1,
     "success": 2,
@@ -74,7 +78,12 @@ def _self_notify(config, title, message):
             token = open(ntf_path).read().strip()
         except Exception:
             pass
-    headers = {"Title": title, "Priority": "5", "Tags": "warning"}
+    headers = {
+        "Title": title,
+        "Priority": "5",
+        "Tags": "warning",
+        "User-Agent": USER_AGENT,
+    }
     if token:
         headers["Authorization"] = "Bearer %s" % token
     url = "%s/daemon-errors" % ntfy_url.rstrip("/")
@@ -128,6 +137,7 @@ def _send_ntfy(
         "Title": title,
         "Priority": str(priority),
         "Tags": notify_type,
+        "User-Agent": USER_AGENT,
     }
     if token:
         headers["Authorization"] = "Bearer %s" % token
@@ -399,6 +409,7 @@ async def ntfy_check(topic: str = "system"):
         "Title": "[ntfy-check] connectivity test",
         "Priority": "1",
         "Tags": "white_check_mark",
+        "User-Agent": USER_AGENT,
     }
     if token:
         headers["Authorization"] = "Bearer %s" % token

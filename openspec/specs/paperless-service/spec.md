@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change paperless-ngx-fleet-integration. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Paperless SHALL run as a native NixOS service on oci-melb-1
 The system SHALL use `services.paperless` from nixpkgs stable as the operational interface — no Docker Compose, no manual setup. The module SHALL bind the web service to `0.0.0.0` on a configurable port (default 8080) for direct Caddy-over-Tailscale ingress without nginx.
 
@@ -67,6 +69,5 @@ The Paperless route SHALL be declared in `policy/web-services.nix` as a public s
 
 #### Scenario: Paperless route is accessible
 - **WHEN** a browser navigates to the Paperless subdomain
-- **THEN** Caddy on do-admin-1 proxies the request over Tailscale to oci-melb-1
+- **THEN** Caddy on `la-admin-1` proxies the request over Tailscale to `oci-melb-1`
 - **AND** the route requires valid OIDC session or redirects to Kanidm
-

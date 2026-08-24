@@ -30,10 +30,10 @@ bootstrap host target:
 
 [arg("rollback", long="rollback")]
 [arg("verbose", long="verbose")]
-deploy host="oci-melb-1" rollback="true" verbose="false":
+deploy host="la-admin-1" rollback="true" verbose="false":
     @HOST="{{ host }}"; ROLLBACK="{{ rollback }}"; VERBOSE="{{ verbose }}"; EXIT=0; \
     if [[ -z "$HOST" ]]; then echo "Error: host required (use --host <nixosConfiguration>)"; exit 1; fi; \
-    STRICT="$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' "path:.#deployHosts.\"$HOST\".strictSubstituteOnly")"; \
+    STRICT="$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' "path:.#deployHosts.nodes.\"$HOST\".strictSubstituteOnly")"; \
     ARGS=(--skip-checks); \
     NIX_ARGS=(); \
     [[ "$ROLLBACK" != "false" ]] || ARGS+=(--auto-rollback false); \
@@ -66,7 +66,7 @@ _activate host:
     if [[ -z "$HOST" ]]; then echo "Error: host required"; exit 1; fi; \
     nix run .#deploy-rs -- --skip-checks --dry-activate ".#$HOST"
 
-_build host="oci-melb-1":
+_build host="la-admin-1":
     @nix build --no-link --no-write-lock-file ".#deploy.nodes.{{ host }}.profiles.system.path"
 
 # Run nh clean all on a host (manual GC trigger)
@@ -83,7 +83,7 @@ prebuild-remote host="oci-melb-1":
         ".#host-{{ host }}"
 
 # Build a host config locally, then push the full closure to cache.
-prebuild-local host="do-admin-1":
+prebuild-local host="la-admin-1":
     @BUILD_DIR=$(mktemp -d); trap 'rm -rf "$BUILD_DIR"' EXIT; \
     nix build \
         --out-link "$BUILD_DIR/result" \

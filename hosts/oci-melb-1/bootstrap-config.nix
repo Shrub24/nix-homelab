@@ -7,6 +7,4 @@
   dataRoot = "/srv/data";
   mediaRoot = "/srv/media";
   flake = "path:.#oci-melb-1";
-  hardwareConfigGenerator = "nixos-generate-config";
-  hardwareConfigPath = "hosts/oci-melb-1/hardware-configuration.nix";
 }

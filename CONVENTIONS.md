@@ -53,3 +53,9 @@
 | Syncthing | `services.syncthing` | `services.syncthing` (no change) |
 | Bifrost | `services.bifrost-gateway` | `services.bifrost-gateway` (no change) |
 | Admin sub-services | `services.admin.*` | `services.admin.*` (no change) |
+
+### User Home Structure
+
+The standard XDG base directories for operator users (`.config`, `.cache`, `.local`, `.local/share`, `.local/state`) are declared as tmpfiles rules in `modules/core/users.nix`, next to the user declaration. Service and application modules own ONLY their leaf directories under that chain and MUST NOT declare parent home directories.
+
+Name-based home-path tmpfiles rules cannot resolve on the very first boot pass (the `users` activation has not run yet); that is benign and healed by the reboot already required by the host-initialization runbook.

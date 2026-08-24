@@ -17,10 +17,6 @@ let
     name: host:
     let
       sshOpts = host.sshOpts or [ ];
-      # postDeploy must use the same ssh config as the deploy itself.
-      sshCommand = lib.concatStringsSep " " (
-        [ "ssh" ] ++ sshOpts ++ [ "${host.sshUser}@${host.hostName}" ]
-      );
     in
     {
       hostname = host.hostName;
@@ -30,9 +26,6 @@ let
         user = "root";
         remoteBuild = host.remoteBuild or false;
         path = deploy-rs.lib.${host.system}.activate.nixos self.nixosConfigurations.${name};
-        postDeploy = ''
-          ${sshCommand} "apprise-notify warning 'Deploy to ${name} completed successfully'" 2>/dev/null || true
-        '';
       };
     };
 

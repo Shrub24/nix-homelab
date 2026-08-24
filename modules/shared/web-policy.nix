@@ -12,6 +12,8 @@ let
     services = policyLib.resolveHostServices webServicesPolicy hostName;
     cloudflare.hosts = policyLib.resolveCloudflareHosts webServicesPolicy hostName;
   }) (webServicesPolicy.hosts or { });
+
+  catalog = policyLib.serviceCatalog webServicesPolicy;
 in
 {
   options.repo.web = {
@@ -19,6 +21,12 @@ in
       type = lib.types.attrs;
       readOnly = true;
       description = "Resolved web-services policy for all hosts.";
+    };
+
+    catalog = lib.mkOption {
+      type = lib.types.attrs;
+      readOnly = true;
+      description = "Canonical cross-host service catalog keyed by stable service ID.";
     };
 
     currentHost = lib.mkOption {
@@ -30,6 +38,7 @@ in
 
   config.repo.web = {
     hosts = resolvedHosts;
+    catalog = catalog;
     currentHost =
       if currentHostName != null && builtins.hasAttr currentHostName resolvedHosts then
         resolvedHosts.${currentHostName}

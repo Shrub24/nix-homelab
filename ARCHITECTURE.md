@@ -25,7 +25,7 @@
 **Host Layer (`hosts/`):**
 - Purpose: Thin host assembly — identity, facts, feature toggles, provider/storage/profile imports, secret bindings
 - Location: `hosts/<host>/default.nix`
-- Contains: `hardware-configuration.nix`, `bootstrap-config.nix`, host-specific component overlays (vary per host — e.g., `do-admin-1` has `cockpit-auth.nix`, `networking.nix`, `quantum.nix`, `edge.nix`)
+- Contains: `default.nix`, host-specific component overlays (vary per host — e.g., `la-admin-1` has `facter.json`, `cockpit-auth.nix`, `quantum.nix`, `edge.nix`; reimage-shaped hosts add `bootstrap-config.nix`)
 - Depends on: Modules (applications, services, profiles, providers, storage, core, shared)
 - Used by: `flake.nix` nixosConfigurations
 
@@ -52,7 +52,7 @@
 **Provider Layer (`modules/providers/`):**
 - Purpose: Isolate cloud/platform-specific hardware, kernel, and network defaults
 - Location: `modules/providers/<provider>/default.nix`
-- Contains: OCI-specific and DigitalOcean-specific safe defaults
+- Contains: OCI-specific safe defaults
 - Used by: Host modules
 
 - **Bifrost Gateway:** `modules/services/bifrost-gateway.nix` — AI gateway service with OpenRouter and CrofAI provider support; exposes container-base URLs for LLM provider endpoints
@@ -99,8 +99,10 @@
 
 **Host Bootstrap Flow:**
 
-1. `deploy.sh` reads host config from `hosts/<host>/bootstrap-config.nix` — `scripts/resolve-host-config.sh`
-2. `nixos-anywhere` runs over SSH with `--flake` target and `disko` partitioning — `deploy.sh`
+Host initialization is conditional on target state — see `docs/runbooks/host-initialization.md`:
+
+1. **Adoption** (existing preinstalled NixOS on a live disk): consume a committed `nixos-facter` report directly (`hardware.facter.reportPath`) with only root/ESP by-UUID mounts hand-maintained, then apply the first generation with `nixos-rebuild boot --target-host <initial-user>@<addr> --use-remote-sudo --flake .#<host>` and reboot from the provider console. No `bootstrap-config.nix` or reimage tooling is involved.
+2. **Reimage** (bare, foreign OS, or destructive layout): `deploy.sh` reads host config from `hosts/<host>/bootstrap-config.nix` — `scripts/resolve-host-config.sh`; `nixos-anywhere` runs over SSH with `--flake` target and `disko` partitioning — `deploy.sh`
 3. Host installs with base config, no host-scoped secrets yet (two-step bootstrap default)
 4. Post-install: retrieve SSH host key, derive age recipient via `ssh-to-age` — `just host-age <host>`
 5. Add age recipient to `.sops.yaml`, re-encrypt host secrets, deploy — operator workflow
@@ -111,7 +113,7 @@
 2. `deploy-rs` reads host metadata from `lib/deploy/hosts.nix` — `lib/deploy/default.nix`
 3. `deploy-rs` builds the host profile and activates over SSH with rollback protection
 4. Post-deploy hook sends `notify info` on success or `notify warning` on failure — `justfile` deploy recipe with inline notification
-5. CI deploys follow same pattern with `--remote-build` and serial ordering (`do-admin-1` → `oci-melb-1`)
+5. CI deploys follow same pattern with `--remote-build` and serial ordering (`la-admin-1` → `oci-melb-1`)
 
 **Secret Resolution Flow:**
 
@@ -125,16 +127,16 @@
 
 1. `policy/web-services.nix` defines services with subdomain, origin, exposure mode
 2. `lib/policy.nix` resolves host services — `resolveHostServices` merges defaults
-3. `applications/edge-ingress.nix` enables Caddy reverse proxy with role-based configuration (edge/origin/none) — imported by `do-admin-1`
+3. `applications/edge-ingress.nix` enables Caddy reverse proxy with role-based configuration (edge/origin/none) — imported by `la-admin-1`
 4. `lib/policy.nix` exports Cloudflare DNS configuration via `resolveCloudflareHosts`
 5. `scripts/export-web-services-policy.sh` generates JSON for OpenTofu consumption
 6. OpenTofu manages Cloudflare DNS records and Access policies
 
 **Media Ingest Flow:**
 
-1. `slskd` downloads to `/srv/media/inbox/slskd`
-2. `dropbox` path watcher (`systemd.paths.dropbox-inbox`) triggers on new files
-3. `ffmpeg-preprocess.service` converts lossless to AIFF
+1. `slskd` downloads to `/srv/media/inbox/slskd`; each `DownloadDirectoryComplete` event restarts `slskd-settle.timer` (scoped polkit grant for the `slskd` user), which starts the pipeline 60s after the last event
+2. `dropbox` path watcher (`systemd.paths.dropbox-inbox`, target declared via `pathConfig.Unit`) triggers on new files
+3. `ffmpeg-preprocess.service` converts lossless to AIFF; timer persistence provides boot catch-up for unprocessed inbox media
 4. `beets-inbox.service` imports preprocessed files into library
 5. Completed files moved to `/srv/media/library`, quarantined files to `/srv/media/quarantine`
 6. SoulSync provides control-plane ingest with Discogs-first metadata
@@ -230,7 +232,7 @@
 - Responsibilities: Define all outputs — `nixosConfigurations`, `devShells`, `packages`, `deploy`, `checks`
 
 **Host Assembly (`hosts/<host>/default.nix`):**
-- Location: `hosts/oci-melb-1/default.nix`, `hosts/do-admin-1/default.nix`
+- Location: `hosts/oci-melb-1/default.nix`, `hosts/la-admin-1/default.nix`
 - Triggers: flake evaluation for a specific host
 - Responsibilities: Import modules, set host identity, enable applications/services, bind secret files
 
@@ -238,6 +240,7 @@
 - Location: `deploy.sh`
 - Triggers: `just bootstrap <host> <target>`
 - Responsibilities: Read bootstrap config, derive age recipient, invoke `nixos-anywhere` with flake/disk config
+- Adoption path: existing preinstalled NixOS hosts follow `docs/runbooks/host-initialization.md` (`nixos-rebuild boot`) instead of `deploy.sh`
 
 **Deploy (`justfile` + `.just/deploy.just`):**
 - Location: `justfile` with `mod deploy '.just/deploy.just'`
@@ -263,8 +266,8 @@
 
 **Secrets:** All secrets encrypted with `sops` + `age`. Decrypted at activation time by `sops-nix`. Path-scoped `.sops.yaml` rules enforce blast-radius boundaries. No plaintext secrets in git.
 
-**CI/CD:** GitHub Actions with nixbuild.net for cross-architecture builds (aarch64 from x86_64 runner). Tailscale `tailscale/github-action@v4` for tailnet access. Serial deploy ordering: `do-admin-1` → `oci-melb-1`. `--remote-build` for CI to avoid store-path transfer.
+**CI/CD:** GitHub Actions with nixbuild.net for cross-architecture builds (aarch64 from x86_64 runner). Tailscale `tailscale/github-action@v4` for tailnet access. Serial deploy ordering: `la-admin-1` → `oci-melb-1`. `--remote-build` for CI to avoid store-path transfer.
 
-**Identity:** Kanidm-based OIDC provides single-sign-on for admin services. Kanidm is self-hosted on `do-admin-1`. OIDC client configurations are generated from `policy/identity.json`. Host-level SSH auth integrates with Kanidm groups.
+**Identity:** Kanidm-based OIDC provides single-sign-on for admin services. Kanidm is self-hosted on `la-admin-1`. OIDC client configurations are generated from `policy/identity.json`. Host-level SSH auth integrates with Kanidm groups.
 
 **Notifications:** All hosts run the notification daemon (`services.notification-daemon.enable`). Deploy outcomes, beets runner failures, and monitored systemd service lifecycle events dispatch via the daemon. The `notify` CLI wrapper provides a stdin-pipe interface for any script to send notifications.

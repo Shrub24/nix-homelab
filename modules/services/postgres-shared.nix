@@ -193,12 +193,34 @@ in
       '');
 
     # ── Shared PostgreSQL backup coverage ──────────────────────────────────
-    # Covers the entire shared data directory (niks3, paperless, audiomuse, etc.).
-    # Individual services do not register separate Postgres volume backups.
+    # Export-first contract: the native NixOS postgresqlBackup module runs
+    # pg_dumpall as the postgres user into the state-backups staging root, so
+    # restic captures a logical export instead of the raw live data directory.
+    # The restic job Requires+After the export unit, so each backup run
+    # generates a fresh consistent dump and aborts when the export fails. The
+    # independent postgresqlBackup timer is disabled (startAt = [ ]): the
+    # export runs only as a restic prerequisite. *.in-progress* dumps are
+    # excluded; all.prev.sql.gz is retained as the previous-good fallback.
+    services.postgresqlBackup = lib.mkIf hasDbConsumer {
+      enable = true;
+      backupAll = true;
+      location = "${config.services.state-backups.stagingRoot}/postgres";
+      pgdumpAllOptions = "--clean --if-exists -w";
+      startAt = [ ];
+    };
+
+    systemd.services."restic-backups-${config.services.state-backups.backupName}" =
+      lib.mkIf hasDbConsumer
+        {
+          requires = [ "postgresqlBackup.service" ];
+          after = [ "postgresqlBackup.service" ];
+        };
+
     services.state-backups.services.postgres-shared = lib.mkIf hasDbConsumer {
       enable = true;
-      mode = "live";
-      paths = [ cfg.dataDir ];
+      mode = "export";
+      exportPaths = [ "${config.services.state-backups.stagingRoot}/postgres" ];
+      exclude = [ "*.in-progress*" ];
     };
   };
 }

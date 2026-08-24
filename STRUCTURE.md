@@ -3,14 +3,14 @@
 ## Directory Layout
 
 ```
-dev-vps/
+nix-homelab/
 ├── .github/         # CI/CD workflows, actions, and skill prompts
 │   ├── actions/     # Composite GitHub Actions (setup-nixbuild)
 │   ├── prompts/     # OpenAgentsControl skill prompts (opsx-*)
 │   ├── skills/     # OpenAgentsControl skill definitions
 │   └── workflows/   # CI/CD pipeline definitions
 ├── .just/          # Modular justfile includes (deploy, ops, checks, backups, host-age, deps, dev)
-├── docs/            # Human-facing architecture and planning docs
+├── docs/            # Human-facing architecture, planning, and runbook docs
 ├── generated/       # Committed generated artifacts (e.g., web policy JSON)
 ├── hosts/           # Per-host NixOS configuration entrypoints
 ├── lib/             # Reusable Nix library functions
@@ -67,11 +67,17 @@ dev-vps/
 - Contains: `deploy.just`, `ops.just`, `checks.just`, `backups.just`, `host-age.just`, `deps.just`, `dev.just`
 - Imported by: `justfile` via `mod` directives
 
+**`docs/`:**
+
+- Purpose: Canonical human-facing architecture, planning, and runbook documentation
+- Contains: `architecture.md`, `decisions.md`, `plan.md`, `context-history.md`, `runbooks/`
+- Key files: `docs/architecture.md`, `docs/decisions.md`, `docs/runbooks/host-initialization.md` (generic host bring-up), `docs/runbooks/admin-host-migration.md` (LA transfer facts)
+
 **`hosts/`:**
 
 - Purpose: Per-host NixOS configuration entrypoints — thin assembly of modules
-- Contains: `default.nix`, `hardware-configuration.nix`, `bootstrap-config.nix`, host-specific overlays
-- Key files: `hosts/oci-melb-1/default.nix`, `hosts/do-admin-1/default.nix`
+- Contains: `default.nix`, committed `facter.json` (`hardware.facter.reportPath`), `bootstrap-config.nix`, host-specific overlays
+- Key files: `hosts/oci-melb-1/default.nix`, `hosts/la-admin-1/default.nix`
 
 **`modules/applications/`:**
 
@@ -82,9 +88,8 @@ dev-vps/
 **`modules/services/`:**
 
 - Purpose: Leaf service implementation modules — individual workloads with enable flags and secrets
-- Contains: Service configs for niks3, Tailscale, Syncthing, Navidrome, Beets, SoulSync, slskd, Tagr, Bifrost, Karakeep, ntfy, notification-daemon, paperless (includes paperless-gpt submodule with multi-instance llm/docling OCR), postgres-shared, edge proxy, admin services (Cockpit, Kanidm, Vaultwarden, Quantum, Termix, Beszel, Gatus, Homepage, Webhook)
-- Key files: `modules/services/tailscale.nix`, `modules/services/syncthing.nix`, `modules/services/navidrome.nix`, `modules/services/ntfy.nix`, `modules/services/beets/default.nix`, `modules/services/bifrost-gateway.nix`, `modules/services/paperless/default.nix`, `modules/services/paperless/paperless-gpt.nix`, `modules/services/postgres-shared.nix`, `modules/services/admin/cockpit.nix`
-- **apprise.nix**: Apprise-specific secrets and client wiring
+- Contains: Service configs for niks3, Tailscale, Bifrost, Karakeep, ntfy, notification-daemon, paperless (includes paperless-gpt submodule with multi-instance llm/docling OCR), postgres-shared, edge proxy, admin services (Cockpit, Kanidm, Vaultwarden, Quantum, Termix, Beszel, Gatus, Homepage, Webhook). Music-related services (Syncthing, Navidrome, Beets, slskd, Tagr, AudioMuse) live under `modules/services/music/`.
+- Key files: `modules/services/tailscale.nix`, `modules/services/music/syncthing.nix`, `modules/services/music/navidrome.nix`, `modules/services/music/beets/default.nix`, `modules/services/music/slskd.nix`, `modules/services/music/tagr.nix`, `modules/services/music/audiomuse.nix`, `modules/services/ntfy.nix`, `modules/services/bifrost-gateway.nix`, `modules/services/paperless/default.nix`, `modules/services/paperless/paperless-gpt.nix`, `modules/services/postgres-shared.nix`, `modules/services/admin/cockpit.nix`
 - **bifrost-gateway.nix**: AI gateway service with OpenRouter and CrofAI provider support
 
 **`modules/services/notification-daemon/`:**
@@ -108,8 +113,8 @@ dev-vps/
 **`modules/providers/`:**
 
 - Purpose: Cloud/platform-specific hardware and network defaults
-- Contains: `oci/default.nix`, `digitalocean/default.nix`
-- Key files: `modules/providers/oci/default.nix`, `modules/providers/digitalocean/default.nix`
+- Contains: `oci/default.nix`
+- Key files: `modules/providers/oci/default.nix`
 
 **`modules/storage/`:**
 
@@ -170,9 +175,9 @@ dev-vps/
 
 **Configuration:** `.sops.yaml`: SOPS recipient policy with path-scoped secret rules
 
-**Host Definitions:** `hosts/oci-melb-1/default.nix` (Oracle Cloud aarch64) and `hosts/do-admin-1/default.nix` (DigitalOcean x86_64): Thin host assembly modules
+**Host Definitions:** `hosts/oci-melb-1/default.nix` (Oracle Cloud aarch64), `hosts/la-admin-1/default.nix` (LA x86_64 admin/edge/identity): Thin host assembly modules
 
-**Deploy Metadata:** `lib/deploy/hosts.nix`: Hostname, SSH user, system architecture, remote-build flag per host
+**Deploy Metadata:** `lib/deploy/hosts.nix`: Hostname, SSH user, system architecture, remote-build flag per host; `edgeHost` and `deployOrder` are the only physical deployment facts (serial order `la-admin-1` → `oci-melb-1`)
 
 **Core Logic:** `modules/`: All NixOS module code organized by application, service, profile, provider, and storage layer
 
@@ -203,7 +208,7 @@ dev-vps/
 - `services.<name>` for top-level standalone services
 - `fleet.<name>` for fleet-wide module options
 
-**Host names:** `kebab-case`: `oci-melb-1`, `do-admin-1`
+**Host names:** `kebab-case`: `oci-melb-1`, `la-admin-1`
 
 **Secret file names:** `kebab-case`: `system.yaml`, `oidc.yaml`, `edge-ingress.yaml`, `bifrost-gateway.yaml`
 

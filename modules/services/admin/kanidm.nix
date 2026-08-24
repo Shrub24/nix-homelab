@@ -95,6 +95,109 @@ let
       claimMaps = client.claimMaps;
     }
   ) oauth2Clients;
+
+  # Version-matched kanidmd from the pinned services.kanidm.package (same binary
+  # the server unit runs), so restore/verify cannot drift from the server build.
+  kanidmd = "${config.services.kanidm.package}/bin/kanidmd";
+
+  # Operator-invoked restore of a Kanidm portable backup artifact, invoked as
+  # a template instance with the artifact path as instance name:
+  #   systemctl start "$(systemd-escape --path --template=kanidm-restore@.service /var/lib/kanidm/backups/backup-<ts>.json.gz)"
+  # Never started at boot (no wantedBy); refuses to run while kanidm.service is
+  # active and never starts it. The offline verify is a strict gate: every
+  # nonzero result is fatal (no version-pinned acceptance path).
+  restoreScript = pkgs.writeShellScript "kanidm-restore" ''
+    set -euo pipefail
+
+    backup_path=''${1:-}
+    if [[ -z "$backup_path" ]]; then
+      echo "kanidm-restore: missing backup artifact path" >&2
+      echo 'usage: systemctl start "$(systemd-escape --path --template=kanidm-restore@.service /path/to/backup-*.json.gz)"' >&2
+      exit 2
+    fi
+    case "$backup_path" in
+      *.json.gz) ;;
+      *)
+        echo "kanidm-restore: expected a Kanidm portable backup artifact (*.json.gz), got: $backup_path" >&2
+        exit 2
+        ;;
+    esac
+    if [[ ! -f "$backup_path" ]]; then
+      echo "kanidm-restore: backup artifact not found: $backup_path" >&2
+      exit 2
+    fi
+    if ${pkgs.systemd}/bin/systemctl is-active --quiet kanidm.service; then
+      echo "kanidm-restore: refusing to restore while kanidm.service is active; stop it first" >&2
+      exit 1
+    fi
+
+    db_path="${config.services.kanidm.server.settings.db_path}"
+    db_dir="$(${pkgs.coreutils}/bin/dirname "$db_path")"
+    ${pkgs.coreutils}/bin/mkdir -p "$db_dir"
+    echo "kanidm-restore: restoring $backup_path into $db_path"
+    ${kanidmd} -c /etc/kanidm/server.toml database restore "$backup_path"
+    echo "kanidm-restore: verifying restored database offline"
+
+    # Temporary logs are removed before ownership repair and again via the
+    # EXIT trap; failed removal is a hard error.
+    kanidm_restore_cleanup() {
+      local rc=0
+      [[ -z "''${verify_log:-}" ]] || ${pkgs.coreutils}/bin/rm -f -- "$verify_log" || rc=1
+      return "$rc"
+    }
+    verify_log=""
+    trap kanidm_restore_cleanup EXIT
+
+    # Capture the verifier's output and exit status without `set -e` aborting
+    # on the expected nonzero result.
+    verify_log="$(${pkgs.coreutils}/bin/mktemp)"
+    verify_rc=0
+    set +e
+    ${kanidmd} -c /etc/kanidm/server.toml database verify >"$verify_log" 2>&1
+    verify_rc=$?
+    set -e
+
+    # Collect every error-bearing line up front so the clean path cannot
+    # accept "Verification passed" alongside such output.
+    error_lines="$(
+      while IFS= read -r line; do
+        if ${pkgs.gnugrep}/bin/grep -qiE '(^|[[:space:]])ERROR([[:space:]:]|$)|\[error\]|Err\(|panic|fatal|verification failed|failed' <<<"$line"; then
+          printf '%s\n' "$line"
+        fi
+      done < "$verify_log"
+    )"
+
+    if [[ $verify_rc -eq 0 ]] && ${pkgs.gnugrep}/bin/grep -q 'Verification passed' "$verify_log"; then
+      # Clean verification still requires zero error-bearing lines.
+      if [[ -n "$error_lines" ]]; then
+        echo "kanidm-restore: offline verify reported error-bearing output alongside 'Verification passed'; refusing to repair or start" >&2
+        printf '%s\n' "$error_lines" >&2
+        exit 1
+      fi
+      ${pkgs.coreutils}/bin/cat "$verify_log"
+    else
+      # The pinned binary exits 0 only together with "Verification passed"; a
+      # bare exit 0 means a setup/output mismatch and stays fatal.
+      if [[ $verify_rc -eq 0 ]]; then
+        echo "kanidm-restore: offline verify exited 0 without 'Verification passed'; refusing to repair or start" >&2
+        exit 1
+      fi
+      # Every nonzero result is fatal; there is no exceptional acceptance path.
+      echo "kanidm-restore: offline verify failed (exit $verify_rc); refusing to repair or start" >&2
+      ${pkgs.coreutils}/bin/cat "$verify_log" >&2
+      exit 1
+    fi
+
+    # Fail closed on any leftover temporary log; the EXIT trap retries on later paths.
+    if ! kanidm_restore_cleanup; then
+      echo "kanidm-restore: failed to remove temporary logs; refusing to repair or start" >&2
+      exit 1
+    fi
+
+    # Restore ran as root; repair ownership (idempotent) so kanidm can open its database.
+    ${pkgs.coreutils}/bin/chown -R kanidm:kanidm "$db_dir"
+    echo "kanidm-restore: done. Start kanidm.service manually when ready."
+  '';
 in
 {
   options.services.admin.kanidm = {
@@ -249,7 +352,7 @@ in
     };
 
     services.kanidm = {
-      package = pkgs.kanidmWithSecretProvisioning_1_10;
+      package = pkgs.kanidmWithSecretProvisioning_1_11;
 
       client = {
         enable = true;
@@ -276,7 +379,6 @@ in
       provision = lib.mkIf (hasIdentitySecrets || hasOauth2Clients || hasProvisioningSecrets) (
         {
           enable = true;
-          instanceUrl = cfg.appUrl;
           systems.oauth2 = oauth2Provisioning;
         }
         // lib.optionalAttrs hasIdentitySecrets {
@@ -289,17 +391,27 @@ in
       );
     };
 
-    environment.systemPackages = [ pkgs.kanidm_1_10 ];
+    environment.systemPackages = [ pkgs.kanidm_1_11 ];
 
+    # Backup coverage is the authoritative portable export only; the live DB
+    # is /var/lib/kanidm/kanidm.db, not the data dir.
     services.state-backups.services.kanidm = {
       enable = true;
       mode = "export";
-      paths = [ cfg.dataDir ];
       exportPaths = [ cfg.backup.exportDir ];
     };
 
     systemd.services.kanidm.serviceConfig.SupplementaryGroups = cfg.tlsReaderGroups;
     systemd.services.kanidm.after = [ "caddy.service" ];
+
+    # Operator-invoked restore helper: no wantedBy, so it never starts at boot.
+    systemd.services."kanidm-restore@" = {
+      description = "One-shot Kanidm portable backup restore and offline verify (operator-invoked while kanidm.service is stopped)";
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${restoreScript} %I";
+      };
+    };
 
     systemd.tmpfiles.rules = [
       "d ${cfg.dataDir} 0750 kanidm kanidm - -"

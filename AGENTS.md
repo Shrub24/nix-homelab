@@ -211,6 +211,78 @@ Use `nix fmt` for Nix-only formatting (backed by `nixfmt`; `treefmt` wraps it in
 
 Exclusion SSOT lives in `treefmt.toml` — all managed paths (`secrets/**`, `generated/**`, `pkgs/_sources/generated.*`, `flake.lock`) are defined there.
 
+## Jujutsu Workflow
+
+This repo uses Jujutsu in colocated mode (shared `.git` object store).
+All parallel work lives as **anonymous mutable changes** on top of `main@origin`.
+A Git-facing bookmark is created only when a feature is ready to publish or open as a PR.
+
+### Start new work
+
+```sh
+jj new main@origin          # empty change based on current upstream main
+jj describe -m "feat: ..."  # local description, no branch
+```
+
+### Split a mixed change
+
+Fileset-directed (non-interactive):
+
+```sh
+jj split -p -r @ -o main@origin -m "wip: deps" policy/oci-images.nix openspec/changes/nvfetcher-*
+```
+
+- `-p` — both parts become siblings (same parent), not parent/child
+- `-o main@origin` — extracted change lands directly on main
+- Remaining changes stay in `@`
+
+Interactive (pick hunks):
+
+```sh
+jj split -p -i
+```
+
+### Rebase onto latest main
+
+```sh
+jj git fetch
+jj rebase -b @ -o main@origin
+```
+
+If rebase hits immutable commits (previously pushed):
+
+```sh
+jj rebase --ignore-immutable -b @ -o main@origin
+```
+
+### Switch between anonymous changes
+
+```sh
+jj log -r 'main@origin.. & mutable()'   # list active changes
+jj edit <change_id>                       # switch working copy
+```
+
+### Publish a completed change
+
+```sh
+jj bookmark set <name> -r @
+jj git push -b <name>
+```
+
+After push, bookmarked commits become immutable. New work starts from `main@origin`.
+
+### Gotchas
+
+**Immutable commits:** `jj rebase` refuses to rewrite commits on the remote. Use `--ignore-immutable` when rebasing a local stack that includes previously-pushed commits.
+
+**Snapshot warnings:** jj snapshots the working copy on every command. Large files (`.qmd/index.sqlite-wal`) trigger warnings. Fix with `.gitignore` or `jj config set --repo snapshot.max-new-file-size <bytes>`.
+
+**Lockfile conflicts after rebase:** Restore from pre-rebase change: `jj restore --from <change-id> flake.lock`, then regenerate if needed.
+
+**OpenSpec files and split:** OpenSpec change artifacts (`openspec/changes/*/`) must travel with the code they describe. Pass the OpenSpec directory as a fileset argument to `jj split`.
+
+**No pre-commit hooks:** jj bypasses Git hooks. Run `treefmt --fail-on-change` and `nix flake check` manually or at push time.
+
 ## Workflow
 
 1. Start with `semble search` to find relevant chunks.

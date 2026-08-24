@@ -11,6 +11,7 @@ let
   secretHelpers = import ../../../../lib/secrets.nix { inherit lib; };
 
   homepageData = import ./data.nix {
+    inherit config;
     policyServices = appCfg.policyServices;
   };
 in

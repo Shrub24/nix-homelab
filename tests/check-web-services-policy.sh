@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-HOST="${1:-do-admin-1}"
+HOST="${1:-la-admin-1}"
 OUT="${REPO_ROOT}/generated/policy/web-services.json"
 TMP="$(mktemp)"
 

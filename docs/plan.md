@@ -4,7 +4,7 @@ This plan is intentionally strategic, not a command-by-command runbook. The goal
 
 ## Planning Objective
 
-Transition this repository from legacy `dev-vps` orientation to a clean, modular fleet-infrastructure repository that can reliably bootstrap and operate `oci-melb-1`, then scale to more hosts including `do-admin-1`.
+Transition this repository from legacy `dev-vps` orientation to a clean, modular fleet-infrastructure repository that can reliably bootstrap and operate `oci-melb-1` and the active admin/edge host `la-admin-1` (the decommissioned host has been removed).
 
 ## Planning Constraints
 
@@ -86,6 +86,7 @@ Track D: Service baseline
 - keep quarantine in synced scope and visible playback surface while library remains canonical promotion target
 - keep music service composition explicit through `modules/applications/music.nix`
 - keep music service modules regrouped under `modules/services/music/` for navigability without changing option namespaces
+- add Traktor playlist synchronization as a manual-only music worker first: synced `collection.nml` at `/srv/media/traktor/collection.nml`, separate M3U export/import workspace under `/srv/media/playlists/traktor/`, and no automatic timers/path watches until manual runs are boring
 - keep private admin service composition explicit through `modules/applications/admin/default.nix`
 - keep the admin surface split between reusable service modules and host-owned source/route inputs (for example Quantum sources and Cockpit host overlays)
 - evolve Beets via native systemd-based inbox-to-library promotion under `/srv/media/library` while keeping `/srv/media` playback visibility
@@ -97,6 +98,17 @@ Track E: Future-ready evolution
 - reserve integration points for future media processing hooks
 - reserve path for later `rclone`/VFS transition
 - defer app-based review UX and higher-complexity orchestration while report-first promotion remains sufficient
+
+Track F: Admin/edge host migration
+
+- `la-admin-1` is the active admin, edge, and Kanidm/OIDC host; the previous rollback host was decommissioned after the LA backup/recovery gates passed
+- serial deploy order is `la-admin-1` before `oci-melb-1`; the local-admin Cockpit path is `/la-admin-1`
+- LA adoption (preinstalled NixOS, non-destructive) is separate from later AU edge and US-East workload work
+- cross-host consumers use stable service IDs from the policy catalog (`config.repo.web.catalog`); physical deployment facts (`edgeHost`, `deployOrder`) stay only in `lib/deploy/hosts.nix`
+- canonical bring-up and transfer documentation: `docs/runbooks/host-initialization.md` (generic) and `docs/runbooks/admin-host-migration.md` (LA facts only)
+- source freeze/rollback: DO decommission is complete; LA is authoritative
+- encrypted-secret actions are operator-owned (host-key-verified recipient, ciphertext from templates, Tailscale/R2/ntfy handoff); repository work provides policy, contracts, and templates only
+- Open WebUI deployment is deferred until the migration cutover and backup gates pass
 
 ## Success Criteria (Strategic)
 
@@ -121,16 +133,18 @@ Any major implementation decision that changes behavior, trust boundaries, or mi
 - `docs/architecture.md`
 - `docs/decisions.md`
 - `docs/plan.md`
+- `docs/context-history.md`
+- the relevant `docs/runbooks/*.md` when bring-up or transfer procedures change
 
 These documents are intended to remain current and drive implementation, not trail it.
 
 Active implementation anchor paths that must stay reflected in docs:
 
 - `hosts/oci-melb-1/default.nix`
-- `hosts/do-admin-1/default.nix`
+- `hosts/la-admin-1/default.nix`
 - `modules/applications/music.nix` (or `modules/applications/music/default.nix` as sub-module root)
 - `modules/applications/admin/default.nix`
-- `modules/services/music/` (canonical music service module subtree: `navidrome.nix`, `audiomuse.nix`, `syncthing.nix`, `beets/`, `slskd.nix`, `soulsync.nix`, `tagr.nix`)
+- `modules/services/music/` (canonical music service module subtree: `navidrome.nix`, `audiomuse.nix`, `syncthing.nix`, `beets/`, `slskd.nix`, `tagr.nix`)
 - `modules/core/base.nix`
 - `modules/profiles/base-server.nix`
 - `modules/services/tailscale.nix`

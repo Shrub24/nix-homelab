@@ -57,7 +57,6 @@ This keeps one source of truth while separating runtime wiring from control-plan
 | `primary_domain` | `"shrublab.xyz"` | Primary domain used for service hostnames |
 | `aop_enabled` | `true` | Enable zone-level Authenticated Origin Pulls |
 | `navidrome_cache_bypass_enabled` | `true` | Enable hostname cache bypass ruleset for Navidrome |
-| `soulsync_cache_bypass_enabled` | `true` | Enable hostname cache bypass ruleset for SoulSync |
 
 ## Suggested workflow (remote backend)
 

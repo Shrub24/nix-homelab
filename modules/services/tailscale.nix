@@ -16,7 +16,6 @@ in
     extraSetFlags = [ "--ssh" ];
     extraUpFlags = lib.mkDefault [
       "--hostname=${hostName}"
-      "--advertise-tags=tag:${hostName}"
     ];
   };
 }

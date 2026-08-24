@@ -39,11 +39,8 @@ locals {
   navidrome_service = try(local.web_service_routes.navidrome, null)
   navidrome_host    = local.navidrome_service != null ? local.navidrome_service.publicHost : null
 
-  soulsync_service = try(local.web_service_routes.soulsync, null)
-  soulsync_host    = local.soulsync_service != null ? local.soulsync_service.publicHost : null
-
-  cache_bypass_rules = concat(
-    (var.navidrome_cache_bypass_enabled && local.navidrome_host != null) ? [{
+  cache_bypass_rules = (var.navidrome_cache_bypass_enabled && local.navidrome_host != null) ? [
+    {
       ref         = "navidrome_bypass_cache"
       description = "Disable cache for Navidrome host"
       expression  = format("http.host eq \"%s\"", local.navidrome_host)
@@ -52,18 +49,8 @@ locals {
       action_parameters = {
         cache = false
       }
-    }] : [],
-    (var.soulsync_cache_bypass_enabled && local.soulsync_host != null) ? [{
-      ref         = "soulsync_bypass_cache"
-      description = "Disable cache for SoulSync host"
-      expression  = format("http.host eq \"%s\"", local.soulsync_host)
-      action      = "set_cache_settings"
-      enabled     = true
-      action_parameters = {
-        cache = false
-      }
-    }] : []
-  )
+    }
+  ] : []
 
 }
 
@@ -101,19 +88,6 @@ resource "cloudflare_dns_record" "origin" {
 # Zero Trust groups
 # ---------------------------------------------------------------------------
 
-# resource "cloudflare_zero_trust_access_group" "service" {
-#   for_each   = var.access_allow_groups
-#   account_id = var.cloudflare_account_id
-#   name       = each.key
-#   include = [
-#     for user_email in each.value.emails : {
-#       email = {
-#         email = user_email
-#       }
-#     }
-#   ]
-# }
-#
 # ---------------------------------------------------------------------------
 # Access applications
 # ---------------------------------------------------------------------------
@@ -262,26 +236,6 @@ resource "cloudflare_ruleset" "zone_firewall_custom" {
       action      = "block"
       enabled     = var.firewall_country_allowlist_enabled
     },
-    {
-      ref         = "skip_cache_subdomain_managed_waf"
-      description = "Skip managed WAF for sovereign binary cache subdomain"
-      expression  = "(http.host eq \"cache.shrublab.xyz\")"
-      action      = "skip"
-      enabled     = true
-      action_parameters = {
-        phases = ["http_request_firewall_managed"]
-      }
-    },
-    {
-      ref         = "skip_cache_subdomain_rate_limit"
-      description = "Skip rate limiting for sovereign binary cache subdomain"
-      expression  = "(http.host eq \"cache.shrublab.xyz\")"
-      action      = "skip"
-      enabled     = true
-      action_parameters = {
-        phases = ["http_ratelimit"]
-      }
-    },
   ]
 }
 
@@ -294,8 +248,8 @@ resource "cloudflare_ruleset" "zone_rate_limit" {
 
   rules = [{
     ref         = "rate_limit_public_services"
-    description = "Apply rate limiting for all requests in this zone"
-    expression  = "true"
+    description = "Apply rate limiting for all requests except the sovereign binary cache"
+    expression  = "not (http.host eq \"cache.shrublab.xyz\" or http.host eq \"build-cache.shrublab.xyz\")"
     action      = "block"
     enabled     = var.rate_limit_enabled
     ratelimit = {

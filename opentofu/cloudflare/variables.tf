@@ -240,12 +240,6 @@ variable "navidrome_cache_bypass_enabled" {
   default     = true
 }
 
-variable "soulsync_cache_bypass_enabled" {
-  description = "Enable cache bypass ruleset for SoulSync host to avoid stale/broken edge-cached UI assets"
-  type        = bool
-  default     = true
-}
-
 variable "rate_limit_enabled" {
   description = "Enable zone-level rate limiting for in-scope public service hosts"
   type        = bool

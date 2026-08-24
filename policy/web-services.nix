@@ -1,3 +1,6 @@
+let
+  oci = "oci-melb-1.tail0fe19b.ts.net";
+in
 {
   defaults = {
     primaryDomain = "shrublab.xyz";
@@ -29,7 +32,7 @@
   };
 
   hosts = {
-    do-admin-1 = {
+    la-admin-1 = {
       defaults = { };
 
       services = {
@@ -37,7 +40,7 @@
           subdomain = "music";
           origin = {
             scheme = "http";
-            host = "oci-melb-1.tail0fe19b.ts.net";
+            host = oci;
             port = 4533;
           };
           exposureMode = "tailscale-upstream";
@@ -48,28 +51,6 @@
             authenticatedOriginPulls = true;
           };
           health.path = "/ping";
-        };
-
-        soulsync = {
-          subdomain = "soulsync";
-          origin = {
-            scheme = "http";
-            host = "oci-melb-1.tail0fe19b.ts.net";
-            port = 8008;
-          };
-          exposureMode = "tailscale-upstream";
-          declarePublic = true;
-          category = "app";
-          access.requireCloudflareAccess = true;
-          cloudflare = {
-            proxied = true;
-            authenticatedOriginPulls = true;
-          };
-          responseHeaders = {
-            Content-Security-Policy = "media-src 'none'";
-            Permissions-Policy = "autoplay=()";
-          };
-          health.path = "/";
         };
 
         termix-admin = {
@@ -110,9 +91,9 @@
           category = "admin";
         };
 
-        cockpit-do-admin-1 = {
+        cockpit-admin = {
           subdomain = "cockpit";
-          path = "/do-admin-1";
+          path = "/la-admin-1";
           forceTrailingSlash = true;
           origin = {
             scheme = "https";
@@ -130,7 +111,7 @@
           forceTrailingSlash = true;
           origin = {
             scheme = "https";
-            host = "oci-melb-1.tail0fe19b.ts.net";
+            host = oci;
             port = 9443;
           };
           exposureMode = "tailscale-upstream";
@@ -199,7 +180,7 @@
           stripPrefix = true;
           origin = {
             scheme = "http";
-            host = "oci-melb-1.tail0fe19b.ts.net";
+            host = oci;
             port = 8384;
           };
           upstreamHostHeader = "{upstream_hostport}";
@@ -211,7 +192,7 @@
           subdomain = "slskd";
           origin = {
             scheme = "http";
-            host = "oci-melb-1.tail0fe19b.ts.net";
+            host = oci;
             port = 5030;
           };
           exposureMode = "tailscale-upstream";
@@ -222,7 +203,7 @@
           subdomain = "tagr";
           origin = {
             scheme = "http";
-            host = "oci-melb-1.tail0fe19b.ts.net";
+            host = oci;
             port = 3003;
           };
           exposureMode = "tailscale-upstream";
@@ -240,7 +221,7 @@
           subdomain = "keep";
           origin = {
             scheme = "http";
-            host = "oci-melb-1.tail0fe19b.ts.net";
+            host = oci;
             port = 3010;
           };
           exposureMode = "tailscale-upstream";
@@ -259,7 +240,7 @@
           subdomain = "paper";
           origin = {
             scheme = "http";
-            host = "oci-melb-1.tail0fe19b.ts.net";
+            host = oci;
             port = 8080;
           };
           exposureMode = "tailscale-upstream";
@@ -290,7 +271,7 @@
           subdomain = "phoenix";
           origin = {
             scheme = "http";
-            host = "oci-melb-1.tail0fe19b.ts.net";
+            host = oci;
             port = 6006;
           };
           exposureMode = "tailscale-only";
@@ -303,7 +284,7 @@
           subdomain = "bifrost";
           origin = {
             scheme = "http";
-            host = "oci-melb-1.tail0fe19b.ts.net";
+            host = oci;
             port = 7411;
           };
           exposureMode = "tailscale-only";

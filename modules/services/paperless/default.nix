@@ -208,6 +208,7 @@ in
 
       settings = {
         PAPERLESS_LOGLEVEL = "debug";
+        PAPERLESS_CONSUMER_DELETE_DUPLICATES = true;
 
         PAPERLESS_DBENGINE = "postgresql";
         PAPERLESS_DBHOST = "/run/postgresql";
@@ -254,6 +255,7 @@ in
         Type = "oneshot";
         User = "paperless";
         Group = "paperless";
+        EnvironmentFile = cfg.environmentFile;
         RemainAfterExit = true;
         Restart = "no";
       };

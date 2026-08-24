@@ -271,7 +271,7 @@ Rationale:
 - introduces an explicit logical application boundary without disrupting existing host behavior
 - preserves service-level reuse while making host composition easier to reason about
 
-## D-018: Termix runs as a Tailscale-only admin application on do-admin-1
+## D-018: Termix runs as a Tailscale-only admin application on la-admin-1
 
 Status: Accepted
 
@@ -280,12 +280,16 @@ Decision:
 - implement Termix with a dedicated low-level module `modules/services/termix.nix` using Podman OCI containers (`termix` + `guacd`)
 - persist Termix state under `/srv/data/termix`
 - expose Termix only through declared edge route policy (Cloudflare Access-gated at public edge, private-origin transport preference)
-- Termix is hosted on `do-admin-1` (DigitalOcean x86_64); `oci-melb-1` does not run Termix
+- Termix is hosted on `la-admin-1` (LA x86_64); `oci-melb-1` does not run Termix
 
 Rationale:
 
 - adds controlled remote admin capability while preserving private-origin boundaries and explicit edge policy
 - keeps runtime/container specifics isolated from host composition and canonical docs
+
+Historical note:
+
+- Termix was originally hosted on the decommissioned DigitalOcean admin host and moved to `la-admin-1` with the LA migration.
 
 ## D-030: Homepage authenticated widgets use host-scoped caller-owned machine-auth env wiring
 
@@ -312,7 +316,7 @@ Operational notes (one-time Beszel bootstrap):
 1. Sign in to Beszel at `https://beszel-admin.shrublab.xyz` as admin.
 2. Create a dedicated Homepage read-only user (non-admin) with a strong generated password.
 3. Share only required systems with that user (explicit system list; no global sharing).
-4. Store the username/password in `hosts/do-admin-1/secrets.yaml` under:
+4. Store the username/password in `secrets/hosts/la-admin-1/system.yaml` under:
    - `homepage/beszel/username`
    - `homepage/beszel/password`
 5. Re-encrypt with `sops` and deploy so `homepage-auth.env` is regenerated.
@@ -449,13 +453,13 @@ Status: Accepted
 
 Decision:
 
-- default bootstrap workflow derives host age recipient by fetching live SSH ed25519 host key (`host-generic` pattern)
+- default bootstrap workflow derives the host age recipient only after the live SSH ed25519 host key is compared with the provider-console fingerprint (`host-generic` pattern)
 - keep advanced injected-key workflow available for cases where live retrieval is not possible
 - enforce host-scoped `.sops.yaml` rules per host (`hosts/<host>/secrets.yaml`)
 
 Rationale:
 
-- reduces manual key handling during day-0 bring-up while preserving scoped blast radius
+- preserves the host-key identity guarantee while avoiding a separately managed age private key
 - keeps a deterministic fallback for restricted network/bootstrap scenarios
 
 ## D-027: deploy-rs is the primary deployment workflow for both active hosts
@@ -468,7 +472,7 @@ Decision:
 - define host deploy metadata in `lib/deploy/hosts.nix` and reusable wiring in `lib/deploy/default.nix`
 - set each node to `sshUser = "dev"`, host hostname, and `profiles.system.path` from the matching `nixosConfigurations.<host>`
 - wire `deploy-rs` deployment checks into `flake checks` for both `aarch64-linux` and `x86_64-linux`
-- make `just deploy`, `just activate`, and `just check` the primary operator workflow
+- make `just deploy`, `just _activate`, and `just checks all` the primary operator workflow
 
 Rationale:
 
@@ -693,7 +697,90 @@ Rationale:
 - PR-based nvfetcher automation preserves reviewability and mirrors Renovate's update model
 - documented operator workflow ensures one clear update path per dependency class
 
-## Open Questions (Intentional)
+## D-040: AudioMuse is optional Navidrome extension with music-service file rehome and Postgres-only backup
+
+Status: Accepted
+
+Decision:
+
+- AudioMuseAI is added as an explicit optional Navidrome similarity extension under `applications.music.audiomuse.enable`; it is not an implicit always-on dependency of the music stack
+- The repository owns declarative service topology, OCI container images, SOPS-backed bootstrap secrets, plugin binary placement (`audiomuseai.ndp` release v8), and Navidrome runtime flags; remaining AudioMuse setup wizard and Navidrome plugin UI configuration are documented as operator steps
+- Music service modules are regrouped under `modules/services/music/` as a file-layout-only move; existing option paths (`services.navidrome`, `services.beets`, `services.slskd`, etc.) remain unchanged
+- AudioMuse durable state scope is Postgres-only (`/srv/data/audiomuse/postgres`); Redis queue/cache and temp audio working files are excluded from canonical backup scope
+- AudioMuse follows the current internal-service-first exposure model; no new public ingress route is added unless existing edge policy explicitly composes one
+- Infrastructure deployed (containers running, plugin binary placed, flags active) is distinguished from E2E validated (Symfonium actual similar/radio behavior); the feature is not accepted as working until E2E validation passes
+
+Rationale:
+
+- AudioMuse is a supporting music-intelligence service for the Navidrome listening path, not a standalone app surface; making it optional avoids unnecessary deployment coupling
+- Upstream AudioMuse persists setup in application-managed database state and Navidrome plugin configuration in Navidrome-managed state; full declarative state injection is not practical without a stable upstream import/export interface
+- A file move improves navigability for the now-substantial music stack without multiplying risk through option namespace migration
+- Excluding Redis/temp from backup preserves meaningful backup scope and avoids promoting cache/queue/temp data as authoritative recovery state
+
+Supersedes/updates:
+
+- updates the music service module layout under `modules/services/music/` without changing any public option namespace
+- documents AudioMuse backup scope separately from other music stack services (Postgres-only vs. full state backup)
+
+References:
+
+- AM-1, AM-2, AM-3, AM-5 from audiomuse-navidrome-integration design
+
+## D-041: Traktor playlist sync starts as a manual upstream-module worker
+
+Status: Accepted
+
+Decision:
+
+- Add `traktor-m3u-sync` as an upstream flake input and use its NixOS module/package instead of vendoring local Python packaging.
+- Compose it from `applications.music` as an optional worker for `oci-melb-1`, with `collection.nml` expected at `/srv/media/traktor/collection.nml`.
+- Keep playlist export and import paths separate under `/srv/media/playlists/traktor/export` and `/srv/media/playlists/traktor/import`.
+- Keep `traktor-m3u-sync-export.service` and `traktor-m3u-sync-import.service` manual-only; do not add timers, path watches, or Syncthing-triggered automation in the first iteration.
+- Treat import as sandbox-only (`Imported Playlists` by default) and rely on upstream timestamped backups before writing `collection.nml`.
+- Make the Traktor-side library root mapping explicit and placeholder-driven until the real Traktor path roots are verified from the synced NML.
+
+Rationale:
+
+- Upstream owns the Python package, `traktor-nml-utils` dependency, and systemd units; this repo should own fleet paths, ACLs, and operational policy.
+- Manual triggers keep the first integration reversible and observable while path translation and import behavior are tested against real Traktor data.
+- Separate import/export directories prevent accidental feedback loops between generated playlists and operator-curated import files.
+- Using the existing `music-ingest`/`media` ACL model keeps playlist workspace permissions consistent with the rest of the music stack.
+
+References:
+
+- traktor-m3u-sync-worker design decisions TMS-1 through TMS-5
+
+## D-042: `la-admin-1` becomes the active admin/edge/identity host via non-destructive adoption
+
+Status: Accepted
+
+Decision:
+
+- `la-admin-1` is the active x86_64 admin, edge, and Kanidm/OIDC host; `do-admin-1` remains an undeployed deploy-rs rollback node, absent from `deployOrder` and CI, until the LA backup/recovery gates pass and it is decommissioned
+- serial deploy order is `la-admin-1` before `oci-melb-1`
+- `docs/runbooks/host-initialization.md` is the canonical generic bring-up runbook (adoption vs reimage selection, fact capture, verified host-key-to-age derivation, operator-key and outbound-key ownership, SOPS/Tailscale/recovery handoff, source-controlled first boot, deploy-rs steady state, no manual users outside the flake); `docs/runbooks/admin-host-migration.md` references it and records LA transfer facts only
+- LA is adopted non-destructively from its preinstalled NixOS system: `nixos-facter` report consumed directly, only observed root/ESP by-UUID mounts hand-maintained, preserved UEFI `systemd-boot`, first generation applied with `nixos-rebuild boot --target-host <initial-user>@<addr> --use-remote-sudo --flake .#<host>` plus console reboot
+- cross-host consumers resolve stable service IDs through the policy catalog (`config.repo.web.catalog`); physical deployment facts (`edgeHost`, `deployOrder`) live only in `lib/deploy/hosts.nix` and must never be interpreted as NixOS nodes
+- LA adoption is separate from later AU edge and US-East workload work
+- source freeze/rollback: DO stays authoritative until the planned freeze, LA restore is read-only until then, and DO remains startable/routable for rollback during the 24-hour soak window after cutover
+- secret values are preserved while readers and paths change: the operator creates and re-encrypts LA ciphertext from templates after fingerprint-verifying the host key, removes the DO recipient immediately from moved LA-only/admin/identity scopes, retains it only on scopes the still-running rollback host actively reads, and grants host-scoped Tailscale/R2/ntfy access
+- Open WebUI deployment is deferred until the migration cutover and backup gates pass
+- D-031 remains the historical networking lesson for remote network-owner cutovers
+
+Rationale:
+
+- preserves identity, edge, and state contracts with a real rollback path while retiring the expiring-credit provider
+- one canonical runbook prevents the next host from recreating this discovery work
+- catalog-versus-physical separation keeps runtime routes decoupled from host replacement
+- operator-owned secret actions keep blast radius and provenance unambiguous
+
+References:
+
+- MIG-1 through MIG-9 from the migrate-admin-host-to-la change design
+
+Supersedes/updates:
+
+- supersedes D-036's serial deploy order (`do-admin-1` then `oci-melb-1`) with `la-admin-1` before `oci-melb-1`, and removes DO from regular deploy and CI until decommission
 
 These are known but intentionally unresolved until implementation and operational learning justify final decisions.
 

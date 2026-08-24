@@ -18,12 +18,6 @@ let
   allExcludePaths = lib.unique (
     cfg.exclude ++ lib.concatLists (map (service: service.exclude) serviceList)
   );
-  exportPathDirs = lib.unique (
-    lib.concatLists (map (service: map builtins.dirOf service.exportPaths) serviceList)
-  );
-  managedExportPathDirs = builtins.filter (
-    path: path == cfg.stagingRoot || lib.hasPrefix "${cfg.stagingRoot}/" path
-  ) exportPathDirs;
   prepareCommands = lib.concatLists (map (service: service.prepareCommands) serviceList);
   cleanupCommands = lib.concatLists (map (service: service.cleanupCommands) serviceList);
 
@@ -40,6 +34,99 @@ let
   cleanupScript = ''
     set -euo pipefail
     ${lib.concatStringsSep "\n" cleanupCommands}
+  '';
+
+  resticExtraArgs = lib.concatMapStringsSep " " (
+    opt: "-o ${lib.escapeShellArg opt}"
+  ) cfg.extraOptions;
+
+  # Operator-invoked restic restore-staging helper. Restores exactly one
+  # absolute include path from a snapshot into a fresh root-only directory
+  # under /var/tmp/state-restore/ and prints ONLY the resulting destination
+  # path on stdout (diagnostics go to stderr) so `stage=$(just ...)` works.
+  # It reuses this module's exact repository, credentials, and backend
+  # options, so the operator never reads secrets or passes arbitrary restic
+  # flags. There is no destination argument: live service paths can never be
+  # chosen or written here; applying staged files is a separate, documented
+  # per-service step. --decode mode accepts base64-encoded arguments so the
+  # just recipe can transport hostile values without remote shell parsing.
+  restoreStageScript = pkgs.writeShellScriptBin "state-restore-stage" ''
+    set -euo pipefail
+
+    if [ "$#" -eq 3 ] && [ "$1" = "--decode" ]; then
+      snap_b64=$2
+      inc_b64=$3
+      case "$snap_b64" in
+        *[!A-Za-z0-9+/=]*)
+          echo "state-restore-stage: snapshot base64 contains invalid characters" >&2
+          exit 2
+          ;;
+      esac
+      case "$inc_b64" in
+        *[!A-Za-z0-9+/=]*)
+          echo "state-restore-stage: include-path base64 contains invalid characters" >&2
+          exit 2
+          ;;
+      esac
+      snapshot=$(printf '%s' "$snap_b64" | ${pkgs.coreutils}/bin/base64 -d) || exit 2
+      include_path=$(printf '%s' "$inc_b64" | ${pkgs.coreutils}/bin/base64 -d) || exit 2
+    elif [ "$#" -eq 2 ]; then
+      snapshot=$1
+      include_path=$2
+    else
+      echo "usage: state-restore-stage [--decode <snapshot-b64> <include-path-b64>] <snapshot> <absolute-include-path>" >&2
+      exit 2
+    fi
+
+    if [ -z "$snapshot" ]; then
+      echo "state-restore-stage: snapshot must not be empty" >&2
+      exit 2
+    fi
+    case "$snapshot" in
+      -*)
+        echo "state-restore-stage: snapshot must not start with '-' (option injection), got: $snapshot" >&2
+        exit 2
+        ;;
+    esac
+
+    case "$include_path" in
+      /*) ;;
+      *)
+        echo "state-restore-stage: include path must be absolute, got: $include_path" >&2
+        exit 2
+        ;;
+    esac
+    case "$include_path" in
+      *'/../'* | */..)
+        echo "state-restore-stage: include path must not contain '..', got: $include_path" >&2
+        exit 2
+        ;;
+    esac
+
+    export RESTIC_REPOSITORY='${repository}'
+    export RESTIC_PASSWORD_FILE='${config.sops.secrets.state_backups_restic_password.path}'
+    env_file='${config.sops.templates."state-backups.env".path}'
+    if [ ! -r "$env_file" ]; then
+      echo "state-restore-stage: missing restic environment file: $env_file" >&2
+      exit 1
+    fi
+    set -a
+    . "$env_file"
+    set +a
+
+    # The staging parent is declared root-owned 0700 by tmpfiles; repair it
+    # defensively before use in case activation has not run yet. The unique
+    # child below it is created 0700 by mktemp.
+    ${pkgs.coreutils}/bin/install -d -m 0700 -o root -g root /var/tmp/state-restore
+    dest=$(${pkgs.coreutils}/bin/mktemp -d /var/tmp/state-restore/restore.XXXXXX)
+    trap 'rc=$?; if [ "$rc" -ne 0 ]; then ${pkgs.coreutils}/bin/rm -rf -- "$dest"; fi' EXIT
+
+    # End-of-options (`--`) before the snapshot prevents a leading-dash
+    # snapshot from being parsed as a restic flag. restic restore writes its
+    # status to stdout, so redirect it to stderr to keep the stdout contract.
+    ${pkgs.restic}/bin/restic ${resticExtraArgs} restore --target "$dest" --include "$include_path" -- "$snapshot" 1>&2
+
+    echo "$dest"
   '';
 in
 {
@@ -68,6 +155,12 @@ in
       type = lib.types.str;
       default = "/srv/data/state-backups";
       description = "Host-local staging root for generated export artifacts captured by restic.";
+    };
+
+    restoreStagePackage = lib.mkOption {
+      type = lib.types.package;
+      readOnly = true;
+      description = "Operator-invoked restic restore-staging helper (state-restore-stage) installed by this module.";
     };
 
     exclude = lib.mkOption {
@@ -258,14 +351,33 @@ in
     // lib.optionalAttrs (prepareCommands != [ ]) { backupPrepareCommand = prepareScript; }
     // lib.optionalAttrs (cleanupCommands != [ ]) { backupCleanupCommand = cleanupScript; };
 
+    # state-backups owns only the staging root and the restore-staging
+    # parent; each service module owns its own export parent directory (e.g.
+    # postgresqlBackup owns ${stagingRoot}/postgres as 0700 postgres) so no
+    # root-owned export rule can conflict with the export writer.
     systemd.tmpfiles.rules = [
       "d ${cfg.stagingRoot} 0750 root root - -"
-    ]
-    ++ map (path: "d ${path} 0750 root root - -") managedExportPathDirs;
+      "d /var/tmp/state-restore 0700 root root - -"
+    ];
+
+    # Failure-only monitoring for the restic backup unit: wire
+    # OnFailure=svc-monitor@... directly, without the generic monitor's
+    # lifecycle ExecStartPost/ExecStopPost hooks (ExecStopPost would report
+    # success after a failed run). The notification-daemon monitor template
+    # must exist, so monitor.enable defaults on; restic is deliberately NOT in
+    # the generic monitor.services lifecycle list.
+    services.notification-daemon.monitor.enable = lib.mkDefault true;
+    systemd.services."restic-backups-${cfg.backupName}".onFailure = lib.mkBefore [
+      "svc-monitor@restic-backups-${cfg.backupName}.service"
+    ];
+
+    # The state-restore-stage helper package (option defined by this module).
+    services.state-backups.restoreStagePackage = restoreStageScript;
 
     environment.systemPackages = with pkgs; [
       restic
       sqlite
+      restoreStageScript
     ];
   };
 }

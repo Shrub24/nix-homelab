@@ -127,6 +127,5 @@ output "service_cache_bypass_ruleset" {
     id                       = cloudflare_ruleset.service_cache_bypass[0].id
     phase                    = cloudflare_ruleset.service_cache_bypass[0].phase
     navidrome_bypass_enabled = var.navidrome_cache_bypass_enabled
-    soulsync_bypass_enabled  = var.soulsync_cache_bypass_enabled
   } : null
 }

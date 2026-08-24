@@ -10,16 +10,31 @@ let
   listenAddress = "${ntfyRoute.origin.host}:${toString ntfyRoute.origin.port}";
   publicBaseUrl = ntfyRoute.publicUrl;
 
-  baseSettings = {
-    base-url = publicBaseUrl;
-    upstream-base-url = publicBaseUrl;
-    behind-proxy = true;
-    proxy-forwarded-header = "X-Forwarded-For";
-    listen-http = listenAddress;
-    "cache-file" = "${dataDir}/cache.db";
-    "attachment-cache-dir" = "${dataDir}/attachments";
-  };
   dataDir = cfg.dataDir;
+
+  validRoles = [
+    "admin"
+    "user"
+    "none"
+  ];
+
+  # ntfy auth-users entries are `<username>:<bcrypt-hash>:<role>`; even
+  # token-only accounts need a real `ntfy user hash` (username::role is
+  # invalid). A documented non-secret `<...>` placeholder is accepted so hosts
+  # can declare user/role in plaintext while the hash stays in the encrypted
+  # auth file.
+  isValidAuthUserHash =
+    hash: lib.hasPrefix "$2" hash || (lib.hasPrefix "<" hash && lib.hasSuffix ">" hash);
+
+  isValidAuthUser =
+    entry:
+    let
+      parts = lib.splitString ":" entry;
+    in
+    lib.length parts == 3
+    && lib.elemAt parts 0 != ""
+    && isValidAuthUserHash (lib.elemAt parts 1)
+    && lib.elem (lib.elemAt parts 2) validRoles;
 in
 {
   options.services.ntfy = {
@@ -87,6 +102,35 @@ in
         '';
       };
 
+      users = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [
+          "oci-melb-1:<disposable bcrypt hash from ntfy user hash>:user"
+        ];
+        description = ''
+          Non-secret declaration of the ntfy auth-users entries the encrypted
+          auth secret file must provision, in ntfy's documented
+          `<username>:<bcrypt-hash>:<role>` shape. The bcrypt hashes and access
+          tokens themselves stay in `auth.secretFiles.auth`; hashes declared
+          here must be a real bcrypt hash from `ntfy user hash` or a documented
+          `<...>` placeholder. Every entry is validated at evaluation time when
+          auth is enabled.
+        '';
+      };
+
+      validateAuthUser = lib.mkOption {
+        type = lib.types.functionTo lib.types.bool;
+        default = isValidAuthUser;
+        readOnly = true;
+        description = ''
+          Pure validation function for a single ntfy `auth-users` entry.
+          Exposed as an option so contract tests can exercise the same shape
+          checks that guard `auth.users` without reading any encrypted secret.
+          Accepts only `<username>:<bcrypt-hash|<...>>:<role>` entries.
+        '';
+      };
+
       secretFiles.auth = lib.mkOption {
         type = lib.types.nullOr lib.types.path;
         default = null;
@@ -130,21 +174,6 @@ in
         };
       }
 
-      # Path A: No auth — use upstream module settings
-      (lib.mkIf (!cfg.auth.enable) {
-        services.ntfy-sh = {
-          enable = true;
-          settings =
-            baseSettings
-            // lib.optionalAttrs (cfg.secretFiles.firebase != null) {
-              "firebase-key-file" = "/run/secrets/ntfy/firebase-key.json";
-            }
-            // {
-              "log-level" = cfg.logLevel;
-            };
-        };
-      })
-
       # Path B: Auth enabled — module settings for upstream deps, template for full config
       (lib.mkIf cfg.auth.enable {
         assertions =
@@ -155,7 +184,13 @@ in
           ++ lib.optional (cfg.auth.secretFiles.auth == null) {
             assertion = false;
             message = "services.ntfy.auth.secretFiles.auth must be set when auth is enabled.";
-          };
+          }
+          ++ lib.optionals (cfg.auth.users != [ ]) (
+            map (entry: {
+              assertion = isValidAuthUser entry;
+              message = "services.ntfy.auth.users entry '${entry}' must be '<username>:<bcrypt-hash|<...>>:<role>' with a nonempty username, a bcrypt hash from `ntfy user hash` (or <...> placeholder), and a role in ${builtins.toString validRoles}.";
+            }) cfg.auth.users
+          );
 
         services.ntfy-sh = {
           enable = true;
@@ -176,7 +211,6 @@ in
         sops.templates."ntfy-base-config" = {
           content = ''
             base-url: ${publicBaseUrl}
-            upstream-base-url: ${publicBaseUrl}
             behind-proxy: true
             proxy-forwarded-header: X-Forwarded-For
             listen-http: ${listenAddress}
@@ -184,6 +218,9 @@ in
             attachment-cache-dir: ${dataDir}/attachments
             enable-login: true
             enable-signup: false
+            auth-file: ${toString cfg.auth.file}
+            auth-default-access: ${cfg.auth.defaultAccess}
+            auth-access: ${builtins.toJSON cfg.auth.access}
           ''
           + lib.optionalString (cfg.secretFiles.firebase != null) ''
             firebase-key-file: /run/secrets/ntfy/firebase-key.json

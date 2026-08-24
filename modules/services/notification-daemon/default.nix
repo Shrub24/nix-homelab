@@ -44,7 +44,7 @@ let
 
     payload = json.dumps({"tier": tier, "title": title, "type": ntype, "message": body}).encode()
     req = urllib.request.Request(
-        "http://127.0.0.1:5555/notify",
+        "http://127.0.0.1:${toString cfg.port}/notify",
         data=payload,
         headers={"Content-Type": "application/json"},
     )
@@ -95,8 +95,9 @@ in
 
       serverUrl = lib.mkOption {
         type = lib.types.str;
-        default = "";
-        description = "ntfy server URL (e.g. https://ntfy.shrublab.xyz).";
+        default = lib.attrByPath [ "repo" "web" "catalog" "ntfy-admin" "publicUrl" ] "" config;
+        defaultText = lib.literalExpression ''lib.attrByPath [ "repo" "web" "catalog" "ntfy-admin" "publicUrl" ] "" config'';
+        description = "ntfy server URL. Defaults to the policy-derived public URL; origin hosts should override to loopback.";
       };
 
       topics = lib.mkOption {
@@ -118,21 +119,6 @@ in
         type = lib.types.listOf lib.types.str;
         default = [ ];
         description = "Systemd units to inject notification hooks into.";
-      };
-
-      tiers = {
-        onStart = lib.mkOption {
-          type = lib.types.str;
-          default = "info";
-        };
-        onFailure = lib.mkOption {
-          type = lib.types.str;
-          default = "warning";
-        };
-        onSuccess = lib.mkOption {
-          type = lib.types.str;
-          default = "info";
-        };
       };
     };
   };
@@ -207,22 +193,6 @@ in
     // lib.optionalAttrs cfg.monitor.enable (
       let
         mon = "svc-monitor@";
-        injectOnFailure = name: {
-          "${name}".onFailure = lib.mkBefore [ "${mon}${name}.service" ];
-        };
-        injectExecHooks = name: {
-          "${name}" = {
-            serviceConfig = {
-              # Notification delivery is best-effort and must not decide unit health.
-              ExecStartPost = lib.mkBefore [
-                "-${monitorScript}/bin/svc-monitor ${name} onStart"
-              ];
-              ExecStopPost = lib.mkAfter [
-                "-${monitorScript}/bin/svc-monitor ${name} onSuccess"
-              ];
-            };
-          };
-        };
       in
       {
         "${mon}" = {
@@ -236,7 +206,24 @@ in
         };
       }
       // builtins.foldl' (
-        acc: name: acc // injectOnFailure name // injectExecHooks name
+        acc: name:
+        acc
+        // {
+          "${name}" = {
+            # OnFailure activates svc-monitor@<unit>.service when the unit
+            # enters the failed state; the Exec hooks fire on every run.
+            onFailure = lib.mkBefore [ "${mon}${name}.service" ];
+            serviceConfig = {
+              # Notification delivery is best-effort and must not decide unit health.
+              ExecStartPost = lib.mkBefore [
+                "-${monitorScript}/bin/svc-monitor ${name} onStart"
+              ];
+              ExecStopPost = lib.mkAfter [
+                "-${monitorScript}/bin/svc-monitor ${name} onSuccess"
+              ];
+            };
+          };
+        }
       ) { } cfg.monitor.services
     );
 

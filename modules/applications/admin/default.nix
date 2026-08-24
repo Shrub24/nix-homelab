@@ -70,8 +70,6 @@ in
         };
 
         assertions = [
-        ]
-        ++ [
           (secretHelpers.mkRequiredSecretAssertion {
             enable = cfg.enable;
             file = cfg.secretFiles.host;
@@ -153,8 +151,6 @@ in
           tlsKeyFile = "/var/lib/acme/${cfg.policyServices."kanidm-admin".primaryDomain}/key.pem";
           tlsReaderGroups = [ "caddy" ];
         };
-
-        services.state-backups.services.kanidm.paths = [ "${cfg.dataRoot}/kanidm" ];
       })
 
       # Termix OIDC and Tailscale serve

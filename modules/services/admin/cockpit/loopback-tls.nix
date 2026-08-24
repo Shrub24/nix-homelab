@@ -11,10 +11,10 @@ let
     "applications"
     "admin"
     "policyServices"
-    "cockpit-do-admin-1"
+    "cockpit-admin"
   ] config;
   cockpitRoute =
-    if hasCockpitRoute then config.applications.admin.policyServices."cockpit-do-admin-1" else null;
+    if hasCockpitRoute then config.applications.admin.policyServices."cockpit-admin" else null;
   stateDir = loopbackTls.stateDir;
   publicCaCert = "/etc/cockpit/loopback-ca.crt";
   certName = "99-loopback";
@@ -129,11 +129,11 @@ in
       }
       {
         assertion = cockpitRoute != null;
-        message = "Cockpit loopback TLS material requires a resolved cockpit-do-admin-1 policy route.";
+        message = "Cockpit loopback TLS material requires a resolved cockpit-admin policy route.";
       }
       {
         assertion = cockpitRoute.origin.scheme == "https";
-        message = "Cockpit loopback TLS material requires cockpit-do-admin-1 upstream scheme=https.";
+        message = "Cockpit loopback TLS material requires cockpit-admin upstream scheme=https.";
       }
     ];
   };

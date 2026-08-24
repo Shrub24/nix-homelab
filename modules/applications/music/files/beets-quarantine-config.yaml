@@ -1,6 +1,6 @@
 directory: /srv/media/library
 library: /srv/data/beets/state/library.db
-plugins: bandcamp chroma discogs fetchart embedart fromfilename inline duplicates spotify deezer convert
+plugins: bandcamp chroma discogs fetchart embedart fromfilename inline duplicates spotify deezer
 item_fields:
   source_filename: |
     import os
@@ -18,8 +18,8 @@ import:
   move: yes
   link: no
   hardlink: no
-  quiet_fallback: asis
-  incremental: yes
+  quiet_fallback: skip
+  incremental: no
   incremental_skip_later: no
   singletons: no
   group_albums: yes
@@ -60,21 +60,6 @@ discogs:
 spotify:
   client_id: REPLACE_WITH_SPOTIFY_CLIENT_ID
   client_secret: REPLACE_WITH_SPOTIFY_CLIENT_SECRET
-convert:
-  auto: yes
-  dest: /srv/media/library
-  format: aiff
-  copy_album_art: yes
-  threads: 2
-  quiet: yes
-  never_convert_lossy_files: yes
-  pretend: no
-  delete_originals: yes
-  id3v23: true
-  formats:
-    aiff:
-      command: ffmpeg -i $source -y -c:a pcm_s16be -write_id3v2 1 $dest
-      extension: aiff
 bandcamp:
   include_digital_only_tracks: true
   art: true

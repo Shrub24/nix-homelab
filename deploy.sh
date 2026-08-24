@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-BOOTSTRAP_CONFIG="${SCRIPT_DIR}/hosts/oci-melb-1/bootstrap-config.nix"
-BOOTSTRAP_KEY_MODE="live"
-BOOTSTRAP_HOST_PUBLIC_KEY=""
-BOOTSTRAP_HOST_AGE_RECIPIENT=""
+BOOTSTRAP_CONFIG=""
 TARGET_HOST=""
 BOOTSTRAP_USER=""
 FLAKE_TARGET=""
@@ -16,9 +12,17 @@ SKIP_HARDWARE_CONFIG="false"
 
 usage() {
 	cat <<EOF
-Usage: $0 [--host-config <path>] [--target <host-or-ip>] [--bootstrap-user <user>] [--flake <flake-ref>] [--extra-files <path>] [--hardware-config-generator <name>] [--hardware-config-path <path>] [--bootstrap-key-mode <live|injected>] [--host-public-key <ssh-ed25519...>] [--host-age-recipient <age1...>] [--skip-hardware-config]
+Usage: $0 [--host-config <path>] [--target <host-or-ip>] [--bootstrap-user <user>] [--flake <flake-ref>] [--extra-files <path>] [--hardware-config-generator <name>] [--hardware-config-path <path>] [--skip-hardware-config]
 
-Defaults are loaded from: hosts/oci-melb-1/bootstrap-config.nix
+--host-config <path> is required; deploy.sh never assumes a default host. The
+canonical caller is the just bootstrap recipe (just bootstrap <host> <addr>),
+which resolves hosts/<host>/bootstrap-config.nix for the requested host and
+passes it here.
+
+The temporary installer image's SSH host key is diagnostic only: never derive
+a persistent SOPS age recipient from it. Enroll the persistent recipient only
+after first boot from the console-verified persistent host key (two-step
+secrets bootstrap; see docs/runbooks/host-initialization.md).
 EOF
 }
 
@@ -80,30 +84,6 @@ while [[ $# -gt 0 ]]; do
 		HARDWARE_CONFIG_PATH="$2"
 		shift 2
 		;;
-	--bootstrap-key-mode)
-		if [[ $# -lt 2 ]]; then
-			echo "Error: --bootstrap-key-mode requires a value"
-			exit 1
-		fi
-		BOOTSTRAP_KEY_MODE="$2"
-		shift 2
-		;;
-	--host-public-key)
-		if [[ $# -lt 2 ]]; then
-			echo "Error: --host-public-key requires a value"
-			exit 1
-		fi
-		BOOTSTRAP_HOST_PUBLIC_KEY="$2"
-		shift 2
-		;;
-	--host-age-recipient)
-		if [[ $# -lt 2 ]]; then
-			echo "Error: --host-age-recipient requires a value"
-			exit 1
-		fi
-		BOOTSTRAP_HOST_AGE_RECIPIENT="$2"
-		shift 2
-		;;
 	--skip-hardware-config)
 		SKIP_HARDWARE_CONFIG="true"
 		shift
@@ -130,47 +110,9 @@ normalize_prefixed_value() {
 	fi
 }
 
-derive_host_age_recipient() {
-	local mode="$1"
-	local host="$2"
-	local ssh_port="${3:-22}"
-	local ssh_pubkey="$4"
-	local age_recipient="$5"
-
-	if [[ -n "$age_recipient" ]]; then
-		printf '%s' "$age_recipient"
-		return
-	fi
-
-	if [[ "$mode" == "injected" ]]; then
-		if [[ -z "$ssh_pubkey" ]]; then
-			echo "Error: --host-public-key is required when --bootstrap-key-mode=injected"
-			exit 1
-		fi
-		printf '%s\n' "$ssh_pubkey" | nix shell nixpkgs#ssh-to-age --command ssh-to-age
-		return
-	fi
-
-	local key_line
-	key_line="$(ssh-keyscan -p "$ssh_port" -t ed25519 "$host" 2>/dev/null | awk '/ssh-ed25519/ {print $0; exit}')"
-	if [[ -z "$key_line" ]]; then
-		echo "Error: unable to retrieve ed25519 host key from ${host}:${ssh_port}"
-		exit 1
-	fi
-
-	printf '%s\n' "$key_line" | nix shell nixpkgs#ssh-to-age --command ssh-to-age
-}
-
-eval_bootstrap_attr_with_fallback() {
+eval_bootstrap_attr() {
 	local attr="$1"
-	local fallback="$2"
-	local value=""
-
-	if value="$(nix eval --raw --file "$BOOTSTRAP_CONFIG" "$attr" 2>/dev/null)"; then
-		printf '%s' "$value"
-	else
-		printf '%s' "$fallback"
-	fi
+	nix eval --raw --file "$BOOTSTRAP_CONFIG" "$attr"
 }
 
 TARGET_HOST="$(normalize_prefixed_value target "$TARGET_HOST")"
@@ -180,9 +122,11 @@ BOOTSTRAP_CONFIG="$(normalize_prefixed_value host_config "$BOOTSTRAP_CONFIG")"
 EXTRA_FILES="$(normalize_prefixed_value extra_files "$EXTRA_FILES")"
 HARDWARE_CONFIG_GENERATOR="$(normalize_prefixed_value hardware_config_generator "$HARDWARE_CONFIG_GENERATOR")"
 HARDWARE_CONFIG_PATH="$(normalize_prefixed_value hardware_config_path "$HARDWARE_CONFIG_PATH")"
-BOOTSTRAP_KEY_MODE="$(normalize_prefixed_value bootstrap_key_mode "$BOOTSTRAP_KEY_MODE")"
-BOOTSTRAP_HOST_PUBLIC_KEY="$(normalize_prefixed_value host_public_key "$BOOTSTRAP_HOST_PUBLIC_KEY")"
-BOOTSTRAP_HOST_AGE_RECIPIENT="$(normalize_prefixed_value host_age_recipient "$BOOTSTRAP_HOST_AGE_RECIPIENT")"
+
+if [[ -z "$BOOTSTRAP_CONFIG" ]]; then
+	echo "Error: --host-config is required; deploy.sh assumes no default host (use just bootstrap <host> <addr>)" >&2
+	exit 1
+fi
 
 if [[ ! -f "$BOOTSTRAP_CONFIG" ]]; then
 	echo "Error: bootstrap config not found: $BOOTSTRAP_CONFIG"
@@ -201,16 +145,22 @@ if [[ -z "$FLAKE_TARGET" ]]; then
 	FLAKE_TARGET="$(nix eval --raw --file "$BOOTSTRAP_CONFIG" flake)"
 fi
 
-if [[ -z "$HARDWARE_CONFIG_GENERATOR" ]]; then
-	HARDWARE_CONFIG_GENERATOR="$(eval_bootstrap_attr_with_fallback hardwareConfigGenerator "nixos-generate-config")"
+# Hardware-config generation is opt-in and must be declared explicitly by the
+# host config; there is no shared fallback path to assume.
+if [[ -z "$HARDWARE_CONFIG_GENERATOR" ]] && grep -q '^  hardwareConfigGenerator' "$BOOTSTRAP_CONFIG"; then
+	HARDWARE_CONFIG_GENERATOR="$(eval_bootstrap_attr hardwareConfigGenerator)"
 fi
 
-if [[ -z "$HARDWARE_CONFIG_PATH" ]]; then
-	HARDWARE_CONFIG_PATH="$(eval_bootstrap_attr_with_fallback hardwareConfigPath "hosts/oci-melb-1/hardware-configuration.nix")"
+if [[ -z "$HARDWARE_CONFIG_PATH" ]] && grep -q '^  hardwareConfigPath' "$BOOTSTRAP_CONFIG"; then
+	HARDWARE_CONFIG_PATH="$(eval_bootstrap_attr hardwareConfigPath)"
 fi
 
-DERIVED_HOST_AGE_RECIPIENT="$(derive_host_age_recipient "$BOOTSTRAP_KEY_MODE" "$TARGET_HOST" "22" "$BOOTSTRAP_HOST_PUBLIC_KEY" "$BOOTSTRAP_HOST_AGE_RECIPIENT")"
-echo "Derived host age recipient (${BOOTSTRAP_KEY_MODE}): ${DERIVED_HOST_AGE_RECIPIENT}"
+if [[ "$SKIP_HARDWARE_CONFIG" != "true" ]] && { [[ -n "$HARDWARE_CONFIG_GENERATOR" ]] || [[ -n "$HARDWARE_CONFIG_PATH" ]]; }; then
+	if [[ -z "$HARDWARE_CONFIG_GENERATOR" ]] || [[ -z "$HARDWARE_CONFIG_PATH" ]]; then
+		echo "Error: $BOOTSTRAP_CONFIG must declare both hardwareConfigGenerator and hardwareConfigPath together (or pass --skip-hardware-config)" >&2
+		exit 1
+	fi
+fi
 
 CMD=(
 	nix run github:nix-community/nixos-anywhere --

@@ -34,8 +34,8 @@ in
 
     backup.exportFile = lib.mkOption {
       type = lib.types.str;
-      default = "/var/lib/state-backups/vaultwarden/db.sqlite3";
-      description = "SQLite backup artifact path captured alongside Vaultwarden raw state.";
+      default = "${config.services.state-backups.stagingRoot}/vaultwarden/db.sqlite3";
+      description = "SQLite backup artifact path captured alongside Vaultwarden raw state. Parent directory is created declaratively by services.state-backups under its staging root.";
     };
 
     secretFiles.host = secretHelpers.mkSecretFileOption "vaultwarden-host-secrets";
@@ -158,6 +158,9 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
       "z ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
+      # SQLite export parent: the export prepare command runs in the restic
+      # backup unit as root, so the staging dir is root-owned 0700.
+      "d ${builtins.dirOf cfg.backup.exportFile} 0700 root root - -"
     ];
 
     systemd.services.vaultwarden = {

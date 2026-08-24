@@ -1,7 +1,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set no-cd
 
-default host="oci-melb-1":
+default host="la-admin-1":
   deploy {{host}}
 
 bootstrap host target:
@@ -41,5 +41,5 @@ _activate host:
   if [[ -z "$HOST" ]]; then echo "Error: host required"; exit 1; fi; \
   nix run .#deploy-rs -- --skip-checks --dry-activate ".#$HOST"
 
-_build host="oci-melb-1":
+_build host="la-admin-1":
   @nix build --no-link --no-write-lock-file "path:.#deploy.nodes.{{host}}.profiles.system.path"

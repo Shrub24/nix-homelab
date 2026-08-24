@@ -11,6 +11,8 @@
     deploy-rs.inputs.nixpkgs.follows = "nixpkgs";
     niks3.url = "github:Mic92/niks3";
     niks3.inputs.nixpkgs.follows = "nixpkgs";
+    traktor-m3u-sync.url = "github:Shrub24/traktor-m3u-sync";
+    traktor-m3u-sync.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -62,6 +64,7 @@
             ]
             ++ [ pkgs.deploy-rs ];
           shellHook = ''
+            unset PYTHONPATH
             if [ -f /tmp/notification-daemon.json ]; then
               NOTIFICATION_DAEMON_CONFIG=/tmp/notification-daemon.json notification-daemon &
               DAEMON_PID=$!
@@ -73,9 +76,11 @@
 
       ociImages = import ./policy/oci-images.nix;
 
+      deployTopology = import ./lib/deploy/hosts.nix;
+
       deployConfig = import ./lib/deploy {
         inherit self nixpkgs deploy-rs;
-        hosts = import ./lib/deploy/hosts.nix;
+        nodes = deployTopology.nodes;
       };
 
     in
@@ -95,12 +100,12 @@
           nix-path-filter = pkgs.callPackage ./pkgs/nix-path-filter { };
           notification-daemon = pkgs.callPackage ./pkgs/notification-daemon { };
           notify = pkgs.callPackage ./pkgs/notify { };
-          host-do-admin-1 = deployConfig.deploy.nodes.do-admin-1.profiles.system.path;
+          host-la-admin-1 = deployConfig.deploy.nodes.la-admin-1.profiles.system.path;
           host-oci-melb-1 = deployConfig.deploy.nodes.oci-melb-1.profiles.system.path;
         }
       );
 
-      deployHosts = import ./lib/deploy/hosts.nix;
+      deployHosts = deployTopology;
 
       formatter = nixpkgs.lib.genAttrs devShellSystems (
         system: (import nixpkgs { inherit system; }).nixfmt
@@ -112,6 +117,7 @@
           sops-nix.nixosModules.sops
           niks3.nixosModules.niks3
           niks3.nixosModules.niks3-auto-upload
+          inputs.traktor-m3u-sync.nixosModules.traktor-m3u-sync
           ./hosts/oci-melb-1/default.nix
         ];
         specialArgs = {
@@ -123,12 +129,30 @@
         };
       };
 
-      nixosConfigurations.do-admin-1 = nixpkgs.lib.nixosSystem {
+      nixosConfigurations.la-admin-1 = nixpkgs.lib.nixosSystem {
+        modules = [
+          sops-nix.nixosModules.sops
+          niks3.nixosModules.niks3-auto-upload
+          ./hosts/la-admin-1/default.nix
+        ];
+        specialArgs = {
+          inherit
+            self
+            inputs
+            ociImages
+            ;
+        };
+      };
+
+      nixosConfigurations.home-forge = nixpkgs.lib.nixosSystem {
+        # x86_64 physical host; no facter report/hardware-configuration exists
+        # yet (captured at operator gate 8.3), so pin the architecture explicitly.
+        system = "x86_64-linux";
         modules = [
           disko.nixosModules.disko
           sops-nix.nixosModules.sops
           niks3.nixosModules.niks3-auto-upload
-          ./hosts/do-admin-1/default.nix
+          ./hosts/home-forge/default.nix
         ];
         specialArgs = {
           inherit

@@ -39,7 +39,7 @@ The host SHALL prune unused Podman artifacts on a recurring schedule so stopped 
 Each active host SHALL declare automatic Nix retention and garbage-collection policy so store growth remains bounded under shared substitute usage.
 
 #### Scenario: Active host Nix retention baseline is evaluated
-- **WHEN** `nixosConfigurations.do-admin-1` and `nixosConfigurations.oci-melb-1` are evaluated
+- **WHEN** `nixosConfigurations.la-admin-1` and `nixosConfigurations.oci-melb-1` are evaluated
 - **THEN** both include recurring Nix GC and bounded retention settings
 - **AND** rollback-friendly retention windows remain explicitly configured
 

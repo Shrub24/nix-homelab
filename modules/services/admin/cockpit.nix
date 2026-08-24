@@ -11,21 +11,21 @@ let
     "applications"
     "admin"
     "policyServices"
-    "cockpit-do-admin-1"
+    "cockpit-admin"
     "publicHost"
   ] config;
   cockpitPublicHost =
     if cfg.publicHost != null then
       cfg.publicHost
     else if hasCockpitPublicHost then
-      config.applications.admin.policyServices."cockpit-do-admin-1".publicHost
+      config.applications.admin.policyServices."cockpit-admin".publicHost
     else
       null;
   cockpitUrlRoot =
     if cfg.urlRoot != null then
       cfg.urlRoot
     else if hasCockpitPublicHost then
-      config.applications.admin.policyServices."cockpit-do-admin-1".path
+      config.applications.admin.policyServices."cockpit-admin".path
     else
       "/";
 in

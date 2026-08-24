@@ -1,4 +1,5 @@
 {
+  config,
   policyServices,
   ...
 }:
@@ -150,9 +151,9 @@ in
         {
           Cockpit = {
             icon = "mdi-console-network";
-            description = "do-admin-1 server administration";
-            href = serviceHref "cockpit-do-admin-1";
-            siteMonitor = (requireRoute "cockpit-do-admin-1").healthUrl;
+            description = "${config.networking.hostName} server administration";
+            href = serviceHref "cockpit-admin";
+            siteMonitor = (requireRoute "cockpit-admin").healthUrl;
           };
         }
         {
@@ -225,15 +226,6 @@ in
             {
               icon = "si-oracle";
               href = "https://www.oracle.com/anz/cloud/sign-in.html";
-              description = "";
-            }
-          ];
-        }
-        {
-          DigitalOcean = [
-            {
-              icon = "si-digitalocean";
-              href = "https://cloud.digitalocean.com/login";
               description = "";
             }
           ];

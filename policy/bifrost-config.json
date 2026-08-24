@@ -3,7 +3,9 @@
   "version": 2,
   "encryption_key": "env.BIFROST_ENCRYPTION_KEY",
   "client": {
-    "enable_logging": true
+    "enable_logging": true,
+    "disable_content_logging": true,
+    "log_retention_days": 7
   },
   "providers": {
     "gemini": {

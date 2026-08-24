@@ -14,6 +14,7 @@ in
     (modulesPath + "/installer/scan/not-detected.nix")
     (modulesPath + "/profiles/qemu-guest.nix")
     ../../modules/profiles/base-server.nix
+    ../../modules/profiles/fleet-standard.nix
     ../../modules/shared/web-policy.nix
     ../../modules/shared/kanidm-host-auth.nix
     ../../modules/shared/identity-oidc.nix
@@ -30,11 +31,10 @@ in
     ../../modules/services/karakeep.nix
     ../../modules/services/niks3.nix
     ../../modules/services/postgres-shared.nix
-    ../../modules/shared/niks3-post-deploy.nix
-    ../../modules/shared/nixbuild-ssh.nix
     ./cockpit-auth.nix
-  ]
-  ++ lib.optional (builtins.pathExists ./hardware-configuration.nix) ./hardware-configuration.nix;
+  ];
+
+  hardware.facter.reportPath = ./facter.json;
 
   networking.hostName = "oci-melb-1";
   services.resolved.enable = true;
@@ -50,9 +50,14 @@ in
     5432
     4533
   ];
+  networking.firewall.interfaces.audiomuse0.allowedTCPPorts = [
+    5432
+  ];
 
   disko.devices.disk.main.device = "/dev/sda";
   applications.music.enable = true;
+  applications.music.audiomuse.enable = true;
+  applications.music.traktorM3uSync.enable = false;
   applications.music.dataRoot = "/srv/data";
   applications.music.mediaRoot = "/srv/media";
   applications.music.secretFiles.host = ../../secrets/applications/music.yaml;
@@ -63,7 +68,7 @@ in
     secretFiles.host = ../../secrets/services/paperless.yaml;
     secretFiles.oidc = ../../secrets/hosts/oci-melb-1/oidc.yaml;
     oidc = {
-      enable = config.repo.web.hosts.do-admin-1.services.paperless.access.oidc.enabled;
+      enable = config.repo.web.catalog.paperless.access.oidc.enabled;
       clientId = config.services.identity.oidc.clients.paperless.clientId;
       wellknownUrl = config.services.identity.oidc.clients.paperless.wellknownUrl;
     };
@@ -79,15 +84,6 @@ in
   };
 
   boot.loader.grub.configurationLimit = 10;
-
-  programs.nh = {
-    enable = true;
-    clean = {
-      enable = true;
-      dates = "daily";
-      extraArgs = "--keep 3";
-    };
-  };
 
   services.journald.extraConfig = ''
     SystemMaxUse=300M
@@ -125,7 +121,7 @@ in
   };
 
   services.identity.oidc = {
-    providerUrl = config.repo.web.hosts.do-admin-1.services."kanidm-admin".publicUrl;
+    providerUrl = config.repo.web.catalog."kanidm-admin".publicUrl;
   };
 
   services.identity.hostAuth = {
@@ -148,7 +144,7 @@ in
   services.karakeep-pod = {
     enable = true;
     oidc = {
-      enable = config.repo.web.hosts.do-admin-1.services.karakeep.access.oidc.enabled;
+      enable = config.repo.web.catalog.karakeep.access.oidc.enabled;
       clientId = config.services.identity.oidc.clients.karakeep.clientId;
       wellknownUrl = config.services.identity.oidc.clients.karakeep.wellknownUrl;
       providerName = "Kanidm";
@@ -193,6 +189,11 @@ in
 
   services.tailscale = lib.mkIf hasHostSecrets { authKeyFile = "/run/secrets/tailscale.auth_key"; };
 
+  # Cap the LA-to-OCI Tailscale TUN MTU below the proven packet-size black hole.
+  # Host-scoped workaround: no enrollment, identity, tag, firewall, route, or
+  # experimental PMTUD change (see specs/network-access/spec.md).
+  systemd.services.tailscaled.environment.TS_DEBUG_MTU = "1200";
+
   services.hostRecovery = lib.mkIf hasHostSecrets {
     enable = true;
     secretFile = ../../secrets/hosts/oci-melb-1/system.yaml;
@@ -225,21 +226,12 @@ in
     secretFile = ../../secrets/services/postgres-shared.yaml;
     niks3.enable = true;
     paperless.enable = true;
+    audiomuse.enable = true;
     litellm.enable = true;
   };
 
-  services.niks3-auto-upload = {
-    enable = true;
-    serverUrl = "http://127.0.0.1:5751";
-    authTokenFile = "/run/secrets/niks3.api_token";
-  };
-  services.niks3-post-deploy.enable = true;
-
-  fleet.nixbuild-ssh.enable = true;
-
-  fleet.hostIdentity.sshPrivateKeyFile = ../../secrets/hosts/oci-melb-1/system.yaml;
-
-  services.tagr.backup.exportFile = "/srv/data/state-backups/tagr/tagr.sqlite3";
+  # Cache server runs locally here; fleet-standard defaults point peers at it.
+  services.niks3-auto-upload.serverUrl = "http://127.0.0.1:5751";
 
   programs.nix-ld = {
     enable = true;
@@ -260,15 +252,14 @@ in
 
     ntfy = {
       enable = true;
-      serverUrl = "https://ntfy.shrublab.xyz";
     };
 
     monitor = {
       enable = true;
       services = [
-        "beets-import-inbox"
-        "beets-reconcile-discovery"
-        "beets-duplicates-check"
+        "beets-inbox"
+        "beets-reconcile"
+        "beets-duplicates"
         "podman-storage-prune"
         "nh-clean-all"
         "beszel-agent"

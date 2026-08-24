@@ -1,19 +1,30 @@
 keys:
   - &owner_age age1w5asfm5rfncy4yvslj3az78kvn7hkrzq4vy0mzexf36w64a7e3nqamw3fp
   - &oci_melb_1_age age1lg45rhdn6mp856f97sdwxu7rpzyyz7edqwnldnpj67r6curnkqws7nn42a
-  - &do_admin_1_age age1a2masnj7tmwjl9azt75kh387lvwwz9vqfhqr0emghdcvu7x9jd9q4wv4aq
+  # LA replacement-host recipient. Must equal the age recipient derived from
+  # the LA SSH host key whose fingerprint is verified through the provider
+  # console. Derive it locally from the verified key, then persist:
+  #   just host-age from-key '<console-verified ssh-ed25519 AAAA...>' \
+  #     key_alias=la_admin_1_age update=true
+  # Live ssh-keyscan results are diagnostic only and must never be persisted.
+  - &la_admin_1_age age16gad4zg3h8mws60nyul0eezgpn888dk0fk7v8tm4rl04tchetuzslcrgjv
+  # home-forge age recipient — derived via ssh-to-age from the persistent
+  # SSH host key verified at the local console (gate 11.1). The deployed
+  # host decrypts this scope at activation time.
+  - &home_forge_age age1g7fxv2j35yqhzv4w6un5edsx9lca2ezv27flcghva46sj2635erqx778wt
 creation_rules:
   - path_regex: ^secrets/common\.ya?ml$
     key_groups:
       - age:
           - *owner_age
           - *oci_melb_1_age
-          - *do_admin_1_age
+          - *la_admin_1_age
+          - *home_forge_age
   - path_regex: ^secrets/opentofu/oidc\.ya?ml$
     key_groups:
       - age:
           - *owner_age
-          - *do_admin_1_age
+          - *la_admin_1_age
   - path_regex: ^secrets/opentofu/cloudflare\.ya?ml$
     key_groups:
       - age:
@@ -34,31 +45,25 @@ creation_rules:
     key_groups:
       - age:
           - *owner_age
-          - *do_admin_1_age
+          - *la_admin_1_age
   - path_regex: ^secrets/applications/edge-ingress\.ya?ml$
     key_groups:
       - age:
           - *owner_age
-          - *oci_melb_1_age
-          - *do_admin_1_age
+          - *la_admin_1_age
   # Service scopes (standalone leaf services)
   - path_regex: ^secrets/services/notification-daemon\.ya?ml$
     key_groups:
       - age:
           - *owner_age
           - *oci_melb_1_age
-          - *do_admin_1_age
+          - *la_admin_1_age
+          - *home_forge_age
   - path_regex: ^secrets/services/ntfy\.ya?ml$
     key_groups:
       - age:
           - *owner_age
-          - *do_admin_1_age
-  - path_regex: ^secrets/services/apprise\.ya?ml$
-    key_groups:
-      - age:
-          - *owner_age
-          - *oci_melb_1_age
-          - *do_admin_1_age
+          - *la_admin_1_age
   - path_regex: ^secrets/services/niks3\.ya?ml$
     key_groups:
       - age:
@@ -94,39 +99,43 @@ creation_rules:
     key_groups:
       - age:
           - *owner_age
-          - *do_admin_1_age
+          - *la_admin_1_age
   - path_regex: ^secrets/identity/provisioning\.json$
     key_groups:
       - age:
           - *owner_age
-          - *do_admin_1_age
+          - *la_admin_1_age
   # Host exception scopes: system (host/bootstrap-only, including recovery password hashes)
   - path_regex: ^secrets/hosts/oci-melb-1/system\.ya?ml$
     key_groups:
       - age:
           - *owner_age
           - *oci_melb_1_age
-  - path_regex: ^secrets/hosts/do-admin-1/system\.ya?ml$
+  - path_regex: ^secrets/hosts/la-admin-1/system\.ya?ml$
     key_groups:
       - age:
           - *owner_age
-          - *do_admin_1_age
+          - *la_admin_1_age
+  - path_regex: ^secrets/hosts/home-forge/system\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *home_forge_age
   # Host exception scopes: OIDC (cross-host identity handshake)
   - path_regex: ^secrets/hosts/oci-melb-1/oidc\.ya?ml$
     key_groups:
       - age:
           - *owner_age
           - *oci_melb_1_age
-          - *do_admin_1_age
-  - path_regex: ^secrets/hosts/do-admin-1/oidc\.ya?ml$
+          - *la_admin_1_age
+  - path_regex: ^secrets/hosts/la-admin-1/oidc\.ya?ml$
     key_groups:
       - age:
           - *owner_age
-          - *do_admin_1_age
-          - *oci_melb_1_age
+          - *la_admin_1_age
   # Firebase service key
   - path_regex: ^secrets/services/ntfy-firebase-key\.json$
     key_groups:
       - age:
           - *owner_age
-          - *do_admin_1_age
+          - *la_admin_1_age

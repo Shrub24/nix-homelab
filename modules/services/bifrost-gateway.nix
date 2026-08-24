@@ -19,6 +19,7 @@ let
   runtimeUid = 1000;
   runtimeGid = 1000;
   logsDir = "${appDir}/logs";
+  logsDbPath = "${appDir}/logs.db";
   cacheDir = "${appDir}/cache";
   vectorDir = "${appDir}/vector";
   environmentFile = config.sops.templates."bifrost.environment".path;
@@ -168,6 +169,9 @@ in
       paths = [ appDir ];
       exclude = [
         logsDir
+        logsDbPath
+        "${logsDbPath}-shm"
+        "${logsDbPath}-wal"
         cacheDir
         vectorDir
       ];

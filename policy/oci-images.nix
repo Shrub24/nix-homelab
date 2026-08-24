@@ -3,9 +3,7 @@
 {
   bifrost = "docker.io/maximhq/bifrost:v1.5.0-prerelease8@sha256:6080255cffdba8fa2abbc14e9b1f463f840dfc4ae5c4a7d47a7ca138b38cdb2c";
 
-  soulsync = "docker.io/boulderbadgedad/soulsync:2.3@sha256:b66edfd3991f1c21e4c28a8bbe71acc998cc156c78e36eb86dd1375667ccd5c7";
-
-  tagr = "ghcr.io/shrub24/tagr:latest@sha256:4b1844cc648e7ab83a14208fa15d68fd49d79f43c7403f87fe3139fed114c243";
+  tagr = "ghcr.io/suitux/tagr:sha-4ce3078@sha256:4dede3f8220e874fbfefecc0806f0ac427505de3de1d8f08922a117b70dccbd7";
 
   trek = "docker.io/mauriceboe/trek:latest@sha256:e1611b225e4401a7bd03b9cd6763ff5ba3c18c9f93bc972a8c2b0de4353275db";
 
@@ -18,6 +16,10 @@
   karakeepChrome = "gcr.io/zenika-hub/alpine-chrome:124@sha256:1a0046448e0bb6c275c88f86e01faf0de62b02ec8572901256ada0a8c08be23f";
 
   karakeepMeilisearch = "getmeili/meilisearch:v1.49.0@sha256:bdc7d7e7939911c40d88d6bcd01f9c72c81f7293135916d48bce241569f721bd";
+
+  audiomuse = "ghcr.io/neptunehub/audiomuse-ai:latest@sha256:ec1824ae02198756ce4bd84c1cc67f1eec074084d81d73f8fb4bd831449e3de1";
+
+  redis7Alpine = "docker.io/library/redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99";
 
   guacd = "docker.io/guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f";
 

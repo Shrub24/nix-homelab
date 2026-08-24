@@ -15,7 +15,7 @@ Repository CI workflows SHALL execute build-heavy Nix validation through `nixbui
 Active hosts SHALL support a common substituter/trust baseline that prioritizes `nixbuild.net` as the first substituter and the sovereign S3-backed binary cache as the durable secondary tier, with `cache.nixos.org` as the upstream fallback.
 
 #### Scenario: Host build configuration is evaluated
-- **WHEN** `nixosConfigurations.do-admin-1` and `nixosConfigurations.oci-melb-1` are evaluated
+- **WHEN** `nixosConfigurations.la-admin-1` and `nixosConfigurations.oci-melb-1` are evaluated
 - **THEN** both include `ssh://eu.nixbuild.net` as the first substituter
 - **AND** both include the sovereign S3 cache as the second substituter
 - **AND** both include `https://cache.nixos.org` as the upstream fallback
@@ -39,6 +39,6 @@ Pushes to `main` SHALL trigger validation and then host deployment in determinis
 
 #### Scenario: Main merge deployment is executed
 - **WHEN** CI/CD runs on push to `main`
-- **THEN** deployment runs `do-admin-1` before `oci-melb-1`
+- **THEN** deployment runs `la-admin-1` before `oci-melb-1`
 - **AND** failure on the first host stops further deployment for that run
 

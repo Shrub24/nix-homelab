@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOST="${1:-do-admin-1}"
+HOST="${1:-la-admin-1}"
 
 mkdir -p generated/policy
 nix eval --impure --json --no-write-lock-file --expr '

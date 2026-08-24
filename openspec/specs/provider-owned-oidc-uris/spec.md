@@ -20,7 +20,7 @@ Service modules and host configurations that require OIDC endpoint URIs SHALL re
 - **AND** no independent base URL string interpolation is used to derive the issuer URL
 
 #### Scenario: Host-level OIDC env templates consume SSOT endpoints
-- **WHEN** `do-admin-1` termix-oidc.env template is rendered
+- **WHEN** `la-admin-1` termix-oidc.env template is rendered
 - **THEN** OIDC endpoint values are sourced from canonical provider-owned `oidc.*` outputs
 - **AND** no host-local URL construction is used for endpoint values
 

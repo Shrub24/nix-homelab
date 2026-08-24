@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change phase1-caddy-edge-proxy. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Single-domain ingress supports flat subdomain routing
 The ingress layer SHALL support serving services under one primary domain using flat subdomain routing for phase-1 host rollout, with the primary domain value sourced from canonical policy/config rather than duplicated literals in multiple modules.
 
@@ -151,28 +153,20 @@ Traffic filtering and firewalling for exposed traffic in this rollout SHALL be h
 - **THEN** Cloudflare firewall/WAF/traffic policies are the primary blocking layer
 - **AND** CrowdSec host-layer controls are not required in this change scope
 
-### Requirement: SoulSync route SHALL be exposed through canonical gated edge policy
-SoulSync SHALL be exposed as a declared web service route through the canonical `do-admin-1` edge-ingress policy path, using `tailscale-upstream` transport to private origin.
+### Requirement: Music route SHALL be exposed through canonical edge policy
+Music/Navidrome SHALL be exposed as a declared web service route through canonical edge-ingress policy, using `tailscale-upstream` transport to private origin.
 
-#### Scenario: SoulSync route is declared in canonical policy
-- **WHEN** policy maps are resolved for `do-admin-1`
-- **THEN** a `soulsync` route is rendered with `tailscale-upstream` origin transport
+#### Scenario: Music route is declared in canonical policy
+- **WHEN** policy maps are resolved for the edge host
+- **THEN** a `music` route is rendered with `tailscale-upstream` origin transport
 
-### Requirement: SoulSync public route SHALL enforce Cloudflare Access and AOP
-The SoulSync route SHALL require Cloudflare Access gating and SHALL require Authenticated Origin Pulls (AOP) under the host-level route policy model.
+### Requirement: Music public route SHALL enforce Cloudflare Access and AOP
+The music route SHALL require Cloudflare Access gating and SHALL require Authenticated Origin Pulls (AOP) under host-level route policy.
 
-#### Scenario: SoulSync route policy is rendered
+#### Scenario: Music route policy is rendered
 - **WHEN** edge route attributes are generated from canonical web-services policy
-- **THEN** `cloudflareAccessRequired` is enforced for SoulSync
+- **THEN** `cloudflareAccessRequired` is enforced for the music route
 - **AND** authenticated origin pulls are required for the host/route set
-
-### Requirement: SoulSync day-1 public posture SHALL be control-plane first
-SoulSync public exposure SHALL prioritize control-plane/UI use, with best-effort suppression of playback affordances when practical, and SHALL document residual playback behavior if suppression is incomplete.
-
-#### Scenario: Playback suppression capability is limited upstream
-- **WHEN** SoulSync lacks a clean supported full player-disable switch
-- **THEN** rollout remains permitted under Access-gated/AOP-protected route policy
-- **AND** residual playback affordances are documented as an operational limitation
 
 ### Requirement: Trusted proxy CIDRs SHALL remain single-source for edge reverse-proxy trust behavior
 The CIDR source used to trust reverse-proxy client IP headers SHALL remain centrally declared and SHALL drive rendered edge trusted-proxy configuration.
@@ -187,10 +181,10 @@ The CIDR source used to trust reverse-proxy client IP headers SHALL remain centr
 - **THEN** rendered reverse-proxy trust behavior changes from that same declared input source
 
 ### Requirement: Tagr route SHALL be exposed through canonical gated edge policy
-Tagr SHALL be exposed as a declared web service route through canonical `do-admin-1` edge-ingress policy using `tailscale-upstream` transport to private origin.
+Tagr SHALL be exposed as a declared web service route through canonical `la-admin-1` edge-ingress policy using `tailscale-upstream` transport to private origin.
 
 #### Scenario: Tagr route is declared in canonical policy
-- **WHEN** policy maps are resolved for `do-admin-1`
+- **WHEN** policy maps are resolved for `la-admin-1`
 - **THEN** a `tagr` route is rendered with `tailscale-upstream` origin transport to `oci-melb-1`
 
 ### Requirement: Tagr public route SHALL enforce Cloudflare Access and AOP
@@ -202,10 +196,10 @@ The Tagr route SHALL require Cloudflare Access gating and SHALL require Authenti
 - **AND** authenticated origin pulls are required for the Tagr host/route set
 
 ### Requirement: Karakeep route SHALL be exposed through canonical edge policy
-Karakeep SHALL be exposed as a declared web service route through canonical `do-admin-1` edge-ingress policy using `tailscale-upstream` transport to private origin on `oci-melb-1`.
+Karakeep SHALL be exposed as a declared web service route through canonical `la-admin-1` edge-ingress policy using `tailscale-upstream` transport to private origin on `oci-melb-1`.
 
 #### Scenario: Karakeep route is declared in canonical policy
-- **WHEN** policy maps are resolved for `do-admin-1`
+- **WHEN** policy maps are resolved for `la-admin-1`
 - **THEN** a `karakeep` route is rendered with `tailscale-upstream` origin transport to `oci-melb-1`
 - **AND** route ownership remains single-sourced in `policy/web-services.nix`
 
@@ -217,3 +211,10 @@ The Karakeep route SHALL NOT require Cloudflare Access gating, and SHALL require
 - **THEN** `cloudflareAccessRequired` is disabled for `karakeep`
 - **AND** authenticated origin pulls are required for the Karakeep host/route set
 
+### Requirement: Edge-host replacement SHALL preserve declared public routes
+Moving the designated edge host SHALL preserve the public URL, Cloudflare Access posture, AOP posture, and declared origin transport of every route in canonical web policy except explicitly approved admin-route changes.
+
+#### Scenario: Policy is resolved for the replacement edge
+- **WHEN** `la-admin-1` becomes the designated edge host
+- **THEN** all declared routes resolve through that host without duplicate route ownership
+- **AND** route-specific Cloudflare Access exceptions remain unchanged

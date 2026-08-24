@@ -3,7 +3,9 @@
 ## Purpose
 
 Define private administrative access contracts for hosts, including Tailscale SSH, Termix access, and break-glass recovery.
+
 ## Requirements
+
 ### Requirement: Admin access remains private and Tailscale-first
 Administrative access SHALL remain private and Tailscale-first by default, while allowing explicit Cloudflare Access-gated web ingress at the public edge bastion with private-origin upstream transport for approved admin routes.
 
@@ -78,7 +80,7 @@ This stage SHALL provide centralized operational visibility using Cockpit and Be
 The admin baseline SHALL support app-native OIDC using Kanidm as shared issuer for the phase-1 app set (`gatus`, `beszel`, `termix`, `quantum`) while keeping explicit exceptions for services that are not in scope for this auth wave and deferring unixd/PAM/SSH host login rollout until after OIDC parity.
 
 #### Scenario: Phase-1 supported apps are OIDC-enabled
-- **WHEN** the admin baseline is rendered for `do-admin-1`
+- **WHEN** the admin baseline is rendered for `la-admin-1`
 - **THEN** `gatus`, `beszel`, `termix`, and `quantum` include app-level OIDC wiring using Kanidm issuer endpoints and scoped credentials
 
 #### Scenario: Cloudflare Access upstream IdP is Kanidm
@@ -109,8 +111,8 @@ Cockpit service wiring SHALL include the upstream `cockpit-ws-user.service` depe
 ### Requirement: Gatus endpoint inventory SHALL derive from web services policy
 Admin monitoring wiring SHALL derive Gatus endpoint inventory for a host from resolved service entries in `policy/web-services.nix` via policy resolution helpers, using policy-defined origin and health metadata.
 
-#### Scenario: Gatus endpoint generation runs for do-admin-1
-- **WHEN** admin monitoring configuration is rendered for `do-admin-1`
+#### Scenario: Gatus endpoint generation runs for la-admin-1
+- **WHEN** admin monitoring configuration is rendered for `la-admin-1`
 - **THEN** Gatus endpoints are generated from resolved host services in `policy/web-services.nix`
 - **AND** endpoint URLs use resolved origin values plus service health path metadata
 
@@ -135,7 +137,7 @@ Homepage layout/services/bookmarks metadata SHALL remain owned by Homepage servi
 Homepage widgets that require authentication SHALL consume caller-owned machine-auth inputs provided through Homepage runtime environment templating, while preserving Homepage presentation ownership.
 
 #### Scenario: Homepage widget config is rendered for authenticated integrations
-- **WHEN** Homepage services are assembled for `do-admin-1`
+- **WHEN** Homepage services are assembled for `la-admin-1`
 - **THEN** authenticated widgets use Homepage runtime variables sourced from host-scoped secrets/templates
 - **AND** Homepage layout/icons/grouping/bookmarks remain owned by Homepage service files
 
@@ -167,7 +169,7 @@ Homepage integrations that run without app credentials SHALL be explicit excepti
 Homepage integration for Gatus SHALL use a local unauthenticated API path, and Gatus SHALL be explicitly bound to loopback so that this unauthenticated API surface is not exposed beyond the local host.
 
 #### Scenario: Homepage retrieves Gatus data over local API
-- **WHEN** Homepage Gatus widget/integration is configured on `do-admin-1`
+- **WHEN** Homepage Gatus widget/integration is configured on `la-admin-1`
 - **THEN** Homepage requests use local API access without bearer/basic/OIDC credentials
 - **AND** Gatus web listener is explicitly configured with loopback bind (`127.0.0.1`)
 
@@ -191,17 +193,17 @@ This change SHALL NOT require Quantum widget machine-auth wiring.
 The admin baseline SHALL expose Quantum as the file-management UI in place of Filebrowser, with local and remote host data sources configured declaratively.
 
 #### Scenario: Quantum replaces the legacy file-management service
-- **WHEN** the admin baseline is evaluated for `do-admin-1`
+- **WHEN** the admin baseline is evaluated for `la-admin-1`
 - **THEN** Filebrowser-specific admin wiring is absent
 - **AND** Quantum is provided through `services.admin.quantum`
 - **AND** Quantum state is mapped under `${applications.admin.dataRoot}/quantum`
 
 ### Requirement: Quantum SHALL support host-local and remote data sources
-Quantum on `do-admin-1` SHALL expose a local source for that host and remote sources for approved hosts using the declared transport model for each source.
+Quantum on `la-admin-1` SHALL expose a local source for that host and remote sources for approved hosts using the declared transport model for each source.
 
 #### Scenario: Quantum source topology is rendered
-- **WHEN** `do-admin-1` admin services are evaluated
-- **THEN** Quantum exposes a host-local source for `do-admin-1`
+- **WHEN** `la-admin-1` admin services are evaluated
+- **THEN** Quantum exposes a host-local source for `la-admin-1`
 - **AND** approved remote sources remain explicitly declared rather than discovered implicitly
 
 ### Requirement: Quantum auth SHALL support Pocket ID OIDC with controlled fallback
@@ -217,22 +219,22 @@ Cockpit access SHALL be exposed as separate per-host sessions rather than relyin
 
 #### Scenario: Operator opens Cockpit from the admin surface
 - **WHEN** Cockpit entrypoints are presented to operators
-- **THEN** `do-admin-1` and `oci-melb-1` are exposed as separate entrypoints
+- **THEN** `la-admin-1` and `oci-melb-1` are exposed as separate entrypoints
 
 ### Requirement: Vaultwarden SHALL expose a production-oriented mail-capable baseline
-Vaultwarden service wiring on `do-admin-1` SHALL define a production-oriented baseline including resolved public domain settings, invite-only account posture, SMTP delivery settings, push capability, and explicit security tuning.
+Vaultwarden service wiring on `la-admin-1` SHALL define a production-oriented baseline including resolved public domain settings, invite-only account posture, SMTP delivery settings, push capability, and explicit security tuning.
 
 #### Scenario: Vaultwarden admin service is evaluated
-- **WHEN** `applications.admin` enables Vaultwarden for `do-admin-1`
+- **WHEN** `applications.admin` enables Vaultwarden for `la-admin-1`
 - **THEN** Vaultwarden config includes resolved public URL/domain inputs and reverse-proxy-aware headers
 - **AND** signup posture defaults to invite-only operation rather than open self-service registration
 - **AND** push and operational security settings are declared in the service baseline
 
 ### Requirement: Vaultwarden SMTP secrets SHALL be host-scoped and template-rendered
-Vaultwarden SMTP and admin runtime secrets for `do-admin-1` SHALL be rendered from host-scoped SOPS secrets into a service-owned environment file.
+Vaultwarden SMTP and admin runtime secrets for `la-admin-1` SHALL be rendered from host-scoped SOPS secrets into a service-owned environment file.
 
 #### Scenario: Vaultwarden secret template is rendered
-- **WHEN** the host secret configuration for `do-admin-1` is evaluated
+- **WHEN** the host secret configuration for `la-admin-1` is evaluated
 - **THEN** Vaultwarden admin token, SMTP credentials, and push credentials are sourced from host-scoped secrets
 - **AND** the generated environment file is owned and permissioned for the Vaultwarden service only
 - **AND** `LoginTo` remains disabled for the shared public Cockpit surface
@@ -245,11 +247,11 @@ Cockpit-specific loopback TLS generation, trusted upstream configuration, and Ta
 - **THEN** Cockpit transport behavior is defined in Cockpit-owned modules
 - **AND** host overlays contain only host-specific Cockpit inputs
 
-### Requirement: do-admin-1 local Cockpit upstream SHALL use explicit trusted loopback TLS
-The `do-admin-1` Cockpit public subpath SHALL proxy to the local Cockpit listener over HTTPS using a host-local CA and explicit upstream trust, without steady-state `tls_insecure_skip_verify`.
+### Requirement: la-admin-1 local Cockpit upstream SHALL use explicit trusted loopback TLS
+The `la-admin-1` Cockpit public subpath SHALL proxy to the local Cockpit listener over HTTPS using a host-local CA and explicit upstream trust, without steady-state `tls_insecure_skip_verify`.
 
-#### Scenario: do-admin-1 local Cockpit upstream is rendered
-- **WHEN** the `cockpit-do-admin-1` route is evaluated
+#### Scenario: la-admin-1 local Cockpit upstream is rendered
+- **WHEN** the `cockpit-la-admin-1` route is evaluated
 - **THEN** the upstream uses HTTPS to the local Cockpit listener
 - **AND** Caddy trusts a declaratively generated local CA for that hop
 - **AND** insecure upstream TLS verification bypass is not required in steady state
@@ -278,3 +280,10 @@ Syncthing administrative browser access SHALL remain private-first and MAY be ex
 - **THEN** the operator can reach the host’s Syncthing UI through the canonical admin URL for that host-specific subpath
 - **AND** the access path remains compatible with existing private-origin and admin access controls
 
+### Requirement: Local-admin Cockpit path SHALL identify the LA host
+The local-admin Cockpit route SHALL use `/la-admin-1` as its deliberate public path and SHALL use a host-neutral internal policy key.
+
+#### Scenario: Local-admin Cockpit route is resolved
+- **WHEN** LA admin Cockpit policy is rendered
+- **THEN** the public path is `/la-admin-1`
+- **AND** the internal route key does not contain `la-admin-1`

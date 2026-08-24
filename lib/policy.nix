@@ -154,4 +154,59 @@ rec {
 
   hostPorts =
     policy: hostName: lib.mapAttrs (_: svc: svc.origin.port) (resolveHostServices policy hostName);
+
+  # Cross-host catalog projection: canonical public URL, access, and health
+  # metadata only. Edge-local transport fields (origin, upstream, healthUrl)
+  # stay out of the catalog so consumers cannot depend on a physical origin.
+  mkCatalogEntry = serviceName: resolved: {
+    service = serviceName;
+    inherit (resolved)
+      publicUrl
+      publicHost
+      primaryDomain
+      subdomain
+      path
+      category
+      declarePublic
+      exposureMode
+      access
+      health
+      ;
+  };
+
+  serviceCatalog =
+    policy:
+    let
+      hosts = policy.hosts or { };
+      allServices = lib.concatLists (
+        lib.mapAttrsToList (
+          hostName: _:
+          lib.mapAttrsToList (serviceName: resolved: {
+            inherit hostName serviceName resolved;
+          }) (resolveHostServices policy hostName)
+        ) hosts
+      );
+
+      byServiceId = builtins.groupBy (entry: entry.serviceName) allServices;
+
+      duplicateIds = lib.filterAttrs (_: entries: builtins.length entries > 1) byServiceId;
+
+      duplicateMessage = lib.concatStringsSep ", " (
+        map (id: "${id} (${lib.concatMapStringsSep ", " (entry: entry.hostName) duplicateIds.${id}})") (
+          builtins.attrNames duplicateIds
+        )
+      );
+
+      checked =
+        if duplicateIds == { } then
+          allServices
+        else
+          throw "Duplicate service catalog key(s) in policy/web-services.nix: ${duplicateMessage}";
+    in
+    builtins.listToAttrs (
+      map (entry: {
+        name = entry.serviceName;
+        value = mkCatalogEntry entry.serviceName entry.resolved;
+      }) checked
+    );
 }

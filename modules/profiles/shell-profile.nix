@@ -43,7 +43,10 @@ in
       nix-du
     ];
 
-    environment.shellAliases = {
+    # nixpkgs ships default `ls`/`ll`/`l` aliases via mkDefault; clear the
+    # global set with mkForce so root/rescue Bash stays stock.
+    environment.shellAliases = lib.mkForce { };
+    programs.zsh.shellAliases = {
       ls = "eza --group-directories-first";
       ll = "eza -lh --group-directories-first";
       la = "eza -lah --group-directories-first";
@@ -52,7 +55,6 @@ in
       rg = "rg --smart-case --hidden --glob '!.git'";
     };
 
-    users.defaultUserShell = pkgs.zsh;
     programs.mosh.enable = true;
 
     programs.zsh = {
@@ -76,20 +78,25 @@ in
 
     environment.etc."zsh/p10k.zsh".text = builtins.readFile ./p10k.zsh;
 
-    system.activationScripts.dev-zshrc = ''
-      if [ -d /home/dev ]; then
-        if [ ! -e /home/dev/.zshrc ]; then
-          install -m 0644 -o dev -g users /dev/null /home/dev/.zshrc
-        fi
+    # `deps = [ "users" ]` keeps this after home creation; otherwise the first
+    # dev login on a fresh boot hits zsh-newuser-install.
+    system.activationScripts.dev-zshrc = {
+      deps = [ "users" ];
+      text = ''
+        if [ -d /home/dev ]; then
+          if [ ! -e /home/dev/.zshrc ]; then
+            install -m 0644 -o dev -g users /dev/null /home/dev/.zshrc
+          fi
 
-        if ! grep -Fq '[ -f /etc/zsh/p10k.zsh ] && source /etc/zsh/p10k.zsh' /home/dev/.zshrc; then
-          printf '\n[ -f /etc/zsh/p10k.zsh ] && source /etc/zsh/p10k.zsh\n' >> /home/dev/.zshrc
-        fi
+          if ! grep -Fq '[ -f /etc/zsh/p10k.zsh ] && source /etc/zsh/p10k.zsh' /home/dev/.zshrc; then
+            printf '\n[ -f /etc/zsh/p10k.zsh ] && source /etc/zsh/p10k.zsh\n' >> /home/dev/.zshrc
+          fi
 
-        chown dev:users /home/dev/.zshrc
-        chmod 0644 /home/dev/.zshrc
-      fi
-    '';
+          chown dev:users /home/dev/.zshrc
+          chmod 0644 /home/dev/.zshrc
+        fi
+      '';
+    };
 
     systemd.tmpfiles.settings."wezterm" = lib.mkIf weztermCfg.enable {
       "/home/${weztermCfg.user}/.local/share/wezterm".d = {

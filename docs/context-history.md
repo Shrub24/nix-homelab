@@ -26,6 +26,8 @@ The project direction was intentionally changed to:
 
 The previous `dev-vps` and `repo-sync` emphasis was explicitly de-prioritized for this repository.
 
+The admin/edge/identity host later moved again: `la-admin-1` is now the active x86_64 admin, edge, and Kanidm/OIDC host, adopted non-destructively from its preinstalled NixOS system, with `do-admin-1` retained as an undeployed rollback source until the LA backup/recovery gates pass and it is decommissioned.
+
 ## Research And Validation Outcomes
 
 During planning and research, the selected direction was validated as idiomatic and modern for current NixOS workflows:
@@ -40,6 +42,7 @@ Tooling stance that emerged:
 
 - keep first host path simple
 - bootstrap remains `nixos-anywhere`, while regular updates now use `deploy-rs`
+- preinstalled NixOS systems are adopted non-destructively per the canonical runbook (`docs/runbooks/host-initialization.md`), with `nixos-anywhere`/`disko` reserved for the destructive reimage path
 - structure repository now so later tooling adoption is low-friction
 - keep host bootstrap/secret workflows host-key driven with clear default and advanced variants
 
@@ -111,12 +114,19 @@ The migration intent is intentionally aggressive:
 As of this planning update:
 
 - first host name is fixed: `oci-melb-1`
-- second host name is fixed: `do-admin-1`
+- active admin/edge/identity host is fixed: `la-admin-1`
+- second host name is fixed: `do-admin-1`, retained only as an undeployed rollback source until decommission
+- serial deploy order is `la-admin-1` before `oci-melb-1`; `do-admin-1` is absent from `deployOrder` and CI
+- the local-admin Cockpit public path is `cockpit.shrublab.xyz/la-admin-1`
+- cross-host consumers resolve stable service IDs through the policy catalog (`config.repo.web.catalog`); physical deployment facts (`edgeHost`, `deployOrder`) stay only in `lib/deploy/hosts.nix`
+- LA adoption of its preinstalled NixOS system is separate from later AU edge and US-East workload work
+- canonical runbooks: `docs/runbooks/host-initialization.md` (generic bring-up) and `docs/runbooks/admin-host-migration.md` (LA transfer facts)
+- Open WebUI deployment is deferred until the migration cutover and backup gates pass
 - architecture direction is fleet-first, modular, and native-service-first
 - active host path is `hosts/oci-melb-1/default.nix`
-- active second host path is `hosts/do-admin-1/default.nix`
+- active admin host path is `hosts/la-admin-1/default.nix`
+- rollback host path is `hosts/do-admin-1/default.nix`
 - active provider boundary is `modules/providers/oci/default.nix`
-- active second provider boundary is `modules/providers/digitalocean/default.nix`
 - active storage boundary is `modules/storage/disko-root.nix`
 - active single-disk storage boundary is `modules/storage/disko-single-disk.nix`
 - active reusable module boundaries are `modules/core/base.nix`, `modules/profiles/base-server.nix`, and `modules/services/tailscale.nix`

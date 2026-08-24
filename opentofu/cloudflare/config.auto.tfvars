@@ -11,7 +11,7 @@ aop_enabled = true
 
 managed_waf_enabled                = true
 firewall_country_allowlist_enabled = true
-firewall_allowed_countries         = ["AU", "GB"]
+firewall_allowed_countries         = ["AU", "GB", "US"]
 rate_limit_enabled                 = true
 rate_limit_characteristics         = ["ip.src", "cf.colo.id"]
 rate_limit_requests_per_period     = 200

@@ -91,6 +91,8 @@ The exact file tree can evolve, but the intended shape is:
 - `modules/applications/<name>/default.nix` for feature composition roots (multi-service stacks), e.g. `modules/applications/music.nix`
 - `modules/services/<domain>/<name>.nix` for reusable service modules grouped by domain (e.g. `modules/services/music/navidrome.nix`, `modules/services/music/audiomuse.nix`, `modules/services/music/syncthing.nix`)
 - `modules/services/<name>.nix` for standalone leaf service modules outside a domain subtree
+- `modules/services/virtualisation/windows-vm.nix` for the reusable declarative Windows VM layer (libvirt instances, attachment to the host-owned always-on bridge, loopback SPICE, virtiofs shares)
+- `modules/applications/dj/` for the DJ composition root (Engine DJ library hosting on a Windows VM; see `docs/runbooks/engine-dj-guest-setup.md`)
 - `modules/core/base.nix` for shared baseline NixOS policy
 - `modules/core/users.nix` for shared user declarations
 - `modules/profiles/base-server.nix` for common host profile composition, including shared Nix substitute/trust defaults

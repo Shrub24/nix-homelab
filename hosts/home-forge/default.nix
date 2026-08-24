@@ -17,6 +17,7 @@ in
     ../../modules/services/notification-daemon
     ../../modules/storage/disko-two-disk.nix
     ../../modules/core/users.nix
+    ../../modules/applications/dj
   ];
 
   networking.hostName = "home-forge";
@@ -115,6 +116,16 @@ in
     secretFiles.host = ../../secrets/services/notification-daemon.yaml;
     secretFiles.hostSystem = ../../secrets/hosts/home-forge/system.yaml;
     ntfy.enable = true;
+  };
+
+  # Engine DJ on a Windows VM: library DB on /srv/data/engine-dj/library,
+  # music shared read-only from the bulk disk, SC6000 reachable over the
+  # eno1 bridge. Guest installation runs through the
+  # windows-vm-windows-dj-install command (runbook); config never changes
+  # for the install lifecycle.
+  applications.dj = {
+    enable = true;
+    engine.enable = true;
   };
 
   system.stateVersion = "25.11";

@@ -807,6 +807,29 @@ References:
 
 - D-031 for the boot-time cutover discipline, and the change specs/design `openspec/changes/adopt-native-systemd-networkd/{design,specs/host-networking/spec,specs/network-access/spec}.md`
 
+## D-044: Windows workloads run in a declarative libvirt VM layer; Engine DJ library stays on Linux ext4
+
+Status: Accepted
+
+Decision:
+
+- `modules/services/virtualisation/windows-vm.nix` provides a reusable layer: declarative instances (vcpu, memory, disk, autostart, SPICE port, TPM, install ISO), virtiofs shares keyed by mount tag, and per-instance systemd controller units over libvirt domains
+- guests attach to the host-owned always-on `br0` bridge over `eno1` (fleet networking aspect, D-043); the VM layer only consumes the bridge and never creates or owns physical networking — macvtap and VFIO passthrough are rejected because Remote Library discovery needs same-L2 broadcast and host↔guest reachability
+- SPICE binds to loopback only; operators tunnel over Tailscale via SSH
+- Engine DJ (`modules/applications/dj/`) is the first consumer: the SQLite library database lives at `/srv/data/engine-dj/library` on ext4, exposed read-write via virtiofs; music is shared read-only from `/srv/storage/music`
+- single-writer discipline is enforced by unit dependencies: future Linux sync workers bind to `dj-library-writers.target`, which conflicts with the VM controller unit; restic backups quiesce the VM through state-backups prepare/cleanup hooks
+- guest software installation (Windows, virtio-win drivers, Engine DJ ≥ 4.3.4) is operator-driven per `docs/runbooks/engine-dj-guest-setup.md`, including the one-time `mklink /D` that pins the guest library path
+- SQLite-over-virtiofs tolerance for Engine DJ is unproven upstream; a validation gate precedes production reliance, with fallback to a guest-local database plus copy-in/copy-out exchange during VM-stopped windows
+
+Rationale:
+
+- keeps the library database readable by libdjinterop workers without foreign filesystem mounts, while the SC6000 consumes it as a native Engine Remote Library source
+- a shared VM layer prevents each future Windows-only workload (e.g. Lexicon/rekordbox USB export) from spawning ad-hoc virtualization
+- kernel-mediated mutual exclusion beats lockfiles and hooks for write-authority discipline
+
+References:
+
+- windows-vm-engine-dj change proposal/design/specs
 These are known but intentionally unresolved until implementation and operational learning justify final decisions.
 
 - when to introduce service-scoped secret files for movable workloads

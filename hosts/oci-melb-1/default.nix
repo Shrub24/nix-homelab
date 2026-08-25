@@ -15,6 +15,7 @@ in
     (modulesPath + "/profiles/qemu-guest.nix")
     ../../modules/profiles/base-server.nix
     ../../modules/profiles/fleet-standard.nix
+    ../../modules/profiles/networking.nix
     ../../modules/shared/web-policy.nix
     ../../modules/shared/kanidm-host-auth.nix
     ../../modules/shared/identity-oidc.nix
@@ -35,13 +36,17 @@ in
   ];
 
   hardware.facter.reportPath = ./facter.json;
-
   networking.hostName = "oci-melb-1";
-  services.resolved.enable = true;
-  networking.nameservers = [
-    "1.1.1.1"
-    "8.8.8.8"
-  ];
+
+  fleet.networking = {
+    uplink.interface = "enp0s6";
+    uplink.ipv6AcceptRA = false;
+    dns.servers = [
+      "1.1.1.1"
+      "8.8.8.8"
+    ];
+  };
+
   networking.firewall.interfaces.podman0.allowedTCPPorts = [
     5030
     4533

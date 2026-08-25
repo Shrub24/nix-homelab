@@ -321,6 +321,18 @@ Adding a new OCI image:
 
 ## Network and Access Model
 
+### Network ownership (native systemd-networkd)
+
+Fleet hosts own physical networking through the import-activated networking aspect (`modules/profiles/networking.nix`), not scripted networking or dhcpcd:
+
+- hosts import the aspect and supply required `fleet.networking` facts: the uplink interface, plus bridge name and MAC when bridged, and a DNS override only when pinned
+- the aspect emits native `systemd.network.{networks,netdevs}` units matched by exact interface name only — Podman bridges, `tailscale0`, veth, and libvirt links stay unmanaged by construction
+- physical addressing is DHCPv4 with MAC-based client identity so provider/router leases and reservations survive
+- `systemd-resolved` is the fleet resolver engine; per-link provider/DHCP DNS stays primary for routing domains, with `FallbackDNS` resilience
+- `home-forge` runs an always-on host-owned `br0` bridge over `eno1` with a pinned MAC so the router reservation holds; applications do not own physical networking
+- `oci-melb-1` disables `IPv6AcceptRA` on its uplink until the provider provisions IPv6
+- network-owner cutovers are boot-staged (`deploy-rs --boot`), validated after a console reboot, then proven repeatable with a second ordinary reboot
+
 Current model:
 
 - Cloudflare + Caddy on `la-admin-1` is the public edge bastion for explicitly declared web routes

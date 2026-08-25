@@ -7,6 +7,7 @@
   imports = [
     ../../modules/profiles/base-server.nix
     ../../modules/profiles/fleet-standard.nix
+    ../../modules/profiles/networking.nix
     ../../modules/shared/web-policy.nix
     ../../modules/shared/kanidm-host-auth.nix
     ../../modules/applications/admin/default.nix
@@ -50,6 +51,10 @@
   };
 
   networking.hostName = "la-admin-1";
+
+  # Networking aspect fact: ens18 is the LA uplink (design D4/D8). RA defaults
+  # kept, no bridge, no pinned DNS today.
+  fleet.networking.uplink.interface = "ens18";
 
   # Quantum deferred on LA for the initial cutover: force-disables the
   # ./quantum.nix import (which sets enable = true); OIDC wiring stays intact.

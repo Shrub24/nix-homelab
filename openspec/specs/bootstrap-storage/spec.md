@@ -47,20 +47,22 @@ The preinstalled LA host SHALL use captured disk, boot, and network facts; its f
 - **AND** no destructive disk action or live network replacement occurs
 
 ### Requirement: LA hardware facts SHALL be host-local and committed
-The LA host SHALL use a `nixos-facter` report generated as root on the LA guest without swap or ephemeral capture. The report SHALL be committed with the LA host configuration and selected directly through `hardware.facter.reportPath`; reports SHALL NOT be shared between hosts or translated into hand-written driver, virtualisation, or interface configuration.
+The LA host SHALL use a `nixos-facter` report generated as root on the LA guest without swap or ephemeral capture. The report SHALL be committed with the LA host configuration and selected directly through `hardware.facter.reportPath`; reports SHALL NOT be shared between hosts or translated into hand-written driver or virtualisation configuration. The fleet networking aspect SHALL disable facter's detected-DHCP backend and derive interface/DHCP ownership from explicit `fleet.networking` host facts.
 
 #### Scenario: LA hardware configuration evaluates
 - **WHEN** `la-admin-1` is evaluated
 - **THEN** its hardware-dependent configuration reads `hosts/la-admin-1/facter.json`
-- **AND** KVM, UEFI, disk, and DHCP configuration derive from that host-local report
+- **AND** KVM, UEFI, and disk configuration derive from that host-local report
+- **AND** native networkd and DHCP configuration derive from the host's `fleet.networking` uplink facts
 
 ### Requirement: Existing filesystem mounts SHALL remain a minimal explicit adoption boundary
-Because nixos-facter does not report filesystems, LA SHALL declare only the observed root and ESP by-UUID mounts required to preserve its existing installation. It SHALL NOT add hand-maintained hardware, driver, or network-interface configuration beside those mounts.
+Because nixos-facter does not report filesystems, LA SHALL declare only the observed root and ESP by-UUID mounts required to preserve its existing installation. It SHALL NOT add hand-maintained hardware or driver configuration beside those mounts; physical interface and DHCP ownership SHALL be expressed through the fleet networking aspect rather than duplicated raw networkd units.
 
 #### Scenario: LA mounts its adopted disk
 - **WHEN** LA boots the first fleet generation
 - **THEN** its root and ESP mount through the observed UUIDs
-- **AND** all other hardware and DHCP behavior derives directly from the facter report
+- **AND** all other hardware behavior derives directly from the facter report
+- **AND** DHCP/interface behavior derives from the fleet networking aspect
 
 ### Requirement: LA SHALL preserve its existing systemd-boot authority
 The LA host SHALL preserve its current UEFI systemd-boot ESP and SHALL explicitly avoid inheriting the fleet base module's GRUB removable-media configuration.

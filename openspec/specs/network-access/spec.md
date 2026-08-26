@@ -22,11 +22,16 @@ Management and service access SHALL be private and Tailscale-first by default, w
 - **THEN** it is treated as an explicit, edge-local-only localhost exception to the Tailscale-upstream default and is constrained to declared exposure policy
 
 ### Requirement: Tailscale integration is standardized
-Hosts SHALL use standardized Tailscale module wiring for connectivity and administrative SSH support.
+Hosts SHALL use standardized Tailscale module wiring for connectivity and administrative SSH support. On hosts running `systemd-resolved`, Tailscale DNS integration SHALL operate through resolved's per-link split-DNS configuration rather than direct `/etc/resolv.conf` ownership.
 
 #### Scenario: Host boots with Tailscale enabled
 - **WHEN** system services start
 - **THEN** Tailscale connectivity and expected service ordering are configured declaratively
+
+#### Scenario: Resolved-mediated split DNS replaces resolv.conf ownership
+- **WHEN** a host that previously let tailscaled own `/etc/resolv.conf` gains `systemd-resolved`
+- **THEN** MagicDNS names resolve through the resolved stub with per-link configuration on `tailscale0`
+- **AND** non-tailnet queries continue to the host's per-link upstream DNS without tailscaled rewriting global resolver state
 
 ### Requirement: Firewall trust boundaries are explicit
 Firewall policy SHALL enforce explicit trust boundaries for allowed interfaces and ports.
@@ -51,8 +56,9 @@ Network-access design SHALL include documented recovery paths for control-plane 
 - **THEN** operators have a documented provider or serial console recovery path that can be used outside the normal host login flow
 
 #### Scenario: A remote host adopts declarative network ownership
-- **WHEN** a host is migrated from provider-managed networking to declarative host-owned networking
+- **WHEN** a host is migrated to host-owned declarative networking under native systemd-networkd
 - **THEN** the declared stack is self-contained about addresses, routes, and interface ownership
+- **AND** the new generation is staged for next boot and activated from console access rather than a live in-band switch
 - **AND** operators do not rely on a live SSH session surviving the ownership handoff
 
 ### Requirement: Public-edge policy SHALL be explicit by default-plus-exception model

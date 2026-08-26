@@ -202,9 +202,17 @@ in
           restartIfChanged = true;
           stopIfChanged = true;
           wantedBy = [ "multi-user.target" ];
+          preStart = "${pkgs.tailscale}/bin/tailscale wait --timeout=60s";
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
+            # Recover if tailscaled is slow to reach Running; stop after 3
+            # tries so a genuinely logged-out node fails loudly instead of
+            # spinning.
+            Restart = "on-failure";
+            RestartSec = "10s";
+            StartLimitIntervalSec = 300;
+            StartLimitBurst = 3;
             ExecStart = ''
               ${pkgs.tailscale}/bin/tailscale serve --yes --bg --https=8443 ${termixRoute.upstream}
             '';

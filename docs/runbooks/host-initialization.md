@@ -37,7 +37,8 @@ nix run github:nix-community/nixos-facter -- -o facter.json
 
 ### Fact ownership: facter vs filesystem vs bootloader
 
-- **facter owns** hardware, drivers, virtualisation, and DHCP — consume the report directly, and do not hand-maintain driver, virtualisation, or network-interface configuration beside it.
+- **facter owns** hardware, drivers, and virtualisation — consume the report directly, and do not hand-maintain driver or virtualisation configuration beside it. The networking aspect disables facter's detected-DHCP backend; DHCP and networkd ownership belong to the aspect, not to facter.
+- **networking is declared from captured facts, owned by the aspect** — capture the uplink and route facts, then declare them on the host as `fleet.networking.uplink.interface`; when the host bridges, also declare the bridge name and MAC (`fleet.networking.bridge`), and add a DNS override (`fleet.networking.dns.servers`) only when DNS is pinned. The import-activated networking aspect (`modules/profiles/networking.nix`) owns networkd/DHCP and renders native `systemd.network` units from these facts.
 - **filesystem mounts are not reported by facter** — hand-maintain only the observed root and ESP by-UUID mounts required to preserve the existing installation.
 - **bootloader ownership is explicit, not inherited** — an adopted host preserves its existing bootloader (e.g. UEFI `systemd-boot`); do not let the fleet base module's default (GRUB removable media) override a working installation. Record the boot mode and confirm the preserved bootloader selects the new generation.
 

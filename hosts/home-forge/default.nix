@@ -10,6 +10,7 @@ in
   imports = [
     ../../modules/profiles/base-server.nix
     ../../modules/profiles/fleet-standard.nix
+    ../../modules/profiles/networking.nix
     ../../modules/shared/web-policy.nix
     # Hard dependency of base-server (via state-backups): declares
     # services.notification-daemon option. Infrastructure, not a workload.
@@ -20,15 +21,22 @@ in
 
   networking.hostName = "home-forge";
 
-  # Locally-managed physical host: plain LAN DHCP via scripted networking, no
-  # static addresses and no public ingress. DNS is pinned to public resolvers
-  # for a private network with no local split-horizon.
-  networking.useDHCP = true;
-  services.resolved.enable = true;
-  networking.nameservers = [
-    "1.1.1.1"
-    "8.8.8.8"
-  ];
+  # Locally-managed physical host: plain LAN DHCP via native systemd-networkd
+  # (fleet networking aspect), no static addresses and no public ingress. The
+  # always-on br0 bridge over eno1 presents the pinned NIC MAC so the router
+  # reservation survives; DNS is pinned to public resolvers for a private
+  # network with no local split-horizon.
+  fleet.networking = {
+    uplink.interface = "eno1";
+    bridge = {
+      name = "br0";
+      macAddress = "84:a9:3e:6b:94:44";
+    };
+    dns.servers = [
+      "1.1.1.1"
+      "8.8.8.8"
+    ];
+  };
 
   # UEFI + systemd-boot. The shared base (core/base.nix) defines GRUB as plain
   # definitions; switch the loader implementation only and keep the base EFI
@@ -95,7 +103,6 @@ in
   # report was captured from the live ISO (operator gate 8.3); until then keep
   # facter wired but inert so base-install eval converges without the file.
   hardware.facter.reportPath = lib.mkIf (builtins.pathExists ./facter.json) ./facter.json;
-
   # 32 GB RAM: raise the /build tmpfs cap from the base-server default (8G)
   # so large remote builds don't run out of space.
   fileSystems."/build".options = lib.mkForce [

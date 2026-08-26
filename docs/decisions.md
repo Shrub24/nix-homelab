@@ -782,6 +782,31 @@ Supersedes/updates:
 
 - supersedes D-036's serial deploy order (`do-admin-1` then `oci-melb-1`) with `la-admin-1` before `oci-melb-1`, and removes DO from regular deploy and CI until decommission
 
+## D-043: Native systemd-networkd is the fleet networking baseline
+
+Status: Accepted
+
+Decision:
+
+- fleet hosts own physical networking through the import-activated networking aspect (`modules/profiles/networking.nix`), which renders native `systemd.network.{networks,netdevs}` units from required `fleet.networking` host facts and retires scripted networking/dhcpcd fleet-wide
+- physical addressing is DHCPv4 with MAC-based client identity so provider/router leases and reservations survive migration
+- `systemd-resolved` is the fleet resolver mechanism; per-link provider/DHCP DNS stays primary for routing domains, with safe defaults (`DNSOverTLS = opportunistic`, `DNSSEC = allow-downgrade`, `FallbackDNS`)
+- `home-forge` runs an always-on host-owned `br0` bridge over `eno1` pinned to `84:a9:3e:6b:94:44` so the router reservation holds
+- `oci-melb-1` disables `IPv6AcceptRA` on its uplink until the provider provisions IPv6; its VCN resolver and `homelabvcn.oraclevcn.com` route domain stay primary via per-link DHCP DNS
+- `la-admin-1` gains `systemd-resolved`; Tailscale switches from `/etc/resolv.conf` overwrite to D-Bus split-DNS
+- network-owner cutovers stay boot-staged (`deploy-rs --boot`), console-backed, with a second ordinary reboot proving repeatability
+
+Rationale:
+
+- the fleet ran NixOS scripted networking by omission, not decision, and it failed opaquely in production on 2026-08-25: the home-forge bridge cutover left `br0` addressless because dhcpcd silently ignores bridge-master interfaces without an explicit config section and NixOS never emits one
+- D-031 already proved declarative `systemd-networkd` viable on do-admin-1; this change makes native networkd the fleet baseline before the Engine DJ change rebases on top and consumes host-owned bridge topology
+- live result: all three hosts passed two-boot validation (staged boot, console reboot, second ordinary reboot) — reserved `.100` lease and pinned bridge MAC on home-forge, `*.oraclevcn.com` resolution and RA-off posture on oci-melb-1, key-only SSH and MagicDNS via resolved on la-admin-1
+- LA cutover validation also exposed two pre-existing cold-boot defects, now corrected: Cockpit certificate material gates `cockpit.service` without ordering `cockpit.socket`, and both repo-owned Tailscale Serve publishers gate on native `tailscale wait` before programming Serve state (fixing the `NoState` race)
+
+References:
+
+- D-031 for the boot-time cutover discipline, and the change specs/design `openspec/changes/adopt-native-systemd-networkd/{design,specs/host-networking/spec,specs/network-access/spec}.md`
+
 These are known but intentionally unresolved until implementation and operational learning justify final decisions.
 
 - when to introduce service-scoped secret files for movable workloads

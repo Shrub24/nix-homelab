@@ -42,7 +42,6 @@ in
       description = "Generate host-local CA and Cockpit loopback TLS certificate";
       wantedBy = [ "multi-user.target" ];
       before = [
-        "cockpit.socket"
         "cockpit.service"
         "caddy.service"
       ];
@@ -114,8 +113,10 @@ in
       };
     };
 
-    systemd.sockets.cockpit.wants = [ "cockpit-loopback-tls-material.service" ];
-    systemd.sockets.cockpit.after = [ "cockpit-loopback-tls-material.service" ];
+    systemd.services.cockpit = {
+      requires = [ "cockpit-loopback-tls-material.service" ];
+      after = [ "cockpit-loopback-tls-material.service" ];
+    };
 
     systemd.services.caddy = lib.mkIf config.services.caddy.enable {
       wants = [ "cockpit-loopback-tls-material.service" ];

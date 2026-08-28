@@ -351,12 +351,11 @@ in
     // lib.optionalAttrs (prepareCommands != [ ]) { backupPrepareCommand = prepareScript; }
     // lib.optionalAttrs (cleanupCommands != [ ]) { backupCleanupCommand = cleanupScript; };
 
-    # state-backups owns only the staging root and the restore-staging
-    # parent; each service module owns its own export parent directory (e.g.
-    # postgresqlBackup owns ${stagingRoot}/postgres as 0700 postgres) so no
-    # root-owned export rule can conflict with the export writer.
+    # state-backups owns only the non-listable staging root and restore-staging
+    # parent. Service users can traverse to their module-owned private export
+    # directories (e.g. PostgreSQL's 0700 postgres-owned child).
     systemd.tmpfiles.rules = [
-      "d ${cfg.stagingRoot} 0750 root root - -"
+      "d ${cfg.stagingRoot} 0711 root root - -"
       "d /var/tmp/state-restore 0700 root root - -"
     ];
 

@@ -5,27 +5,27 @@
 
   tagr = "ghcr.io/suitux/tagr:sha-4ce3078@sha256:4dede3f8220e874fbfefecc0806f0ac427505de3de1d8f08922a117b70dccbd7";
 
-  trek = "docker.io/mauriceboe/trek:latest@sha256:e1611b225e4401a7bd03b9cd6763ff5ba3c18c9f93bc972a8c2b0de4353275db";
+  trek = "docker.io/mauriceboe/trek:latest@sha256:9a54f8e6247c07158c31eff2eb7b34489cb8e0ed1ba356af9bc77418b55813d4";
 
-  doclingServe = "quay.io/docling-project/docling-serve:v1.26.0@sha256:56189f190892cc03a4a5c10ba9e56c421ac2524554aa2d36f0f4bb6564132524";
+  doclingServe = "quay.io/docling-project/docling-serve:v1.32.0@sha256:5d1a649d48b5715e23ec4906bb0624632b1971a1d975a4bc57d0f723114c7c6e";
 
-  paperlessGpt = "ghcr.io/icereed/paperless-gpt:latest@sha256:c0ce6186028911101a2cfe68353f14a9dbb2653596f3f1cff94de4b6db3114ff";
+  paperlessGpt = "ghcr.io/icereed/paperless-gpt:latest@sha256:855d9df5bacb2bed60bd520f1ffe0d118695aef9f77d37466ae85823001f547d";
 
-  karakeepWeb = "ghcr.io/karakeep-app/karakeep:release@sha256:64d6a9bbf2d37b5c808cf06b5d87f1f1c7846fdd3844724145a9741aeb06fd31";
+  karakeepWeb = "ghcr.io/karakeep-app/karakeep:release@sha256:b069e4307dec06ea06d16989c6861c30a1ff208568be44ed5fb5d422cd3e950c";
 
   karakeepChrome = "gcr.io/zenika-hub/alpine-chrome:124@sha256:1a0046448e0bb6c275c88f86e01faf0de62b02ec8572901256ada0a8c08be23f";
 
-  karakeepMeilisearch = "getmeili/meilisearch:v1.49.0@sha256:bdc7d7e7939911c40d88d6bcd01f9c72c81f7293135916d48bce241569f721bd";
+  karakeepMeilisearch = "getmeili/meilisearch:v1.53.1@sha256:8d6643d86d71fad6ad3cba92cde7ccfce9e4d6c384bda67598eb553571c32431";
 
-  audiomuse = "ghcr.io/neptunehub/audiomuse-ai:latest@sha256:ec1824ae02198756ce4bd84c1cc67f1eec074084d81d73f8fb4bd831449e3de1";
+  audiomuse = "ghcr.io/neptunehub/audiomuse-ai:latest@sha256:726d30981a601cb4556c6caece162ac15df247a7e7f09e36b64e8afd2f8f0b60";
 
-  redis7Alpine = "docker.io/library/redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99";
+  redis7Alpine = "docker.io/library/redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf";
 
   guacd = "docker.io/guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f";
 
   termix = "ghcr.io/lukegus/termix:release-2.1.0@sha256:52e45c1ea3fb85be5b3ade5ff42eed0946fe81131cbd834f6960e00797f17f86";
 
-  quantum = "ghcr.io/gtsteffaniak/filebrowser:stable@sha256:2cd949cd06c058576773c5b8400c854478a64c4f364b1e2bea275819847f099b";
+  quantum = "ghcr.io/gtsteffaniak/filebrowser:stable@sha256:7c5d7ac8ffda31294d278063cf9d2e04303b39e6dce1f4c691342240ca7703b8";
 
-  phoenix = "docker.io/arizephoenix/phoenix:latest@sha256:7eee4177732e6cba269f83071b869c5e37a86b47ba2ba8c6bef246273bee501d";
+  phoenix = "docker.io/arizephoenix/phoenix:latest@sha256:b899655ed60ba69fcbbe470963b673b2635ee5e7ede6ea7085eeef2645348647";
 }

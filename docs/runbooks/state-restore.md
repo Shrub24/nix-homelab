@@ -217,13 +217,13 @@ Restore by staging the path (operator workstation), then on the target host pres
 | `/srv/data/syncthing` | `syncthing.service` | `chown -R syncthing:syncthing` | folder state Healthy |
 | `/srv/data/navidrome` | `navidrome.service`, `navidrome-scan.service` | `chown -R navidrome:navidrome` | library/quarantine present; scan completes |
 | `/srv/data/beets` | `beets-*.service`, `beets-*.timer`, `beets-*.path` | `chown -R beets:beets` | `beet info` resolves; runners start clean |
-| `/srv/media/library`, `/srv/media/quarantine` (excl. `.versions`) | `syncthing.service`, `navidrome.service`, `podman-tagr.service`, `slskd.service`, `beets-*` units, `ffmpeg-preprocess.service` + inbox path units; `traktor-m3u-sync-*` when enabled | keep group/ACL layout from the snapshot, then `sudo systemctl start media-permission-reconcile.service` to re-apply module ACLs | syncthing folder Healthy; navidrome reflects files |
+| `/srv/storage/media/music/library`, `/srv/storage/media/music/quarantine` (excl. `.versions`) on `home-forge`; retained rollback copy at `/srv/media` on `oci-melb-1` | `syncthing.service`, `navidrome.service`, `podman-tagr.service`, `slskd.service`, `beets-*` units, `ffmpeg-preprocess.service` + inbox path units | keep group/ACL layout from the snapshot, then `sudo systemctl start media-permission-reconcile.service` to re-apply module ACLs | syncthing folder Healthy; navidrome reflects files |
 | `/srv/data/paperless`, `/srv/data/paperless/media`, `/srv/data/paperless/consume` | `paperless-*.service` | `chown -R paperless:paperless` | UI login; document count matches pre-restore |
 | `/srv/data/paperless-gpt-llm` (+ docling dir when enabled) | `podman-paperless-gpt-*.service` | `chown -R root:root`, mode 0750 | paperless-gpt API/status responds; tags route |
 | `/srv/data/karakeep` | `podman-karakeep-web.service`, `podman-karakeep-meilisearch.service`, `podman-karakeep-chrome.service`, `podman-network-karakeep-net.service` | `chown -R root:root`, mode 0750 | login works; meilisearch reindexes from the app DB |
 | `/srv/data/bifrost/app` (logs/cache/vector excluded) | `podman-bifrost.service`, `bifrost-config.service` | `chown -R 1000:1000` | `/v1/models` responds |
 | `/srv/data/phoenix` | `podman-phoenix.service`, `phoenix-prune.service`, `phoenix-prune.timer` | `chown -R root:root` | UI loads; spans queryable |
-| `/srv/data/tagr` (+ export `/srv/data/state-backups/tagr/tagr.sqlite3`) | `podman-tagr.service` | `chown -R root:root`, mode 0750 | prefer the SQLite export; `PRAGMA integrity_check` → ok; login works |
+| `/srv/data/tagr` (+ export `/srv/data/state-backups/tagr/tagr.sqlite3`) | `podman-tagr.service` | `chown -R root:music-ingest`, mode 2770 (tmpfiles `z` rule re-converges this) | prefer the SQLite export; `PRAGMA integrity_check` → ok; login works |
 
 Notes:
 

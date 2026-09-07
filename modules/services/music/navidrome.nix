@@ -6,9 +6,6 @@
 }:
 let
   cfg = config.services.navidrome;
-  libraryDir = if cfg.libraryDir != null then cfg.libraryDir else "${cfg.mediaRoot}/library";
-  quarantineDir =
-    if cfg.quarantineDir != null then cfg.quarantineDir else "${cfg.mediaRoot}/quarantine";
 
   # ── Operator-managed (not repo-declared) ──────────────────────────────
   # AudioMuse plugin configuration after the binary is installed:
@@ -20,28 +17,19 @@ let
   # ──────────────────────────────────────────────────────────────────────────
 in
 {
-  options.services.navidrome.mediaRoot = lib.mkOption {
-    type = lib.types.str;
-    default = "/srv/media";
-    description = "Root directory for media files";
-  };
-
   options.services.navidrome.dataDir = lib.mkOption {
     type = lib.types.str;
-    default = "/srv/data/navidrome";
-    description = "Data directory for Navidrome";
+    description = "Data directory for Navidrome. Required; injected by the caller.";
   };
 
   options.services.navidrome.libraryDir = lib.mkOption {
-    type = lib.types.nullOr lib.types.str;
-    default = null;
-    description = "Primary Navidrome library path (defaults to mediaRoot + /library).";
+    type = lib.types.str;
+    description = "Primary Navidrome library path. Required; injected by the caller.";
   };
 
   options.services.navidrome.quarantineDir = lib.mkOption {
-    type = lib.types.nullOr lib.types.str;
-    default = null;
-    description = "Secondary Navidrome library path for quarantine (defaults to mediaRoot + /quarantine).";
+    type = lib.types.str;
+    description = "Secondary Navidrome library path for quarantine. Required; injected by the caller.";
   };
 
   options.services.navidrome.audiomuse = {
@@ -53,14 +41,28 @@ in
     };
   };
 
-  config = {
+  # Gate the entire custom Navidrome composition (settings, units, tmpfiles) on
+  # nixpkgs' services.navidrome.enable. A host that wants Navidrome must set it
+  # explicitly; hosts that only import this leaf (e.g. OCI via applications.music)
+  # can disable it cleanly without leaving dormant units or settings behind.
+  config = lib.mkIf config.services.navidrome.enable {
+    # Fleet-stable identity: Navidrome state moves between hosts, so the
+    # numeric UID/GID is pinned instead of left to per-host dynamic
+    # allocation (NixOS descends from 999, host-dependent).
+    users.users.navidrome.uid = lib.mkDefault 977;
+    users.groups.navidrome.gid = lib.mkDefault 977;
+
     services.navidrome = {
-      enable = true;
       openFirewall = false;
-      plugins = lib.mkIf cfg.audiomuse.enable [ pkgs.navidromePlugins.audiomuseai ];
+      # Cache-preserving AudioMuseAI plugin integration: we deliberately do NOT
+      # use `services.navidrome.plugins = [ pkgs.navidromePlugins.audiomuseai ]`
+      # because that bakes the plugin derivation into the Navidrome build and
+      # loses the stock cache-substitutable Navidrome. Instead we declaratively
+      # symlink the packaged WASM `.ndp` into ${dataDir}/plugins via tmpfiles and
+      # bind it into nixpkgs' fixed Plugins.Folder below.
       settings = lib.mkMerge [
         {
-          MusicFolder = lib.mkDefault libraryDir;
+          MusicFolder = lib.mkDefault cfg.libraryDir;
           DataFolder = lib.mkDefault config.services.navidrome.dataDir;
           ScanSchedule = "15m";
           EnableTranscodingConfig = true;
@@ -70,6 +72,9 @@ in
           FFmpegPath = "${pkgs.ffmpeg}/bin/ffmpeg";
           Address = "0.0.0.0";
           PID.Album = "albumartistid,album";
+          Subsonic = {
+            DefaultReportRealPath = true;
+          };
         }
         (lib.mkIf cfg.audiomuse.enable {
           Plugins = {
@@ -95,10 +100,27 @@ in
         group = cfg.group;
       };
 
+    # AudioMuseAI plugin directory + packaged WASM `.ndp` symlink (cache-preserving).
+    # The plugin file is provided by pkgs.navidromePlugins.audiomuseai; symlinking
+    # into ${cfg.dataDir}/plugins avoids embedding it in the Navidrome derivation so
+    # stock cache-substitutable Navidrome is retained.
+    systemd.tmpfiles.settings.navidromeDirs."${cfg.dataDir}/plugins" = {
+      "d" = {
+        mode = "700";
+        user = cfg.user;
+        group = cfg.group;
+      };
+    };
+    systemd.tmpfiles.settings.navidromeDirs."${cfg.dataDir}/plugins/audiomuseai.ndp" = {
+      "L+" = {
+        argument = "${pkgs.navidromePlugins.audiomuseai}/share/audiomuseai.ndp";
+      };
+    };
+
     systemd.services.navidrome = {
       unitConfig.RequiresMountsFor = [
-        libraryDir
-        quarantineDir
+        cfg.libraryDir
+        cfg.quarantineDir
         cfg.dataDir
       ];
       wants = [
@@ -110,8 +132,14 @@ in
         "syncthing.service"
       ];
       serviceConfig.ReadWritePaths = lib.mkAfter [
-        libraryDir
-        quarantineDir
+        cfg.libraryDir
+        cfg.quarantineDir
+      ];
+      # nixpkgs fixes Plugins.Folder at finalPackage/share/plugins. Bind the
+      # declarative data-dir link there only in Navidrome's mount namespace so
+      # the cached stock package remains immutable and cache-substitutable.
+      serviceConfig.BindReadOnlyPaths = lib.mkAfter [
+        "${cfg.dataDir}/plugins:${config.services.navidrome.finalPackage}/share/plugins"
       ];
       serviceConfig.PrivateMounts = lib.mkForce false;
       serviceConfig.SupplementaryGroups = lib.mkAfter [
@@ -124,7 +152,7 @@ in
       description = "Scan Navidrome music library";
       after = [ "navidrome.service" ];
       unitConfig.RequiresMountsFor = [
-        libraryDir
+        cfg.libraryDir
         cfg.dataDir
       ];
       serviceConfig = {
@@ -135,7 +163,7 @@ in
           "media"
           "music-ingest"
         ];
-        ExecStart = "${cfg.package}/bin/navidrome --nobanner --datafolder ${cfg.dataDir} --musicfolder ${libraryDir} scan";
+        ExecStart = "${cfg.package}/bin/navidrome --nobanner --datafolder ${cfg.dataDir} --musicfolder ${cfg.libraryDir} scan";
       };
     };
   };

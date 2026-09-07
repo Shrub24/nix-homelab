@@ -23,6 +23,7 @@ in
     ../../modules/storage/disko-two-disk.nix
     ../../modules/core/users.nix
     ../../modules/applications/dj
+    ../../modules/applications/music
   ];
 
   networking.hostName = "home-forge";
@@ -141,6 +142,19 @@ in
       sharePath = musicStorageRoot;
     };
   };
+
+  applications.music = {
+    enable = true;
+    dataRoot = "/srv/data";
+    storageRoot = musicStorageRoot;
+    secretFiles.host = ../../secrets/applications/music.yaml;
+    navidrome.enable = true;
+    audiomuse.enable = true;
+    # AudioMuse DB lives in oci-melb-1's shared Postgres over Tailscale.
+    audiomuse.postgresHost = "oci-melb-1";
+  };
+
+  services.syncthing.openDefaultPorts = lib.mkForce true;
 
   system.stateVersion = "25.11";
 }

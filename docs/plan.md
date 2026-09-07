@@ -84,12 +84,12 @@ Track D: Service baseline
 - deploy Navidrome reading direct sync path
 - deploy AudioMuse as an optional Navidrome similarity extension (Podman containers, Postgres, Navidrome plugin); deployment lifecycle distinguishes infrastructure deployed from E2E Symfonium-validated behavior
 - keep quarantine in synced scope and visible playback surface while library remains canonical promotion target
-- keep music service composition explicit through `modules/applications/music.nix`
+- keep music service composition explicit through `modules/applications/music/default.nix`
 - keep music service modules regrouped under `modules/services/music/` for navigability without changing option namespaces
-- add Traktor playlist synchronization as a manual-only music worker first: synced `collection.nml` at `/srv/media/traktor/collection.nml`, separate M3U export/import workspace under `/srv/media/playlists/traktor/`, and no automatic timers/path watches until manual runs are boring
+- run the complete music application on `home-forge` under the host-selected music application root `/srv/storage/media/music/{library,playlists,inbox,quarantine,.versions}`, with AudioMuse's database in OCI's shared Postgres over Tailscale and LA edge routes for music/slskd/tagr pointing at `home-forge`; playlist export/import for Engine DJ is owned by a separate repository
 - keep private admin service composition explicit through `modules/applications/admin/default.nix`
 - keep the admin surface split between reusable service modules and host-owned source/route inputs (for example Quantum sources and Cockpit host overlays)
-- evolve Beets via native systemd-based inbox-to-library promotion under `/srv/media/library` while keeping `/srv/media` playback visibility
+- evolve Beets via native systemd-based inbox-to-library promotion under `home-forge` `/srv/storage/media/music/library` while keeping library and quarantine playback visibility
 - support a secondary approved-quarantine promotion runner for manual re-attempt workflows
 
 Track E: Future-ready evolution
@@ -142,7 +142,7 @@ Active implementation anchor paths that must stay reflected in docs:
 
 - `hosts/oci-melb-1/default.nix`
 - `hosts/la-admin-1/default.nix`
-- `modules/applications/music.nix` (or `modules/applications/music/default.nix` as sub-module root)
+- `modules/applications/music/default.nix`
 - `modules/applications/admin/default.nix`
 - `modules/services/music/` (canonical music service module subtree: `navidrome.nix`, `audiomuse.nix`, `syncthing.nix`, `beets/`, `slskd.nix`, `tagr.nix`)
 - `modules/core/base.nix`

@@ -8,14 +8,19 @@ let
 
   folderSettings = lib.mapAttrs (
     _name: folder:
-    builtins.removeAttrs folder [
+    (builtins.removeAttrs folder [
       "ensureDir"
       "ensureMarker"
       "ensureAcl"
       "dirMode"
       "dirUser"
       "dirGroup"
-    ]
+    ])
+    // {
+      # A host must not share a folder with itself: drop the local host's key
+      # from the fleet SSOT device list so one device map serves every host.
+      devices = builtins.filter (d: d != config.networking.hostName) (folder.devices or [ ]);
+    }
   ) cfg.folderTargets;
 
   folderTmpfiles = lib.flatten (
@@ -93,16 +98,16 @@ in
     );
   };
 
-  config = {
+  config = lib.mkIf cfg.enable {
     services.syncthing = {
-      enable = true;
       dataDir = lib.mkDefault "/srv/data/syncthing";
       configDir = lib.mkDefault "/srv/data/syncthing/config";
       guiAddress = lib.mkDefault "0.0.0.0:8384";
       openDefaultPorts = false;
       overrideDevices = lib.mkDefault true;
       overrideFolders = lib.mkDefault true;
-      settings.devices = cfg.deviceTargets;
+      # Drop the local host's own entry from the fleet SSOT device map.
+      settings.devices = builtins.removeAttrs cfg.deviceTargets [ config.networking.hostName ];
       settings.folders = folderSettings;
     };
 

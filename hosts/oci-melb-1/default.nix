@@ -19,7 +19,6 @@ in
     ../../modules/shared/web-policy.nix
     ../../modules/shared/kanidm-host-auth.nix
     ../../modules/shared/identity-oidc.nix
-    ../../modules/applications/music
     ../../modules/services/paperless
     ../../modules/applications/edge-ingress.nix
     ../../modules/providers/oci/default.nix
@@ -60,12 +59,6 @@ in
   ];
 
   disko.devices.disk.main.device = "/dev/sda";
-  applications.music.enable = true;
-  applications.music.audiomuse.enable = true;
-  applications.music.traktorM3uSync.enable = false;
-  applications.music.dataRoot = "/srv/data";
-  applications.music.mediaRoot = "/srv/media";
-  applications.music.secretFiles.host = ../../secrets/applications/music.yaml;
 
   services.paperless = {
     enable = true;

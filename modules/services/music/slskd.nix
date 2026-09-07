@@ -13,14 +13,17 @@ in
 {
   options.services.slskd.downloadsPath = lib.mkOption {
     type = lib.types.str;
-    default = "/srv/media/inbox/slskd";
-    description = "Directory for completed slskd downloads.";
+    description = "Directory for completed slskd downloads. Required; injected by the caller.";
   };
 
   options.services.slskd.incompletePath = lib.mkOption {
     type = lib.types.str;
-    default = "/srv/media/slskd-incomplete";
-    description = "Directory for incomplete slskd downloads.";
+    description = "Directory for incomplete slskd downloads. Required; injected by the caller.";
+  };
+
+  options.services.slskd.shareDirectories = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    description = "Directories slskd shares to the Soulseek network. Required; injected by the caller.";
   };
 
   options.services.slskd.secretFiles.host = secretHelpers.mkSecretFileOption "slskd-host-secrets";
@@ -32,6 +35,12 @@ in
   };
 
   config = lib.mkIf (cfg.secretFiles.host != null) {
+    # Fleet-stable identity: download state moves between hosts, so the
+    # numeric UID/GID is pinned instead of left to per-host dynamic
+    # allocation (NixOS descends from 999, host-dependent).
+    users.users.slskd.uid = lib.mkDefault 975;
+    users.groups.slskd.gid = lib.mkDefault 975;
+
     assertions = [
       (secretHelpers.mkRequiredSecretAssertion {
         enable = cfg.secretFiles.host != null;
@@ -97,9 +106,7 @@ in
           downloads = cfg.downloadsPath;
           incomplete = cfg.incompletePath;
         };
-        shares.directories = [
-          "/srv/media/library"
-        ];
+        shares.directories = cfg.shareDirectories;
       }
       // lib.optionalAttrs (cfg.downloadCompleteScript != null) {
         integrations.scripts.download_complete = {
@@ -137,7 +144,6 @@ in
       ];
       serviceConfig.ReadWritePaths = lib.mkAfter (
         lib.unique [
-          "/srv/media"
           downloadsParent
           incompleteParent
           cfg.downloadsPath

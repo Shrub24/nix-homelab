@@ -7,29 +7,23 @@
 }:
 let
   cfg = config.applications.music;
-  globals = import ../../../policy/globals.nix;
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
 
-  # Concrete media paths derived at the application layer.
   mediaPaths = rec {
-    inherit (cfg) inboxDir libraryDir quarantineDir;
+    libraryDir = "${cfg.storageRoot}/library";
+    playlistsDir = "${cfg.storageRoot}/playlists";
+    inboxDir = "${cfg.storageRoot}/inbox";
+    quarantineDir = "${cfg.storageRoot}/quarantine";
+    versionArchiveRoot = "${cfg.storageRoot}/.versions";
     untaggedDir = "${quarantineDir}/untagged";
     approvedDir = "${quarantineDir}/approved";
-    traktorDir = "${cfg.mediaRoot}/traktor";
-    traktorCollection = "${traktorDir}/collection.nml";
-    traktorPlaylistsDir = "${cfg.mediaRoot}/playlists/traktor";
-    traktorExportDir = "${traktorPlaylistsDir}/export";
-    traktorImportDir = "${traktorPlaylistsDir}/import";
   };
 
-  # Beets config files live under the music/ subdirectory (sibling to this file).
   beetsConfigs = {
     standard = ./files/beets-config.yaml;
     quarantine = ./files/beets-quarantine-config.yaml;
   };
 
-  # Sops-rendered config paths (secrets substituted). Falls back to raw template
-  # when sops templates are not configured.
   beetsRenderedConfigs = {
     standard =
       if lib.hasAttrByPath [ "sops" "templates" "beets-config.yaml" "path" ] config then
@@ -43,7 +37,6 @@ let
         beetsConfigs.quarantine;
   };
 
-  # ffmpeg pre-processing binary for lossless-to-AIFF conversion (pre-import).
   ffmpegPreprocessBin = pkgs.writeShellApplication {
     name = "ffmpeg-preprocess";
     runtimeInputs = [
@@ -54,8 +47,6 @@ let
     text = builtins.readFile ./files/ffmpeg-preprocess.sh;
   };
 
-  # Interactive wrapper for manual quarantine import.
-  # Runs the quarantine-interactive runner as the beets user with the correct env.
   beetsInteractiveBin = pkgs.writeShellApplication {
     name = "beets-interactive";
     runtimeInputs = [
@@ -87,14 +78,13 @@ let
 
       if [ $RC -eq 0 ]; then
         systemctl start media-permission-reconcile.service
-        systemctl start navidrome-scan.service
+        ${lib.optionalString cfg.navidrome.enable "systemctl start navidrome-scan.service"}
       fi
 
       exit $RC
     '';
   };
 
-  # Permission reconciliation wrapper — triggers the standalone systemd service.
   mediaFixPermsBin = pkgs.writeShellApplication {
     name = "media-fixperms";
     runtimeInputs = [ pkgs.systemd ];
@@ -104,8 +94,6 @@ let
     '';
   };
 
-  # Duplicates detection wrapper — runs as beets user with correct env.
-  # Pass any beet duplicates flags: beets-dupes --merge, beets-dupes --delete, etc.
   beetsDupesBin = pkgs.writeShellApplication {
     name = "beets-dupes";
     runtimeInputs = [
@@ -128,16 +116,71 @@ let
     '';
   };
 
-  # slskd download-complete hook.
-  # slskd calls this per DownloadDirectoryComplete event (runs as slskd user).
-  # Each event re-arms slskd-settle.timer; the pipeline starts once, after
-  # the settle window elapses with no further events. No filesystem state.
+  beetsMergeSplitsBin = pkgs.writeShellApplication {
+    name = "beets-merge-splits";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.diffutils
+      pkgs.findutils
+      pkgs.gnugrep
+      pkgs.systemd
+    ];
+    text = ''
+      set -euo pipefail
+      if [ "$(id -un)" != beets ]; then
+        exec systemd-run --pipe --wait \
+          --unit="beets-merge-splits-$(date -u +"%Y%m%dT%H%M%SZ")" \
+          -p User=beets \
+          -p Group=beets \
+          -p SupplementaryGroups="music-ingest media" \
+          -p ReadWritePaths="${config.services.beets.dataDir} ${mediaPaths.libraryDir} /run/secrets/rendered" \
+          -p WorkingDirectory="${config.services.beets.dataDir}" \
+          --setenv=BEETSDIR="${config.services.beets.dataDir}" \
+          --setenv=BEETS_CONFIG_SOURCE="${beetsRenderedConfigs.standard}" \
+          --setenv=HOME="${config.services.beets.dataDir}" \
+          -- \
+          /run/current-system/sw/bin/beets-merge-splits "$@"
+      fi
+      export PATH="/run/current-system/sw/bin:$PATH"
+    ''
+    + builtins.readFile ./files/merge-splits.sh;
+  };
+
+  beetsPruneEmptyBin = pkgs.writeShellApplication {
+    name = "beets-prune-empty";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.findutils
+      pkgs.gnugrep
+      pkgs.systemd
+    ];
+    text = ''
+      set -euo pipefail
+      if [ "$(id -un)" != beets ]; then
+        exec systemd-run --pipe --wait \
+          --unit="beets-prune-empty-$(date -u +"%Y%m%dT%H%M%SZ")" \
+          -p User=beets \
+          -p Group=beets \
+          -p SupplementaryGroups="music-ingest media" \
+          -p ReadWritePaths="${config.services.beets.dataDir} ${mediaPaths.libraryDir} /run/secrets/rendered" \
+          -p WorkingDirectory="${config.services.beets.dataDir}" \
+          --setenv=BEETSDIR="${config.services.beets.dataDir}" \
+          --setenv=BEETS_CONFIG_SOURCE="${beetsRenderedConfigs.standard}" \
+          --setenv=HOME="${config.services.beets.dataDir}" \
+          --setenv=BEETS_PRUNE_ROOT="${mediaPaths.libraryDir}" \
+          -- \
+          /run/current-system/sw/bin/beets-prune-empty "$@"
+      fi
+      export PATH="/run/current-system/sw/bin:$PATH"
+    ''
+    + builtins.readFile ./files/prune-empty-dirs.sh;
+  };
+
   slskdDownloadCompleteHook = pkgs.writeShellScript "slskd-download-complete" ''
     export PATH="/run/current-system/sw/bin:$PATH"
     exec systemctl try-restart slskd-settle.timer
   '';
 
-  # SOPS secret entries for Beets plugin credentials.
   beetsSecretEntries = [
     {
       secretName = "beets_discogs_token";
@@ -170,9 +213,25 @@ let
     owner = "beets";
     group = "beets";
     mode = "0440";
-    content = builtins.replaceStrings (map (e: e.placeholder) beetsSecretEntries) (map (
-      e: config.sops.placeholder.${e.secretName}
-    ) beetsSecretEntries) (builtins.readFile beetsConfigs.${name});
+    content =
+      builtins.replaceStrings
+        (
+          [
+            "__MUSIC_LIBRARY_DIR__"
+            "__BEETS_STATE_DB__"
+            "__BEETS_CONVERT_DIR__"
+          ]
+          ++ map (e: e.placeholder) beetsSecretEntries
+        )
+        (
+          [
+            mediaPaths.libraryDir
+            "${cfg.dataRoot}/beets/state/library.db"
+            "${cfg.dataRoot}/beets/convert"
+          ]
+          ++ map (e: config.sops.placeholder.${e.secretName}) beetsSecretEntries
+        )
+        (builtins.readFile beetsConfigs.${name});
   };
 
   _mkBeetsSopsSecret =
@@ -185,12 +244,6 @@ let
       group = "beets";
     };
 
-  # ------------------------------------------------------------------------ #
-  # Concrete runner instances for this music application
-  # ------------------------------------------------------------------------ #
-  # Each instance is typed and grounded to application-owned paths and configs.
-  # Built-in runner kinds only; no arbitrary custom commands.
-
   beetsRunnerInstances = {
 
     inbox = {
@@ -198,7 +251,6 @@ let
       description = "Beets automated inbox import worker";
       targetPath = mediaPaths.inboxDir;
       configSource = beetsRenderedConfigs.standard;
-      mediaRoot = cfg.mediaRoot;
       dataDir = "${cfg.dataRoot}/beets";
       writePaths = [
         "${cfg.dataRoot}/beets"
@@ -210,7 +262,7 @@ let
       ];
       mountFor = [
         "${cfg.dataRoot}/beets"
-        cfg.mediaRoot
+        cfg.storageRoot
         mediaPaths.inboxDir
         mediaPaths.libraryDir
         mediaPaths.untaggedDir
@@ -224,7 +276,6 @@ let
       description = "Beets interactive quarantine review worker";
       targetPath = mediaPaths.untaggedDir;
       configSource = beetsRenderedConfigs.quarantine;
-      mediaRoot = cfg.mediaRoot;
       dataDir = "${cfg.dataRoot}/beets";
       enableHardening = false;
       writePaths = [
@@ -234,12 +285,11 @@ let
       ];
       mountFor = [
         "${cfg.dataRoot}/beets"
-        cfg.mediaRoot
+        cfg.storageRoot
         mediaPaths.quarantineDir
         mediaPaths.untaggedDir
       ];
       conditionDir = mediaPaths.quarantineDir;
-      # No timer - operator-invoked only over SSH TTY.
     };
 
     reconcile = {
@@ -247,7 +297,6 @@ let
       description = "Beets library reconciliation worker";
       targetPath = mediaPaths.libraryDir;
       configSource = beetsRenderedConfigs.standard;
-      mediaRoot = cfg.mediaRoot;
       dataDir = "${cfg.dataRoot}/beets";
       writePaths = [
         "${cfg.dataRoot}/beets"
@@ -255,11 +304,10 @@ let
       ];
       mountFor = [
         "${cfg.dataRoot}/beets"
-        cfg.mediaRoot
+        cfg.storageRoot
         mediaPaths.libraryDir
       ];
       conditionDir = mediaPaths.libraryDir;
-      # No timer - operator-invoked for maintenance.
     };
 
     duplicates = {
@@ -267,17 +315,15 @@ let
       description = "Beets duplicate detection and cleanup (interactive)";
       targetPath = mediaPaths.libraryDir;
       configSource = beetsRenderedConfigs.standard;
-      mediaRoot = cfg.mediaRoot;
       dataDir = "${cfg.dataRoot}/beets";
       writePaths = [
         mediaPaths.libraryDir
       ];
       mountFor = [
-        cfg.mediaRoot
+        cfg.storageRoot
         mediaPaths.libraryDir
       ];
       conditionDir = mediaPaths.libraryDir;
-      # No timer - operator-invoked for manual review.
     };
   };
 
@@ -297,38 +343,17 @@ in
 
     dataRoot = lib.mkOption {
       type = lib.types.str;
-      default = globals.applications.music.dataRoot;
-      description = "Top-level data root for music application services.";
+      description = "Top-level data root for music application service state. Host-required: no fleet-wide default.";
     };
 
-    mediaRoot = lib.mkOption {
+    storageRoot = lib.mkOption {
       type = lib.types.str;
-      default = globals.applications.music.mediaRoot;
-      description = "Top-level media root for music application services.";
-    };
-
-    inboxDir = lib.mkOption {
-      type = lib.types.str;
-      default = "${cfg.mediaRoot}/inbox";
-      description = "Shared inbox directory composed at the application layer.";
-    };
-
-    libraryDir = lib.mkOption {
-      type = lib.types.str;
-      default = "${cfg.mediaRoot}/library";
-      description = "Shared library directory composed at the application layer.";
-    };
-
-    quarantineDir = lib.mkOption {
-      type = lib.types.str;
-      default = "${cfg.mediaRoot}/quarantine";
-      description = "Shared quarantine directory composed at the application layer.";
-    };
-
-    versionArchiveRoot = lib.mkOption {
-      type = lib.types.str;
-      default = "${cfg.mediaRoot}/.versions";
-      description = "Media-local root for Syncthing version archives kept outside scanned music trees.";
+      description = ''
+        Root of the music storage subtree. Host-required: no fleet-wide default.
+        The conventional subtree (library/, playlists/, inbox/, quarantine/,
+        .versions/) is derived internally from this root and is not overridable;
+        only the root itself is a host binding.
+      '';
     };
 
     syncthingDevices = lib.mkOption {
@@ -340,6 +365,9 @@ in
         windows = {
           id = "XDJJL7S-JM2SOTY-XFAMJ36-DJPKKPP-SEYNXXO-CDKRXUR-HF6XCEZ-44U4CQR";
         };
+        home-forge = {
+          id = "MBPDSQR-VPJRSY7-MUP2YDM-MDVRFMQ-UMQTZCQ-GZBUQW6-LE65KVE-S2SCKAB";
+        };
       };
       description = "Syncthing device map for this application composition.";
     };
@@ -348,12 +376,31 @@ in
       type = lib.types.attrsOf lib.types.attrs;
       default = {
         library = {
-          path = cfg.libraryDir;
+          path = mediaPaths.libraryDir;
           type = "sendreceive";
           versioning = {
             type = "staggered";
             params = {
-              fsPath = "${cfg.versionArchiveRoot}/library";
+              fsPath = "${mediaPaths.versionArchiveRoot}/library";
+            };
+          };
+          ignorePerms = true;
+          ensureDir = true;
+          ensureMarker = true;
+          ensureAcl = true;
+          devices = [
+            "arch"
+            "windows"
+            "home-forge"
+          ];
+        };
+        quarantine = {
+          path = mediaPaths.quarantineDir;
+          type = "sendreceive";
+          versioning = {
+            type = "staggered";
+            params = {
+              fsPath = "${mediaPaths.versionArchiveRoot}/quarantine";
             };
           };
           ignorePerms = true;
@@ -365,20 +412,24 @@ in
             "windows"
           ];
         };
-        quarantine = {
-          path = cfg.quarantineDir;
+        inbox = {
+          path = mediaPaths.inboxDir;
           type = "sendreceive";
           versioning = {
             type = "staggered";
             params = {
-              fsPath = "${cfg.versionArchiveRoot}/quarantine";
+              fsPath = "${mediaPaths.versionArchiveRoot}/inbox";
             };
           };
           ignorePerms = true;
           ensureDir = true;
           ensureMarker = true;
           ensureAcl = true;
-          devices = [ "arch" ];
+          devices = [
+            "arch"
+            "windows"
+            "home-forge"
+          ];
         };
       };
       description = "Syncthing folder map for this application composition.";
@@ -389,26 +440,33 @@ in
         default = false;
         description = "Enable AudioMuseAI as an optional Navidrome similarity extension. When enabled, composes the AudioMuse core service and Navidrome plugin wiring.";
       };
+
+      postgresHost = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "PostgreSQL hostname for AudioMuse; null uses the leaf default.";
+      };
+
+      postgresPort = lib.mkOption {
+        type = lib.types.nullOr lib.types.port;
+        default = null;
+        description = "PostgreSQL TCP port for AudioMuse; null uses the leaf default.";
+      };
     };
 
-    traktorM3uSync = {
-      enable = lib.mkEnableOption "manual Traktor NML to M3U playlist synchronization worker" // {
-        default = false;
-        description = "Enable the manual Traktor M3U sync worker. Export/import are exposed as systemd oneshots and are not scheduled automatically.";
-      };
-      traktorRoot = lib.mkOption {
-        type = lib.types.str;
-        default = "CHANGE-ME:/Music";
-        description = "Traktor-side library root as stored in collection.nml. Replace after inspecting the real NML path roots.";
-      };
-      sandboxName = lib.mkOption {
-        type = lib.types.str;
-        default = "Imported Playlists";
-        description = "Sandbox folder name used by upstream M3U import into collection.nml.";
-      };
+    navidrome.enable = lib.mkEnableOption "Navidrome within the music application" // {
+      default = true;
+      description = "Whether the music application composes the Navidrome leaf service and its state-backup contract.";
     };
 
     secretFiles.host = secretHelpers.mkSecretFileOption "music-host-secrets";
+
+    slskdDomain = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Public domain for the slskd web UI vhost; null composes no vhost.";
+    };
+
     configFiles = lib.mkOption {
       type = lib.types.submodule {
         options = {
@@ -457,6 +515,7 @@ in
     ];
 
     services.syncthing = {
+      enable = true;
       dataDir = "${cfg.dataRoot}/syncthing";
       configDir = "${cfg.dataRoot}/syncthing/config";
       deviceTargets = cfg.syncthingDevices;
@@ -476,14 +535,15 @@ in
     };
 
     services.navidrome = {
-      libraryDir = cfg.libraryDir;
-      quarantineDir = cfg.quarantineDir;
+      enable = cfg.navidrome.enable;
+      libraryDir = mediaPaths.libraryDir;
+      quarantineDir = mediaPaths.quarantineDir;
       dataDir = "${cfg.dataRoot}/navidrome";
       audiomuse.enable = cfg.audiomuse.enable;
     };
 
     services.state-backups.services.navidrome = {
-      enable = true;
+      enable = cfg.navidrome.enable;
       mode = "live";
       paths = [ "${cfg.dataRoot}/navidrome" ];
     };
@@ -493,36 +553,16 @@ in
       dataDir = "${cfg.dataRoot}/audiomuse";
       timeZone = config.time.timeZone;
       secretFiles.host = cfg.secretFiles.host;
-    };
-
-    # Upstream module integration. Keep this thin: applications.music owns
-    # fleet paths/ACLs while upstream owns the Python package and systemd units.
-    services.traktor-m3u-sync = lib.mkIf cfg.traktorM3uSync.enable {
-      enable = true;
-      package = inputs.traktor-m3u-sync.packages.${pkgs.stdenv.hostPlatform.system}.traktor-m3u-sync;
-      library = {
-        traktor_root = cfg.traktorM3uSync.traktorRoot;
-        m3u_root = cfg.libraryDir;
-      };
-      export = {
-        enable = true;
-        collection_path = mediaPaths.traktorCollection;
-        output_dir = mediaPaths.traktorExportDir;
-      };
-      import = {
-        enable = true;
-        collection_path = mediaPaths.traktorCollection;
-        import_dir = mediaPaths.traktorImportDir;
-        sandbox_name = cfg.traktorM3uSync.sandboxName;
-      };
+      secretFiles.db = lib.mkDefault cfg.secretFiles.host;
+      postgresHost = lib.mkIf (cfg.audiomuse.postgresHost != null) cfg.audiomuse.postgresHost;
+      postgresPort = lib.mkIf (cfg.audiomuse.postgresPort != null) cfg.audiomuse.postgresPort;
     };
 
     services.beets = {
       dataDir = "${cfg.dataRoot}/beets";
-      mediaRoot = cfg.mediaRoot;
-      inboxDir = cfg.inboxDir;
-      libraryDir = cfg.libraryDir;
-      quarantineDir = cfg.quarantineDir;
+      inboxDir = mediaPaths.inboxDir;
+      libraryDir = mediaPaths.libraryDir;
+      quarantineDir = mediaPaths.quarantineDir;
       secretFiles.host = cfg.secretFiles.host;
       configFiles = {
         standard = cfg.configFiles.standard;
@@ -544,7 +584,7 @@ in
     systemd.services.media-permission-reconcile = {
       description = "Reconcile ACLs and ownership on media directories";
       after = [ "local-fs.target" ];
-      unitConfig.RequiresMountsFor = [ cfg.mediaRoot ];
+      unitConfig.RequiresMountsFor = [ cfg.storageRoot ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart =
@@ -569,9 +609,11 @@ in
                   find "$d" -type d -exec setfacl -m d:u:syncthing:rwX {} +
                 }
                 fixup "${mediaPaths.libraryDir}"
+                fixup "${mediaPaths.playlistsDir}"
                 fixup "${mediaPaths.quarantineDir}"
                 fixup "${mediaPaths.untaggedDir}"
                 fixup "${mediaPaths.approvedDir}"
+                fixup "${mediaPaths.inboxDir}"
               '';
             };
           in
@@ -581,23 +623,14 @@ in
 
     services.beets.onSuccessUnits = [
       "media-permission-reconcile.service"
-      "navidrome-scan.service"
-    ];
+    ]
+    ++ lib.optional cfg.navidrome.enable "navidrome-scan.service";
 
-    # ---------------------------------------------------------------------- #
-    # ffmpeg-preprocess: pre-import lossless → AIFF conversion
-    #
-    # Event-driven trigger architecture:
-    #
-    #   dropbox/ dir     → PathModified (flat dirs from Syncthing/manual)
-    #   slskd downloads  → DownloadDirectoryComplete hook restarts the settle
-    #                      timer; each event re-arms it, so the pipeline runs
-    #                      once after the last completion settles.
-    #
-    # Both converge on ffmpeg-preprocess.service → beets-inbox.service.
-    # ---------------------------------------------------------------------- #
+    # Flag file the preprocess touches when a pass warrants an import; gates beets-inbox via ConditionPathExists.
+    services.beets.importReadyFlag = "/var/lib/beets/ffmpeg-preprocess/inbox-ready";
+
     systemd.services.ffmpeg-preprocess = {
-      description = "Pre-process incoming lossless audio to AIFF before import";
+      description = "Pre-process incoming audio to library formats before import";
       after = [ "network.target" ];
       unitConfig = {
         OnSuccess = "beets-inbox.service";
@@ -623,21 +656,38 @@ in
       };
     };
 
-    # Dropbox: flat manual/Syncthing drops — PathModified on flat dir.
     # Unit= is a [Path]-section key (pathConfig), not a [Unit] key.
     systemd.paths.dropbox-inbox = {
       enable = true;
       wantedBy = [ "multi-user.target" ];
-      unitConfig.RequiresMountsFor = cfg.mediaRoot;
+      unitConfig.RequiresMountsFor = cfg.storageRoot;
       pathConfig = {
-        PathModified = "${cfg.inboxDir}/dropbox";
+        PathModified = "${mediaPaths.inboxDir}/dropbox";
+        Unit = "dropbox-poke.service";
+      };
+    };
+
+    systemd.services.dropbox-poke = {
+      description = "Re-arm the dropbox settle timer (debounce trickle writes)";
+      path = [ pkgs.systemd ];
+      serviceConfig = {
+        Type = "oneshot";
+        # restart, not try-restart: a fired one-shot timer is inactive, and the event must always schedule a run.
+        ExecStart = "systemctl restart dropbox-settle.timer";
+      };
+    };
+
+    systemd.timers.dropbox-settle = {
+      enable = true;
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnActiveSec = "60s";
+        AccuracySec = "5s";
+        Persistent = true;
         Unit = "ffmpeg-preprocess.service";
       };
     };
 
-    # slskd downloads: each DownloadDirectoryComplete event restarts this
-    # timer via the integration hook, re-arming the 60s settle window.
-    # Persistent=true provides boot catch-up for unprocessed inbox media.
     systemd.timers.slskd-settle = {
       enable = true;
       wantedBy = [ "timers.target" ];
@@ -649,9 +699,7 @@ in
       };
     };
 
-    # The integration hook runs as the unprivileged slskd user inside the
-    # slskd service; grant it exactly one unit-management action so it can
-    # re-arm the settle timer and nothing else.
+    # Grant the unprivileged slskd user exactly one unit action: re-arm the settle timer.
     security.polkit.extraConfig = ''
       polkit.addRule(function(action, subject) {
           if (action.id == "org.freedesktop.systemd1.manage-units"
@@ -666,72 +714,78 @@ in
       ffmpegPreprocessBin
       beetsInteractiveBin
       beetsDupesBin
+      beetsMergeSplitsBin
+      beetsPruneEmptyBin
       mediaFixPermsBin
     ];
+
+    programs.zsh.shellAliases = {
+      b = "sudo -u beets env BEETSDIR=${config.services.beets.dataDir} HOME=${config.services.beets.dataDir} beet -c ${beetsRenderedConfigs.quarantine}";
+    };
 
     services.state-backups.services.media = {
       enable = true;
       mode = "live";
-      paths = [ cfg.mediaRoot ];
-      exclude = [
-        cfg.versionArchiveRoot
-      ];
+      paths = [ cfg.storageRoot ];
+      # .versions are Syncthing-internal; the job's engine-dj quiesce hooks stop the VM first.
+      exclude = [ mediaPaths.versionArchiveRoot ];
     };
 
     services.slskd = {
-      downloadsPath = "${cfg.mediaRoot}/inbox/slskd";
-      incompletePath = "${cfg.mediaRoot}/slskd-incomplete";
-      domain = "oci-melb-1";
+      downloadsPath = "${mediaPaths.inboxDir}/slskd";
+      incompletePath = "${mediaPaths.inboxDir}/slskd-incomplete";
+      shareDirectories = [ mediaPaths.libraryDir ];
       secretFiles.host = cfg.secretFiles.host;
       downloadCompleteScript = slskdDownloadCompleteHook;
     };
 
+    services.slskd.domain = lib.mkIf (cfg.slskdDomain != null) cfg.slskdDomain;
+
     services.tagr = {
       enable = true;
       dataDir = "${cfg.dataRoot}/tagr";
-      mediaRoot = cfg.mediaRoot;
+      libraryPath = mediaPaths.libraryDir;
+      quarantinePath = mediaPaths.quarantineDir;
       secretFiles.host = cfg.secretFiles.host;
     };
 
     systemd.tmpfiles.rules = [
-      "d ${cfg.mediaRoot} 0755 root root - -"
-      "z ${cfg.mediaRoot} 0755 root root - -"
-      "d ${cfg.versionArchiveRoot} 2775 root media - -"
-      "d ${cfg.versionArchiveRoot}/library 2775 root media - -"
-      "a+ ${cfg.versionArchiveRoot}/library - - - - user:syncthing:rwx"
-      "a+ ${cfg.versionArchiveRoot}/library - - - - default:user:syncthing:rwX"
-      "d ${cfg.versionArchiveRoot}/quarantine 2775 root media - -"
-      "a+ ${cfg.versionArchiveRoot}/quarantine - - - - user:syncthing:rwx"
-      "a+ ${cfg.versionArchiveRoot}/quarantine - - - - default:user:syncthing:rwX"
-      "d ${cfg.libraryDir} 2775 root music-ingest - -"
-      "a+ ${cfg.libraryDir} - - - - group:music-ingest:rwX"
-      "a+ ${cfg.libraryDir} - - - - default:group:music-ingest:rwX"
-      "a+ ${cfg.libraryDir} - - - - group:media:r-X"
-      "a+ ${cfg.libraryDir} - - - - default:group:media:r-X"
-      "d ${cfg.quarantineDir} 2775 root music-ingest - -"
-      "a+ ${cfg.quarantineDir} - - - - group:music-ingest:rwX"
-      "a+ ${cfg.quarantineDir} - - - - default:group:music-ingest:rwX"
-      "a+ ${cfg.quarantineDir} - - - - group:media:r-X"
-      "a+ ${cfg.quarantineDir} - - - - default:group:media:r-X"
-      "d ${cfg.inboxDir} 2775 root music-ingest - -"
-      "z ${cfg.inboxDir} 2775 root music-ingest - -"
-      "d ${cfg.inboxDir}/dropbox 2775 root music-ingest - -"
-      "a+ ${cfg.inboxDir} - - - - group:music-ingest:rwX"
-      "a+ ${cfg.inboxDir} - - - - default:group:music-ingest:rwX"
-      "a+ ${cfg.inboxDir} - - - - group:media:r-X"
-      "a+ ${cfg.inboxDir} - - - - default:group:media:r-X"
-      "d ${mediaPaths.traktorDir} 2775 root music-ingest - -"
-      "d ${mediaPaths.traktorPlaylistsDir} 2775 root music-ingest - -"
-      "d ${mediaPaths.traktorExportDir} 2775 root music-ingest - -"
-      "d ${mediaPaths.traktorImportDir} 2775 root music-ingest - -"
-      "a+ ${mediaPaths.traktorDir} - - - - group:music-ingest:rwX"
-      "a+ ${mediaPaths.traktorDir} - - - - default:group:music-ingest:rwX"
-      "a+ ${mediaPaths.traktorDir} - - - - group:media:r-X"
-      "a+ ${mediaPaths.traktorDir} - - - - default:group:media:r-X"
-      "a+ ${mediaPaths.traktorPlaylistsDir} - - - - group:music-ingest:rwX"
-      "a+ ${mediaPaths.traktorPlaylistsDir} - - - - default:group:music-ingest:rwX"
-      "a+ ${mediaPaths.traktorPlaylistsDir} - - - - group:media:r-X"
-      "a+ ${mediaPaths.traktorPlaylistsDir} - - - - default:group:media:r-X"
+      "d ${cfg.storageRoot} 0755 root root - -"
+      "z ${cfg.storageRoot} 0755 root root - -"
+      "d ${mediaPaths.versionArchiveRoot} 2775 root media - -"
+      "d ${mediaPaths.versionArchiveRoot}/library 2775 root media - -"
+      "a+ ${mediaPaths.versionArchiveRoot}/library - - - - user:syncthing:rwx"
+      "a+ ${mediaPaths.versionArchiveRoot}/library - - - - default:user:syncthing:rwX"
+      "d ${mediaPaths.versionArchiveRoot}/quarantine 2775 root media - -"
+      "a+ ${mediaPaths.versionArchiveRoot}/quarantine - - - - user:syncthing:rwx"
+      "a+ ${mediaPaths.versionArchiveRoot}/quarantine - - - - default:user:syncthing:rwX"
+      "d ${mediaPaths.versionArchiveRoot}/inbox 2775 root media - -"
+      "a+ ${mediaPaths.versionArchiveRoot}/inbox - - - - user:syncthing:rwx"
+      "a+ ${mediaPaths.versionArchiveRoot}/inbox - - - - default:user:syncthing:rwX"
+      "d ${mediaPaths.libraryDir} 2775 root music-ingest - -"
+      "a+ ${mediaPaths.libraryDir} - - - - group:music-ingest:rwX"
+      "a+ ${mediaPaths.libraryDir} - - - - default:group:music-ingest:rwX"
+      "a+ ${mediaPaths.libraryDir} - - - - group:media:r-X"
+      "a+ ${mediaPaths.libraryDir} - - - - default:group:media:r-X"
+      # Playlists are a sibling of library, not a child: Navidrome reads
+      # library/, so exporting under it would surface playlists as tracks.
+      "d ${mediaPaths.playlistsDir} 2775 root music-ingest - -"
+      "a+ ${mediaPaths.playlistsDir} - - - - group:music-ingest:rwX"
+      "a+ ${mediaPaths.playlistsDir} - - - - default:group:music-ingest:rwX"
+      "a+ ${mediaPaths.playlistsDir} - - - - group:media:r-X"
+      "a+ ${mediaPaths.playlistsDir} - - - - default:group:media:r-X"
+      "d ${mediaPaths.quarantineDir} 2775 root music-ingest - -"
+      "a+ ${mediaPaths.quarantineDir} - - - - group:music-ingest:rwX"
+      "a+ ${mediaPaths.quarantineDir} - - - - default:group:music-ingest:rwX"
+      "a+ ${mediaPaths.quarantineDir} - - - - group:media:r-X"
+      "a+ ${mediaPaths.quarantineDir} - - - - default:group:media:r-X"
+      "d ${mediaPaths.inboxDir} 2775 root music-ingest - -"
+      "z ${mediaPaths.inboxDir} 2775 root music-ingest - -"
+      "d ${mediaPaths.inboxDir}/dropbox 2775 root music-ingest - -"
+      "a+ ${mediaPaths.inboxDir} - - - - group:music-ingest:rwX"
+      "a+ ${mediaPaths.inboxDir} - - - - default:group:music-ingest:rwX"
+      "a+ ${mediaPaths.inboxDir} - - - - group:media:r-X"
+      "a+ ${mediaPaths.inboxDir} - - - - default:group:media:r-X"
       "f /var/lib/slskd/environment 0640 slskd slskd - -"
       "f /var/lib/tagr/environment 0640 root root - -"
     ];

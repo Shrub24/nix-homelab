@@ -5,6 +5,10 @@
 }:
 let
   hasHostSecrets = builtins.pathExists ../../secrets/hosts/home-forge/system.yaml;
+
+  # Host-owned physical music root; the DJ application injects it as the
+  # guest's M: share.
+  musicStorageRoot = "/srv/storage/media/music";
 in
 {
   imports = [
@@ -18,6 +22,7 @@ in
     ../../modules/services/omniroute.nix
     ../../modules/storage/disko-two-disk.nix
     ../../modules/core/users.nix
+    ../../modules/applications/dj
   ];
 
   networking.hostName = "home-forge";
@@ -128,6 +133,14 @@ in
   services.notification-daemon.monitor.services =
     lib.optionals (builtins.pathExists ../../secrets/services/omniroute.yaml)
       [ "podman-omniroute" ];
+
+  applications.dj = {
+    enable = true;
+    engine = {
+      enable = true;
+      sharePath = musicStorageRoot;
+    };
+  };
 
   system.stateVersion = "25.11";
 }

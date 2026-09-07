@@ -16,6 +16,7 @@ In scope now:
 
 - Oracle Cloud host `oci-melb-1` as a fleet node
 - LA host `la-admin-1` as the active admin, edge, and identity node
+- home-forge host as the Engine DJ Windows VM workload node (declarative Windows VM layer; see `docs/runbooks/engine-dj-guest-setup.md`)
 - private-first service topology with a designated public edge bastion (Cloudflare + Caddy)
 - native NixOS services: `navidrome` and `syncthing`
 - optional Navidrome extension services: `audiomuse` (PostgreSQL + Redis + Flask/worker, managed via Podman containers) as a Navidrome-facing music-intelligence layer for Symfonium similar/radio behavior
@@ -91,6 +92,8 @@ The exact file tree can evolve, but the intended shape is:
 - `modules/applications/<name>/default.nix` for feature composition roots (multi-service stacks), e.g. `modules/applications/music.nix`
 - `modules/services/<domain>/<name>.nix` for reusable service modules grouped by domain (e.g. `modules/services/music/navidrome.nix`, `modules/services/music/audiomuse.nix`, `modules/services/music/syncthing.nix`)
 - `modules/services/<name>.nix` for standalone leaf service modules outside a domain subtree
+- `modules/services/virtualisation/windows-vm.nix` for the reusable declarative Windows VM layer (libvirt instances, attachment to the host-owned always-on bridge, loopback SPICE, virtiofs shares)
+- `modules/applications/dj/` for the DJ composition root (Engine DJ library hosting on a Windows VM; see `docs/runbooks/engine-dj-guest-setup.md`)
 - `modules/core/base.nix` for shared baseline NixOS policy
 - `modules/core/users.nix` for shared user declarations
 - `modules/profiles/base-server.nix` for common host profile composition, including shared Nix substitute/trust defaults
@@ -199,6 +202,7 @@ Initial media/data flow:
 - Tagr is available as an operator-invoked manual metadata/cover fallback editor against canonical media paths
 - `/srv/media` remains the authoritative shared media root
 - `/srv/data` remains the service-state mount (`/srv/data/syncthing/config`, `/srv/data/navidrome`, `/srv/data/tagr`, `/srv/data/audiomuse`, `/srv/data/karakeep`, `/srv/data/bifrost`)
+- Engine DJ (`modules/applications/dj/`) runs in a Windows VM on `home-forge`: the `M:` virtiofs share maps the host music root `/srv/storage/media/music` (read-write for direct imports), the NVMe Engine database is exported as a separate `engine-library` share on `L:` with a guest junction `M:\Engine Library` → `L:\` (no host bind inside the music root), and the read-only `setup` share carries the WinFsp/Mesa setup media (see D-044 and `docs/runbooks/engine-dj-guest-setup.md`)
 - canonical ingest/promotion paths:
   - download inbox: `/srv/media/inbox/slskd`
   - canonical library: `/srv/media/library`

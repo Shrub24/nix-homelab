@@ -16,10 +16,10 @@ In scope now:
 
 - Oracle Cloud host `oci-melb-1` as a fleet node
 - LA host `la-admin-1` as the active admin, edge, and identity node
-- home-forge host as the Engine DJ Windows VM workload node (declarative Windows VM layer; see `docs/runbooks/engine-dj-guest-setup.md`)
+- home-forge host as the media/DJ workload node (music application and Engine DJ Windows VM)
 - private-first service topology with a designated public edge bastion (Cloudflare + Caddy)
 - native NixOS services: `navidrome` and `syncthing`
-- optional Navidrome extension services: `audiomuse` (PostgreSQL + Redis + Flask/worker, managed via Podman containers) as a Navidrome-facing music-intelligence layer for Symfonium similar/radio behavior
+- the complete music application runs on `home-forge` rooted at the host-selected music application root `/srv/storage/media/music`; AudioMuse compute runs there with its PostgreSQL database in OCI's shared cluster over Tailscale (Navidrome-facing music-intelligence layer for Symfonium similar/radio behavior)
 - music service modules regrouped under `modules/services/music/` as a coherent feature subtree
 - modular host and service design for future multi-host growth
 
@@ -89,7 +89,7 @@ The exact file tree can evolve, but the intended shape is:
 - `hosts/<host>/default.nix` for host identity, facts, feature enables, and narrow overrides
 - `hosts/<host>/facter.json` for committed hardware facts via `hardware.facter.reportPath`
 - `hosts/<host>/<component>.nix` for host-specific component overlays
-- `modules/applications/<name>/default.nix` for feature composition roots (multi-service stacks), e.g. `modules/applications/music.nix`
+- `modules/applications/<name>/default.nix` for feature composition roots (multi-service stacks), e.g. `modules/applications/music/`
 - `modules/services/<domain>/<name>.nix` for reusable service modules grouped by domain (e.g. `modules/services/music/navidrome.nix`, `modules/services/music/audiomuse.nix`, `modules/services/music/syncthing.nix`)
 - `modules/services/<name>.nix` for standalone leaf service modules outside a domain subtree
 - `modules/services/virtualisation/windows-vm.nix` for the reusable declarative Windows VM layer (libvirt instances, attachment to the host-owned always-on bridge, loopback SPICE, virtiofs shares)

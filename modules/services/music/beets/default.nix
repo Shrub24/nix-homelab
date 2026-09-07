@@ -31,11 +31,9 @@ let
     SystemCallArchitectures = "native";
   };
 
+  # Every path is injected by the caller; nothing is derived here.
   mediaPaths = rec {
-    inboxDir = if cfg.inboxDir != null then cfg.inboxDir else "${cfg.mediaRoot}/inbox";
-    libraryDir = if cfg.libraryDir != null then cfg.libraryDir else "${cfg.mediaRoot}/library";
-    quarantineDir =
-      if cfg.quarantineDir != null then cfg.quarantineDir else "${cfg.mediaRoot}/quarantine";
+    inherit (cfg) inboxDir libraryDir quarantineDir;
     untaggedDir = "${quarantineDir}/untagged";
     approvedDir = "${quarantineDir}/approved";
   };
@@ -72,12 +70,19 @@ let
     };
   };
 
+  # Single-format checker for badfiles `commands:` (mp3 is covered by mp3val).
+  # Takes the file path as $1 and exits nonzero when decoding fails.
+  ffmpegCheck = pkgs.writeShellScriptBin "beet-ffmpeg-check" ''
+    exec ${pkgs.ffmpeg}/bin/ffmpeg -hide_banner -v error -i "$1" -f null -
+  '';
+
   runnerKinds = import ./runners.nix {
     inherit pkgs lib;
     beets = beetsRuntime;
     notify = notifyPkg;
     mediaPaths = mediaPaths;
     dataDir = cfg.dataDir;
+    ffmpegCheck = ffmpegCheck;
   };
 
   aclForDir = dir: [
@@ -137,32 +142,22 @@ in
   options.services.beets = {
     dataDir = lib.mkOption {
       type = lib.types.str;
-      default = "/srv/data/beets";
-      description = "Data directory for beets runtime.";
-    };
-
-    mediaRoot = lib.mkOption {
-      type = lib.types.str;
-      default = "/srv/media";
-      description = "Root directory for media paths.";
+      description = "Data directory for beets runtime. Required; injected by the caller.";
     };
 
     inboxDir = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Optional full path for inbox directory (defaults to mediaRoot + /inbox).";
+      type = lib.types.str;
+      description = "Inbox directory. Required; injected by the caller.";
     };
 
     libraryDir = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Optional full path for library directory (defaults to mediaRoot + /library).";
+      type = lib.types.str;
+      description = "Library directory. Required; injected by the caller.";
     };
 
     quarantineDir = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = "Optional full path for quarantine root (always creates fixed untagged/approved subdirs).";
+      type = lib.types.str;
+      description = "Quarantine root. Required; injected by the caller. Fixed untagged/approved subdirs are derived from it.";
     };
 
     secretFiles.host = secretHelpers.mkSecretFileOption "beets-host-secrets";
@@ -171,6 +166,12 @@ in
       type = lib.types.listOf lib.types.str;
       default = [ ];
       description = "Systemd units to trigger via OnSuccess= on all beets runner services. Set from the application composition layer.";
+    };
+
+    importReadyFlag = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Flag file that must exist for import-kind runners to start (set by the application-layer preprocess when a pass warrants an import; cleared on success so failures keep it for the retry timer). Null disables the gate.";
     };
 
     notify = lib.mkOption {
@@ -242,10 +243,6 @@ in
               type = lib.types.str;
               description = "Beets runtime data dir.";
             };
-            mediaRoot = lib.mkOption {
-              type = lib.types.str;
-              description = "Media root path.";
-            };
             args = lib.mkOption {
               type = lib.types.listOf lib.types.str;
               default = [ ];
@@ -289,9 +286,15 @@ in
       })
     ];
 
-    users.groups.beets = { };
+    # Fleet-stable identity: state moves between hosts (OCI -> home-forge), so
+    # the numeric UID/GID is pinned instead of left to per-host dynamic
+    # allocation (NixOS descends from 999, host-dependent).
+    users.groups.beets = {
+      gid = lib.mkDefault 976;
+    };
     users.users.beets = {
       isSystemUser = true;
+      uid = lib.mkDefault 976;
       group = "beets";
       home = cfg.dataDir;
       createHome = false;
@@ -304,6 +307,9 @@ in
     environment.systemPackages = [
       beetsRuntime
       pkgs.apprise
+      pkgs.mp3val
+      pkgs.ffmpeg
+      ffmpegCheck
     ]
     ++ builtins.map (r: runnerKinds.${r.runnerKind}) (builtins.attrValues cfg.runners);
 
@@ -343,8 +349,15 @@ in
               }
               // {
                 OnSuccess = cfg.onSuccessUnits;
+              }
+              // lib.optionalAttrs (kind == "import" && cfg.importReadyFlag != null) {
+                ConditionPathExists = cfg.importReadyFlag;
               };
-            serviceConfig = (baseUnit.serviceConfig or { });
+            serviceConfig =
+              (baseUnit.serviceConfig or { })
+              // lib.optionalAttrs (kind == "import" && cfg.importReadyFlag != null) {
+                ExecStartPost = "-${pkgs.coreutils}/bin/rm -f ${cfg.importReadyFlag}";
+              };
           }
         )
       ) cfg.runners)
@@ -396,6 +409,18 @@ in
           }
         )
         (lib.filterAttrs (_: r: r ? triggers && r.triggers ? timer && r.triggers.timer != null) cfg.runners)
+      // (lib.mapAttrs' (
+        runnerName: runnerInstance:
+        lib.nameValuePair "beets-${runnerName}-retry" {
+          description = "Delayed one-shot retry for failed beets ${runnerName} run";
+          timerConfig = {
+            OnActiveSec = "15min";
+            AccuracySec = "1min";
+            Persistent = true;
+            Unit = "beets-${runnerName}.service";
+          };
+        }
+      ) (lib.filterAttrs (_: runnerInstance: runnerInstance.runnerKind == "import") cfg.runners))
     );
 
     # Generate path units for runner instances that declare path triggers.

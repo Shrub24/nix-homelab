@@ -1,17 +1,21 @@
-directory: /srv/media/library
-library: /srv/data/beets/state/library.db
-plugins: bandcamp chroma discogs fetchart embedart fromfilename inline duplicates spotify deezer
-item_fields:
-  source_filename: |
-    import os
-    from beets.util import bytestring_path
-    return bytestring_path(os.path.basename(path))
-  source_stem: |
-    import os
-    from beets.util import bytestring_path
-    source_name = os.path.basename(path)
-    source_stem, _ = os.path.splitext(source_name)
-    return bytestring_path(source_stem)
+directory: __MUSIC_LIBRARY_DIR__
+library: __BEETS_STATE_DB__
+plugins: badfiles bandcamp chroma convert discogs fetchart embedart fromfilename inline duplicates spotify deezer unimported
+asciify_paths: yes
+# item_fields:
+#   source_filename: |
+#     import os
+#     from beets.util import bytestring_path
+#     return bytestring_path(os.path.basename(path))
+#   source_stem: |
+#     import os
+#     from beets.util import bytestring_path
+#     source_name = os.path.basename(path)
+#     source_stem, _ = os.path.splitext(source_name)
+#     return bytestring_path(source_stem)
+ignore:
+  - ".stversions/**"
+  - ".stfolder"
 import:
   write: yes
   copy: no
@@ -23,7 +27,7 @@ import:
   incremental_skip_later: no
   singletons: no
   group_albums: yes
-  duplicate_action: keep
+  duplicate_action: skip
 match:
   strong_rec_thresh: 0.18
   medium_rec_thresh: 0.45
@@ -48,17 +52,42 @@ embedart:
   auto: yes
   ifempty: yes
 paths:
-  default: $albumartist/$album%aunique{}/$source_stem
-  comp: Compilations/$album%aunique{}/$source_stem
-  singleton: Singles/$artist/$source_stem
+  default: $albumartist/$album%aunique{}/$track $title
+  comp: Compilations/$album%aunique{}/$track $title
+  singleton: Singles/$artist/$track $title
 discogs:
   user_token: REPLACE_WITH_DISCOGS_USER_TOKEN
 duplicates:
   tiebreak:
     items: [bitrate]
+convert:
+  dest: __BEETS_CONVERT_DIR__
+  formats:
+    aiff:
+      command: ffmpeg -i $source -y -vn -acodec pcm_s16be $dest
+      extension: aiff
+    mp3:
+      command: ffmpeg -i $source -y -vn -acodec libmp3lame -b:a 320k $dest
+      extension: mp3
+badfiles:
+  check_on_import: yes
+  import_action_on_error: skip
+  import_action_on_warning: continue
+  commands:
+    aac: beet-ffmpeg-check
+    aif: beet-ffmpeg-check
+    aiff: beet-ffmpeg-check
+    flac: beet-ffmpeg-check
+    m4a: beet-ffmpeg-check
+    ogg: beet-ffmpeg-check
+    opus: beet-ffmpeg-check
+    wav: beet-ffmpeg-check
 spotify:
   client_id: REPLACE_WITH_SPOTIFY_CLIENT_ID
   client_secret: REPLACE_WITH_SPOTIFY_CLIENT_SECRET
 beetcamp:
   include_digital_only_tracks: true
   art: true
+unimported:
+  ignore_extensions: jpg png stfolder
+  ignore_subdirectories: .stversions/

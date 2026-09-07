@@ -41,6 +41,9 @@ creation_rules:
       - age:
           - *owner_age
           - *oci_melb_1_age
+          # home-forge consumes the audiomuse app credentials (password/api_token/
+          # jwt_secret) from this file; OCI is retained for the remaining ingest.
+          - *home_forge_age
   - path_regex: ^secrets/applications/admin\.ya?ml$
     key_groups:
       - age:

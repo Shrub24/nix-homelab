@@ -8,8 +8,6 @@
 let
   cfg = config.services.tagr;
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
-  libraryPath = "${cfg.mediaRoot}/library";
-  quarantinePath = "${cfg.mediaRoot}/quarantine";
   ingestGid = toString config.users.groups.music-ingest.gid;
   mediaGid = toString config.users.groups.media.gid;
 in
@@ -19,14 +17,17 @@ in
 
     dataDir = lib.mkOption {
       type = lib.types.str;
-      default = "/srv/data/tagr";
-      description = "Persistent data directory for Tagr.";
+      description = "Persistent data directory for Tagr. Required; injected by the caller.";
     };
 
-    mediaRoot = lib.mkOption {
+    libraryPath = lib.mkOption {
       type = lib.types.str;
-      default = "/srv/media";
-      description = "Canonical media root used to derive Tagr library and quarantine mounts.";
+      description = "Music library directory bind-mounted read-write into the container. Required; injected by the caller.";
+    };
+
+    quarantinePath = lib.mkOption {
+      type = lib.types.str;
+      description = "Music quarantine directory bind-mounted read-write into the container. Required; injected by the caller.";
     };
 
     environmentFile = lib.mkOption {
@@ -98,7 +99,10 @@ in
     virtualisation.podman.enable = true;
 
     systemd.tmpfiles.rules = [
-      "d ${cfg.dataDir} 0750 root root - -"
+      # tagr container writes /data/tagr.db as uid 1001 in group music-ingest
+      # (PGID + --group-add); z re-converges the dir when a restore drifts it.
+      "d ${cfg.dataDir} 2770 root music-ingest - -"
+      "z ${cfg.dataDir} 2770 root music-ingest - -"
       # SQLite export parent: the export prepare command runs in the restic
       # backup unit as root, so the staging dir is root-owned 0700.
       "d ${builtins.dirOf cfg.backup.exportFile} 0700 root root - -"
@@ -121,8 +125,8 @@ in
       ];
       volumes = [
         "${cfg.dataDir}:/data"
-        "${libraryPath}:/music/library:rw"
-        "${quarantinePath}:/music/quarantine:rw"
+        "${cfg.libraryPath}:/music/library:rw"
+        "${cfg.quarantinePath}:/music/quarantine:rw"
       ];
     };
 
@@ -137,8 +141,8 @@ in
       ];
       unitConfig.RequiresMountsFor = [
         cfg.dataDir
-        libraryPath
-        quarantinePath
+        cfg.libraryPath
+        cfg.quarantinePath
       ];
       serviceConfig.SupplementaryGroups = lib.mkAfter [
         "music-ingest"

@@ -1,10 +1,11 @@
 {
-  pkgs,
   lib,
+  pkgs,
   beets,
   mediaPaths,
   dataDir,
   notify,
+  ffmpegCheck,
 }:
 
 let
@@ -36,9 +37,11 @@ let
     count=0
     renamed=0
     while IFS= read -r -d $'\0' f; do
-      base="$(basename "$f")"
-      dest="${destDir}/$base"
+      rel="''${f#"${sourceDir}"/}"
+      dest="${destDir}/$rel"
+      mkdir -p "$(dirname "$dest")"
       if [ -e "$dest" ]; then
+        base="$(basename "$rel")"
         stem="''${base%.*}"
         ext=""
         if [ "$stem" != "$base" ]; then
@@ -48,7 +51,7 @@ let
         while [ -e "${destDir}/''${stem}.demoted-''${n}''${ext}" ]; do
           n=$((n + 1))
         done
-        dest="${destDir}/''${stem}.demoted-''${n}''${ext}"
+        dest="$(dirname "$dest")/''${stem}.demoted-''${n}''${ext}"
         renamed=$((renamed + 1))
       fi
       mv "$f" "$dest"
@@ -88,6 +91,8 @@ let
         beets
         pkgs.coreutils
         pkgs.findutils
+        pkgs.mp3val
+        ffmpegCheck
       ];
 
   mkSimpleRunner =
@@ -130,7 +135,7 @@ in
 
   reconcile =
     mkSimpleRunner "beets-runner-reconcile"
-      ''beet -c "$CONFIG" update -a && beet -c "$CONFIG" convert --yes && beet -c "$CONFIG" duplicates -a && beet -c "$CONFIG" move''
+      ''beet -c "$CONFIG" update -a && beet -c "$CONFIG" duplicates -a && beet -c "$CONFIG" move''
       [
         beets
         pkgs.coreutils

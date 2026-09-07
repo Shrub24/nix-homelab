@@ -1,5 +1,6 @@
 let
   oci = "oci-melb-1.tail0fe19b.ts.net";
+  homeForge = "home-forge.tail0fe19b.ts.net";
 in
 {
   defaults = {
@@ -40,7 +41,7 @@ in
           subdomain = "music";
           origin = {
             scheme = "http";
-            host = oci;
+            host = homeForge;
             port = 4533;
           };
           exposureMode = "tailscale-upstream";
@@ -188,11 +189,26 @@ in
           category = "admin";
         };
 
+        syncthing-home-forge = {
+          subdomain = "syncthing";
+          path = "/home-forge";
+          forceTrailingSlash = true;
+          stripPrefix = true;
+          origin = {
+            scheme = "http";
+            host = homeForge;
+            port = 8384;
+          };
+          upstreamHostHeader = "{upstream_hostport}";
+          exposureMode = "tailscale-upstream";
+          category = "admin";
+        };
+
         slskd = {
           subdomain = "slskd";
           origin = {
             scheme = "http";
-            host = oci;
+            host = homeForge;
             port = 5030;
           };
           exposureMode = "tailscale-upstream";
@@ -203,7 +219,7 @@ in
           subdomain = "tagr";
           origin = {
             scheme = "http";
-            host = oci;
+            host = homeForge;
             port = 3003;
           };
           exposureMode = "tailscale-upstream";

@@ -8,6 +8,13 @@
 let
   cfg = config.services.audiomuse;
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
+
+  # The audiomuse Postgres role password comes from the shared postgres-shared
+  # SOPS file (secrets/services/postgres-shared.yaml, key roles/audiomuse/password),
+  # the sole SSOT for the database password; the operator adds home-forge as a
+  # recipient with `sops updatekeys` and preserves the existing value.
+  dbSecretAvailable = cfg.secretFiles.db != null && builtins.pathExists cfg.secretFiles.db;
+  navidromePort = 4533;
 in
 {
   options.services.audiomuse = {
@@ -63,11 +70,31 @@ in
 
     navidromeUrl = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
-      default = "http://host.containers.internal:4533";
+      default = "http://host.containers.internal:${toString navidromePort}";
       description = "Optional Navidrome base URL presented to AudioMuseAI during initial setup.";
     };
 
+    # AudioMuse's PostgreSQL database lives remotely in OCI's shared Postgres,
+    # reached over Tailscale/MagicDNS (tailnet-only + SCRAM). The host is a leaf
+    # contract input so home-forge can point at oci-melb-1 while remaining local
+    # co-located deployments keep host.containers.internal. Redis/temp stay local.
+    postgresHost = lib.mkOption {
+      type = lib.types.str;
+      default = "host.containers.internal";
+      description = "PostgreSQL hostname/address for the AudioMuse database.";
+    };
+
+    postgresPort = lib.mkOption {
+      type = lib.types.port;
+      default = 5432;
+      description = "PostgreSQL TCP port for the AudioMuse database.";
+    };
+
     secretFiles.host = secretHelpers.mkSecretFileOption "audiomuse-host-secrets";
+
+    secretFiles.db = secretHelpers.mkSecretFileOption "audiomuse-db";
+
+    secretKeys.postgresPassword = secretHelpers.mkSecretKeyOption "audiomuse/postgres_password";
   };
 
   config = lib.mkIf cfg.enable {
@@ -78,12 +105,26 @@ in
         feature = "services.audiomuse";
         label = "secretFiles.host";
       })
+      (secretHelpers.mkRequiredSecretAssertion {
+        enable = cfg.enable;
+        file = cfg.secretFiles.db;
+        feature = "services.audiomuse";
+        label = "secretFiles.db";
+      })
+      {
+        assertion = !cfg.enable || dbSecretAvailable;
+        message = "services.audiomuse.enable is true but its encrypted secretFiles.db is missing.";
+      }
     ];
 
     sops.templates."audiomuse.env" = {
       owner = "root";
       group = "root";
       mode = "0400";
+      restartUnits = [
+        "podman-audiomuse-web.service"
+        "podman-audiomuse-worker.service"
+      ];
       content = ''
         TZ=${cfg.timeZone}
         AUTH_ENABLED=true
@@ -93,9 +134,13 @@ in
         JWT_SECRET=${config.sops.placeholder.audiomuse_jwt_secret}
         POSTGRES_DB=audiomuse
         POSTGRES_USER=audiomuse
-        POSTGRES_HOST=host.containers.internal
-        POSTGRES_PORT=5432
+        POSTGRES_HOST=${cfg.postgresHost}
+        POSTGRES_PORT=${toString cfg.postgresPort}
+      ''
+      + ''
         POSTGRES_PASSWORD=${config.sops.placeholder.audiomuse_postgres_password}
+      ''
+      + ''
         REDIS_URL=redis://audiomuse-redis:6379/0
       ''
       + lib.optionalString (cfg.navidromeUrl != null) ''
@@ -103,27 +148,39 @@ in
       '';
     };
 
-    sops.secrets = secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
-      audiomuse_password = {
-        key = "audiomuse/password";
-        path = "/run/secrets/audiomuse.password";
+    sops.secrets =
+      secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
+        audiomuse_password = {
+          key = "audiomuse/password";
+          path = "/run/secrets/audiomuse.password";
+        };
+        audiomuse_api_token = {
+          key = "audiomuse/api_token";
+          path = "/run/secrets/audiomuse.api_token";
+        };
+        audiomuse_jwt_secret = {
+          key = "audiomuse/jwt_secret";
+          path = "/run/secrets/audiomuse.jwt_secret";
+        };
+      }
+      // {
+        audiomuse_postgres_password = {
+          sopsFile = cfg.secretFiles.db;
+          key = cfg.secretKeys.postgresPassword;
+          path = "/run/secrets/audiomuse.postgres_password";
+          restartUnits = [
+            "podman-audiomuse-web.service"
+            "podman-audiomuse-worker.service"
+          ];
+        };
       };
-      audiomuse_api_token = {
-        key = "audiomuse/api_token";
-        path = "/run/secrets/audiomuse.api_token";
-      };
-      audiomuse_jwt_secret = {
-        key = "audiomuse/jwt_secret";
-        path = "/run/secrets/audiomuse.jwt_secret";
-      };
-      audiomuse_postgres_password = {
-        key = "audiomuse/postgres_password";
-        path = "/run/secrets/audiomuse.postgres_password";
-      };
-    };
 
     virtualisation.podman.enable = true;
     virtualisation.podman.autoPrune.enable = lib.mkDefault true;
+
+    networking.firewall.interfaces."audiomuse0".allowedTCPPorts = lib.mkIf (cfg.navidromeUrl != null) [
+      navidromePort
+    ];
 
     systemd.services."podman-network-${cfg.networkName}" = {
       description = "Create Podman network ${cfg.networkName}";

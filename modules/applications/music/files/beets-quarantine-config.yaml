@@ -1,17 +1,20 @@
-directory: /srv/media/library
-library: /srv/data/beets/state/library.db
-plugins: bandcamp chroma discogs fetchart embedart fromfilename inline duplicates spotify deezer
-item_fields:
-  source_filename: |
-    import os
-    from beets.util import bytestring_path
-    return bytestring_path(os.path.basename(path))
-  source_stem: |
-    import os
-    from beets.util import bytestring_path
-    source_name = os.path.basename(path)
-    source_stem, _ = os.path.splitext(source_name)
-    return bytestring_path(source_stem)
+directory: __MUSIC_LIBRARY_DIR__
+library: __BEETS_STATE_DB__
+plugins: badfiles bandcamp chroma convert discogs fetchart embedart fromfilename inline duplicates spotify deezer unimported
+# item_fields:
+#   source_filename: |
+#     import os
+#     from beets.util import bytestring_path
+#     return bytestring_path(os.path.basename(path))
+#   source_stem: |
+#     import os
+#     from beets.util import bytestring_path
+#     source_name = os.path.basename(path)
+#     source_stem, _ = os.path.splitext(source_name)
+#     return bytestring_path(source_stem)
+ignore:
+  - ".stversions/**"
+  - ".stfolder"
 import:
   write: yes
   copy: no
@@ -49,12 +52,34 @@ embedart:
   auto: yes
   ifempty: yes
 paths:
-  default: $albumartist/$album%aunique{}/$source_stem
-  comp: Compilations/$album%aunique{}/$source_stem
-  singleton: Singles/$artist/$source_stem
+  default: $albumartist/$album%aunique{}/$track $title
+  comp: Compilations/$album%aunique{}/$track $title
+  singleton: Singles/$artist/$track $title
 duplicates:
   tiebreak:
     items: [bitrate, num_media, tracks]
+# No import_action_* here: the quarantine operator answers per file (the inbox
+# config skips bad files instead so they land here for review).
+convert:
+  dest: __BEETS_CONVERT_DIR__
+  formats:
+    aiff:
+      extension: aiff
+      command: ffmpeg -i $source -y -vn -acodec pcm_s16be $dest
+    mp3:
+      extension: mp3
+      command: ffmpeg -i $source -y -vn -acodec libmp3lame -b:a 320k $dest
+badfiles:
+  check_on_import: yes
+  commands:
+    aac: beet-ffmpeg-check
+    aif: beet-ffmpeg-check
+    aiff: beet-ffmpeg-check
+    flac: beet-ffmpeg-check
+    m4a: beet-ffmpeg-check
+    ogg: beet-ffmpeg-check
+    opus: beet-ffmpeg-check
+    wav: beet-ffmpeg-check
 discogs:
   user_token: REPLACE_WITH_DISCOGS_USER_TOKEN
 spotify:
@@ -65,3 +90,6 @@ bandcamp:
   art: true
 chroma:
   auto: yes
+unimported:
+  ignore_extensions: jpg png stfolder
+  ignore_subdirectories: .stversions/

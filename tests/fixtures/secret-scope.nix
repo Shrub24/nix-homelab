@@ -4,7 +4,10 @@
     "la-admin-1"
     "home-forge"
   ];
-  "applications/music" = [ "oci-melb-1" ];
+  "applications/music" = [
+    "oci-melb-1"
+    "home-forge"
+  ];
   "applications/admin" = [ "la-admin-1" ];
   "applications/edge-ingress" = [ "la-admin-1" ];
 

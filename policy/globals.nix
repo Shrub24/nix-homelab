@@ -16,10 +16,9 @@
   };
 
   applications = {
-    music = {
-      dataRoot = "/srv/data";
-      mediaRoot = "/srv/media";
-    };
+    # Music has no global physical paths: storage roots are host-required
+    # bindings (see applications.music.dataRoot/.storageRoot) so a host cannot
+    # silently inherit a fleet-wide layout.
     admin = {
       dataRoot = "/srv/data";
     };

@@ -28,4 +28,6 @@
   quantum = "ghcr.io/gtsteffaniak/filebrowser:stable@sha256:2cd949cd06c058576773c5b8400c854478a64c4f364b1e2bea275819847f099b";
 
   phoenix = "docker.io/arizephoenix/phoenix:latest@sha256:7eee4177732e6cba269f83071b869c5e37a86b47ba2ba8c6bef246273bee501d";
+
+  omniroute = "ghcr.io/shrub24/omniroute:edge@sha256:a7c2cc4bb3852f2c67fdd5e7f2fb1b80042ee2d84b295648eaa67cb0ef8e53a9";
 }

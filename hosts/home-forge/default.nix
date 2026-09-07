@@ -15,6 +15,7 @@ in
     # Hard dependency of base-server (via state-backups): declares
     # services.notification-daemon option. Infrastructure, not a workload.
     ../../modules/services/notification-daemon
+    ../../modules/services/omniroute.nix
     ../../modules/storage/disko-two-disk.nix
     ../../modules/core/users.nix
   ];
@@ -116,6 +117,17 @@ in
     secretFiles.hostSystem = ../../secrets/hosts/home-forge/system.yaml;
     ntfy.enable = true;
   };
+
+  # Providers/routing/tunnels are dashboard-managed state under /srv/data/omniroute;
+  # gated on the encrypted secret existing (two-step bootstrap).
+  services.omniroute = lib.mkIf (builtins.pathExists ../../secrets/services/omniroute.yaml) {
+    enable = true;
+    secretFiles.host = ../../secrets/services/omniroute.yaml;
+  };
+
+  services.notification-daemon.monitor.services =
+    lib.optionals (builtins.pathExists ../../secrets/services/omniroute.yaml)
+      [ "podman-omniroute" ];
 
   system.stateVersion = "25.11";
 }

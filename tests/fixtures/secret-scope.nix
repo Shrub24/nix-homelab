@@ -13,6 +13,7 @@
 
   "services/karakeep-pod" = [ "oci-melb-1" ];
   "services/bifrost-gateway" = [ "oci-melb-1" ];
+  "services/omniroute" = [ "home-forge" ];
   "services/ntfy" = [ "la-admin-1" ];
   "services/ntfy-firebase-key.json" = [ "la-admin-1" ];
   "services/notification-daemon" = [

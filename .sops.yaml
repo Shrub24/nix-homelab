@@ -79,6 +79,11 @@ creation_rules:
       - age:
           - *owner_age
           - *oci_melb_1_age
+  - path_regex: ^secrets/services/omniroute\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *home_forge_age
   - path_regex: ^secrets/services/paperless\.ya?ml$
     key_groups:
       - age:

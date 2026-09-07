@@ -29,12 +29,12 @@ let
       }
     ]
     ++ map (source: {
-      name = source.name;
-      path = source.path;
+      inherit (source) name;
+      inherit (source) path;
       config.defaultEnabled = true;
     }) cfg.localSources
     ++ map (host: {
-      name = host.name;
+      inherit (host) name;
       path = "/mnt/hosts/${host.name}";
       config.defaultEnabled = true;
     }) cfg.sftp.hosts;
@@ -202,40 +202,37 @@ in
 
       hosts = lib.mkOption {
         type = lib.types.listOf (
-          lib.types.submodule (
-            { ... }:
-            {
-              options = {
-                name = lib.mkOption {
-                  type = lib.types.str;
-                  description = "Host source label and mount directory name.";
-                };
-
-                host = lib.mkOption {
-                  type = lib.types.str;
-                  description = "SFTP endpoint host (typically Tailscale DNS name).";
-                };
-
-                user = lib.mkOption {
-                  type = lib.types.str;
-                  default = "dev";
-                  description = "Remote SSH username used for SFTP mount.";
-                };
-
-                remotePath = lib.mkOption {
-                  type = lib.types.str;
-                  default = "/srv/data";
-                  description = "Remote host path exposed as this Quantum source.";
-                };
-
-                readOnly = lib.mkOption {
-                  type = lib.types.bool;
-                  default = true;
-                  description = "Mount source read-only by default.";
-                };
+          lib.types.submodule (_: {
+            options = {
+              name = lib.mkOption {
+                type = lib.types.str;
+                description = "Host source label and mount directory name.";
               };
-            }
-          )
+
+              host = lib.mkOption {
+                type = lib.types.str;
+                description = "SFTP endpoint host (typically Tailscale DNS name).";
+              };
+
+              user = lib.mkOption {
+                type = lib.types.str;
+                default = "dev";
+                description = "Remote SSH username used for SFTP mount.";
+              };
+
+              remotePath = lib.mkOption {
+                type = lib.types.str;
+                default = "/srv/data";
+                description = "Remote host path exposed as this Quantum source.";
+              };
+
+              readOnly = lib.mkOption {
+                type = lib.types.bool;
+                default = true;
+                description = "Mount source read-only by default.";
+              };
+            };
+          })
         );
         default = [ ];
         description = "SFTP host list exposed as Quantum sources via SSHFS mounts.";
@@ -244,22 +241,19 @@ in
 
     localSources = lib.mkOption {
       type = lib.types.listOf (
-        lib.types.submodule (
-          { ... }:
-          {
-            options = {
-              name = lib.mkOption {
-                type = lib.types.str;
-                description = "Quantum source display name for local bind-mounted paths.";
-              };
-
-              path = lib.mkOption {
-                type = lib.types.str;
-                description = "Container-visible path for local source (for example /srv/data).";
-              };
+        lib.types.submodule (_: {
+          options = {
+            name = lib.mkOption {
+              type = lib.types.str;
+              description = "Quantum source display name for local bind-mounted paths.";
             };
-          }
-        )
+
+            path = lib.mkOption {
+              type = lib.types.str;
+              description = "Container-visible path for local source (for example /srv/data).";
+            };
+          };
+        })
       );
       default = [ ];
       description = "Additional local filesystem sources exposed to Quantum.";
@@ -272,7 +266,7 @@ in
   config = lib.mkIf (appCfg.enable && cfg.enable) {
     assertions = [
       (secretHelpers.mkRequiredSecretAssertion {
-        enable = cfg.enable;
+        inherit (cfg) enable;
         file = cfg.secretFiles.host;
         feature = "services.admin.quantum";
         label = "secretFiles.host";
@@ -300,75 +294,65 @@ in
       }
     ];
 
-    # Auth env file - always owned by quantum module when needed
-    sops.templates."quantum-auth.env" = lib.mkIf needsAuthTemplate {
-      owner = "root";
-      group = "root";
-      mode = "0400";
-      content = ''
-        FILEBROWSER_ADMIN_PASSWORD=${config.sops.placeholder.quantum_admin_password}
-      '';
-    };
+    sops = {
+      templates = {
+        # Auth env file - always owned by quantum module when needed
+        "quantum-auth.env" = lib.mkIf needsAuthTemplate {
+          owner = "root";
+          group = "root";
+          mode = "0400";
+          content = ''
+            FILEBROWSER_ADMIN_PASSWORD=${config.sops.placeholder.quantum_admin_password}
+          '';
+        };
 
-    # OIDC env file - owned by quantum module when OIDC is enabled
-    sops.templates."quantum-oidc.env" = lib.mkIf hasOidcSecrets {
-      owner = "root";
-      group = "root";
-      mode = "0400";
-      content = ''
-        FILEBROWSER_OIDC_CLIENT_ID=${cfg.oidc.clientId}
-        FILEBROWSER_OIDC_CLIENT_SECRET=${config.sops.placeholder.quantum_oidc_client_secret}
-      '';
-    };
+        # OIDC env file - owned by quantum module when OIDC is enabled
+        "quantum-oidc.env" = lib.mkIf hasOidcSecrets {
+          owner = "root";
+          group = "root";
+          mode = "0400";
+          content = ''
+            FILEBROWSER_OIDC_CLIENT_ID=${cfg.oidc.clientId}
+            FILEBROWSER_OIDC_CLIENT_SECRET=${config.sops.placeholder.quantum_oidc_client_secret}
+          '';
+        };
+      };
 
-    # Password auth secrets from host secrets file
-    # OIDC secrets from oidc secrets file when OIDC is enabled
-    sops.secrets = lib.mkMerge [
-      (lib.mkIf needsAuthTemplate (
-        secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
-          quantum_admin_password = {
-            key = "quantum/admin_password";
-            path = "/run/secrets/quantum.admin_password";
-            owner = "root";
-            group = "root";
-          };
-        }
-      ))
-      (lib.mkIf hasOidcSecrets (
-        secretHelpers.mkSecretsFromMap cfg.secretFiles.oidc {
-          quantum_oidc_client_secret = {
-            key = "quantum/client_secret";
-            path = "/run/secrets/quantum.oidc_client_secret";
-            owner = "root";
-            group = "root";
-          };
-        }
-      ))
-    ];
+      # Password auth secrets from host secrets file
+      # OIDC secrets from oidc secrets file when OIDC is enabled
+      secrets = lib.mkMerge [
+        (lib.mkIf needsAuthTemplate (
+          secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
+            quantum_admin_password = {
+              key = "quantum/admin_password";
+              path = "/run/secrets/quantum.admin_password";
+              owner = "root";
+              group = "root";
+            };
+          }
+        ))
+        (lib.mkIf hasOidcSecrets (
+          secretHelpers.mkSecretsFromMap cfg.secretFiles.oidc {
+            quantum_oidc_client_secret = {
+              key = "quantum/client_secret";
+              path = "/run/secrets/quantum.oidc_client_secret";
+              owner = "root";
+              group = "root";
+            };
+          }
+        ))
+      ];
+    };
 
     virtualisation.podman.enable = true;
 
     environment.systemPackages = [ pkgs.sshfs ];
 
-    systemd.tmpfiles.rules = [
-      "d ${appCfg.dataRoot}/quantum 0750 ${toString cfg.runtimeUid} ${toString cfg.runtimeGid} - -"
-      "d ${appCfg.dataRoot}/quantum/files 0750 ${toString cfg.runtimeUid} ${toString cfg.runtimeGid} - -"
-      "d ${mountRoot} 0755 root root - -"
-      "z ${mountRoot} 0755 root root - -"
-    ]
-    ++ lib.optionals (cfg.localSources != [ ]) [
-      "d ${localSourceMaskDir} 0555 root root - -"
-    ]
-    ++ lib.concatMap (host: [
-      "d ${mountPathFor host} 0755 root root - -"
-      "z ${mountPathFor host} 0755 root root - -"
-    ]) cfg.sftp.hosts;
-
     fileSystems = sshfsFileSystems;
 
     virtualisation.oci-containers.containers.quantum = {
       autoStart = true;
-      image = cfg.image;
+      inherit (cfg) image;
       ports = [
         "${listenAddress}:${toString listenPort}:8080"
       ];
@@ -393,41 +377,59 @@ in
       ];
     };
 
-    systemd.services.quantum-permissions-reconcile = {
-      description = "Reconcile Quantum data directory ownership and permissions";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "systemd-tmpfiles-setup.service" ];
-      before = [ "podman-quantum.service" ];
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = pkgs.writeShellScript "quantum-permissions-reconcile" ''
-          set -euo pipefail
-          install -d -m 0750 -o ${toString cfg.runtimeUid} -g ${toString cfg.runtimeGid} "${appCfg.dataRoot}/quantum"
-          install -d -m 0750 -o ${toString cfg.runtimeUid} -g ${toString cfg.runtimeGid} "${appCfg.dataRoot}/quantum/files"
-          chown ${toString cfg.runtimeUid}:${toString cfg.runtimeGid} "${appCfg.dataRoot}/quantum"
-          if [ -d "${appCfg.dataRoot}/quantum" ]; then
-            find "${appCfg.dataRoot}/quantum" -mindepth 1 -maxdepth 1 ! -name mnt -exec chown -R ${toString cfg.runtimeUid}:${toString cfg.runtimeGid} {} +
-          fi
-        '';
-      };
-    };
+    systemd = {
+      tmpfiles.rules = [
+        "d ${appCfg.dataRoot}/quantum 0750 ${toString cfg.runtimeUid} ${toString cfg.runtimeGid} - -"
+        "d ${appCfg.dataRoot}/quantum/files 0750 ${toString cfg.runtimeUid} ${toString cfg.runtimeGid} - -"
+        "d ${mountRoot} 0755 root root - -"
+        "z ${mountRoot} 0755 root root - -"
+      ]
+      ++ lib.optionals (cfg.localSources != [ ]) [
+        "d ${localSourceMaskDir} 0555 root root - -"
+      ]
+      ++ lib.concatMap (host: [
+        "d ${mountPathFor host} 0755 root root - -"
+        "z ${mountPathFor host} 0755 root root - -"
+      ]) cfg.sftp.hosts;
 
-    systemd.services."podman-quantum" = {
-      wants = [
-        "network-online.target"
-        "systemd-tmpfiles-setup.service"
-        "quantum-permissions-reconcile.service"
-      ];
-      after = [
-        "network-online.target"
-        "systemd-tmpfiles-setup.service"
-        "quantum-permissions-reconcile.service"
-      ];
-      unitConfig.RequiresMountsFor = [
-        "${appCfg.dataRoot}/quantum"
-        "${appCfg.dataRoot}/quantum/files"
-        mountRoot
-      ];
+      services = {
+        quantum-permissions-reconcile = {
+          description = "Reconcile Quantum data directory ownership and permissions";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "systemd-tmpfiles-setup.service" ];
+          before = [ "podman-quantum.service" ];
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = pkgs.writeShellScript "quantum-permissions-reconcile" ''
+              set -euo pipefail
+              install -d -m 0750 -o ${toString cfg.runtimeUid} -g ${toString cfg.runtimeGid} "${appCfg.dataRoot}/quantum"
+              install -d -m 0750 -o ${toString cfg.runtimeUid} -g ${toString cfg.runtimeGid} "${appCfg.dataRoot}/quantum/files"
+              chown ${toString cfg.runtimeUid}:${toString cfg.runtimeGid} "${appCfg.dataRoot}/quantum"
+              if [ -d "${appCfg.dataRoot}/quantum" ]; then
+                find "${appCfg.dataRoot}/quantum" -mindepth 1 -maxdepth 1 ! -name mnt -exec chown -R ${toString cfg.runtimeUid}:${toString cfg.runtimeGid} {} +
+              fi
+            '';
+          };
+        };
+
+        "podman-quantum" = {
+          wants = [
+            "network-online.target"
+            "systemd-tmpfiles-setup.service"
+            "quantum-permissions-reconcile.service"
+          ];
+          after = [
+            "network-online.target"
+            "systemd-tmpfiles-setup.service"
+            "quantum-permissions-reconcile.service"
+          ];
+          unitConfig.RequiresMountsFor = [
+            "${appCfg.dataRoot}/quantum"
+            "${appCfg.dataRoot}/quantum/files"
+            mountRoot
+          ];
+        };
+      };
     };
 
   };

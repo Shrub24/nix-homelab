@@ -82,7 +82,7 @@
 
       deployConfig = import ./lib/deploy {
         inherit self nixpkgs deploy-rs;
-        nodes = deployTopology.nodes;
+        inherit (deployTopology) nodes;
       };
 
     in
@@ -97,7 +97,7 @@
           pkgs = import nixpkgs { inherit system; };
         in
         {
-          deploy-rs = pkgs.deploy-rs;
+          inherit (pkgs) deploy-rs;
           niks3 = niks3.packages.${system}.niks3;
           nix-path-filter = pkgs.callPackage ./pkgs/nix-path-filter { };
           notification-daemon = pkgs.callPackage ./pkgs/notification-daemon { };
@@ -114,62 +114,65 @@
         system: (import nixpkgs { inherit system; }).nixfmt
       );
 
-      nixosConfigurations.oci-melb-1 = nixpkgs.lib.nixosSystem {
-        modules = [
-          disko.nixosModules.disko
-          sops-nix.nixosModules.sops
-          niks3.nixosModules.niks3
-          niks3.nixosModules.niks3-auto-upload
-          inputs.traktor-m3u-sync.nixosModules.traktor-m3u-sync
-          inputs.nix-index-database.nixosModules.nix-index
-          ./hosts/oci-melb-1/default.nix
-        ];
-        specialArgs = {
-          inherit
-            self
-            inputs
-            ociImages
-            ;
+      nixosConfigurations = {
+        oci-melb-1 = nixpkgs.lib.nixosSystem {
+          modules = [
+            disko.nixosModules.disko
+            sops-nix.nixosModules.sops
+            niks3.nixosModules.niks3
+            niks3.nixosModules.niks3-auto-upload
+            inputs.nix-index-database.nixosModules.nix-index
+            ./hosts/oci-melb-1/default.nix
+          ];
+          specialArgs = {
+            inherit
+              self
+              inputs
+              ociImages
+              ;
+          };
+        };
+
+        la-admin-1 = nixpkgs.lib.nixosSystem {
+          modules = [
+            sops-nix.nixosModules.sops
+            niks3.nixosModules.niks3-auto-upload
+            inputs.nix-index-database.nixosModules.nix-index
+            ./hosts/la-admin-1/default.nix
+          ];
+          specialArgs = {
+            inherit
+              self
+              inputs
+              ociImages
+              ;
+          };
+        };
+
+        home-forge = nixpkgs.lib.nixosSystem {
+          # x86_64 physical host; no facter report/hardware-configuration exists
+          # yet (captured at operator gate 8.3), so pin the architecture explicitly.
+          modules = [
+            {
+              nixpkgs.hostPlatform.system = "x86_64-linux";
+            }
+            disko.nixosModules.disko
+            sops-nix.nixosModules.sops
+            niks3.nixosModules.niks3-auto-upload
+            inputs.nix-index-database.nixosModules.nix-index
+            ./hosts/home-forge/default.nix
+          ];
+          specialArgs = {
+            inherit
+              self
+              inputs
+              ociImages
+              ;
+          };
         };
       };
 
-      nixosConfigurations.la-admin-1 = nixpkgs.lib.nixosSystem {
-        modules = [
-          sops-nix.nixosModules.sops
-          niks3.nixosModules.niks3-auto-upload
-          inputs.nix-index-database.nixosModules.nix-index
-          ./hosts/la-admin-1/default.nix
-        ];
-        specialArgs = {
-          inherit
-            self
-            inputs
-            ociImages
-            ;
-        };
-      };
-
-      nixosConfigurations.home-forge = nixpkgs.lib.nixosSystem {
-        # x86_64 physical host; no facter report/hardware-configuration exists
-        # yet (captured at operator gate 8.3), so pin the architecture explicitly.
-        system = "x86_64-linux";
-        modules = [
-          disko.nixosModules.disko
-          sops-nix.nixosModules.sops
-          niks3.nixosModules.niks3-auto-upload
-          inputs.nix-index-database.nixosModules.nix-index
-          ./hosts/home-forge/default.nix
-        ];
-        specialArgs = {
-          inherit
-            self
-            inputs
-            ociImages
-            ;
-        };
-      };
-
-      deploy = deployConfig.deploy;
-      checks = deployConfig.checks;
+      inherit (deployConfig) deploy;
+      inherit (deployConfig) checks;
     };
 }

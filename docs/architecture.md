@@ -194,30 +194,26 @@ Recovered `oci-melb-1` single-disk baseline:
 - `modules/storage/disko-single-disk.nix` is the canonical storage boundary for that recovered host shape
 - host-specific sizing stays in `hosts/oci-melb-1/default.nix`, while the partition/mount contract remains declarative in the storage module
 
-Initial media/data flow:
+Current media/data flow (music application on `home-forge`):
 
-- Syncthing manages both `/srv/media/library` and `/srv/media/quarantine` directly
-- `modules/applications/music.nix` is the canonical owner for creating shared media roots (`/srv/media`, `/srv/media/inbox`, `/srv/media/library`, `/srv/media/quarantine`, `.versions`)
-- lower-level service modules may add ACLs, marker files, or service-specific subdirectories, but do not redefine those shared root directory ownership contracts
-- Tagr is available as an operator-invoked manual metadata/cover fallback editor against canonical media paths
-- `/srv/media` remains the authoritative shared media root
-- `/srv/data` remains the service-state mount (`/srv/data/syncthing/config`, `/srv/data/navidrome`, `/srv/data/tagr`, `/srv/data/audiomuse`, `/srv/data/karakeep`, `/srv/data/bifrost`)
-- Engine DJ (`modules/applications/dj/`) runs in a Windows VM on `home-forge`: the `M:` virtiofs share maps the host music root `/srv/storage/media/music` (read-write for direct imports), the NVMe Engine database is exported as a separate `engine-library` share on `L:` with a guest junction `M:\Engine Library` → `L:\` (no host bind inside the music root), and the read-only `setup` share carries the WinFsp/Mesa setup media (see D-044 and `docs/runbooks/engine-dj-guest-setup.md`)
+- the complete music application (Navidrome, AudioMuse compute, Syncthing, slskd/Beets/Tagr ingest services) runs on `home-forge`; `oci-melb-1` disables `applications.music`, retains the shared PostgreSQL cluster (AudioMuse database + backup), and keeps its copied `/srv/media` tree and prior music service state on disk only as rollback insurance
+- LA edge routes `music` (Navidrome), `slskd`, and `tagr` to `home-forge` over Tailscale upstreams (`policy/web-services.nix`)
+- `home-forge` selects the music application root via `musicStorageRoot` in `hosts/home-forge/default.nix`: `storageRoot=/srv/storage/media/music` with `library/`, `playlists/`, `inbox/`, `quarantine/`, and `.versions/` beneath it; `/srv/data` remains the service-state mount (`/srv/data/syncthing/config`, `/srv/data/navidrome`, `/srv/data/tagr`, `/srv/data/audiomuse`, `/srv/data/beets`)
+- `applications.music` requires explicit `storageRoot`/`dataRoot` host bindings with no fleet defaults (`policy/globals.nix` carries no music paths); `modules/applications/music/` is the canonical owner for creating the shared roots and layout directories under `storageRoot`; lower-level service modules may add ACLs, marker files, or service-specific subdirectories, but do not redefine those shared root directory ownership contracts
+- Navidrome's MusicFolder and Syncthing's `library` folder use `library/`; Engine DJ's `M:` share maps the whole music root through virtiofs (guest sees `M:\library`, `M:\playlists`, `M:\Engine Library`, `M:\inbox`, `M:\quarantine`). `M:\Engine Library` is a real directory on the share (host `<storageRoot>/Engine Library`) — there is no separate Engine share, mount tag, or guest junction; the operator points the Windows Music known-folder directly at `M:` so Engine resolves `Music\Engine Library` to `M:\Engine Library` (see D-044, D-046, and `docs/runbooks/engine-dj-guest-setup.md`)
+- Syncthing hub is `home-forge`: sendreceive `library/`, `quarantine/`, and `inbox/` folders are shared with the `arch` and `windows` devices, with staggered versioning archived under `.versions/`
 - canonical ingest/promotion paths:
-  - download inbox: `/srv/media/inbox/slskd`
-  - canonical library: `/srv/media/library`
-  - unresolved/review lane: `/srv/media/quarantine/untagged`
-  - approved rescue/staging lane: `/srv/media/quarantine/approved`
-  - Traktor collection sync input: `/srv/media/traktor/collection.nml`
-  - Traktor playlist workspace: `/srv/media/playlists/traktor/{export,import}`
+  - download inbox: `<storageRoot>/inbox/slskd` (manual drop area at `<storageRoot>/inbox/dropbox`; incomplete state under `<storageRoot>/inbox/slskd-incomplete`)
+  - canonical library: `<storageRoot>/library`
+  - unresolved/review lane: `<storageRoot>/quarantine/untagged`
+  - approved rescue/staging lane: `<storageRoot>/quarantine/approved`
+  - playlist export target: the Engine library DB at `<storageRoot>/Engine Library/Database2/m.db` (`/srv/storage/media/music/Engine Library/Database2/m.db`, a real directory on the `M:` share), written directly by the `traktor-m3u-sync` engine export job (chained from the Navidrome M3U import; `track_path_prefix=../library`; see D-046)
 - quarantine ownership is `music-ingest`; ACL grants explicit `media` read-only (`r-x`/`r-X`) access and `syncthing` write access for review and sync workflows
-- Syncthing folder markers are codified with tmpfiles at `/srv/media/library/.stfolder` and `/srv/media/quarantine/.stfolder` owned by `syncthing:syncthing`
-- beets remains installed as fallback rescue tooling and no longer owns default automated ingest
+- Syncthing folder markers are codified with tmpfiles under the library, quarantine, and inbox folders owned by `syncthing:syncthing`
+- beets remains installed as fallback rescue tooling and no longer owns default automated ingest; its state and import logs remain under `/srv/data/beets`
+- Tagr is available as an operator-invoked manual metadata/cover fallback editor against canonical media paths
 - Navidrome scope is explicit (`library + quarantine`) and inbox is excluded from the listening surface
-- `modules/applications/music.nix` also defines `music-library` so `dev` and Syncthing share controlled library access
-- `slskd` keeps downloads and incomplete state under `/srv/media` (`/srv/media/inbox/slskd` and `/srv/media/slskd-incomplete`)
-- Beets state and import logs remain under `/srv/data/beets` (`/srv/data/beets/state`, `/srv/data/beets/logs`)
-- Traktor M3U synchronization is a manual worker: `traktor-m3u-sync-export.service` exports NML playlists to M3U, and `traktor-m3u-sync-import.service` imports curated M3U files into the upstream sandbox folder (`Imported Playlists` by default). No timers or path watches are enabled until manual runs prove the path mapping and sandbox behavior.
+- AudioMuse compute (web, worker, local Redis) runs on `home-forge`; its PostgreSQL database stays in OCI's shared cluster over Tailscale/MagicDNS — an OCI/tailnet outage degrades AudioMuse, not core Navidrome
 - no duplicate media staging dataset is introduced
 
 Future evolution:
@@ -230,10 +226,10 @@ Future evolution:
 Current baseline:
 
 - mutable service state is backed up with NixOS-native `services.restic.backups`
-- backup scope is state-first: `/srv/data` subtrees and generated recovery artifacts are in scope, and `/srv/media` coverage is controlled by host backup policy
+- backup scope is state-first: `/srv/data` subtrees and generated recovery artifacts are in scope, and media-root coverage (`/srv/storage/media/music` on `home-forge`, `/srv/media` on `oci-melb-1`) is controlled by host backup policy
 - each host writes to its own dedicated Cloudflare R2 bucket using host-scoped credentials and a host-unique restic password
 - non-secret transport defaults (`endpoint`, `region`, path-style behavior) stay canonical in `policy/globals.nix`
-- restic repositories are host-scoped: `shrublab-backup-la-admin-1` and `shrublab-backup-oci-melb-1`; the decommissioned host's repository was retained as migration recovery evidence
+- restic repositories are host-scoped: `shrublab-backup-la-admin-1`, `shrublab-backup-oci-melb-1`, and `shrublab-backup-home-forge`; the decommissioned host's repository was retained as migration recovery evidence
 
 Consistency model:
 
@@ -250,7 +246,7 @@ Current export-first services:
 
 Current live-state services:
 
-- Syncthing, Navidrome, Beets state, Termix, Beszel hub, Karakeep, Bifrost non-log app state, Phoenix, Paperless local state/media/consume, paperless-gpt instances, and `/srv/media` library/quarantine (excluding `.versions`)
+- Syncthing, Navidrome, Beets state, Termix, Beszel hub, Karakeep, Bifrost non-log app state, Phoenix, Paperless local state/media/consume, paperless-gpt instances, and music library/quarantine excluding `.versions` (`/srv/storage/media/music` on `home-forge`, retained rollback copy under `/srv/media` on `oci-melb-1`) — the music application now runs on `home-forge`, so the listed OCI music-state entries describe retained rollback copies; home-forge has active music-state backup contracts for Navidrome, Syncthing, Beets, Tagr, and media
 - Beszel hub coverage uses the real DynamicUser path `/var/lib/private/beszel-hub`, never the compatibility symlink `/var/lib/beszel-hub`
 - AudioMuse — Postgres-only backup scope (durable app state); Redis queue/cache and temp audio working files are excluded from canonical backup scope per spec
 - optional Cockpit loopback TLS material (`/var/lib/cockpit-loopback-tls`) when enabled
@@ -461,9 +457,9 @@ AudioMuseAI is an optional Navidrome similarity extension composed from `applica
 
 | Stage | What happens | Who completes it |
 |---|---|---|
-| **1. Deploy toggle** | Set `applications.music.audiomuse.enable = true` in host config, add SOPS secret keys (see secret template), deploy with `just deploy <host>`. AudioMuse Podman containers, Postgres, Redis, Navidrome plugin binary, and runtime flags are placed. Service is deployable but not usable end-to-end. | Operator (repo config) |
-| **2. First-run AudioMuse setup** | Reach the AudioMuse web UI on `<host-tailscale-ip>:8000` (or the port configured in `services.audiomuse.port` via Tailscale). Complete the upstream setup wizard: create admin user, configure Navidrome base URL if not auto-detected. Wizard populates the AudioMuse application database. | Operator (SSH + browser over Tailscale) |
-| **3. Navidrome plugin enablement** | In the Navidrome Admin UI (`<host>:4533` over Tailscale), navigate to Plugins → audiomuse.ai. Enable the plugin, set API URL to the AudioMuse web container address, and supply the API token matching the SOPS `audiomuse/api_token` key. | Operator (browser over Tailscale) |
+| **1. Deploy toggle** | Set `applications.music.audiomuse.enable = true` in the `home-forge` host config, add SOPS secret keys (see secret template), deploy with `just deploy <host>`. AudioMuse Podman containers (web/worker/local Redis), the packaged Navidrome plugin file, and runtime flags are placed; the PostgreSQL database is the shared OCI cluster reached over Tailscale. Service is deployable but not usable end-to-end. | Operator (repo config) |
+| **2. First-run AudioMuse setup** | Reach the AudioMuse web UI on the `home-forge` Tailscale IP at the configured AudioMuse port (default 8000). Complete the upstream setup wizard: create admin user, configure Navidrome base URL if not auto-detected. Wizard populates the AudioMuse application database. | Operator (SSH + browser over Tailscale) |
+| **3. Navidrome plugin enablement** | In the Navidrome Admin UI (home-forge `:4533` over Tailscale), navigate to Plugins → audiomuse.ai. Enable the plugin, set API URL to the AudioMuse web container address, and supply the API token matching the SOPS `audiomuse/api_token` key. | Operator (browser over Tailscale) |
 | **4. Similar/radio validation (E2E)** | On a Symfonium client connected to the Navidrome/OpenSubsonic endpoint over Tailscale, select a track and invoke similar or radio. Confirm results are returned and reflect AudioMuse-backed similarity (not Navidrome's fallback). | Operator (Symfonium client on tailnet) |
 
 ### Infrastructure vs. validation distinction
@@ -476,6 +472,7 @@ The feature is not accepted as working until stage 4 is confirmed. Stages 2–4 
 ### Exposure and access
 
 - AudioMuse follows the current repo exposure model: internal-service-first, private over Tailscale. Do not add a new public ingress route for AudioMuse unless the existing edge policy explicitly composes one.
+- AudioMuse reaches its PostgreSQL database in OCI's shared cluster over Tailscale/MagicDNS (tailnet-only + SCRAM); availability coupling is accepted: an OCI/tailnet outage degrades AudioMuse, not core Navidrome.
 - Default Navidrome plugin URL for AudioMuse is `http://host.containers.internal:8000` (via the Podman host bridge interface).
 - Operator bootstrap access to the AudioMuse web UI is over Tailscale to the host port (`<tailscale-ip>:8000`).
 - Navidrome admin UI is already available over Tailscale (`<tailscale-ip>:4533` or the declared edge route if configured).
@@ -493,6 +490,8 @@ AudioMuse registers these SOPS-backed keys through `services.audiomuse.secretFil
 | `audiomuse/postgres_password` | Password for the `audiomuse` Postgres role |
 
 Add these keys to the music application secrets file (`secrets/applications/music.yaml`) using the standard SOPS workflow. Do not manually decrypt or edit encrypted secret payloads.
+
+Database-side ownership follows the database: OCI Postgres reads the `audiomuse` role password from the OCI-only `secrets/services/postgres-shared.yaml` at `roles/audiomuse/password`, while home-forge AudioMuse reads the client-side password from `secrets/applications/music.yaml` at `audiomuse/postgres_password` (same file as the keys above).
 
 ### Backup scope
 

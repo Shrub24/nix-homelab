@@ -17,6 +17,6 @@ For this change scope, role permissions SHALL be explicit: `music-ingest` is the
 
 #### Scenario: Traktor sync is removed
 - **WHEN** the operator enables the Navidrome playlist-sync worker on home-forge
-- **THEN** the engine export writes playlists directly into the Engine library database under `/srv/data/engine-dj/library/Database2`
+- **THEN** the engine export writes playlists directly into the Engine library database under `<musicStorageRoot>/Engine Library/Database2`
 - **AND** the worker's M3U input and SQLite state remain outside the media library
 - **AND** the music application remains free of Traktor/NML composition

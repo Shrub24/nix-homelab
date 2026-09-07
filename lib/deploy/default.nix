@@ -5,7 +5,7 @@
   nodes,
 }:
 let
-  lib = nixpkgs.lib;
+  inherit (nixpkgs) lib;
 
   # Only the `nodes` map from lib/deploy/hosts.nix may feed node construction;
   # physical topology facts (`edgeHost`, `deployOrder`) must never be treated
@@ -20,8 +20,8 @@ let
     in
     {
       hostname = host.hostName;
-      sshUser = host.sshUser;
-      sshOpts = sshOpts;
+      inherit (host) sshUser;
+      inherit sshOpts;
       profiles.system = {
         user = "root";
         remoteBuild = host.remoteBuild or false;

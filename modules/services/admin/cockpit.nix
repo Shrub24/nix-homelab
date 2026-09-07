@@ -122,70 +122,74 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    services.cockpit = {
-      enable = true;
-      openFirewall = false;
-      package = pkgs.cockpit;
-      settings = lib.optionalAttrs (cockpitPublicHost != null) {
-        WebService = {
-          Origins = lib.mkForce "https://${cockpitPublicHost} wss://${cockpitPublicHost}";
-          ProtocolHeader = "X-Forwarded-Proto";
-          ForwardedForHeader = "X-Forwarded-For";
-          LoginTo = false;
-        }
-        // lib.optionalAttrs (cockpitUrlRoot != "/") {
-          UrlRoot = cockpitUrlRoot;
+    services = {
+      cockpit = {
+        enable = true;
+        openFirewall = false;
+        package = pkgs.cockpit;
+        settings = lib.optionalAttrs (cockpitPublicHost != null) {
+          WebService = {
+            Origins = lib.mkForce "https://${cockpitPublicHost} wss://${cockpitPublicHost}";
+            ProtocolHeader = "X-Forwarded-Proto";
+            ForwardedForHeader = "X-Forwarded-For";
+            LoginTo = false;
+          }
+          // lib.optionalAttrs (cockpitUrlRoot != "/") {
+            UrlRoot = cockpitUrlRoot;
+          };
         };
       };
+
+      udisks2.enable = true;
+
+      openssh.extraConfig = lib.mkIf svcUser.enable (
+        lib.mkAfter (
+          if svcUser.denySsh then
+            ''
+              Match User ${svcUser.name}
+                PasswordAuthentication no
+                KbdInteractiveAuthentication no
+                PubkeyAuthentication no
+                PermitTTY no
+                X11Forwarding no
+                AllowTcpForwarding no
+                PermitTunnel no
+                ForceCommand /run/current-system/sw/bin/false
+            ''
+          else
+            ''
+              Match User ${svcUser.name}
+                PasswordAuthentication yes
+                KbdInteractiveAuthentication yes
+                PubkeyAuthentication no
+            ''
+        )
+      );
     };
 
     # Keep cockpit socket bind explicit/IPv4-only and reset inherited
     # ListenStream entries to avoid ambiguous/wildcard address-family binds.
-    systemd.sockets.cockpit.listenStreams = lib.mkForce [
-      ""
-      "${cfg.listenAddress}:${toString config.services.cockpit.port}"
-    ];
-    systemd.sockets.cockpit.socketConfig.FreeBind = true;
+    systemd.sockets.cockpit = {
+      listenStreams = lib.mkForce [
+        ""
+        "${cfg.listenAddress}:${toString config.services.cockpit.port}"
+      ];
+      socketConfig.FreeBind = true;
+    };
 
     environment.systemPackages = [
       pkgs."cockpit-podman"
       pkgs."cockpit-files"
     ];
 
-    services.udisks2.enable = true;
-
     users.users = lib.optionalAttrs svcUser.enable {
       "${svcUser.name}" = {
         isNormalUser = true;
         description = "Restricted Cockpit service account";
         shell = "${pkgs.bashInteractive}/bin/bash";
-        hashedPasswordFile = svcUser.hashedPasswordFile;
+        inherit (svcUser) hashedPasswordFile;
       };
     };
-
-    services.openssh.extraConfig = lib.mkIf svcUser.enable (
-      lib.mkAfter (
-        if svcUser.denySsh then
-          ''
-            Match User ${svcUser.name}
-              PasswordAuthentication no
-              KbdInteractiveAuthentication no
-              PubkeyAuthentication no
-              PermitTTY no
-              X11Forwarding no
-              AllowTcpForwarding no
-              PermitTunnel no
-              ForceCommand /run/current-system/sw/bin/false
-          ''
-        else
-          ''
-            Match User ${svcUser.name}
-              PasswordAuthentication yes
-              KbdInteractiveAuthentication yes
-              PubkeyAuthentication no
-          ''
-      )
-    );
 
     assertions = [
       {

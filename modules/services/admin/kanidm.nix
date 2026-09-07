@@ -29,18 +29,18 @@ let
       originLanding = appCfg.policyServices.${clientPolicy.routeKey}.publicUrl;
     }
     // lib.optionalAttrs (clientPolicy ? allowInsecureClientDisablePkce) {
-      allowInsecureClientDisablePkce = clientPolicy.allowInsecureClientDisablePkce;
+      inherit (clientPolicy) allowInsecureClientDisablePkce;
     }
     // lib.optionalAttrs (clientPolicy ? enableLegacyCrypto) {
-      enableLegacyCrypto = clientPolicy.enableLegacyCrypto;
+      inherit (clientPolicy) enableLegacyCrypto;
     }
     // lib.optionalAttrs (clientPolicy ? enableLocalhostRedirects) {
-      enableLocalhostRedirects = clientPolicy.enableLocalhostRedirects;
+      inherit (clientPolicy) enableLocalhostRedirects;
     }
     // lib.optionalAttrs (clientPolicy ? preferShortUsername) {
-      preferShortUsername = clientPolicy.preferShortUsername;
+      inherit (clientPolicy) preferShortUsername;
     }
-    // lib.optionalAttrs (clientPolicy ? public) { public = clientPolicy.public; }
+    // lib.optionalAttrs (clientPolicy ? public) { inherit (clientPolicy) public; }
   ) oauth2ClientPolicies;
 
   hasIdentitySecrets = cfg.secretFiles.identity != null;
@@ -75,7 +75,7 @@ let
           "${client.route.publicUrl}${client.callbackPath}";
     in
     {
-      displayName = client.displayName;
+      inherit (client) displayName;
       originUrl = resolvedOriginUrl;
       originLanding =
         if client ? originLanding && client.originLanding != null then
@@ -90,9 +90,9 @@ let
       allowInsecureClientDisablePkce = client.allowInsecureClientDisablePkce or false;
       enableLegacyCrypto = client.enableLegacyCrypto or false;
       enableLocalhostRedirects = client.enableLocalhostRedirects or false;
-      scopeMaps = client.scopeMaps;
-      supplementaryScopeMaps = client.supplementaryScopeMaps;
-      claimMaps = client.claimMaps;
+      inherit (client) scopeMaps;
+      inherit (client) supplementaryScopeMaps;
+      inherit (client) claimMaps;
     }
   ) oauth2Clients;
 
@@ -266,12 +266,14 @@ in
       };
     };
 
-    secretFiles.identity = secretHelpers.mkSecretFileOption "kanidm-identity-secrets";
-    secretFiles.provisioning = secretHelpers.mkSecretFileOption "kanidm-provisioning-overlay";
-    secretFiles.oauth2Clients = lib.mkOption {
-      type = lib.types.attrsOf lib.types.path;
-      default = { };
-      description = "Per-client OIDC secret source files keyed by Kanidm oauth2 client id.";
+    secretFiles = {
+      identity = secretHelpers.mkSecretFileOption "kanidm-identity-secrets";
+      provisioning = secretHelpers.mkSecretFileOption "kanidm-provisioning-overlay";
+      oauth2Clients = lib.mkOption {
+        type = lib.types.attrsOf lib.types.path;
+        default = { };
+        description = "Per-client OIDC secret source files keyed by Kanidm oauth2 client id.";
+      };
     };
 
     backup = {
@@ -345,79 +347,87 @@ in
       })
       // oauth2SecretSpecs;
 
-    services.admin.kanidm.oidc = {
-      clientPathPrefix = config.services.identity.oidc.clientPathPrefix;
-      tokenUrl = config.services.identity.oidc.tokenUrl;
-      clients = config.services.identity.oidc.clients;
-    };
-
-    services.kanidm = {
-      package = pkgs.kanidmWithSecretProvisioning_1_11;
-
-      client = {
-        enable = true;
-        settings.uri = cfg.appUrl;
+    services = {
+      admin.kanidm.oidc = {
+        clientPathPrefix = config.services.identity.oidc.clientPathPrefix;
+        tokenUrl = config.services.identity.oidc.tokenUrl;
+        clients = config.services.identity.oidc.clients;
       };
 
-      server = {
-        enable = true;
-        settings = {
-          origin = cfg.appUrl;
-          domain = if cfg.domain != null then cfg.domain else originHost;
-          bindaddress = cfg.bindAddress;
-          tls_chain = cfg.tlsChainFile;
-          tls_key = cfg.tlsKeyFile;
-          role = "WriteReplica";
-          online_backup = {
-            path = cfg.backup.exportDir;
-            schedule = cfg.backup.schedule;
-            versions = cfg.backup.versions;
+      kanidm = {
+        package = pkgs.kanidmWithSecretProvisioning_1_11;
+
+        client = {
+          enable = true;
+          settings.uri = cfg.appUrl;
+        };
+
+        server = {
+          enable = true;
+          settings = {
+            origin = cfg.appUrl;
+            domain = if cfg.domain != null then cfg.domain else originHost;
+            bindaddress = cfg.bindAddress;
+            tls_chain = cfg.tlsChainFile;
+            tls_key = cfg.tlsKeyFile;
+            role = "WriteReplica";
+            online_backup = {
+              path = cfg.backup.exportDir;
+              schedule = cfg.backup.schedule;
+              versions = cfg.backup.versions;
+            };
           };
         };
+
+        provision = lib.mkIf (hasIdentitySecrets || hasOauth2Clients || hasProvisioningSecrets) (
+          {
+            enable = true;
+            systems.oauth2 = oauth2Provisioning;
+          }
+          // lib.optionalAttrs hasIdentitySecrets {
+            adminPasswordFile = config.sops.secrets.kanidm_admin_password.path;
+            idmAdminPasswordFile = config.sops.secrets.kanidm_idm_admin_password.path;
+          }
+          // lib.optionalAttrs hasProvisioningSecrets {
+            extraJsonFile = config.sops.secrets.kanidm_provisioning_overlay.path;
+          }
+        );
       };
 
-      provision = lib.mkIf (hasIdentitySecrets || hasOauth2Clients || hasProvisioningSecrets) (
-        {
-          enable = true;
-          systems.oauth2 = oauth2Provisioning;
-        }
-        // lib.optionalAttrs hasIdentitySecrets {
-          adminPasswordFile = config.sops.secrets.kanidm_admin_password.path;
-          idmAdminPasswordFile = config.sops.secrets.kanidm_idm_admin_password.path;
-        }
-        // lib.optionalAttrs hasProvisioningSecrets {
-          extraJsonFile = config.sops.secrets.kanidm_provisioning_overlay.path;
-        }
-      );
+      # Backup coverage is the authoritative portable export only; the live DB
+      # is /var/lib/kanidm/kanidm.db, not the data dir.
+      state-backups.services.kanidm = {
+        enable = true;
+        mode = "export";
+        exportPaths = [ cfg.backup.exportDir ];
+      };
     };
 
     environment.systemPackages = [ pkgs.kanidm_1_11 ];
 
-    # Backup coverage is the authoritative portable export only; the live DB
-    # is /var/lib/kanidm/kanidm.db, not the data dir.
-    services.state-backups.services.kanidm = {
-      enable = true;
-      mode = "export";
-      exportPaths = [ cfg.backup.exportDir ];
-    };
+    systemd = {
+      services = {
+        kanidm = {
+          serviceConfig.SupplementaryGroups = cfg.tlsReaderGroups;
+          after = [ "caddy.service" ];
+        };
 
-    systemd.services.kanidm.serviceConfig.SupplementaryGroups = cfg.tlsReaderGroups;
-    systemd.services.kanidm.after = [ "caddy.service" ];
-
-    # Operator-invoked restore helper: no wantedBy, so it never starts at boot.
-    systemd.services."kanidm-restore@" = {
-      description = "One-shot Kanidm portable backup restore and offline verify (operator-invoked while kanidm.service is stopped)";
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${restoreScript} %I";
+        # Operator-invoked restore helper: no wantedBy, so it never starts at boot.
+        "kanidm-restore@" = {
+          description = "One-shot Kanidm portable backup restore and offline verify (operator-invoked while kanidm.service is stopped)";
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = "${restoreScript} %I";
+          };
+        };
       };
-    };
 
-    systemd.tmpfiles.rules = [
-      "d ${cfg.dataDir} 0750 kanidm kanidm - -"
-      "z ${cfg.dataDir} 0750 kanidm kanidm - -"
-      "d ${cfg.backup.exportDir} 0750 kanidm kanidm - -"
-      "z ${cfg.backup.exportDir} 0750 kanidm kanidm - -"
-    ];
+      tmpfiles.rules = [
+        "d ${cfg.dataDir} 0750 kanidm kanidm - -"
+        "z ${cfg.dataDir} 0750 kanidm kanidm - -"
+        "d ${cfg.backup.exportDir} 0750 kanidm kanidm - -"
+        "z ${cfg.backup.exportDir} 0750 kanidm kanidm - -"
+      ];
+    };
   };
 }

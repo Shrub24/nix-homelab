@@ -728,7 +728,7 @@ References:
 
 ## D-041: Traktor playlist sync starts as a manual upstream-module worker
 
-Status: Accepted
+Status: Superseded by D-045 (Traktor stack deleted)
 
 Decision:
 
@@ -816,10 +816,10 @@ Decision:
 - `modules/services/virtualisation/windows-vm.nix` provides a reusable layer: declarative instances (vcpu, memory, disk, autostart, SPICE port, TPM, install ISO), virtiofs shares keyed by mount tag, and per-instance systemd controller units over libvirt domains
 - guests attach to the host-owned always-on `br0` bridge over `eno1` (fleet networking aspect, D-043); the VM layer only consumes the bridge and never creates or owns physical networking — macvtap and VFIO passthrough are rejected because Remote Library discovery needs same-L2 broadcast and host↔guest reachability
 - SPICE binds to loopback only; operators tunnel over Tailscale via SSH
-- Engine DJ (`modules/applications/dj/`) is the first consumer: the SQLite library database lives at `/srv/data/engine-dj/library` on the host NVMe (ext4), exposed read-write via virtiofs as a separate `engine-library` share on `L:`; music is shared read-write from the host-injected music root `/srv/storage/media/music` as the `M:` share, with a guest junction `M:\Engine Library` → `L:\` (no host bind inside the music root)
+- Engine DJ (`modules/applications/dj/`) is the first consumer: the Engine library (including the SQLite database) is the real `Engine Library` directory inside the host music root `/srv/storage/media/music`, exposed read-write through the single `M:` virtiofs share as `M:\Engine Library` (no separate share, mount tag, or guest junction)
 - single-writer discipline is enforced by unit dependencies: future Linux sync workers bind to `dj-library-writers.target`, which conflicts with the VM controller unit; restic backups quiesce the VM through state-backups prepare/cleanup hooks and conflict with the writer target
-- guest software installation (Windows, virtio-win drivers, Engine DJ ≥ 4.3.4) is operator-driven per `docs/runbooks/engine-dj-guest-setup.md`; `setup.ps1` registers `M:`/`L:`/`S:` and creates the Engine library junctions
-- live validation confirmed the split virtiofs layout across track import, SC6000 Remote Library, guest/host reboots, and SQLite integrity checks; guest-local database copy-in/copy-out remains the fallback if a future virtiofs regression appears
+- guest software installation (Windows, virtio-win drivers, Engine DJ ≥ 4.3.4) is operator-driven per `docs/runbooks/engine-dj-guest-setup.md`; `setup.ps1` registers `M:`/`S:` and removes the legacy `L:` Engine-library share, while the operator points the Windows Music known-folder directly at `M:`
+- live validation confirmed the single-share virtiofs layout across track import, SC6000 Remote Library, guest/host reboots, and SQLite integrity checks; guest-local database copy-in/copy-out remains the fallback if a future virtiofs regression appears
 
 Rationale:
 
@@ -830,6 +830,64 @@ Rationale:
 References:
 
 - windows-vm-engine-dj change proposal/design/specs
+
+## D-045: Music application is owned by home-forge with the AudioMuse database in OCI
+
+Status: Accepted
+
+Decision:
+
+- the complete music application (Navidrome, AudioMuse compute, Syncthing, slskd/Beets/Tagr ingest) composes on `home-forge` through `applications.music`
+- the canonical media root on `home-forge` is `/srv/storage/media` with sibling `library/`, `quarantine/`, `inbox/`, and `.versions/`; Navidrome, Engine DJ's `M:` share, and Syncthing all use `library/`
+- `oci-melb-1` disables `applications.music`, retains the shared PostgreSQL cluster (AudioMuse database + backup), and keeps its copied `/srv/media` tree and prior music service state on disk only as rollback insurance
+- AudioMuse reaches its database in OCI's shared Postgres over Tailscale/MagicDNS (tailnet-only + SCRAM); availability coupling is accepted: an OCI/tailnet outage degrades AudioMuse, not core Navidrome
+- database-side role password lives in the OCI-only `secrets/services/postgres-shared.yaml` at `roles/audiomuse/password`; home-forge AudioMuse reads the client-side password from `secrets/applications/music.yaml` at `audiomuse/postgres_password`
+- LA edge routes `music`, `slskd`, and `tagr` to `home-forge` (`tailscale-upstream`)
+- Syncthing hub is `home-forge` with sendreceive `library/`, `quarantine/`, and `inbox/` folders shared with the `arch` and `windows` devices and staggered version archives under `.versions/`
+- Navidrome stays the stock package: the packaged AudioMuseAI `.ndp` is symlinked into the data directory via tmpfiles and bind-mounted into nixpkgs' fixed plugin folder, avoiding Navidrome rebuilds
+- legacy Traktor/NML playlist wiring remains deleted; `home-forge` uses the externally maintained `traktor-m3u-sync` module only for the engine-direct Navidrome M3U → Engine library playlist flow (the engine export job writes into the Engine library DB), with no Traktor configuration or synchronization
+
+Rationale:
+
+- Engine DJ is the active library authority on `home-forge`; colocating the whole music stack with the canonical media tree gives Engine a direct import path from `M:` without Syncthing staging or manual copies
+- keeping the AudioMuse database in OCI reuses the accepted shared-Postgres pattern (as Arch workstation clients already do) and keeps database-side secret ownership with the database host
+- a downtime cutover with the edge route moved last and the OCI generation retained provides a clean rollback path
+
+Supersedes/updates:
+
+- supersedes D-041 (Traktor manual playlist worker) — its Traktor/NML scope remains deleted; the external module is now used only for the separate Navidrome M3U export path
+- updates D-040's OCI-local AudioMuse placement: AudioMuse compute now runs on `home-forge` with its Postgres database in OCI's shared cluster
+- updates D-019/D-020/D-029/D-033 `/srv/media` path contracts: canonical media paths are now `home-forge` `mediaRoot`-derived (`/srv/storage/media/...`), while OCI keeps its copied tree for rollback only
+
+References:
+
+- openspec change `navidrome-itunes-engine-sync` (proposal/design/specs)
+
+## D-046: Music application root is host-selected; Engine DJ shares the music root
+
+Status: Accepted
+
+Decision:
+
+- hosts own their physical storage roots: `applications.music` requires explicit `storageRoot` and `dataRoot` bindings with no fleet defaults, and `policy/globals.nix` no longer carries music paths
+- the music application root on `home-forge` is `/srv/storage/media/music` (`musicStorageRoot` in `hosts/home-forge/default.nix`) with the conventional layout beneath it: `library/` (Beets directory, Navidrome MusicFolder, Syncthing `library` folder), `playlists/`, `inbox/` (`dropbox/`, `slskd/`), `quarantine/` (`untagged/`, `approved/`), and `.versions/` (Syncthing staggered version archives)
+- Engine DJ's `M:` virtiofs share maps the whole music root, not `library/` alone; the guest sees `M:\library`, `M:\playlists`, `M:\Engine Library`, `M:\inbox`, and `M:\quarantine`. `M:\Engine Library` is a real directory on the share (host `<storageRoot>/Engine Library`) — no separate share, mount tag, or guest junction; the operator points the Windows Music known-folder directly at `M:` so Engine resolves `Music\Engine Library` to `M:\Engine Library`
+- playlists sync engine-direct: the `traktor-m3u-sync` engine export job (chained from the Navidrome M3U import) writes playlists straight into the Engine library database at `<storageRoot>/Engine Library/Database2/m.db` (guest `M:\Engine Library\Database2\m.db`) with `track_path_prefix=../library`, resolving tracks relative to the Engine Library dir on `M:`
+
+Rationale:
+
+- one share root keeps host and guest viewing the same layout; synced playlist output lands in the Engine library DB under `Engine Library/Database2`, never inside `library/`, so it cannot surface as audio in Navidrome or Syncthing sync scope
+- a required binding instead of a default prevents a new host from silently inheriting home-forge's physical path
+- the Engine DJ main library database still references pre-move `M:\Artist...` paths; synced playlists avoid the XML re-import cost because the engine export writes `../library`-relative locations directly into the Engine library DB (see `docs/runbooks/engine-dj-guest-setup.md`)
+
+Supersedes/updates:
+
+- refines D-044's `M:` source wording: the music root is the host-selected `applications.music.storageRoot` binding with the conventional layout beneath it, not a pre-normalization flat library root
+- supersedes D-045's canonical-path claim: the host-selected music application root `/srv/storage/media/music` (with a `playlists/` sibling) replaces the `mediaRoot=/srv/storage/media` option and its sibling directories
+
+References:
+
+- D-044, D-045, `docs/runbooks/engine-dj-guest-setup.md`, and the `normalize-music-storage-topology` and `navidrome-m3u-itunes-worker` change designs
 
 These are known but intentionally unresolved until implementation and operational learning justify final decisions.
 

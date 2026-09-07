@@ -8,10 +8,10 @@
   - refs: `design.md` MS-3
   - delegate: CoderAgent
   - verify: targeted Nix evaluations for home-forge and OCI plus repository path-reference search
-- [x] 1.3 Make home-forge the SSOT for `musicStorageRoot = "/srv/storage/media/music"`, pass it to the music and DJ applications, share it as `M:`, and keep `/srv/data/engine-dj/library` bind-presented at `Engine Library`; deliberately leave `traktor-m3u-sync` output wiring unchanged.
+- [x] 1.3 Make home-forge the SSOT for `musicStorageRoot = "/srv/storage/media/music"`, pass it to the music and DJ applications, share it as `M:`, and keep the Engine library as a real `Engine Library` directory under the music root; deliberately leave `traktor-m3u-sync` output wiring unchanged.
   - refs: `design.md` MS-1, MS-2, MS-4
   - delegate: CoderAgent
-  - verify: evaluate derived application paths, VM share source, bind mount, and state-backup path
+  - verify: evaluate derived application paths, VM share source, Engine Library directory, and state-backup path
 
 ## 2. Guest Setup Compatibility
 
@@ -44,7 +44,7 @@
   - refs: `specs/media-services/spec.md`
   - delegate: BuildAgent
   - verify: live service/API/database/config checks, guest-side PowerShell path listing, backup timer active, and explicit metadata validation before deleting the non-empty Beets pre-import copy
-- [ ] 5.2 Update architecture, decision, restore, and Engine DJ runbook documentation to the normalized schema; run `treefmt --fail-on-change` and `openspec validate --strict` before handoff.
+- [x] 5.2 Update architecture, decision, restore, and Engine DJ runbook documentation to the normalized schema; run `treefmt --fail-on-change` and `openspec validate --strict` before handoff.
   - refs: `proposal.md`, `design.md`
   - delegate: DocWriter
   - verify: documentation search has no active stale topology references and strict validation passes

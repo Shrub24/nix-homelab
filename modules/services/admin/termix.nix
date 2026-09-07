@@ -173,26 +173,30 @@ in
       };
     };
 
-    systemd.tmpfiles.rules = [
-      "d ${cfg.dataDir} 0750 root root - -"
-      "d ${cfg.dataDir}/data 0750 root root - -"
-      "d ${cfg.dataDir}/guacd 0750 root root - -"
-    ];
-
-    systemd.services."podman-guacd" = {
-      wants = [ "network-online.target" ];
-      after = [ "network-online.target" ];
-    };
-
-    systemd.services."podman-termix" = {
-      wants = [
-        "network-online.target"
-        "podman-guacd.service"
+    systemd = {
+      tmpfiles.rules = [
+        "d ${cfg.dataDir} 0750 root root - -"
+        "d ${cfg.dataDir}/data 0750 root root - -"
+        "d ${cfg.dataDir}/guacd 0750 root root - -"
       ];
-      after = [
-        "network-online.target"
-        "podman-guacd.service"
-      ];
+
+      services = {
+        "podman-guacd" = {
+          wants = [ "network-online.target" ];
+          after = [ "network-online.target" ];
+        };
+
+        "podman-termix" = {
+          wants = [
+            "network-online.target"
+            "podman-guacd.service"
+          ];
+          after = [
+            "network-online.target"
+            "podman-guacd.service"
+          ];
+        };
+      };
     };
   };
 }

@@ -12,7 +12,7 @@ let
 
   homepageData = import ./data.nix {
     inherit config;
-    policyServices = appCfg.policyServices;
+    inherit (appCfg) policyServices;
   };
 in
 {
@@ -28,7 +28,7 @@ in
   config = lib.mkIf (appCfg.enable && cfg.enable) {
     assertions = [
       (secretHelpers.mkRequiredSecretAssertion {
-        enable = cfg.enable;
+        inherit (cfg) enable;
         file = cfg.secretFiles.host;
         feature = "services.admin.homepage";
         label = "secretFiles.host";

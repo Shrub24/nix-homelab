@@ -10,7 +10,7 @@ let
   listenAddress = "${ntfyRoute.origin.host}:${toString ntfyRoute.origin.port}";
   publicBaseUrl = ntfyRoute.publicUrl;
 
-  dataDir = cfg.dataDir;
+  inherit (cfg) dataDir;
 
   validRoles = [
     "admin"

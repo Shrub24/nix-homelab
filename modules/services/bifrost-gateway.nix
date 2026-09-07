@@ -115,42 +115,9 @@ in
 
     virtualisation.podman.enable = true;
 
-    systemd.tmpfiles.rules = [
-      "d ${cfg.dataDir} 0755 root root - -"
-      "z ${cfg.dataDir} 0755 root root - -"
-      "d ${appDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
-      "z ${appDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
-      "d ${logsDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
-      "z ${logsDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
-      "d ${cacheDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
-      "z ${cacheDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
-      "d ${vectorDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
-      "z ${vectorDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
-    ];
-
-    systemd.services.bifrost-config = {
-      description = "Render Bifrost config from repo-owned settings";
-      wantedBy = [ "multi-user.target" ];
-      before = [ "podman-bifrost.service" ];
-      unitConfig.RequiresMountsFor = [ cfg.dataDir ];
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = pkgs.writeShellScript "bifrost-config-render" ''
-          set -euo pipefail
-          install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${appDir}"
-          install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${logsDir}"
-          install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${cacheDir}"
-          install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${vectorDir}"
-          # Bifrost prefers the imperative SQLite config store over config.json when present.
-          rm -f "${configDbPath}"
-          install -m 0644 -o ${toString runtimeUid} -g ${toString runtimeGid} "${cfg.configFile}" "${configPath}"
-        '';
-      };
-    };
-
     virtualisation.oci-containers.containers.bifrost = {
       autoStart = true;
-      image = cfg.image;
+      inherit (cfg) image;
       ports = [ "0.0.0.0:${toString cfg.port}:${toString cfg.port}" ];
       environment = {
         APP_DIR = "/app/data";
@@ -177,23 +144,60 @@ in
       ];
     };
 
-    systemd.services."podman-bifrost" = {
-      wants = [
-        "network-online.target"
-        "bifrost-config.service"
+    systemd = {
+      tmpfiles.rules = [
+        "d ${cfg.dataDir} 0755 root root - -"
+        "z ${cfg.dataDir} 0755 root root - -"
+        "d ${appDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
+        "z ${appDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
+        "d ${logsDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
+        "z ${logsDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
+        "d ${cacheDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
+        "z ${cacheDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
+        "d ${vectorDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
+        "z ${vectorDir} 0775 ${toString runtimeUid} ${toString runtimeGid} - -"
       ];
-      after = [
-        "network-online.target"
-        "bifrost-config.service"
-      ];
-      unitConfig.RequiresMountsFor = [
-        cfg.dataDir
-        appDir
-      ];
-      restartTriggers = [
-        cfg.configFile
-      ]
-      ++ [ environmentFile ];
+
+      services = {
+        bifrost-config = {
+          description = "Render Bifrost config from repo-owned settings";
+          wantedBy = [ "multi-user.target" ];
+          before = [ "podman-bifrost.service" ];
+          unitConfig.RequiresMountsFor = [ cfg.dataDir ];
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = pkgs.writeShellScript "bifrost-config-render" ''
+              set -euo pipefail
+              install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${appDir}"
+              install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${logsDir}"
+              install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${cacheDir}"
+              install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${vectorDir}"
+              # Bifrost prefers the imperative SQLite config store over config.json when present.
+              rm -f "${configDbPath}"
+              install -m 0644 -o ${toString runtimeUid} -g ${toString runtimeGid} "${cfg.configFile}" "${configPath}"
+            '';
+          };
+        };
+
+        "podman-bifrost" = {
+          wants = [
+            "network-online.target"
+            "bifrost-config.service"
+          ];
+          after = [
+            "network-online.target"
+            "bifrost-config.service"
+          ];
+          unitConfig.RequiresMountsFor = [
+            cfg.dataDir
+            appDir
+          ];
+          restartTriggers = [
+            cfg.configFile
+          ]
+          ++ [ environmentFile ];
+        };
+      };
     };
   };
 }

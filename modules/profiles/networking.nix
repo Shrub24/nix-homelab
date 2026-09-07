@@ -90,7 +90,48 @@ in
     # mkDefault so a host's plain/forced legacy `true` wins the merge and is
     # then rejected by the curated assertions below instead of a generic
     # equal-priority conflict.
-    systemd.network.enable = true;
+    systemd.network = {
+      enable = true;
+
+      # Exact-match units only: unbridged uplink or bridged member + addressed
+      # bridge. Virtual/overlay interfaces (Podman, tailscale0, veth, libvirt)
+      # are unmanaged by construction.
+      networks = lib.mkIf (cfg.uplink.interface != null) (
+        {
+          ${addressed} = {
+            matchConfig.Name = addressed;
+            networkConfig = {
+              DHCP = "ipv4";
+            }
+            // lib.optionalAttrs (cfg.uplink.ipv6AcceptRA != null) {
+              IPv6AcceptRA = cfg.uplink.ipv6AcceptRA;
+            };
+            dhcpV4Config.ClientIdentifier = "mac";
+            linkConfig.RequiredForOnline = "routable";
+          };
+        }
+        // lib.optionalAttrs (cfg.bridge != null) {
+          # Bridge member: no addressing, enslaved to the bridge.
+          ${cfg.uplink.interface} = {
+            matchConfig.Name = cfg.uplink.interface;
+            networkConfig.Bridge = cfg.bridge.name;
+            linkConfig.RequiredForOnline = "enslaved";
+          };
+        }
+      );
+
+      netdevs = lib.mkIf (cfg.bridge != null) {
+        ${cfg.bridge.name} = {
+          netdevConfig = {
+            Name = cfg.bridge.name;
+            Kind = "bridge";
+          }
+          // lib.optionalAttrs (cfg.bridge.macAddress != null) {
+            MACAddress = cfg.bridge.macAddress;
+          };
+        };
+      };
+    };
     networking.useDHCP = lib.mkDefault false;
     networking.dhcpcd.enable = lib.mkDefault false;
 
@@ -103,16 +144,18 @@ in
     # Resolver mechanism fleet-wide: systemd-resolved with safe defaults.
     # Per-link DHCP DNS stays primary; global DNS is pinned only when the
     # host declares dns.servers; FallbackDNS provides resilience.
-    services.resolved.enable = true;
-    services.resolved.settings.Resolve = {
-      DNSOverTLS = lib.mkDefault "opportunistic";
-      DNSSEC = lib.mkDefault "allow-downgrade";
-      FallbackDNS = lib.mkDefault [
-        "1.1.1.1"
-        "8.8.8.8"
-      ];
+    services.resolved = {
+      enable = true;
+      settings.Resolve = {
+        DNSOverTLS = lib.mkDefault "opportunistic";
+        DNSSEC = lib.mkDefault "allow-downgrade";
+        FallbackDNS = lib.mkDefault [
+          "1.1.1.1"
+          "8.8.8.8"
+        ];
+        DNS = lib.mkIf (cfg.dns.servers != null) cfg.dns.servers;
+      };
     };
-    services.resolved.settings.Resolve.DNS = lib.mkIf (cfg.dns.servers != null) cfg.dns.servers;
 
     assertions = [
       {
@@ -157,44 +200,5 @@ in
         '';
       }
     ];
-
-    # Exact-match units only: unbridged uplink or bridged member + addressed
-    # bridge. Virtual/overlay interfaces (Podman, tailscale0, veth, libvirt)
-    # are unmanaged by construction.
-    systemd.network.networks = lib.mkIf (cfg.uplink.interface != null) (
-      {
-        ${addressed} = {
-          matchConfig.Name = addressed;
-          networkConfig = {
-            DHCP = "ipv4";
-          }
-          // lib.optionalAttrs (cfg.uplink.ipv6AcceptRA != null) {
-            IPv6AcceptRA = cfg.uplink.ipv6AcceptRA;
-          };
-          dhcpV4Config.ClientIdentifier = "mac";
-          linkConfig.RequiredForOnline = "routable";
-        };
-      }
-      // lib.optionalAttrs (cfg.bridge != null) {
-        # Bridge member: no addressing, enslaved to the bridge.
-        ${cfg.uplink.interface} = {
-          matchConfig.Name = cfg.uplink.interface;
-          networkConfig.Bridge = cfg.bridge.name;
-          linkConfig.RequiredForOnline = "enslaved";
-        };
-      }
-    );
-
-    systemd.network.netdevs = lib.mkIf (cfg.bridge != null) {
-      ${cfg.bridge.name} = {
-        netdevConfig = {
-          Name = cfg.bridge.name;
-          Kind = "bridge";
-        }
-        // lib.optionalAttrs (cfg.bridge.macAddress != null) {
-          MACAddress = cfg.bridge.macAddress;
-        };
-      };
-    };
   };
 }

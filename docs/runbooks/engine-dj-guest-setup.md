@@ -34,7 +34,7 @@ ip -br addr                 # br0 carries the LAN IP; eno1 has none
 bridge link                 # eno1 state UP enslaved to br0
 systemctl status windows-vm-setup windows-vm-windows-dj
 virsh list --all            # windows-dj defined and running
-ls -la /srv/data/engine-dj/library /srv/storage/media/music   # share roots exist
+ls -la /srv/storage/media/music '/srv/storage/media/music/Engine Library'   # share root + Engine dir exist
 ```
 
 The VM idles at the UEFI "no bootable device" screen until install media is staged (next step) — harmless.
@@ -73,7 +73,7 @@ remote-viewer spice://127.0.0.1:5900    # or virt-viewer
    powershell -ExecutionPolicy Bypass -File S:\setup.ps1
    ```
 
-   This installs WinFsp, registers `M:`/`L:`/`S:` via `New-Service`/`Start-Service`, disables sleep, creates the library junction, and installs the Mesa fallback.
+   This installs WinFsp, registers `M:`/`S:` via `New-Service`/`Start-Service`, removes the legacy `L:` Engine-library share, disables sleep, and installs the Mesa fallback.
 
 5. Leave installer mode:
 
@@ -85,13 +85,13 @@ Reinstalling later is the same flow: run the install command again, then `--clea
 
 ## 3. Map the library share
 
-Shares: `media` (RW, whole music root `/srv/storage/media/music`) → `M:`; `engine-library` (RW, NVMe Engine database `/srv/data/engine-dj/library`) → `L:`; `setup` (RO, Nix store) → `S:`. Step 2.4 already creates `M:`/`L:`/`S:` via `S:\setup.ps1` — this section is the result:
+Shares: `media` (RW, whole music root `/srv/storage/media/music`) → `M:`; `setup` (RO, Nix store) → `S:`. Step 2.4 already creates `M:`/`S:` via `S:\setup.ps1` — this section is the result:
 
-- `M:\Engine Library` is a guest junction → `L:\`, created by `S:\setup.ps1` (`cmd /c mklink /D "M:\Engine Library" "L:\"`); the NVMe database stays on its own share, not a host bind inside `M:` (a bind poisoned WinFsp readdir)
-- `S:\setup.ps1` created `Music\Engine Library → M:\Engine Library` via `cmd /c mklink /D "%USERPROFILE%\Music\Engine Library" "M:\Engine Library"`
+- `M:\Engine Library` is a real directory on the music share (host `<storageRoot>/Engine Library`), created by host tmpfiles — there is no separate Engine share, mount tag, or guest junction
+- the operator points the Windows Music known-folder directly at `M:` so Engine resolves `Music\Engine Library` to `M:\Engine Library`; `setup.ps1` creates no link and never moves library files
 - `M:` holds the canonical media library (music at `M:\library`); `M:\playlists` no longer receives sync output — playlists are written straight into the Engine library DB (see below)
 - Sleep/hibernate is disabled; Mesa `opengl32sw.dll` is installed if Engine was found
-- The legacy `VirtioFS-Library` service (old `L:` mapping) is removed by `S:\setup.ps1` as cleanup; the current `L:` is `VirtioFS-EngineLibrary` (`engine-library` tag)
+- The legacy `VirtioFS-Library` and `VirtioFS-EngineLibrary` services (old `L:` mappings) are removed by `S:\setup.ps1` as cleanup
 
 ## Navidrome playlist sync (engine-direct)
 
@@ -104,7 +104,7 @@ Navidrome exports playlists as M3Us. `playlist-sync` batch-exports every playlis
    ssh dev@home-forge -- sudo systemctl status 'traktor-m3u-sync-import@navidrome' 'traktor-m3u-sync-export@engine' --no-pager
    ```
 
-2. The export job publishes playlists directly into the Engine library database at `<engine-library>/Database2/m.db` (host `/srv/data/engine-dj/library/Database2/m.db`, guest `M:\Engine Library\Database2\m.db` via the `L:` share + junction) with `track_path_prefix=../library`, so tracks resolve relative to the Engine Library dir on `M:`.
+2. The export job publishes playlists directly into the Engine library database at `<storageRoot>/Engine Library/Database2/m.db` (host `/srv/storage/media/music/Engine Library/Database2/m.db`, guest `M:\Engine Library\Database2\m.db`) with `track_path_prefix=../library`, so tracks resolve relative to the Engine Library dir on `M:`.
 3. In the guest, open Engine DJ and confirm the synced playlists appear and their tracks resolve from `M:\library`. The iTunes-XML import path is superseded; investigate a failed job before retrying.
 
 The import and engine-export jobs bind to `dj-library-writers.target`, so starting them stops the VM first and starting the VM stops them (single-writer discipline; see V8).
@@ -139,7 +139,7 @@ These checks established the settled layout. Re-run them after material virtiofs
 V4 — after shutting down the guest cleanly:
 
 ```sh
-sqlite3 /srv/data/engine-dj/library/Database2/m.db 'PRAGMA integrity_check;'
+sqlite3 '/srv/storage/media/music/Engine Library/Database2/m.db' 'PRAGMA integrity_check;'
 # expect: ok
 ```
 
@@ -168,13 +168,13 @@ Record results. Any database corruption or locking misbehavior: stop, do not ret
 
 ## Single-writer discipline reference
 
-The library directory (`/srv/data/engine-dj/library`) alternates ownership:
+The Engine library directory (`<storageRoot>/Engine Library`) alternates ownership:
 
 | Writer                                   | Mechanism                                                             |
 | ---------------------------------------- | --------------------------------------------------------------------- |
 | VM (Engine DJ)                           | runs while `windows-vm-windows-dj.service` is active                  |
 | playlist-sync import/export jobs         | bind to `dj-library-writers.target` (`BindsTo`), which conflicts with the VM unit |
-| restic state backup                      | quiesce hook stops the VM only if running, restarts it afterwards     |
+| restic state backup                      | quiesce hook stops the VM only if running, restarts it afterwards; the job conflicts with `dj-library-writers.target` |
 
 Never edit files under the library directory while the VM is running.
 

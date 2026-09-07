@@ -1,5 +1,4 @@
-{ ... }:
-{
+_: {
   boot.loader.grub.devices = [ "/dev/sda" ];
 
   # Keep OCI serial-console recovery available after reboot.

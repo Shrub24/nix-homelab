@@ -35,7 +35,24 @@ in
   ];
 
   hardware.facter.reportPath = ./facter.json;
-  networking.hostName = "oci-melb-1";
+
+  networking = {
+    hostName = "oci-melb-1";
+
+    firewall.interfaces = {
+      podman0.allowedTCPPorts = [
+        5030
+        4533
+      ];
+      podman2.allowedTCPPorts = [
+        5432
+        4533
+      ];
+      audiomuse0.allowedTCPPorts = [
+        5432
+      ];
+    };
+  };
 
   fleet.networking = {
     uplink.interface = "enp0s6";
@@ -46,70 +63,47 @@ in
     ];
   };
 
-  networking.firewall.interfaces.podman0.allowedTCPPorts = [
-    5030
-    4533
-  ];
-  networking.firewall.interfaces.podman2.allowedTCPPorts = [
-    5432
-    4533
-  ];
-  networking.firewall.interfaces.audiomuse0.allowedTCPPorts = [
-    5432
-  ];
-
   disko.devices.disk.main.device = "/dev/sda";
 
-  services.paperless = {
-    enable = true;
-    dataRoot = "/srv/data";
-    secretFiles.host = ../../secrets/services/paperless.yaml;
-    secretFiles.oidc = ../../secrets/hosts/oci-melb-1/oidc.yaml;
-    oidc = {
-      enable = config.repo.web.catalog.paperless.access.oidc.enabled;
-      clientId = config.services.identity.oidc.clients.paperless.clientId;
-      wellknownUrl = config.services.identity.oidc.clients.paperless.wellknownUrl;
-    };
-    paperless-gpt = {
-      docling.enable = false;
-      instances.llm = {
-        enable = true;
-        environment.LLM_MODEL = globals.aiGateway.aliases.text;
-        environment.VISION_LLM_MODEL = globals.aiGateway.aliases.image;
-      };
-      instances.docling.enable = false;
-    };
-  };
+  # Music is disabled on this host by construction: the applications.music
+  # module is not imported here, so no music service can wire up. The whole
+  # music application (Navidrome, AudioMuse, Syncthing, ingest) moved to
+  # home-forge as one wired composition. This host retains the shared
+  # Postgres (audiomuse DB + backup) and the copied /srv/media tree stays as
+  # rollback insurance until the cutover soaks.
 
   boot.loader.grub.configurationLimit = 10;
 
-  services.journald.extraConfig = ''
-    SystemMaxUse=300M
-    SystemKeepFree=1G
-    MaxRetentionSec=7day
-  '';
+  systemd = {
+    services = {
+      podman-storage-prune = {
+        description = "Prune unused Podman storage artifacts";
+        path = [ pkgs.podman ];
+        serviceConfig = {
+          Type = "oneshot";
+          Nice = 19;
+          IOSchedulingClass = "idle";
+        };
+        script = ''
+          set -euo pipefail
+          podman system prune --all --force --volumes
+        '';
+      };
 
-  systemd.services.podman-storage-prune = {
-    description = "Prune unused Podman storage artifacts";
-    path = [ pkgs.podman ];
-    serviceConfig = {
-      Type = "oneshot";
-      Nice = 19;
-      IOSchedulingClass = "idle";
+      # Cap the LA-to-OCI Tailscale TUN MTU below the proven packet-size black hole.
+      # Host-scoped workaround: no enrollment, identity, tag, firewall, route, or
+      # experimental PMTUD change (see specs/network-access/spec.md).
+      tailscaled.environment.TS_DEBUG_MTU = "1200";
     };
-    script = ''
-      set -euo pipefail
-      podman system prune --all --force --volumes
-    '';
-  };
 
-  systemd.timers.podman-storage-prune = {
-    description = "Periodic Podman storage prune";
-    wantedBy = [ "timers.target" ];
-    timerConfig = {
-      OnCalendar = "weekly";
-      RandomizedDelaySec = "1h";
-      Persistent = true;
+    timers.podman-storage-prune = {
+      description = "Periodic Podman storage prune";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "weekly";
+        RandomizedDelaySec = "1h";
+        Persistent = true;
+      };
     };
   };
 
@@ -118,40 +112,132 @@ in
     role = "origin";
   };
 
-  services.identity.oidc = {
-    providerUrl = config.repo.web.catalog."kanidm-admin".publicUrl;
-  };
-
-  services.identity.hostAuth = {
-    enable = true;
-    sshIntegration = true;
-    pamAllowedLoginGroups = [ "admins" ];
-  };
-
-  services.bifrost-gateway = {
-    enable = true;
-    dataDir = "/srv/data/bifrost";
-    configFile = globals.aiGateway.configFile;
-    secretFiles.host = ../../secrets/services/bifrost-gateway.yaml;
-  };
-
-  services.phoenix = {
-    enable = true;
-  };
-
-  services.karakeep-pod = {
-    enable = true;
-    oidc = {
-      enable = config.repo.web.catalog.karakeep.access.oidc.enabled;
-      clientId = config.services.identity.oidc.clients.karakeep.clientId;
-      wellknownUrl = config.services.identity.oidc.clients.karakeep.wellknownUrl;
-      providerName = "Kanidm";
-      autoRedirect = true;
-      disablePasswordAuth = true;
+  services = {
+    paperless = {
+      enable = true;
+      dataRoot = "/srv/data";
+      secretFiles.host = ../../secrets/services/paperless.yaml;
+      secretFiles.oidc = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+      oidc = {
+        enable = config.repo.web.catalog.paperless.access.oidc.enabled;
+        clientId = config.services.identity.oidc.clients.paperless.clientId;
+        wellknownUrl = config.services.identity.oidc.clients.paperless.wellknownUrl;
+      };
+      paperless-gpt = {
+        docling.enable = false;
+        instances.llm = {
+          enable = true;
+          environment.LLM_MODEL = globals.aiGateway.aliases.text;
+          environment.VISION_LLM_MODEL = globals.aiGateway.aliases.image;
+        };
+        instances.docling.enable = false;
+      };
     };
-    storage.s3.enable = true;
-    secretFiles.host = ../../secrets/services/karakeep-pod.yaml;
-    secretFiles.oidc = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+
+    journald.extraConfig = ''
+      SystemMaxUse=300M
+      SystemKeepFree=1G
+      MaxRetentionSec=7day
+    '';
+
+    identity.oidc = {
+      providerUrl = config.repo.web.catalog."kanidm-admin".publicUrl;
+    };
+
+    identity.hostAuth = {
+      enable = true;
+      sshIntegration = true;
+      pamAllowedLoginGroups = [ "admins" ];
+    };
+
+    bifrost-gateway = {
+      enable = true;
+      dataDir = "/srv/data/bifrost";
+      configFile = globals.aiGateway.configFile;
+      secretFiles.host = ../../secrets/services/bifrost-gateway.yaml;
+    };
+
+    phoenix = {
+      enable = true;
+    };
+
+    karakeep-pod = {
+      enable = true;
+      oidc = {
+        enable = config.repo.web.catalog.karakeep.access.oidc.enabled;
+        clientId = config.services.identity.oidc.clients.karakeep.clientId;
+        wellknownUrl = config.services.identity.oidc.clients.karakeep.wellknownUrl;
+        providerName = "Kanidm";
+        autoRedirect = true;
+        disablePasswordAuth = true;
+      };
+      storage.s3.enable = true;
+      secretFiles.host = ../../secrets/services/karakeep-pod.yaml;
+      secretFiles.oidc = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+    };
+
+    tailscale = lib.mkIf hasHostSecrets { authKeyFile = "/run/secrets/tailscale.auth_key"; };
+
+    hostRecovery = lib.mkIf hasHostSecrets {
+      enable = true;
+      secretFile = ../../secrets/hosts/oci-melb-1/system.yaml;
+      rescueUser = {
+        name = "rescue";
+      };
+      reboot.onCalendar = "weekly";
+    };
+
+    beszel-agent-auth = {
+      enable = true;
+      secretFiles.host = ../../secrets/hosts/oci-melb-1/system.yaml;
+    };
+
+    state-backups = {
+      enable = true;
+      secretFile = ../../secrets/hosts/oci-melb-1/system.yaml;
+      bucket = "shrublab-backup-oci-melb-1";
+      stagingRoot = "/srv/data/state-backups";
+    };
+
+    niks3-cache = {
+      enable = true;
+      hostSecretFile = ../../secrets/hosts/oci-melb-1/system.yaml;
+      secretFiles.host = ../../secrets/services/niks3.yaml;
+    };
+
+    postgres-shared = {
+      enable = true;
+      secretFile = ../../secrets/services/postgres-shared.yaml;
+      niks3.enable = true;
+      paperless.enable = true;
+      audiomuse.enable = true;
+      litellm.enable = true;
+    };
+
+    # Cache server runs locally here; fleet-standard defaults point peers at it.
+    niks3-auto-upload.serverUrl = "http://127.0.0.1:5751";
+
+    notification-daemon = {
+      enable = true;
+      secretFiles.host = ../../secrets/services/notification-daemon.yaml;
+      secretFiles.hostSystem = ../../secrets/hosts/oci-melb-1/system.yaml;
+
+      ntfy = {
+        enable = true;
+      };
+
+      monitor = {
+        enable = true;
+        services = [
+          "beets-inbox"
+          "beets-reconcile"
+          "beets-duplicates"
+          "podman-storage-prune"
+          "nh-clean-all"
+          "beszel-agent"
+        ];
+      };
+    };
   };
 
   disko-root-extra = "20G";
@@ -166,70 +252,22 @@ in
 
   sops.defaultSopsFile = ../../secrets/common.yaml;
 
-  sops.secrets = (
-    lib.optionalAttrs hasHostSecrets {
-      tailscale_auth_key = {
-        sopsFile = ../../secrets/hosts/oci-melb-1/system.yaml;
-        key = "tailscale/auth_key";
-        path = "/run/secrets/tailscale.auth_key";
-        mode = "0400";
-      };
-      cockpit_service_user_password_hash = {
-        sopsFile = ../../secrets/hosts/oci-melb-1/system.yaml;
-        key = "cockpit/service_user/password_hash";
-        path = "/run/secrets/cockpit.service_user.password_hash";
-        owner = "root";
-        group = "root";
-        mode = "0400";
-      };
-    }
-  );
-
-  services.tailscale = lib.mkIf hasHostSecrets { authKeyFile = "/run/secrets/tailscale.auth_key"; };
-
-  # Cap the LA-to-OCI Tailscale TUN MTU below the proven packet-size black hole.
-  # Host-scoped workaround: no enrollment, identity, tag, firewall, route, or
-  # experimental PMTUD change (see specs/network-access/spec.md).
-  systemd.services.tailscaled.environment.TS_DEBUG_MTU = "1200";
-
-  services.hostRecovery = lib.mkIf hasHostSecrets {
-    enable = true;
-    secretFile = ../../secrets/hosts/oci-melb-1/system.yaml;
-    rescueUser = {
-      name = "rescue";
+  sops.secrets = lib.optionalAttrs hasHostSecrets {
+    tailscale_auth_key = {
+      sopsFile = ../../secrets/hosts/oci-melb-1/system.yaml;
+      key = "tailscale/auth_key";
+      path = "/run/secrets/tailscale.auth_key";
+      mode = "0400";
     };
-    reboot.onCalendar = "weekly";
+    cockpit_service_user_password_hash = {
+      sopsFile = ../../secrets/hosts/oci-melb-1/system.yaml;
+      key = "cockpit/service_user/password_hash";
+      path = "/run/secrets/cockpit.service_user.password_hash";
+      owner = "root";
+      group = "root";
+      mode = "0400";
+    };
   };
-
-  services.beszel-agent-auth = {
-    enable = true;
-    secretFiles.host = ../../secrets/hosts/oci-melb-1/system.yaml;
-  };
-
-  services.state-backups = {
-    enable = true;
-    secretFile = ../../secrets/hosts/oci-melb-1/system.yaml;
-    bucket = "shrublab-backup-oci-melb-1";
-    stagingRoot = "/srv/data/state-backups";
-  };
-
-  services.niks3-cache = {
-    enable = true;
-    hostSecretFile = ../../secrets/hosts/oci-melb-1/system.yaml;
-    secretFiles.host = ../../secrets/services/niks3.yaml;
-  };
-
-  services.postgres-shared = {
-    enable = true;
-    secretFile = ../../secrets/services/postgres-shared.yaml;
-    niks3.enable = true;
-    paperless.enable = true;
-    audiomuse.enable = true;
-    litellm.enable = true;
-  };
-
-  # Cache server runs locally here; fleet-standard defaults point peers at it.
-  services.niks3-auto-upload.serverUrl = "http://127.0.0.1:5751";
 
   programs.nix-ld = {
     enable = true;
@@ -241,28 +279,6 @@ in
       xz
       icu
     ];
-  };
-
-  services.notification-daemon = {
-    enable = true;
-    secretFiles.host = ../../secrets/services/notification-daemon.yaml;
-    secretFiles.hostSystem = ../../secrets/hosts/oci-melb-1/system.yaml;
-
-    ntfy = {
-      enable = true;
-    };
-
-    monitor = {
-      enable = true;
-      services = [
-        "beets-inbox"
-        "beets-reconcile"
-        "beets-duplicates"
-        "podman-storage-prune"
-        "nh-clean-all"
-        "beszel-agent"
-      ];
-    };
   };
 
   system.stateVersion = "25.11";

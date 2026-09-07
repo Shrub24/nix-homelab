@@ -98,10 +98,10 @@ in
           cfg.role == "edge"
         ) config.sops.templates."caddy-cloudflare.env".path;
 
-        authenticatedOriginPulls = cfg.authenticatedOriginPulls;
+        inherit (cfg) authenticatedOriginPulls;
       }
       (lib.mkIf (cfg.trustedProxyCidrs != null) {
-        trustedProxyCidrs = cfg.trustedProxyCidrs;
+        inherit (cfg) trustedProxyCidrs;
       })
     ];
 

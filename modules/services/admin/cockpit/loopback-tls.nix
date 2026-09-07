@@ -6,7 +6,7 @@
 }:
 let
   cfg = config.services.admin.cockpit;
-  loopbackTls = cfg.loopbackTls;
+  inherit (cfg) loopbackTls;
   hasCockpitRoute = lib.hasAttrByPath [
     "applications"
     "admin"
@@ -15,10 +15,9 @@ let
   ] config;
   cockpitRoute =
     if hasCockpitRoute then config.applications.admin.policyServices."cockpit-admin" else null;
-  stateDir = loopbackTls.stateDir;
+  inherit (loopbackTls) stateDir;
   publicCaCert = "/etc/cockpit/loopback-ca.crt";
   certName = "99-loopback";
-  caCert = "${stateDir}/ca.crt";
   cert = "${stateDir}/cockpit.crt";
   key = "${stateDir}/cockpit.key";
 in
@@ -30,97 +29,101 @@ in
       paths = [ stateDir ];
     };
 
-    systemd.tmpfiles.rules = [
-      "d ${stateDir} 0700 root root - -"
-      "d /etc/cockpit 0755 root root - -"
-      "d /etc/cockpit/ws-certs.d 0755 root root - -"
-      "L+ /etc/cockpit/ws-certs.d/${certName}.cert - - - - ${cert}"
-      "L+ /etc/cockpit/ws-certs.d/${certName}.key - - - - ${key}"
-    ];
-
-    systemd.services.cockpit-loopback-tls-material = {
-      description = "Generate host-local CA and Cockpit loopback TLS certificate";
-      wantedBy = [ "multi-user.target" ];
-      before = [
-        "cockpit.service"
-        "caddy.service"
+    systemd = {
+      tmpfiles.rules = [
+        "d ${stateDir} 0700 root root - -"
+        "d /etc/cockpit 0755 root root - -"
+        "d /etc/cockpit/ws-certs.d 0755 root root - -"
+        "L+ /etc/cockpit/ws-certs.d/${certName}.cert - - - - ${cert}"
+        "L+ /etc/cockpit/ws-certs.d/${certName}.key - - - - ${key}"
       ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = pkgs.writeShellScript "cockpit-loopback-tls-material" ''
-          set -euo pipefail
-          umask 077
 
-          state_dir="${stateDir}"
-          ca_key="$state_dir/ca.key"
-          ca_crt="$state_dir/ca.crt"
-          leaf_key="$state_dir/cockpit.key"
-          leaf_crt="$state_dir/cockpit.crt"
-          leaf_csr="$state_dir/cockpit.csr"
-          leaf_cfg="$state_dir/cockpit-openssl.cnf"
+      services = {
+        cockpit-loopback-tls-material = {
+          description = "Generate host-local CA and Cockpit loopback TLS certificate";
+          wantedBy = [ "multi-user.target" ];
+          before = [
+            "cockpit.service"
+            "caddy.service"
+          ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = pkgs.writeShellScript "cockpit-loopback-tls-material" ''
+              set -euo pipefail
+              umask 077
 
-          install -d -m 0700 "$state_dir"
+              state_dir="${stateDir}"
+              ca_key="$state_dir/ca.key"
+              ca_crt="$state_dir/ca.crt"
+              leaf_key="$state_dir/cockpit.key"
+              leaf_crt="$state_dir/cockpit.crt"
+              leaf_csr="$state_dir/cockpit.csr"
+              leaf_cfg="$state_dir/cockpit-openssl.cnf"
 
-          if [ ! -s "$ca_key" ] || [ ! -s "$ca_crt" ]; then
-            ${pkgs.openssl}/bin/openssl req -x509 -newkey rsa:4096 -nodes -sha256 -days 3650 \
-              -subj "/CN=Shrublab Cockpit Loopback CA/" \
-              -keyout "$ca_key" \
-              -out "$ca_crt"
-          fi
+              install -d -m 0700 "$state_dir"
 
-          cat > "$leaf_cfg" <<'EOF'
-          [ req ]
-          distinguished_name = dn
-          prompt = no
-          req_extensions = v3_req
+              if [ ! -s "$ca_key" ] || [ ! -s "$ca_crt" ]; then
+                ${pkgs.openssl}/bin/openssl req -x509 -newkey rsa:4096 -nodes -sha256 -days 3650 \
+                  -subj "/CN=Shrublab Cockpit Loopback CA/" \
+                  -keyout "$ca_key" \
+                  -out "$ca_crt"
+              fi
 
-          [ dn ]
-          CN = ${loopbackTls.serverName}
+              cat > "$leaf_cfg" <<'EOF'
+              [ req ]
+              distinguished_name = dn
+              prompt = no
+              req_extensions = v3_req
 
-          [ v3_req ]
-          keyUsage = critical, digitalSignature, keyEncipherment
-          extendedKeyUsage = serverAuth
-          subjectAltName = @alt_names
+              [ dn ]
+              CN = ${loopbackTls.serverName}
 
-          [ alt_names ]
-          DNS.1 = ${loopbackTls.serverName}
-          DNS.2 = localhost
-          IP.1 = 127.0.0.1
-          EOF
+              [ v3_req ]
+              keyUsage = critical, digitalSignature, keyEncipherment
+              extendedKeyUsage = serverAuth
+              subjectAltName = @alt_names
 
-          if [ ! -s "$leaf_key" ] || [ ! -s "$leaf_crt" ]; then
-            ${pkgs.openssl}/bin/openssl req -new -newkey rsa:2048 -nodes \
-              -keyout "$leaf_key" \
-              -out "$leaf_csr" \
-              -config "$leaf_cfg"
+              [ alt_names ]
+              DNS.1 = ${loopbackTls.serverName}
+              DNS.2 = localhost
+              IP.1 = 127.0.0.1
+              EOF
 
-            ${pkgs.openssl}/bin/openssl x509 -req -sha256 -days 825 \
-              -in "$leaf_csr" \
-              -CA "$ca_crt" \
-              -CAkey "$ca_key" \
-              -CAcreateserial \
-              -out "$leaf_crt" \
-              -extfile "$leaf_cfg" \
-              -extensions v3_req
-          fi
+              if [ ! -s "$leaf_key" ] || [ ! -s "$leaf_crt" ]; then
+                ${pkgs.openssl}/bin/openssl req -new -newkey rsa:2048 -nodes \
+                  -keyout "$leaf_key" \
+                  -out "$leaf_csr" \
+                  -config "$leaf_cfg"
 
-          rm -f "$leaf_csr"
-          chmod 0400 "$ca_key" "$leaf_key"
-          chmod 0444 "$ca_crt" "$leaf_crt"
-          install -D -m 0444 "$ca_crt" "${publicCaCert}"
-        '';
+                ${pkgs.openssl}/bin/openssl x509 -req -sha256 -days 825 \
+                  -in "$leaf_csr" \
+                  -CA "$ca_crt" \
+                  -CAkey "$ca_key" \
+                  -CAcreateserial \
+                  -out "$leaf_crt" \
+                  -extfile "$leaf_cfg" \
+                  -extensions v3_req
+              fi
+
+              rm -f "$leaf_csr"
+              chmod 0400 "$ca_key" "$leaf_key"
+              chmod 0444 "$ca_crt" "$leaf_crt"
+              install -D -m 0444 "$ca_crt" "${publicCaCert}"
+            '';
+          };
+        };
+
+        cockpit = {
+          requires = [ "cockpit-loopback-tls-material.service" ];
+          after = [ "cockpit-loopback-tls-material.service" ];
+        };
+
+        caddy = lib.mkIf config.services.caddy.enable {
+          wants = [ "cockpit-loopback-tls-material.service" ];
+          after = [ "cockpit-loopback-tls-material.service" ];
+        };
       };
-    };
-
-    systemd.services.cockpit = {
-      requires = [ "cockpit-loopback-tls-material.service" ];
-      after = [ "cockpit-loopback-tls-material.service" ];
-    };
-
-    systemd.services.caddy = lib.mkIf config.services.caddy.enable {
-      wants = [ "cockpit-loopback-tls-material.service" ];
-      after = [ "cockpit-loopback-tls-material.service" ];
     };
 
     assertions = [

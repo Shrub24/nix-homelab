@@ -1,5 +1,4 @@
 {
-  lib,
   pkgs,
   ...
 }:
@@ -9,24 +8,27 @@ let
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMrzW7nXTeKqejlnIYmccciDJ4/PfjV6ek4Wvo7v86/a termix"
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBsHnolkmLVudDN3HKQ/Q4Xw2ZqDVjax177hbi15jqRW la-admin-1-dev@shrublab"
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINRh71N504a6X1OkZ6XxhJrllHiEEWC/4o5s3+RtPuI8 home-forge-dev@shrublab"
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBeKFT2RvMo1WvF+f8Q6W8cU2wn31aCG1k9onz6Y+fqz root@arch"
   ];
 in
 {
-  users.mutableUsers = false;
+  users = {
+    mutableUsers = false;
 
-  users.users.dev = {
-    isNormalUser = true;
-    description = "Dev User";
-    extraGroups = [
-      "wheel"
-    ];
-    shell = pkgs.zsh;
-    openssh.authorizedKeys.keys = sshKeys;
-  };
+    users.dev = {
+      isNormalUser = true;
+      description = "Dev User";
+      extraGroups = [
+        "wheel"
+      ];
+      shell = pkgs.zsh;
+      openssh.authorizedKeys.keys = sshKeys;
+    };
 
-  users.users.root = {
-    shell = pkgs.bashInteractive;
-    openssh.authorizedKeys.keys = sshKeys;
+    users.root = {
+      shell = pkgs.bashInteractive;
+      openssh.authorizedKeys.keys = sshKeys;
+    };
   };
 
   systemd.tmpfiles.settings."user-homes" = {

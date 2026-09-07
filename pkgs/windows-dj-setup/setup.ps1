@@ -19,7 +19,8 @@ if (-not $winfspInstalled) {
 } else { Write-Host "WinFsp already installed." }
 
 # 2. VirtIO-FS services: one service per mount tag. M: is the whole music
-# storage root and S: is this read-only setup share.
+# storage root (Engine Library is a real directory on it) and S: is this
+# read-only setup share.
 # ponytail: one service per tag; virtiofs.exe handles a single mount per process
 $virtiofs = "C:\Program Files\Virtio-Win\viofs\virtiofs.exe"
 if (-not (Test-Path $virtiofs)) { Write-Error "virtiofs.exe not found at $virtiofs - install virtio-win-guest-tools first."; exit 1 }
@@ -43,13 +44,14 @@ function Remove-DjService([string]$Name) {
   throw "Service $Name is still pending deletion. Reboot and run setup.ps1 again."
 }
 
-# Engine library was a host bind inside M: (poisoned readdir); now a separate
-# share on L: with a guest junction M:\Engine Library -> L:\ (no host submount).
+# The Engine library used to ride a separate L: share behind an M:\Engine
+# Library junction; it is now a real directory on M:. Remove the dead share
+# services. Deleting a service never touches the library files themselves.
 Remove-DjService "VirtioFS-Library"
+Remove-DjService "VirtioFS-EngineLibrary"
 
 foreach ($svc in @(
   @{ Name="VirtioFS-Media"; Tag="media"; Letter="M:" },
-  @{ Name="VirtioFS-EngineLibrary"; Tag="engine-library"; Letter="L:" },
   @{ Name="VirtioFS-Setup"; Tag="setup"; Letter="S:" }
 )) {
   Remove-DjService $svc.Name
@@ -59,17 +61,12 @@ foreach ($svc in @(
   Write-Host "Started $($svc.Name) -> $($svc.Letter)"
 }
 
-# 2b. M:\Engine Library -> L:\ junction (drive-specific DB on L:)
-$djM = "M:\Engine Library"
-if (Test-Path -LiteralPath $djM) {
-  $itM = Get-Item -LiteralPath $djM -Force -ErrorAction SilentlyContinue
-  $isReparseM = $itM -and (($itM.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
-  if ($isReparseM) { cmd /c rmdir "$djM" | Out-Null }
-  else { throw "$djM exists and is not a junction; move it manually before rerunning setup.ps1" }
-}
-if (-not (Test-Path -LiteralPath $djM)) {
-  cmd /c mklink /D "$djM" "L:\" | Out-Null
-  Write-Host "Created $djM -> L:\"
+# Remove only the obsolete M:\Engine Library -> L:\ junction. Never remove a
+# real Engine Library directory.
+$engineLibrary = Get-Item -LiteralPath "M:\Engine Library" -Force -ErrorAction SilentlyContinue
+if ($engineLibrary -and (($engineLibrary.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+  cmd /c rmdir "M:\Engine Library" | Out-Null
+  Write-Host "Removed legacy M:\Engine Library junction."
 }
 
 # 3. Sleep/hibernate - VM must stay awake for Remote Library
@@ -78,27 +75,14 @@ powercfg /change standby-timeout-ac 0
 powercfg /change monitor-timeout-ac 0
 Write-Host "Sleep/hibernate disabled."
 
-# 4. Engine library link (Engine expects Music\Engine Library)
-# A reparse point is what a mklink /D target is; its attribute is 5.1-safe to read.
-function Test-DjReparsePoint([string]$Path) {
-  $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-  if (-not $item) { return $false }
-  return (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)
-}
-
-$link = "$env:USERPROFILE\Music\Engine Library"
-$target = "M:\Engine Library"
-if (Test-DjReparsePoint $link) {
-  # cmd /c rmdir removes the link itself, never its target contents.
-  cmd /c rmdir "$link" | Out-Null
-} elseif (Test-Path -LiteralPath $link) {
-  Write-Host "Left alone (not a link, real directory): $link"
-}
-if (-not (Test-Path -LiteralPath $link)) {
-  # mklink is cmd-only
-  cmd /c mklink /D "$link" "$target" | Out-Null
-  Write-Host "Created $link -> $target"
-}
+# 4. Engine library location
+# Engine DJ opens its library from the user's Music known-folder
+# (%USERPROFILE%\Music\Engine Library). The operator points the Music
+# known-folder directly at M:, so M:\Engine Library (a real directory on the
+# music share) is what Engine sees. This script deliberately creates no
+# junction, symlink, or profile link and never moves library files.
+Write-Host "Engine library: point the Windows Music known-folder directly at M: (not a subfolder) so Engine resolves M:\Engine Library."
+Write-Host "VERIFY: in Explorer, M:\Engine Library exists on the music share and the Music folder resolves to M:\."
 
 # 5. Mesa OpenGL fallback - fixes "Failed to initialize graphics backend for OpenGL" on virtio-gpu
 # opengl32.dll needs libgallium_wgl.dll beside it
@@ -119,4 +103,4 @@ if ($engineExe) {
   }
 } else { Write-Host "Engine DJ not found - copy $here\opengl32sw.dll + libgallium_wgl.dll to the Engine install dir after installing Engine." }
 
-Write-Host "Done. Reboot recommended, then verify M:\, L:\, and S:\ in Explorer."
+Write-Host "Done. Reboot recommended, then verify M:\ and S:\ in Explorer."

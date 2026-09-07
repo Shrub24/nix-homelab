@@ -6,11 +6,11 @@ The live home-forge music tree mixes audio files, generated playlists, Engine DJ
 
 ## What Changes
 
-- **BREAKING:** Make home-forge select `/srv/storage/media/music` as the music application's storage root, with `library`, `playlists`, `inbox`, `quarantine`, `.versions`, and the bind-presented `Engine Library` as sibling paths.
+- **BREAKING:** Make home-forge select `/srv/storage/media/music` as the music application's storage root, with `library`, `playlists`, `inbox`, `quarantine`, `.versions`, and the real `Engine Library` directory as sibling paths.
 - Share the music application root as the Engine DJ guest's single writable `M:` drive.
 - Remove physical music-root policy from `policy/globals.nix`; the host supplies required application and DJ path options instead.
 - Remove hardcoded shared-path defaults from enabled music leaf services; the application composition root injects every required shared path.
-- Preserve `/srv/data/<service>` as the service-state boundary and keep the Engine DJ database physically at `/srv/data/engine-dj/library`.
+- Preserve `/srv/data/<service>` as the service-state boundary; the Engine library is a real `Engine Library` directory beneath the music root rather than service state.
 - Remove confirmed-empty pre-cutover directories and the stale Beets pre-import copy during the controlled migration; leave `tagged` data unchanged for later Beets reorganization.
 - Repair the setup-media PowerShell script for Windows PowerShell 5.1 while retaining `New-Service` and `Start-Service` for VirtIO-FS service management.
 - Deliberately leave the `traktor-m3u-sync` output-path wiring unchanged because that integration is being replaced separately.

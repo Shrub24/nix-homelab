@@ -39,7 +39,7 @@ Home-forge will use:
   inbox/
   quarantine/
   .versions/
-  Engine Library/   (bind from /srv/data/engine-dj/library)
+  Engine Library/   (real dir; the Engine database lives here)
 ```
 
 `/srv/storage/media` remains a category boundary for future music-independent photo or video applications. Engine DJ shares `/srv/storage/media/music`, not the category root, so future categories cannot leak into the guest.
@@ -50,11 +50,11 @@ The music application derives shared subtrees from `storageRoot` and passes conc
 
 The alternative—publishing every derived directory as an overridable application option—adds unsupported topology combinations and preserves the current drift surface.
 
-### MS-4 — Single virtiofs share with host-side bind composition
+### MS-4 — Single virtiofs share; Engine Library is a real directory
 
-The DJ module receives an explicit required `sharePath` and exports it as `M:`. `/srv/data/engine-dj/library` remains the physical Engine database and is bind-mounted at `${sharePath}/Engine Library` before virtiofs exports the tree.
+The DJ module receives an explicit required `sharePath` and exports it as `M:`. The Engine library is a real `Engine Library` directory beneath that root (created by host tmpfiles); the guest sees `M:\Engine Library` directly, with no second share, mount tag, host bind, or guest junction.
 
-This avoids a second guest drive and avoids nesting a WinFsp/virtiofs mount beneath another virtiofs filesystem. A host-side bind is already the proven mechanism and preserves backup ownership.
+This keeps one share root so host and guest view the same layout and the Engine database rides the music storage root's existing backup coverage. A cross-device bind inside `M:` poisoned WinFsp readdir, and a separate `L:` share plus junction reintroduced a second drive; a plain directory on the single share avoids both.
 
 ### PS-1 — Windows PowerShell 5.1 compatibility
 

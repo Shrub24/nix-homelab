@@ -3,12 +3,18 @@ let
   hostName = config.networking.hostName;
 in
 {
-  systemd.services.tailscaled.restartIfChanged = false;
-  systemd.services.tailscaled.stopIfChanged = false;
-  systemd.services.tailscaled-autoconnect.restartIfChanged = false;
-  systemd.services.tailscaled-autoconnect.stopIfChanged = false;
-  systemd.services.tailscaled-autoconnect.wants = [ "sops-install-secrets.service" ];
-  systemd.services.tailscaled-autoconnect.after = [ "sops-install-secrets.service" ];
+  systemd.services = {
+    tailscaled = {
+      restartIfChanged = false;
+      stopIfChanged = false;
+    };
+    tailscaled-autoconnect = {
+      restartIfChanged = false;
+      stopIfChanged = false;
+      wants = [ "sops-install-secrets.service" ];
+      after = [ "sops-install-secrets.service" ];
+    };
+  };
 
   services.tailscale = {
     enable = true;

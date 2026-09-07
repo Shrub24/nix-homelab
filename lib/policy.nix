@@ -22,7 +22,7 @@ rec {
     resolved: "${resolved.origin.scheme}://${resolved.origin.host}:${toString resolved.origin.port}";
 
   mkOidcEndpoints = issuerUrl: {
-    issuerUrl = issuerUrl;
+    inherit issuerUrl;
     wellknownUrl = "${issuerUrl}/.well-known/openid-configuration";
     authorizationUrl = "${issuerUrl}/authorize";
     tokenUrl = "${issuerUrl}/api/oidc/token";
@@ -113,17 +113,17 @@ rec {
           value = {
             inherit publicHost;
             hostname = canonicalService.subdomain;
-            primaryDomain = canonicalService.primaryDomain;
+            inherit (canonicalService) primaryDomain;
             proxied = canonicalService.cloudflare.proxied or true;
             declarePublic = true;
-            exposureMode = canonicalService.exposureMode;
+            inherit (canonicalService) exposureMode;
             routes = map (service: service.service) hostServices;
           }
           // lib.optionalAttrs (canonicalAccessService != null) {
             access = canonicalAccessService.access // {
-              service = canonicalAccessService.service;
-              publicUrl = canonicalAccessService.publicUrl;
-              path = canonicalAccessService.path;
+              inherit (canonicalAccessService) service;
+              inherit (canonicalAccessService) publicUrl;
+              inherit (canonicalAccessService) path;
             };
           };
         }

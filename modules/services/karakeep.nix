@@ -148,7 +148,7 @@ in
         message = "services.karakeep-pod.oidc.wellknownUrl must be set when OIDC is enabled.";
       }
       (secretHelpers.mkRequiredSecretAssertion {
-        enable = cfg.enable;
+        inherit (cfg) enable;
         file = cfg.secretFiles.host;
         feature = "services.karakeep-pod";
         label = "secretFiles.host";
@@ -211,99 +211,83 @@ in
         }
       ));
 
-    virtualisation.podman.enable = true;
-    virtualisation.podman.autoPrune.enable = lib.mkDefault true;
-
-    systemd.services."podman-network-${cfg.networkName}" = {
-      description = "Create Podman network ${cfg.networkName}";
-      wantedBy = [ "multi-user.target" ];
-      before = [
-        "podman-karakeep-meilisearch.service"
-        "podman-karakeep-chrome.service"
-        "podman-karakeep-web.service"
-      ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network exists ${cfg.networkName} || ${pkgs.podman}/bin/podman network create ${cfg.networkName}'";
-        ExecStop = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network rm -f ${cfg.networkName} || true'";
+    virtualisation = {
+      podman = {
+        enable = true;
+        autoPrune.enable = lib.mkDefault true;
       };
-    };
 
-    systemd.tmpfiles.rules = [
-      "d ${cfg.dataDir} 0750 root root - -"
-      "d ${cfg.dataDir}/app 0750 root root - -"
-      "d ${cfg.dataDir}/meilisearch 0750 root root - -"
-      "d ${envDir} 0750 root root - -"
-      "f ${cfg.environmentFile} 0640 root root - -"
-    ];
+      oci-containers.containers = {
+        karakeep-meilisearch = {
+          autoStart = true;
+          image = cfg.meilisearchImage;
+          extraOptions = [
+            "--network=${cfg.networkName}"
+          ];
+          environment = {
+            MEILI_NO_ANALYTICS = "true";
+          };
+          environmentFiles = [
+            cfg.environmentFile
+          ];
+          volumes = [
+            "${cfg.dataDir}/meilisearch:/meili_data"
+          ];
+        };
 
-    virtualisation.oci-containers.containers.karakeep-meilisearch = {
-      autoStart = true;
-      image = cfg.meilisearchImage;
-      extraOptions = [
-        "--network=${cfg.networkName}"
-      ];
-      environment = {
-        MEILI_NO_ANALYTICS = "true";
+        karakeep-chrome = {
+          autoStart = true;
+          image = cfg.chromeImage;
+          extraOptions = [
+            "--network=${cfg.networkName}"
+          ];
+          cmd = [
+            "--disable-gpu"
+            "--disable-dev-shm-usage"
+            "--hide-scrollbars"
+            "--disable-blink-features=AutomationControlled"
+            "--window-size=1440,900"
+          ];
+        };
+
+        karakeep-web = {
+          autoStart = true;
+          image = cfg.webImage;
+          extraOptions = [
+            "--network=${cfg.networkName}"
+          ];
+          ports = [
+            "${cfg.listenAddress}:${toString cfg.port}:3000"
+          ];
+          environment = {
+            MEILI_ADDR = "http://karakeep-meilisearch:7700";
+            BROWSER_WEB_URL = "http://karakeep-chrome:9222";
+            DATA_DIR = "/data";
+            MEILI_NO_ANALYTICS = "true";
+            NEXTAUTH_URL = cfg.publicUrl;
+          }
+          // {
+            DISABLE_PASSWORD_AUTH = if cfg.oidc.disablePasswordAuth then "true" else "false";
+          }
+          // lib.optionalAttrs cfg.oidc.enable {
+            OAUTH_WELLKNOWN_URL = cfg.oidc.wellknownUrl;
+            OAUTH_SCOPE = cfg.oidc.scope;
+            OAUTH_PROVIDER_NAME = cfg.oidc.providerName;
+            OAUTH_AUTO_REDIRECT = if cfg.oidc.autoRedirect then "true" else "false";
+            OAUTH_ALLOW_DANGEROUS_EMAIL_ACCOUNT_LINKING =
+              if cfg.oidc.allowDangerousEmailAccountLinking then "true" else "false";
+          }
+          // lib.optionalAttrs cfg.storage.s3.enable {
+            ASSET_STORE_S3_FORCE_PATH_STYLE = if cfg.storage.s3.forcePathStyle then "true" else "false";
+          };
+          environmentFiles = [
+            cfg.environmentFile
+          ];
+          volumes = [
+            "${cfg.dataDir}/app:/data"
+          ];
+        };
       };
-      environmentFiles = [
-        cfg.environmentFile
-      ];
-      volumes = [
-        "${cfg.dataDir}/meilisearch:/meili_data"
-      ];
-    };
-
-    virtualisation.oci-containers.containers.karakeep-chrome = {
-      autoStart = true;
-      image = cfg.chromeImage;
-      extraOptions = [
-        "--network=${cfg.networkName}"
-      ];
-      cmd = [
-        "--no-sandbox"
-        "--remote-debugging-address=0.0.0.0"
-        "--remote-debugging-port=9222"
-      ];
-    };
-
-    virtualisation.oci-containers.containers.karakeep-web = {
-      autoStart = true;
-      image = cfg.webImage;
-      extraOptions = [
-        "--network=${cfg.networkName}"
-      ];
-      ports = [
-        "${cfg.listenAddress}:${toString cfg.port}:3000"
-      ];
-      environment = {
-        MEILI_ADDR = "http://karakeep-meilisearch:7700";
-        BROWSER_WEB_URL = "http://karakeep-chrome:9222";
-        DATA_DIR = "/data";
-        MEILI_NO_ANALYTICS = "true";
-        NEXTAUTH_URL = cfg.publicUrl;
-      }
-      // {
-        DISABLE_PASSWORD_AUTH = if cfg.oidc.disablePasswordAuth then "true" else "false";
-      }
-      // lib.optionalAttrs cfg.oidc.enable {
-        OAUTH_WELLKNOWN_URL = cfg.oidc.wellknownUrl;
-        OAUTH_SCOPE = cfg.oidc.scope;
-        OAUTH_PROVIDER_NAME = cfg.oidc.providerName;
-        OAUTH_AUTO_REDIRECT = if cfg.oidc.autoRedirect then "true" else "false";
-        OAUTH_ALLOW_DANGEROUS_EMAIL_ACCOUNT_LINKING =
-          if cfg.oidc.allowDangerousEmailAccountLinking then "true" else "false";
-      }
-      // lib.optionalAttrs cfg.storage.s3.enable {
-        ASSET_STORE_S3_FORCE_PATH_STYLE = if cfg.storage.s3.forcePathStyle then "true" else "false";
-      };
-      environmentFiles = [
-        cfg.environmentFile
-      ];
-      volumes = [
-        "${cfg.dataDir}/app:/data"
-      ];
     };
 
     services.state-backups.services.karakeep = {
@@ -312,53 +296,81 @@ in
       paths = [ cfg.dataDir ];
     };
 
-    systemd.services."podman-karakeep-web" = {
-      wants = [
-        "network-online.target"
-        "podman-network-${cfg.networkName}.service"
-      ];
-      after = [
-        "network-online.target"
-        "podman-network-${cfg.networkName}.service"
-        "podman-karakeep-meilisearch.service"
-        "podman-karakeep-chrome.service"
-      ];
-      requires = [
-        "podman-network-${cfg.networkName}.service"
-        "podman-karakeep-meilisearch.service"
-        "podman-karakeep-chrome.service"
-      ];
-      unitConfig.RequiresMountsFor = [
-        cfg.dataDir
-        envDir
-      ];
-    };
+    systemd = {
+      services = {
+        "podman-network-${cfg.networkName}" = {
+          description = "Create Podman network ${cfg.networkName}";
+          wantedBy = [ "multi-user.target" ];
+          before = [
+            "podman-karakeep-meilisearch.service"
+            "podman-karakeep-chrome.service"
+            "podman-karakeep-web.service"
+          ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network exists ${cfg.networkName} || ${pkgs.podman}/bin/podman network create ${cfg.networkName}'";
+            ExecStop = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network rm -f ${cfg.networkName} || true'";
+          };
+        };
 
-    systemd.services."podman-karakeep-meilisearch" = {
-      wants = [
-        "network-online.target"
-        "podman-network-${cfg.networkName}.service"
-      ];
-      after = [
-        "network-online.target"
-        "podman-network-${cfg.networkName}.service"
-      ];
-      requires = [ "podman-network-${cfg.networkName}.service" ];
-      unitConfig.RequiresMountsFor = [
-        cfg.dataDir
-      ];
-    };
+        "podman-karakeep-web" = {
+          wants = [
+            "network-online.target"
+            "podman-network-${cfg.networkName}.service"
+          ];
+          after = [
+            "network-online.target"
+            "podman-network-${cfg.networkName}.service"
+            "podman-karakeep-meilisearch.service"
+            "podman-karakeep-chrome.service"
+          ];
+          requires = [
+            "podman-network-${cfg.networkName}.service"
+            "podman-karakeep-meilisearch.service"
+            "podman-karakeep-chrome.service"
+          ];
+          unitConfig.RequiresMountsFor = [
+            cfg.dataDir
+            envDir
+          ];
+        };
 
-    systemd.services."podman-karakeep-chrome" = {
-      wants = [
-        "network-online.target"
-        "podman-network-${cfg.networkName}.service"
+        "podman-karakeep-meilisearch" = {
+          wants = [
+            "network-online.target"
+            "podman-network-${cfg.networkName}.service"
+          ];
+          after = [
+            "network-online.target"
+            "podman-network-${cfg.networkName}.service"
+          ];
+          requires = [ "podman-network-${cfg.networkName}.service" ];
+          unitConfig.RequiresMountsFor = [
+            cfg.dataDir
+          ];
+        };
+
+        "podman-karakeep-chrome" = {
+          wants = [
+            "network-online.target"
+            "podman-network-${cfg.networkName}.service"
+          ];
+          after = [
+            "network-online.target"
+            "podman-network-${cfg.networkName}.service"
+          ];
+          requires = [ "podman-network-${cfg.networkName}.service" ];
+        };
+      };
+
+      tmpfiles.rules = [
+        "d ${cfg.dataDir} 0750 root root - -"
+        "d ${cfg.dataDir}/app 0750 root root - -"
+        "d ${cfg.dataDir}/meilisearch 0750 root root - -"
+        "d ${envDir} 0750 root root - -"
+        "f ${cfg.environmentFile} 0640 root root - -"
       ];
-      after = [
-        "network-online.target"
-        "podman-network-${cfg.networkName}.service"
-      ];
-      requires = [ "podman-network-${cfg.networkName}.service" ];
     };
   };
 }

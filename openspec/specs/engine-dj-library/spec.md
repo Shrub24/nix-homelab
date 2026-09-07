@@ -7,7 +7,7 @@ Host the Engine DJ library database and its music on Linux storage so the SC6000
 
 ### Requirement: Library database lives on Linux storage
 
-The Engine DJ library directory (including the SQLite database) SHALL reside on the host's native service-state filesystem. The layout MUST NOT require the host to mount foreign-filesystem images to read or back up the library.
+The Engine DJ library directory (including the SQLite database) SHALL reside on the host's native ext4 music storage filesystem. The layout MUST NOT require the host to mount foreign-filesystem images to read or back up the library.
 
 #### Scenario: Offline worker access
 - **WHEN** the VM is stopped and an operator or sync worker inspects the library directory
@@ -15,7 +15,7 @@ The Engine DJ library directory (including the SQLite database) SHALL reside on 
 
 ### Requirement: Stable guest path mapping
 
-The library share SHALL be presented to the guest at a stable drive letter, and the guest-visible Engine library path MUST be established once via a fixed symbolic link from the default library location. Library paths recorded in the database MUST remain valid across guest reboots.
+The Engine library SHALL be a real directory on the guest's `M:` music share (`M:\Engine Library`, host `<storageRoot>/Engine Library`), with no separate share, mount tag, or symbolic link. The guest-visible Engine library location is established once by the operator pointing the Windows Music known-folder directly at `M:`. Library paths recorded in the database MUST remain valid across guest reboots.
 
 #### Scenario: Reboot preserves paths
 - **WHEN** the guest reboots with the same share definition

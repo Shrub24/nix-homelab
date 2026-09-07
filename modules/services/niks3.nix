@@ -1,7 +1,6 @@
 {
   config,
   lib,
-  pkgs,
   ...
 }:
 let
@@ -72,7 +71,7 @@ in
         secretKeyFile = "/run/secrets/niks3.s3_secret_access_key";
       };
 
-      cacheUrl = cfg.cacheUrl;
+      inherit (cfg) cacheUrl;
       signKeyFiles = [ "/run/secrets/niks3.signing_key" ];
       apiTokenFile = lib.mkIf (cfg.hostSecretFile != null) "/run/secrets/niks3.api_token";
     };

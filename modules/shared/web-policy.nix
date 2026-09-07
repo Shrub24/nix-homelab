@@ -38,7 +38,7 @@ in
 
   config.repo.web = {
     hosts = resolvedHosts;
-    catalog = catalog;
+    inherit catalog;
     currentHost =
       if currentHostName != null && builtins.hasAttr currentHostName resolvedHosts then
         resolvedHosts.${currentHostName}

@@ -1,16 +1,9 @@
-{ ... }@args:
+args:
 let
   hasFlakeSelf = args ? self;
   hasFlakeOutPath = hasFlakeSelf && args.self ? outPath;
   configurationRevision =
-    if !hasFlakeSelf then
-      null
-    else if args.self ? rev then
-      args.self.rev
-    else if args.self ? dirtyRev then
-      args.self.dirtyRev
-    else
-      null;
+    if !hasFlakeSelf then null else args.self.rev or (args.self.dirtyRev or null);
 in
 {
   environment.etc =
@@ -23,16 +16,17 @@ in
 
   system.configurationRevision = configurationRevision;
 
-  nix.settings.experimental-features = [
-    "nix-command"
-    "flakes"
-  ];
-
-  nix.settings.auto-optimise-store = true;
-  nix.settings.trusted-users = [
-    "root"
-    "dev"
-  ];
+  nix.settings = {
+    experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
+    auto-optimise-store = true;
+    trusted-users = [
+      "root"
+      "dev"
+    ];
+  };
 
   time.timeZone = "UTC";
 

@@ -23,7 +23,7 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       (secretHelpers.mkRequiredSecretAssertion {
-        enable = cfg.enable;
+        inherit (cfg) enable;
         file = cfg.secretFiles.host;
         feature = "services.beszel-agent-auth";
         label = "secretFiles.host";

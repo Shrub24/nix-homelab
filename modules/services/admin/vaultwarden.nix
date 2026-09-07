@@ -44,7 +44,7 @@ in
   config = lib.mkIf (appCfg.enable && cfg.enable) {
     assertions = [
       (secretHelpers.mkRequiredSecretAssertion {
-        enable = cfg.enable;
+        inherit (cfg) enable;
         file = cfg.secretFiles.host;
         feature = "services.admin.vaultwarden";
         label = "secretFiles.host";

@@ -142,12 +142,6 @@ in
         description = "windows-vm instance name hosting Engine DJ.";
       };
 
-      libraryPath = lib.mkOption {
-        type = lib.types.str;
-        default = "/srv/data/engine-dj/library";
-        description = "Host directory holding the Engine library database (ext4 service state). Exclusive access alternates between the VM and Linux-side writers.";
-      };
-
       sharePath = lib.mkOption {
         type = lib.types.str;
         description = "Root exported to the guest (drive M:). Required; injected by the caller.";
@@ -203,12 +197,6 @@ in
               source = engine.sharePath;
               readonly = false;
             };
-            # A cross-device submount inside M: breaks WinFsp readdir; use L:
-            # with a guest junction instead (setup.ps1).
-            engine-library = {
-              source = engine.libraryPath;
-              readonly = false;
-            };
             setup = {
               source = "${self.packages.${pkgs.stdenv.hostPlatform.system}.windows-dj-setup}";
               readonly = true;
@@ -239,9 +227,9 @@ in
             action = "export";
             state = "library";
             format = "engine";
-            # The Engine library DB lives under the NVMe engine-library share
-            # (L:, junctioned at M:\Engine Library), not the music root.
-            engine.database_path = "${engine.libraryPath}/Database2/m.db";
+            # The Engine library is a real directory on the M: music share; the
+            # SQLite DB lives at Engine Library/Database2 (guest M:\Engine Library).
+            engine.database_path = "${engine.musicStorageRoot}/Engine Library/Database2/m.db";
             # Engine stores Track paths relative to the Database2 parent.
             engine.track_path_prefix = "../library";
           };
@@ -258,12 +246,14 @@ in
         };
       };
 
-      # Quiesce contract: stop the VM only if it was running; the M:-drive
-      # library rides along cold via the media backup in the same window.
+      # Quiesce contract: stop the VM only if it was running. The Engine library
+      # rides the music storage root, which the media backup already covers in
+      # the same window (lib.unique deduplicates the path), so this service
+      # contributes only the quiesce hooks and never backs unused /srv/data.
       state-backups.services.engine-dj = {
         enable = true;
         mode = "quiesce";
-        paths = [ engine.libraryPath ];
+        paths = [ engine.musicStorageRoot ];
         prepareCommands = [
           ''
             state=$(${pkgs.libvirt}/bin/virsh domstate ${engine.vmName} 2>/dev/null) || {
@@ -333,8 +323,8 @@ in
         after = [ "dj-library-writers.target" ];
       };
       tmpfiles.rules = [
-        "d ${engine.libraryPath} 0755 root root - -"
-        "z '${engine.libraryPath}/Database2' 0770 playlist-sync music-ingest -"
+        "d '${engine.musicStorageRoot}/Engine Library' 0755 root root - -"
+        "z '${engine.musicStorageRoot}/Engine Library/Database2' 0770 playlist-sync music-ingest -"
         "d ${engine.sharePath} 2770 root music-ingest - -"
         "d ${engine.traktorStateDir} 0750 playlist-sync music-ingest -"
         "d ${engine.traktorStateDir}/import 0770 playlist-sync music-ingest -"

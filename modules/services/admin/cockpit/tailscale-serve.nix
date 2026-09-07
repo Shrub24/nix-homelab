@@ -6,7 +6,7 @@
 }:
 let
   cfg = config.services.admin.cockpit;
-  tailscaleServe = cfg.tailscaleServe;
+  inherit (cfg) tailscaleServe;
   localUrl = "http://127.0.0.1:${toString config.services.cockpit.port}";
 in
 {

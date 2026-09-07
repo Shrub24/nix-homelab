@@ -27,18 +27,20 @@ in
     };
   };
 
-  services.niks3-auto-upload = lib.mkIf hasHostSecrets {
-    enable = lib.mkDefault true;
-    serverUrl = lib.mkDefault "http://oci-melb-1:5751";
-    authTokenFile = "/run/secrets/niks3.api_token";
+  services = {
+    niks3-auto-upload = lib.mkIf hasHostSecrets {
+      enable = lib.mkDefault true;
+      serverUrl = lib.mkDefault "http://oci-melb-1:5751";
+      authTokenFile = "/run/secrets/niks3.api_token";
+    };
+    niks3-post-deploy.enable = true;
+    beszel-agent-auth = lib.mkIf hasHostSecrets {
+      enable = true;
+      secretFiles.host = hostSystemSecret;
+    };
   };
-  services.niks3-post-deploy.enable = true;
-  fleet.nixbuild-ssh.enable = true;
 
-  services.beszel-agent-auth = lib.mkIf hasHostSecrets {
-    enable = true;
-    secretFiles.host = hostSystemSecret;
-  };
+  fleet.nixbuild-ssh.enable = true;
 
   fleet.hostIdentity.sshPrivateKeyFile = lib.mkIf hasHostSecrets hostSystemSecret;
 

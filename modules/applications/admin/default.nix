@@ -12,7 +12,6 @@ let
   oauth2Policy = identityPolicy.systems.oauth2;
 
   termixRoute = cfg.policyServices.${oauth2Policy.termix.routeKey};
-  quantumRoute = cfg.policyServices.${oauth2Policy.quantum.routeKey};
 
   oidcRuntimeEnabled =
     clientPolicy:
@@ -51,13 +50,15 @@ in
       description = "Resolved host services from policy/web-services.nix for SSOT endpoint consumption.";
     };
 
-    secretFiles.host = secretHelpers.mkSecretFileOption "admin-host-secrets";
-    secretFiles.identity = secretHelpers.mkSecretFileOption "admin-identity-secrets";
-    secretFiles.identityProvisioning = secretHelpers.mkSecretFileOption "admin-identity-provisioning";
-    secretFiles.oidcClients = lib.mkOption {
-      type = lib.types.attrsOf lib.types.path;
-      default = { };
-      description = "Per-client OIDC secret source files keyed by Kanidm oauth2 client id.";
+    secretFiles = {
+      host = secretHelpers.mkSecretFileOption "admin-host-secrets";
+      identity = secretHelpers.mkSecretFileOption "admin-identity-secrets";
+      identityProvisioning = secretHelpers.mkSecretFileOption "admin-identity-provisioning";
+      oidcClients = lib.mkOption {
+        type = lib.types.attrsOf lib.types.path;
+        default = { };
+        description = "Per-client OIDC secret source files keyed by Kanidm oauth2 client id.";
+      };
     };
   };
 
@@ -65,38 +66,46 @@ in
     lib.mkMerge [
       # Base config with assertions and default service enables
       {
-        services.identity.oidc = {
-          providerUrl = cfg.policyServices."kanidm-admin".publicUrl;
+        services = {
+          identity.oidc = {
+            providerUrl = cfg.policyServices."kanidm-admin".publicUrl;
+          };
+
+          admin = {
+            termix.enable = lib.mkDefault true;
+            kanidm.enable = lib.mkDefault true;
+            cockpit.enable = lib.mkDefault true;
+            webhook.enable = lib.mkDefault true;
+            gatus.enable = lib.mkDefault true;
+            vaultwarden.enable = lib.mkDefault true;
+            quantum.enable = lib.mkDefault false;
+            homepage.enable = lib.mkDefault true;
+            beszel.enable = lib.mkDefault true;
+          };
         };
 
         assertions = [
           (secretHelpers.mkRequiredSecretAssertion {
-            enable = cfg.enable;
+            inherit (cfg) enable;
             file = cfg.secretFiles.host;
             feature = "applications.admin";
             label = "secretFiles.host";
           })
         ];
-
-        services.admin.termix.enable = lib.mkDefault true;
-        services.admin.kanidm.enable = lib.mkDefault true;
-        services.admin.cockpit.enable = lib.mkDefault true;
-        services.admin.webhook.enable = lib.mkDefault true;
-        services.admin.gatus.enable = lib.mkDefault true;
-        services.admin.vaultwarden.enable = lib.mkDefault true;
-        services.admin.quantum.enable = lib.mkDefault false;
-        services.admin.homepage.enable = lib.mkDefault true;
-        services.admin.beszel.enable = lib.mkDefault true;
       }
 
       # Pass-through: propagate secretFiles to sub-services
       {
-        services.admin.vaultwarden.secretFiles.host = cfg.secretFiles.host;
-        services.admin.homepage.secretFiles.host = cfg.secretFiles.host;
-        services.admin.quantum.secretFiles.host = cfg.secretFiles.host;
-        services.admin.kanidm.secretFiles.identity = cfg.secretFiles.identity;
-        services.admin.kanidm.secretFiles.provisioning = cfg.secretFiles.identityProvisioning;
-        services.admin.kanidm.secretFiles.oauth2Clients = cfg.secretFiles.oidcClients;
+        services.admin = {
+          vaultwarden.secretFiles.host = cfg.secretFiles.host;
+          homepage.secretFiles.host = cfg.secretFiles.host;
+          quantum.secretFiles.host = cfg.secretFiles.host;
+          kanidm.secretFiles = {
+            identity = cfg.secretFiles.identity;
+            provisioning = cfg.secretFiles.identityProvisioning;
+            oauth2Clients = cfg.secretFiles.oidcClients;
+          };
+        };
       }
 
       # All host-level secrets - from host-scoped secret file

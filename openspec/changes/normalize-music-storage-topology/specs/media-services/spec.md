@@ -17,7 +17,7 @@ For this change scope, role permissions SHALL be explicit: `music-ingest` is the
 - **THEN** `applications.music.storageRoot` is the host-selected `/srv/storage/media/music` with no physical music path in fleet policy
 - **AND** the application derives sibling `library/`, `playlists/`, `inbox/`, `quarantine/`, and `.versions/` subtrees beneath it
 - **AND** Navidrome and Syncthing use the derived `library/` path, while Engine `M:` shares the whole music storage root
-- **AND** Engine DJ's database remains physically at `/srv/data/engine-dj/library` bind-presented at `storageRoot/Engine Library`
+- **AND** Engine DJ's library is a real `Engine Library` directory at `storageRoot/Engine Library`, with no separate share, mount tag, or guest junction
 
 #### Scenario: Traktor sync is removed
 - **WHEN** `applications.music` is evaluated after this change
@@ -62,10 +62,10 @@ Stateful media-stack services SHALL support backup coverage for their mutable se
 ## ADDED Requirements
 
 ### Requirement: Engine DJ consumes one bounded music share
-The Engine DJ guest SHALL receive the host-selected music application root as one writable `M:` share. The guest-visible root SHALL contain sibling `library`, `playlists`, `inbox`, `quarantine`, and `Engine Library` paths, while the Engine database SHALL remain physically stored beneath the service-state root and bind-presented at `Engine Library`.
+The Engine DJ guest SHALL receive the host-selected music application root as one writable `M:` share. The guest-visible root SHALL contain sibling `library`, `playlists`, `inbox`, `quarantine`, and `Engine Library` paths, where `Engine Library` is a real directory beneath the music root (no separate share, mount tag, or guest junction).
 
 #### Scenario: Engine DJ music share is evaluated
 - **WHEN** Engine DJ is enabled on a host with the music application
 - **THEN** the guest share is rooted at that host's music application storage root
 - **AND** unrelated future media categories outside the music root are not exposed to the guest
-- **AND** Engine database backup coverage continues to use its physical service-state path
+- **AND** Engine database backup coverage rides the music storage root (deduplicated with the media backup)

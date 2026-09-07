@@ -1,21 +1,23 @@
 { lib, config, ... }:
 {
-  options."disko-root-extra" = lib.mkOption {
-    type = lib.types.str;
-    default = "20G";
-    description = "Size for the root partition on single-disk split hosts.";
-  };
+  options = {
+    "disko-root-extra" = lib.mkOption {
+      type = lib.types.str;
+      default = "20G";
+      description = "Size for the root partition on single-disk split hosts.";
+    };
 
-  options."disko-data-size" = lib.mkOption {
-    type = lib.types.str;
-    default = "28G";
-    description = "Size for the /srv/data partition on single-disk split hosts.";
-  };
+    "disko-data-size" = lib.mkOption {
+      type = lib.types.str;
+      default = "28G";
+      description = "Size for the /srv/data partition on single-disk split hosts.";
+    };
 
-  options."disko-nix-size" = lib.mkOption {
-    type = lib.types.str;
-    default = "45G";
-    description = "Size for the /nix partition on single-disk split hosts.";
+    "disko-nix-size" = lib.mkOption {
+      type = lib.types.str;
+      default = "45G";
+      description = "Size for the /nix partition on single-disk split hosts.";
+    };
   };
 
   config.disko.devices.disk.main = {

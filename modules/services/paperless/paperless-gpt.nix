@@ -1,7 +1,6 @@
 {
   lib,
   config,
-  pkgs,
   ociImages,
   ...
 }:
@@ -9,7 +8,7 @@ let
   cfg = config.services.paperless.paperless-gpt;
   bifrostBaseUrl = config.services.bifrost-gateway.endpoint.containerBaseUrl;
 
-  enabledInstances = lib.filterAttrs (n: v: v.enable) cfg.instances;
+  enabledInstances = lib.filterAttrs (_n: v: v.enable) cfg.instances;
   hasDocling = cfg.docling.enable;
 in
 {
@@ -98,7 +97,7 @@ in
         };
 
     sops.templates = lib.mapAttrs' (
-      name: inst:
+      name: _inst:
       lib.nameValuePair "paperless-gpt-${name}.environment" {
         owner = "root";
         group = "root";
@@ -111,7 +110,7 @@ in
 
     systemd.tmpfiles.rules =
       lib.flatten (
-        lib.mapAttrsToList (name: inst: [
+        lib.mapAttrsToList (_name: inst: [
           "d ${inst.dataDir} 0750 root root - -"
           "d ${inst.dataDir}/prompts 0750 root root - -"
           "d ${inst.dataDir}/db 0750 root root - -"
@@ -125,65 +124,69 @@ in
         "d ${cfg.docling.dataDir}/scratch 0750 root root - -"
       ];
 
-    virtualisation.podman.enable = true;
-    virtualisation.podman.autoPrune.enable = lib.mkDefault true;
+    virtualisation = {
+      podman = {
+        enable = true;
+        autoPrune.enable = lib.mkDefault true;
+      };
 
-    virtualisation.oci-containers.containers = lib.mkMerge [
-      (lib.optionalAttrs hasDocling {
-        docling-serve = {
-          autoStart = true;
-          image = ociImages.doclingServe;
-          ports = [ "${cfg.docling.address}:${toString cfg.docling.port}:5001" ];
-          environment = {
-            DOCLING_SERVE_LOG_LEVEL = "WARNING";
-            DOCLING_SERVE_ARTIFACTS_PATH = "/models";
-            DOCLING_SERVE_SCRATCH_PATH = "/scratch";
-            DOCLING_SERVE_ENABLE_UI = "0";
+      oci-containers.containers = lib.mkMerge [
+        (lib.optionalAttrs hasDocling {
+          docling-serve = {
+            autoStart = true;
+            image = ociImages.doclingServe;
+            ports = [ "${cfg.docling.address}:${toString cfg.docling.port}:5001" ];
+            environment = {
+              DOCLING_SERVE_LOG_LEVEL = "WARNING";
+              DOCLING_SERVE_ARTIFACTS_PATH = "/models";
+              DOCLING_SERVE_SCRATCH_PATH = "/scratch";
+              DOCLING_SERVE_ENABLE_UI = "0";
+            };
+            volumes = [
+              "${cfg.docling.dataDir}/models:/models:Z"
+              "${cfg.docling.dataDir}/scratch:/scratch:Z"
+            ];
+            extraOptions = [
+              "--memory=1024M"
+              "--health-cmd=curl -sf http://127.0.0.1:5001/health || exit 1"
+              "--health-interval=30s"
+              "--health-retries=3"
+            ];
           };
-          volumes = [
-            "${cfg.docling.dataDir}/models:/models:Z"
-            "${cfg.docling.dataDir}/scratch:/scratch:Z"
-          ];
-          extraOptions = [
-            "--memory=1024M"
-            "--health-cmd=curl -sf http://127.0.0.1:5001/health || exit 1"
-            "--health-interval=30s"
-            "--health-retries=3"
-          ];
-        };
-      })
-      (lib.mapAttrs' (
-        name: inst:
-        lib.nameValuePair "paperless-gpt-${name}" {
-          autoStart = true;
-          image = ociImages.paperlessGpt;
-          ports = [ "127.0.0.1:${toString inst.port}:8080" ];
-          environment = {
-            LISTEN_INTERFACE = ":8080";
-            PAPERLESS_BASE_URL = "http://host.containers.internal:8080";
-            MANUAL_TAG = inst.manualTag;
-            AUTO_TAG = inst.autoTag;
-            AUTO_OCR_TAG = inst.autoOcrTag;
-            PDF_OCR_COMPLETE_TAG = inst.pdfOcrCompleteTag;
-            LLM_PROVIDER = "openai";
-            OPENAI_BASE_URL = bifrostBaseUrl;
-            OPENAI_API_KEY = "bifrost-local";
-            LOG_LEVEL = "info";
+        })
+        (lib.mapAttrs' (
+          name: inst:
+          lib.nameValuePair "paperless-gpt-${name}" {
+            autoStart = true;
+            image = ociImages.paperlessGpt;
+            ports = [ "127.0.0.1:${toString inst.port}:8080" ];
+            environment = {
+              LISTEN_INTERFACE = ":8080";
+              PAPERLESS_BASE_URL = "http://host.containers.internal:8080";
+              MANUAL_TAG = inst.manualTag;
+              AUTO_TAG = inst.autoTag;
+              AUTO_OCR_TAG = inst.autoOcrTag;
+              PDF_OCR_COMPLETE_TAG = inst.pdfOcrCompleteTag;
+              LLM_PROVIDER = "openai";
+              OPENAI_BASE_URL = bifrostBaseUrl;
+              OPENAI_API_KEY = "bifrost-local";
+              LOG_LEVEL = "info";
+            }
+            // lib.optionalAttrs hasDocling {
+              DOCLING_URL = "http://host.containers.internal:${toString cfg.docling.port}";
+            }
+            // inst.environment;
+            environmentFiles = [ config.sops.templates."paperless-gpt-${name}.environment".path ];
+            volumes = [
+              "${inst.dataDir}/prompts:/app/prompts"
+              "${inst.dataDir}/db:/app/db"
+              "${inst.dataDir}/hocr:/app/hocr"
+              "${inst.dataDir}/pdf:/app/pdf"
+            ];
           }
-          // lib.optionalAttrs (hasDocling) {
-            DOCLING_URL = "http://host.containers.internal:${toString cfg.docling.port}";
-          }
-          // inst.environment;
-          environmentFiles = [ config.sops.templates."paperless-gpt-${name}.environment".path ];
-          volumes = [
-            "${inst.dataDir}/prompts:/app/prompts"
-            "${inst.dataDir}/db:/app/db"
-            "${inst.dataDir}/hocr:/app/hocr"
-            "${inst.dataDir}/pdf:/app/pdf"
-          ];
-        }
-      ) enabledInstances)
-    ];
+        ) enabledInstances)
+      ];
+    };
 
     services.state-backups.services = lib.mkMerge [
       (lib.mapAttrs' (
@@ -213,13 +216,13 @@ in
             "network-online.target"
             "paperless-web.service"
           ]
-          ++ lib.optionals (hasDocling) [
+          ++ lib.optionals hasDocling [
             "podman-docling-serve.service"
           ];
           requires = [
             "paperless-web.service"
           ]
-          ++ lib.optionals (hasDocling) [
+          ++ lib.optionals hasDocling [
             "podman-docling-serve.service"
           ];
           unitConfig.RequiresMountsFor = [

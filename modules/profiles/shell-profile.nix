@@ -23,62 +23,68 @@ in
   };
 
   config = {
-    environment.systemPackages = with pkgs; [
-      bat
-      btop
-      duf
-      eza
-      fd
-      fzf
-      jq
-      lsof
-      ncdu
-      yq-go
-      ripgrep
-      zoxide
-      zsh-autosuggestions
-      zsh-powerlevel10k
-      wezterm
-      isd
-      nix-du
-    ];
+    environment = {
+      systemPackages = with pkgs; [
+        bat
+        btop
+        duf
+        eza
+        fd
+        fzf
+        jq
+        lsof
+        ncdu
+        yq-go
+        ripgrep
+        zoxide
+        zsh-autosuggestions
+        zsh-powerlevel10k
+        wezterm
+        isd
+        nix-du
+        yazi
+        fff
+      ];
 
-    # nixpkgs ships default `ls`/`ll`/`l` aliases via mkDefault; clear the
-    # global set with mkForce so root/rescue Bash stays stock.
-    environment.shellAliases = lib.mkForce { };
-    programs.zsh.shellAliases = {
-      ls = "eza --group-directories-first";
-      ll = "eza -lh --group-directories-first";
-      la = "eza -lah --group-directories-first";
-      lt = "eza --tree --level=2";
-      cat = "bat --paging=never";
-      rg = "rg --smart-case --hidden --glob '!.git'";
+      # nixpkgs ships default `ls`/`ll`/`l` aliases via mkDefault; clear the
+      # global set with mkForce so root/rescue Bash stays stock.
+      shellAliases = lib.mkForce { };
+      etc."zsh/p10k.zsh".text = builtins.readFile ./p10k.zsh;
     };
 
-    programs.nix-index-database.comma.enable = true;
+    programs = {
+      zsh.shellAliases = {
+        ls = "eza --group-directories-first";
+        ll = "eza -lh --group-directories-first";
+        la = "eza -lah --group-directories-first";
+        lt = "eza --tree --level=2";
+        cat = "bat --paging=never";
+        rg = "rg --smart-case --hidden --glob '!.git'";
+      };
 
-    programs.mosh.enable = true;
+      nix-index-database.comma.enable = true;
 
-    programs.zsh = {
-      enable = true;
-      enableCompletion = true;
-      autosuggestions.enable = true;
-      syntaxHighlighting.enable = true;
+      mosh.enable = true;
 
-      interactiveShellInit = ''
-        source ${pkgs.zsh-powerlevel10k}/share/zsh-powerlevel10k/powerlevel10k.zsh-theme
+      zsh = {
+        enable = true;
+        enableCompletion = true;
+        autosuggestions.enable = true;
+        syntaxHighlighting.enable = true;
 
-        if command -v zoxide >/dev/null 2>&1; then
-          eval "$(zoxide init zsh)"
-        fi
+        interactiveShellInit = ''
+          source ${pkgs.zsh-powerlevel10k}/share/zsh-powerlevel10k/powerlevel10k.zsh-theme
 
-        if [ -f /etc/zsh/p10k.zsh ]; then
-          source /etc/zsh/p10k.zsh
-        fi
-      '';
+          if command -v zoxide >/dev/null 2>&1; then
+            eval "$(zoxide init zsh)"
+          fi
+
+          if [ -f /etc/zsh/p10k.zsh ]; then
+            source /etc/zsh/p10k.zsh
+          fi
+        '';
+      };
     };
-
-    environment.etc."zsh/p10k.zsh".text = builtins.readFile ./p10k.zsh;
 
     # `deps = [ "users" ]` keeps this after home creation; otherwise the first
     # dev login on a fresh boot hits zsh-newuser-install.
@@ -102,7 +108,7 @@ in
 
     systemd.tmpfiles.settings."wezterm" = lib.mkIf weztermCfg.enable {
       "/home/${weztermCfg.user}/.local/share/wezterm".d = {
-        user = weztermCfg.user;
+        inherit (weztermCfg) user;
         group = "users";
         mode = "0755";
       };

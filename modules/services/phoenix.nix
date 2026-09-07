@@ -85,14 +85,9 @@ in
   config = lib.mkIf cfg.enable {
     virtualisation.podman.enable = true;
 
-    systemd.tmpfiles.rules = [
-      "d ${cfg.dataDir} 0755 root root - -"
-      "z ${cfg.dataDir} 0755 root root - -"
-    ];
-
     virtualisation.oci-containers.containers.phoenix = {
       autoStart = true;
-      image = cfg.image;
+      inherit (cfg) image;
       ports = [
         "0.0.0.0:${toString cfg.port}:${toString cfg.port}"
         "0.0.0.0:${toString cfg.grpcPort}:${toString cfg.grpcPort}"
@@ -109,57 +104,66 @@ in
       ];
     };
 
-    systemd.services."podman-phoenix" = {
-      description = "Arize Phoenix LLM observability collector";
-      wants = [ "network-online.target" ];
-      after = [ "network-online.target" ];
-      unitConfig.RequiresMountsFor = [ cfg.dataDir ];
-    };
+    systemd = {
+      tmpfiles.rules = [
+        "d ${cfg.dataDir} 0755 root root - -"
+        "z ${cfg.dataDir} 0755 root root - -"
+      ];
 
-    # Periodic trace pruning via DB rotation when size exceeds threshold.
-    systemd.services.phoenix-prune = {
-      description = "Prune old Arize Phoenix traces";
-      after = [ "podman-phoenix.service" ];
-      wants = [ "podman-phoenix.service" ];
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = pkgs.writeShellScript "phoenix-prune" ''
-          set -euo pipefail
-          DB="${cfg.dataDir}/phoenix.db"
-          MAX_SIZE=${toString cfg.pruneMaxDbSizeMb}
-          RETENTION_DAYS=${toString cfg.retentionDays}
+      services = {
+        "podman-phoenix" = {
+          description = "Arize Phoenix LLM observability collector";
+          wants = [ "network-online.target" ];
+          after = [ "network-online.target" ];
+          unitConfig.RequiresMountsFor = [ cfg.dataDir ];
+        };
 
-          if [ ! -f "$DB" ]; then
-            exit 0
-          fi
+        # Periodic trace pruning via DB rotation when size exceeds threshold.
+        phoenix-prune = {
+          description = "Prune old Arize Phoenix traces";
+          after = [ "podman-phoenix.service" ];
+          wants = [ "podman-phoenix.service" ];
+          serviceConfig = {
+            Type = "oneshot";
+            ExecStart = pkgs.writeShellScript "phoenix-prune" ''
+              set -euo pipefail
+              DB="${cfg.dataDir}/phoenix.db"
+              MAX_SIZE=${toString cfg.pruneMaxDbSizeMb}
+              RETENTION_DAYS=${toString cfg.retentionDays}
 
-          # If the DB exists and has entries, try age-based pruning via sqlite3.
-          if command -v sqlite3 &>/dev/null; then
-            # Phoenix stores spans in the 'spans' table with 'start_time' as nanoseconds since epoch.
-            # Compute cutoff: now - retention_days in nanoseconds.
-            CUTOFF=$(( $(date +%s) - RETENTION_DAYS * 86400 ))
-            CUTOFF_NS=$(( CUTOFF * 1000000000 ))
-            sqlite3 "$DB" "DELETE FROM spans WHERE start_time < $CUTOFF_NS;" 2>/dev/null || true
-            sqlite3 "$DB" "VACUUM;" 2>/dev/null || true
-          fi
+              if [ ! -f "$DB" ]; then
+                exit 0
+              fi
 
-          # If the DB is still too large, rotate it (preserve as backup, start fresh).
-          SIZE_MB=$(du -m "$DB" | cut -f1)
-          if [ "$SIZE_MB" -gt "$MAX_SIZE" ]; then
-            mv "$DB" "$DB.$(date +%Y%m%d-%H%M%S)"
-            systemctl restart podman-phoenix
-          fi
-        '';
+              # If the DB exists and has entries, try age-based pruning via sqlite3.
+              if command -v sqlite3 &>/dev/null; then
+                # Phoenix stores spans in the 'spans' table with 'start_time' as nanoseconds since epoch.
+                # Compute cutoff: now - retention_days in nanoseconds.
+                CUTOFF=$(( $(date +%s) - RETENTION_DAYS * 86400 ))
+                CUTOFF_NS=$(( CUTOFF * 1000000000 ))
+                sqlite3 "$DB" "DELETE FROM spans WHERE start_time < $CUTOFF_NS;" 2>/dev/null || true
+                sqlite3 "$DB" "VACUUM;" 2>/dev/null || true
+              fi
+
+              # If the DB is still too large, rotate it (preserve as backup, start fresh).
+              SIZE_MB=$(du -m "$DB" | cut -f1)
+              if [ "$SIZE_MB" -gt "$MAX_SIZE" ]; then
+                mv "$DB" "$DB.$(date +%Y%m%d-%H%M%S)"
+                systemctl restart podman-phoenix
+              fi
+            '';
+          };
+        };
       };
-    };
 
-    systemd.timers.phoenix-prune = {
-      description = "Monthly Arize Phoenix trace pruning timer";
-      wantedBy = [ "timers.target" ];
-      timerConfig = {
-        OnCalendar = "monthly";
-        RandomizedDelaySec = "6h";
-        Persistent = true;
+      timers.phoenix-prune = {
+        description = "Monthly Arize Phoenix trace pruning timer";
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnCalendar = "monthly";
+          RandomizedDelaySec = "6h";
+          Persistent = true;
+        };
       };
     };
 

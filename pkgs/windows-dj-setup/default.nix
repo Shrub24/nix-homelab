@@ -35,7 +35,7 @@ stdenv.mkDerivation {
     windows-dj setup share (read-only, mounted as S:\):
       winfsp.msi       — WinFsp installer (required before virtiofs services)
       opengl32sw.dll   — Mesa software GL fallback for Engine DJ on virtio-gpu
-      setup.ps1        - one-shot setup: installs WinFsp, registers VirtIO-FS services (M: music, L: Engine library, S: setup), disables sleep, creates the Engine library link, installs Mesa fallback
+      setup.ps1        - one-shot setup: installs WinFsp, registers VirtIO-FS services (M: music, S: setup), removes the legacy L: Engine-library share, disables sleep, installs Mesa fallback
     Run once as Administrator:  powershell -ExecutionPolicy Bypass -File S:\setup.ps1
     EOF
   '';

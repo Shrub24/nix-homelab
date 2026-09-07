@@ -25,7 +25,20 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    services.kanidm.package = lib.mkDefault pkgs.kanidm_1_11;
+    services.kanidm = {
+      package = lib.mkDefault pkgs.kanidm_1_11;
+
+      client = {
+        enable = true;
+        settings.uri = config.services.identity.oidc.providerUrl;
+      };
+
+      unix = {
+        enable = true;
+        inherit (cfg) sshIntegration;
+        settings.kanidm.pam_allowed_login_groups = cfg.pamAllowedLoginGroups;
+      };
+    };
 
     assertions = [
       {
@@ -37,16 +50,5 @@ in
         message = "services.identity.hostAuth.pamAllowedLoginGroups must be non-empty when host auth is enabled.";
       }
     ];
-
-    services.kanidm.client = {
-      enable = true;
-      settings.uri = config.services.identity.oidc.providerUrl;
-    };
-
-    services.kanidm.unix = {
-      enable = true;
-      sshIntegration = cfg.sshIntegration;
-      settings.kanidm.pam_allowed_login_groups = cfg.pamAllowedLoginGroups;
-    };
   };
 }

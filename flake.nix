@@ -13,6 +13,8 @@
     niks3.inputs.nixpkgs.follows = "nixpkgs";
     traktor-m3u-sync.url = "github:Shrub24/traktor-m3u-sync";
     traktor-m3u-sync.inputs.nixpkgs.follows = "nixpkgs";
+    nix-index-database.url = "github:nix-community/nix-index-database";
+    nix-index-database.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -118,6 +120,7 @@
           niks3.nixosModules.niks3
           niks3.nixosModules.niks3-auto-upload
           inputs.traktor-m3u-sync.nixosModules.traktor-m3u-sync
+          inputs.nix-index-database.nixosModules.nix-index
           ./hosts/oci-melb-1/default.nix
         ];
         specialArgs = {
@@ -133,6 +136,7 @@
         modules = [
           sops-nix.nixosModules.sops
           niks3.nixosModules.niks3-auto-upload
+          inputs.nix-index-database.nixosModules.nix-index
           ./hosts/la-admin-1/default.nix
         ];
         specialArgs = {
@@ -152,6 +156,7 @@
           disko.nixosModules.disko
           sops-nix.nixosModules.sops
           niks3.nixosModules.niks3-auto-upload
+          inputs.nix-index-database.nixosModules.nix-index
           ./hosts/home-forge/default.nix
         ];
         specialArgs = {

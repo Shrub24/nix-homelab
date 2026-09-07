@@ -55,6 +55,8 @@ in
       rg = "rg --smart-case --hidden --glob '!.git'";
     };
 
+    programs.nix-index-database.comma.enable = true;
+
     programs.mosh.enable = true;
 
     programs.zsh = {

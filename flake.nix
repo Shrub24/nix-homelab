@@ -102,6 +102,7 @@
           nix-path-filter = pkgs.callPackage ./pkgs/nix-path-filter { };
           notification-daemon = pkgs.callPackage ./pkgs/notification-daemon { };
           notify = pkgs.callPackage ./pkgs/notify { };
+          windows-dj-setup = pkgs.callPackage ./pkgs/windows-dj-setup { };
           host-la-admin-1 = deployConfig.deploy.nodes.la-admin-1.profiles.system.path;
           host-oci-melb-1 = deployConfig.deploy.nodes.oci-melb-1.profiles.system.path;
         }

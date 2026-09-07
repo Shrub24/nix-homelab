@@ -9,6 +9,11 @@ ssh-root host:
   @ssh root@{{host}}
 
 [arg("user", long)]
+spice host="home-forge" user="dev":
+  @ssh -f -N -o ClearAllForwardings=no -o ExitOnForwardFailure=yes -L 5900:127.0.0.1:5900 {{user}}@{{host}}
+  @echo "SPICE tunnel ready: spice://127.0.0.1:5900"
+
+[arg("user", long)]
 [arg("unit", long)]
 [arg("lines", long)]
 logs host user="dev" unit="tailscaled" lines="200":

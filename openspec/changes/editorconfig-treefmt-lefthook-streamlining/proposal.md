@@ -13,7 +13,7 @@ Core value: Eliminate formatting-as-noise from diffs and reviews while keeping t
 ## What Changes
 
 - Add `.editorconfig` at repo root as the **editor baseline only** — charset, indentation, line endings for every file class. Must not be treated as the origin of formatting policy.
-- Add `treefmt.toml` as the canonical multi-language formatter config — declares formatters for each file class (Nix → `nixfmt`, YAML / Markdown / JSON → `prettier`, TOML → `taplo`, shell → `shfmt`, OpenTofu (`.tf`, `.tfvars`) → `tofu fmt`, Python → `black`). `treefmt.toml` is the **single source of truth** for formatting exclusions.
+- Add `treefmt.toml` as the canonical multi-language formatter config — declares formatters for each file class (Nix → `nixfmt`, YAML / Markdown / JSON → `prettier`, TOML → `taplo`, shell → `shfmt`, OpenTofu (`.tf`, `.tfvars`) → `tofu fmt`, Python → `ruff format`). `treefmt.toml` is the **single source of truth** for formatting exclusions.
 - Add a `pre-commit` formatting hook to `lefthook.yml` that runs `treefmt` on staged files and stages the fix.
 - Add a formatting check step to CI (`ci.yml`) that verifies `treefmt --fail-on-change` and fails the build on unformatted files.
 - Update `flake.nix` to add `treefmt` and all new formatter packages to the devShell as native packages (backed by `treefmt.toml`, not via a separate flake input).

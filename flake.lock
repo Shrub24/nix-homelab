@@ -219,11 +219,11 @@
         "treefmt-nix": "treefmt-nix_2"
       },
       "locked": {
-        "lastModified": 1784115877,
-        "narHash": "sha256-6ihGHdNi7fFtaqXtboA3tew8bbtqBp7XOHN3C9YK83s=",
+        "lastModified": 1788348761,
+        "narHash": "sha256-8BC/bwZgv3b1iXbSaneKaDl5XqZDN7i8JuGivHnRtuQ=",
         "owner": "Shrub24",
         "repo": "traktor-m3u-sync",
-        "rev": "4bcd01340ddd2a898232f169bf0d4281df5a15ce",
+        "rev": "c345ed028c1318fbf5ed11b7abc7b4e5fdbe6980",
         "type": "github"
       },
       "original": {

@@ -9,6 +9,9 @@ let
   # Host-owned physical music root; the DJ application injects it as the
   # guest's M: share.
   musicStorageRoot = "/srv/storage/media/music";
+  # Playlist-sync worker state (SQLite store + inbound M3U drop), outside the
+  # media library so state/input files never surface as music.
+  traktorStateDir = "/srv/data/traktor-m3u-sync";
 in
 {
   imports = [
@@ -140,6 +143,9 @@ in
     engine = {
       enable = true;
       sharePath = musicStorageRoot;
+      musicStorageRoot = musicStorageRoot;
+      traktorStateDir = traktorStateDir;
+      secretFiles.navidrome = ../../secrets/applications/music.yaml;
     };
   };
 

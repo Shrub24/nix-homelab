@@ -14,10 +14,9 @@ firewall_country_allowlist_enabled = true
 firewall_allowed_countries         = ["AU", "GB", "US"]
 rate_limit_enabled                 = true
 rate_limit_characteristics         = ["ip.src", "cf.colo.id"]
-rate_limit_requests_per_period     = 200
+rate_limit_requests_per_period     = 300
 rate_limit_requests_to_origin      = true
 navidrome_cache_bypass_enabled     = true
-soulsync_cache_bypass_enabled      = true
 
 # Resend email sending domain
 resend_send_enabled = true

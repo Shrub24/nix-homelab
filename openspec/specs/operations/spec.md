@@ -19,3 +19,12 @@ Pre-deploy and post-deploy verification for the music stack SHALL include checks
 - **THEN** the checks SHALL confirm that AudioMuse service units or containers are running
 - **AND** the checks SHALL confirm that Navidrome has the nixpkgs-provided plugin package (`pkgs.navidromePlugins.audiomuseai`) and plugin runtime flags in place before end-user similarity testing
 - **AND** final acceptance SHALL include actual Symfonium similar/radio behavior against the deployed stack
+
+### Requirement: CI SHALL validate cross-language formatting
+The local validation job SHALL run `treefmt --fail-on-change` through the repository dev shell and fail when tracked source files are not canonically formatted, without configuring a remote builder.
+
+#### Scenario: CI checks formatting
+- **WHEN** CI validates a push or pull request
+- **THEN** all formatter packages declared by `treefmt.toml` are provided by the dev shell
+- **AND** unformatted files produce a non-zero result with actionable paths
+- **AND** the check runs without nixbuild.net setup

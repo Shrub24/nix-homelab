@@ -18,3 +18,13 @@ Architecture/decision/process documents SHALL remain centralized and referenced 
 - **WHEN** significant layout/workflow updates are made
 - **THEN** authoritative docs are updated in the same change window
 - **AND** module path examples are updated when music services are regrouped under `modules/services/music/`
+
+## ADDED Requirements
+
+### Requirement: Repository formatting configuration is explicit
+The repository SHALL keep `.editorconfig` and `treefmt.toml` at the repository root. `.editorconfig` SHALL provide editor defaults only, while `treefmt.toml` SHALL define the canonical cross-language formatter configuration and formatting exclusions.
+
+#### Scenario: Repository formatting configuration is audited
+- **WHEN** the repository root is inspected
+- **THEN** `.editorconfig` covers the repository's source file classes without path-specific exclusions
+- **AND** `treefmt.toml` defines the formatter mappings and excludes managed/generated paths, including secrets, generated artifacts, source-generation outputs, and lockfiles

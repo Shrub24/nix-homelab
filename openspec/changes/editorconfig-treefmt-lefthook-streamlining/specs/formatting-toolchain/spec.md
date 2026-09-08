@@ -36,7 +36,7 @@ The repository SHALL include a `treefmt.toml` configuration file that declares t
   - `.md` → `prettier` (or equivalent Markdown formatter)
   - `.sh` / `.bash` → `shfmt`
   - `.json` → `prettier` (or equivalent JSON formatter)
-  - `.py` → `black`
+  - `.py` → `ruff format`
   - `.tf` / `.tfvars` → `tofu fmt`
 - **AND** `.nix` formatting is handled by `nixfmt` through the same `treefmt` dispatch
 
@@ -116,7 +116,7 @@ The CI workflow SHALL include a formatting validation step that fails the build 
 
 ### Requirement: Formatter packages SHALL be provided through the devShell, not a dedicated flake input
 
-All formatter packages (`treefmt`, `nixfmt`, `prettier`, `shfmt`, `taplo`, `black`, `opentofu`) SHALL be added to the devShell `nativeBuildInputs` or equivalent in `flake.nix`, sourced from the existing nixpkgs baseline.
+All formatter packages (`treefmt`, `nixfmt`, `prettier`, `shfmt`, `taplo`, `ruff`, `opentofu`) SHALL be added to the devShell `nativeBuildInputs` or equivalent in `flake.nix`, sourced from the existing nixpkgs baseline.
 
 #### Scenario: Developer opens a devShell
 

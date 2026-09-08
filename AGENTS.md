@@ -55,7 +55,7 @@ Canonical human-facing architecture and migration guidance lives under `docs/` (
 
 | Tool                          | Purpose                           | Notes                                                                                            |
 | ----------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `treefmt`                     | Format/repo-wide check for all languages | Runs `nixfmt`, `prettier`, `taplo`, `shfmt`, `tofu fmt` via `treefmt.toml`. Use `--fail-on-change` for CI. |
+| `treefmt`                     | Format/repo-wide check for all languages | Runs `nixfmt`, `prettier`, `taplo`, `shfmt`, `ruff`, `tofu fmt` via `treefmt.toml`. Use `--fail-on-change` for CI. |
 | `just fmt` / `just fmt-check` | Shortcut for `treefmt` / `treefmt --fail-on-change` | Same as above via `just` recipes. |
 | `nix fmt`                     | Format Nix files only            | Stays as the dedicated Nix-only formatter backed by `nixfmt`. `treefmt` wraps it internally so both produce identical results on `.nix` files. |
 | `nix flake check`             | Validate flake outputs and checks | Run locally and in CI before applying host changes.                                              |

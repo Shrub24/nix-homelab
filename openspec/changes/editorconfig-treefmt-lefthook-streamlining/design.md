@@ -42,13 +42,13 @@ This change adds the missing layers without breaking the existing `nix fmt` cont
 
 ### Decision FMT-2: `treefmt.toml` is the canonical multi-language formatter config
 
-**Chosen:** Add `treefmt.toml` declaring formatters for each file class the repo uses — `nixfmt` for Nix, `prettier` for YAML/Markdown/JSON, `taplo` for TOML, `shfmt` for shell, `tofu fmt` for OpenTofu (`.tf`, `.tfvars`), `black` for Python.
+**Chosen:** Add `treefmt.toml` declaring formatters for each file class the repo uses — `nixfmt` for Nix, `prettier` for YAML/Markdown/JSON, `taplo` for TOML, `shfmt` for shell, `tofu fmt` for OpenTofu (`.tf`, `.tfvars`), `ruff format` for Python.
 
 **Rationale:** `treefmt` is the standard Nix-ecosystem multi-formatter runner. It accepts a single `treefmt.toml` config, dispatches to per-language formatters, and supports `--fail-on-change` for CI. Adding formatters later means adding one line to `treefmt.toml` and one package to the devShell.
 
 **Why `.hcl` is excluded from `tofu fmt`:** `tofu fmt` handles `.tf` and `.tfvars` cleanly. The repo's `.hcl` files are `backend.hcl` (local, gitignored) and `.terraform.lock.hcl` (generated lockfile). Neither should be formatted by `tofu fmt`. `.terraform.lock.hcl` is explicitly listed in the `treefmt.toml` exclusion SSOT.
 
-**Why `black` for Python:** Zero-config, deterministic output, widely available in nixpkgs. The repo has 3 `.py` files today; `black` adds minimal surface and is the idiomatic Python formatter.
+**Why `ruff format` for Python:** Zero-config, deterministic output, widely available in nixpkgs. The repo has 3 `.py` files today; `ruff` adds minimal surface and is the idiomatic Python formatter (and linter).
 
 **Alternative considered:** A shell script that runs each formatter independently. Rejected — a shell script doesn't provide `--fail-on-change`, global exclusion patterns, or standardized output.
 
@@ -89,7 +89,7 @@ Authoritative exclusion list (lives in `treefmt.toml` only):
 
 ### Decision FMT-6: Formatter packages come from the existing nixpkgs baseline, not a dedicated flake input
 
-**Chosen:** Add `treefmt` and formatter packages (`prettier`, `shfmt`, `taplo`, `black`, `opentofu`) to the devShell in `flake.nix`. No new flake input for treefmt.
+**Chosen:** Add `treefmt` and formatter packages (`prettier`, `shfmt`, `taplo`, `ruff`, `opentofu`) to the devShell in `flake.nix`. No new flake input for treefmt.
 
 **Rationale:** All required formatters are available in `nixpkgs`. A dedicated treefmt flake input would add lockfile churn for no benefit — the formatters run outside the Nix build sandbox (developer workstations, CI runners) and don't need to be a build dependency.
 
@@ -103,7 +103,7 @@ Authoritative exclusion list (lives in `treefmt.toml` only):
 | `.md`               | indent_style = space, 2  | prettier (markdown)      |
 | `.sh` / `.bash`     | indent_style = space, 2  | shfmt                    |
 | `.json`             | indent_style = space, 2  | prettier (json)          |
-| `.py`               | indent_style = space, 4  | black                    |
+| `.py`               | indent_style = space, 4  | ruff format              |
 | `.tf` / `.tfvars`   | indent_style = space, 2  | tofu fmt                 |
 
 **Exclusion SSOT:** `treefmt.toml` excludes list. `.editorconfig` applies editor defaults uniformly — no exclusion sections.
@@ -114,7 +114,7 @@ Authoritative exclusion list (lives in `treefmt.toml` only):
 |------|------------|
 | **One-shot reformat noise**: A single large reformat commit touches many files, obscuring history and making `git blame` less useful. | Run the reformat in the change that adds the toolchain and review it separately. Add exclusions (SSOT in `treefmt.toml`) first so managed paths aren't touched. Accept that the baseline commit will be large — it's a one-time cost. |
 | **Prettier reformats Markdown in ways that break rendered output**: Prettier's Markdown formatter can change list indentation, line wrapping, or table alignment. | Validate rendered output after reformat. Treat Markdown formatting as non-breaking by default; if a `docs/*.md` file renders incorrectly, add it to exclusions and format manually. |
-| **Black reformats Python in unexpected ways**: Black has no configuration options — its output is deterministic but may differ from contributor expectations. | The repo has 3 `.py` files; review the reformat diff. Black output is the canonical Python formatting for this repo going forward. |
+| **`ruff format` reformats Python in unexpected ways**: Its output is deterministic but may differ from contributor expectations. | The repo has 3 `.py` files; review the reformat diff. `ruff format` output is the canonical Python formatting for this repo going forward. |
 | **Pre-commit hook slows commits**: `treefmt` on staged files adds latency to `git commit`. | treefmt is fast per-file. If latency becomes a problem, optimize by restricting the hook to changed files only (already the lefthook default) or wrapping in a timeout. |
 | **New contributor doesn't have treefmt installed**: If the hook fails, the contributor may be confused. | The devShell provides all formatter packages. lefthook should degrade gracefully if a formatter is missing — treefmt handles missing commands gracefully. |
 | **Exclusion list grows stale**: A contributor removes a managed path from the repo but forgets to clean up the `treefmt.toml` excludes list. | Review exclusions as part of general repo maintenance. The `# SSOT` comment helps reviewers locate the list. A stale exclusion is harmless (unmatched globs are ignored). |

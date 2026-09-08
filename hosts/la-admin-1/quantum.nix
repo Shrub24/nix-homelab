@@ -1,5 +1,4 @@
-{ ... }:
-{
+_: {
   services.admin.quantum = {
     enable = true;
     passwordAuthEnabled = false;

@@ -89,9 +89,29 @@ Shares: `media` (RW, whole music root `/srv/storage/media/music`) → `M:`; `eng
 
 - `M:\Engine Library` is a guest junction → `L:\`, created by `S:\setup.ps1` (`cmd /c mklink /D "M:\Engine Library" "L:\"`); the NVMe database stays on its own share, not a host bind inside `M:` (a bind poisoned WinFsp readdir)
 - `S:\setup.ps1` created `Music\Engine Library → M:\Engine Library` via `cmd /c mklink /D "%USERPROFILE%\Music\Engine Library" "M:\Engine Library"`
-- `M:` holds the canonical media library (music at `M:\library`)
+- `M:` holds the canonical media library (music at `M:\library`); `M:\playlists` no longer receives sync output — playlists are written straight into the Engine library DB (see below)
 - Sleep/hibernate is disabled; Mesa `opengl32sw.dll` is installed if Engine was found
 - The legacy `VirtioFS-Library` service (old `L:` mapping) is removed by `S:\setup.ps1` as cleanup; the current `L:` is `VirtioFS-EngineLibrary` (`engine-library` tag)
+
+## Navidrome playlist sync (engine-direct)
+
+Navidrome exports playlists as M3Us. `playlist-sync` batch-exports every playlist as `/music`-rooted M3Us into `/srv/data/traktor-m3u-sync/import/` (stale M3Us replaced, empties skipped) and starts the import job. It fetches playlists through Navidrome's Subsonic API using the `navidrome_username`/`navidrome_password` secret — it never reads the Navidrome DB directly — and never runs automatically.
+
+1. Run the sync command on `home-forge`, then check both jobs (`playlist-sync` needs root because it drives a system-level `systemd-run` transient unit and starts the import job):
+
+   ```sh
+   ssh dev@home-forge -- sudo playlist-sync
+   ssh dev@home-forge -- sudo systemctl status 'traktor-m3u-sync-import@navidrome' 'traktor-m3u-sync-export@engine' --no-pager
+   ```
+
+2. The export job publishes playlists directly into the Engine library database at `<engine-library>/Database2/m.db` (host `/srv/data/engine-dj/library/Database2/m.db`, guest `M:\Engine Library\Database2\m.db` via the `L:` share + junction) with `track_path_prefix=../library`, so tracks resolve relative to the Engine Library dir on `M:`.
+3. In the guest, open Engine DJ and confirm the synced playlists appear and their tracks resolve from `M:\library`. The iTunes-XML import path is superseded; investigate a failed job before retrying.
+
+The import and engine-export jobs bind to `dj-library-writers.target`, so starting them stops the VM first and starting the VM stops them (single-writer discipline; see V8).
+
+The fetcher accepts both library-relative paths and absolute paths rooted at `<musicStorageRoot>/library` and emits `/music/<relative>` exactly once. Navidrome's `DefaultReportRealPath=true` covers new clients; the existing `playlist-sync` player must be toggled to report real paths in the Navidrome UI (per-player setting) or the API returns music-folder-relative paths instead.
+
+The worker's SQLite state is `/srv/data/traktor-m3u-sync/store.db`. Removing it resets import tracking only; it never changes Navidrome playlists or media and does not revert tracks already published into the Engine database.
 
 ## 4. Engine DJ Desktop and the SC6000
 
@@ -112,7 +132,7 @@ These checks established the settled layout. Re-run them after material virtiofs
 | V3  | SC6000 Remote Library connect                 | Player sees the VM source; track loads      |
 | V4  | Clean guest shutdown, host-side DB inspection | Files readable; SQLite integrity ok (below) |
 | V5  | Guest reboot                                  | Tracks resolve; SC6000 reconnects           |
-| V6  | Writable media import                        | Engine imports tracks directly from `M:`    |
+| V6  | Navidrome playlist sync (engine-direct)       | Playlists appear in Engine DJ after the import→export chain; tracks resolve from `M:\library` |
 | V7  | Backup quiesce                                | Backup stops the VM, runs, restarts it      |
 | V8  | Writer conflict semantics                     | Starting either side stops the other        |
 
@@ -123,7 +143,7 @@ sqlite3 /srv/data/engine-dj/library/Database2/m.db 'PRAGMA integrity_check;'
 # expect: ok
 ```
 
-V6 — import tracks from `M:` inside Engine and confirm they analyze and play.
+V6 — run the playlist sync above (export M3Us, start the import job, chained engine export), then confirm the playlists appear in Engine DJ and tracks resolve from `M:\library`.
 
 V7 — with the VM running:
 
@@ -133,11 +153,15 @@ sudo systemctl start restic-backups-state
 # after the run: virsh domstate windows-dj -> "running"
 ```
 
-V8 — conflict direction checks:
+V8 — writer conflict checks (the writer jobs bind to `dj-library-writers.target`, which conflicts with the VM):
 
 ```sh
+# target vs VM: starting either stops the other
 sudo systemctl start dj-library-writers.target   # VM unit deactivates, guest shuts down
 sudo systemctl start windows-vm-windows-dj       # target deactivates before guest starts
+# writer chain vs VM: starting the import/export stops the VM first
+sudo systemctl start traktor-m3u-sync-import@navidrome   # VM shuts down, then import runs
+sudo systemctl start windows-vm-windows-dj               # writer unit deactivates before guest starts
 ```
 
 Record results. Any database corruption or locking misbehavior: stop, do not retry against the same data, and switch to the fallback layout per design R1 before proceeding.
@@ -149,7 +173,7 @@ The library directory (`/srv/data/engine-dj/library`) alternates ownership:
 | Writer                                   | Mechanism                                                             |
 | ---------------------------------------- | --------------------------------------------------------------------- |
 | VM (Engine DJ)                           | runs while `windows-vm-windows-dj.service` is active                  |
-| Linux workers (future libdjinterop sync) | bind to `dj-library-writers.target`, which conflicts with the VM unit |
+| playlist-sync import/export jobs         | bind to `dj-library-writers.target` (`BindsTo`), which conflicts with the VM unit |
 | restic state backup                      | quiesce hook stops the VM only if running, restarts it afterwards     |
 
 Never edit files under the library directory while the VM is running.

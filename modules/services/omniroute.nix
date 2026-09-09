@@ -2,7 +2,6 @@
   config,
   lib,
   pkgs,
-  ociImages,
   ...
 }:
 let
@@ -24,13 +23,13 @@ in
 
     image = lib.mkOption {
       type = lib.types.str;
-      default = ociImages.omniroute;
+      default = config.repo.ociImages.omniroute;
       description = "OmniRoute container image.";
     };
 
     redisImage = lib.mkOption {
       type = lib.types.str;
-      default = ociImages.redis7Alpine;
+      default = config.repo.ociImages.redis7Alpine;
       description = "Redis sidecar image backing the rate limiter.";
     };
 

@@ -29,7 +29,7 @@ in
     acmeEmail = "infra@${config.repo.web.currentHost.primaryDomain}";
     authenticatedOriginPulls = {
       enable = true;
-      caCertFile = toString ../../certs/authenticated_origin_pull_ca.pem;
+      caCertFile = toString ../../../certs/authenticated_origin_pull_ca.pem;
     };
     routes = edgeRoutes;
   };

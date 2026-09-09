@@ -6,31 +6,31 @@
   ...
 }:
 let
-  hasHostSecrets = builtins.pathExists ../../secrets/hosts/oci-melb-1/system.yaml;
-  globals = import ../../policy/globals.nix;
+  hasHostSecrets = builtins.pathExists ../../../secrets/hosts/oci-melb-1/system.yaml;
+  globals = import ../../../policy/globals.nix;
 in
 {
   imports = [
     (modulesPath + "/installer/scan/not-detected.nix")
     (modulesPath + "/profiles/qemu-guest.nix")
-    ../../modules/profiles/base-server.nix
-    ../../modules/profiles/fleet-standard.nix
-    ../../modules/profiles/networking.nix
-    ../../modules/shared/web-policy.nix
-    ../../modules/shared/kanidm-host-auth.nix
-    ../../modules/shared/identity-oidc.nix
-    ../../modules/services/paperless
-    ../../modules/applications/edge-ingress.nix
-    ../../modules/providers/oci/default.nix
-    ../../modules/storage/disko-single-disk-split.nix
-    ../../modules/core/users.nix
-    ../../modules/services/admin/cockpit.nix
-    ../../modules/services/notification-daemon
-    ../../modules/services/bifrost-gateway.nix
-    ../../modules/services/phoenix.nix
-    ../../modules/services/karakeep.nix
-    ../../modules/services/niks3.nix
-    ../../modules/services/postgres-shared.nix
+    ../../../modules/profiles/base-server.nix
+    ../../../modules/profiles/fleet-standard.nix
+    ../../../modules/profiles/networking.nix
+    ../../../modules/shared/web-policy.nix
+    ../../../modules/shared/kanidm-host-auth.nix
+    ../../../modules/shared/identity-oidc.nix
+    ../../../modules/services/paperless
+    ../../../modules/applications/edge-ingress.nix
+    ../../../modules/providers/oci/default.nix
+    ./disko-single-disk-split.nix
+    ../../../modules/core/users.nix
+    ../../../modules/services/admin/cockpit.nix
+    ../../../modules/services/notification-daemon
+    ../../../modules/services/bifrost-gateway.nix
+    ../../../modules/services/phoenix.nix
+    ../../../modules/services/karakeep.nix
+    ../../../modules/services/niks3.nix
+    ../../../modules/services/postgres-shared.nix
     ./cockpit-auth.nix
   ];
 
@@ -116,8 +116,8 @@ in
     paperless = {
       enable = true;
       dataRoot = "/srv/data";
-      secretFiles.host = ../../secrets/services/paperless.yaml;
-      secretFiles.oidc = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+      secretFiles.host = ../../../secrets/services/paperless.yaml;
+      secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
       oidc = {
         enable = config.repo.web.catalog.paperless.access.oidc.enabled;
         clientId = config.services.identity.oidc.clients.paperless.clientId;
@@ -154,7 +154,7 @@ in
       enable = true;
       dataDir = "/srv/data/bifrost";
       configFile = globals.aiGateway.configFile;
-      secretFiles.host = ../../secrets/services/bifrost-gateway.yaml;
+      secretFiles.host = ../../../secrets/services/bifrost-gateway.yaml;
     };
 
     phoenix = {
@@ -172,15 +172,15 @@ in
         disablePasswordAuth = true;
       };
       storage.s3.enable = true;
-      secretFiles.host = ../../secrets/services/karakeep-pod.yaml;
-      secretFiles.oidc = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+      secretFiles.host = ../../../secrets/services/karakeep-pod.yaml;
+      secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
     };
 
     tailscale = lib.mkIf hasHostSecrets { authKeyFile = "/run/secrets/tailscale.auth_key"; };
 
     hostRecovery = lib.mkIf hasHostSecrets {
       enable = true;
-      secretFile = ../../secrets/hosts/oci-melb-1/system.yaml;
+      secretFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
       rescueUser = {
         name = "rescue";
       };
@@ -189,20 +189,20 @@ in
 
     state-backups = {
       enable = true;
-      secretFile = ../../secrets/hosts/oci-melb-1/system.yaml;
+      secretFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
       bucket = "shrublab-backup-oci-melb-1";
       stagingRoot = "/srv/data/state-backups";
     };
 
     niks3-cache = {
       enable = true;
-      hostSecretFile = ../../secrets/hosts/oci-melb-1/system.yaml;
-      secretFiles.host = ../../secrets/services/niks3.yaml;
+      hostSecretFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
+      secretFiles.host = ../../../secrets/services/niks3.yaml;
     };
 
     postgres-shared = {
       enable = true;
-      secretFile = ../../secrets/services/postgres-shared.yaml;
+      secretFile = ../../../secrets/services/postgres-shared.yaml;
       niks3.enable = true;
       paperless.enable = true;
       audiomuse.enable = true;
@@ -214,8 +214,8 @@ in
 
     notification-daemon = {
       enable = true;
-      secretFiles.host = ../../secrets/services/notification-daemon.yaml;
-      secretFiles.hostSystem = ../../secrets/hosts/oci-melb-1/system.yaml;
+      secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
+      secretFiles.hostSystem = ../../../secrets/hosts/oci-melb-1/system.yaml;
 
       ntfy = {
         enable = true;
@@ -245,17 +245,17 @@ in
     wget
   ];
 
-  sops.defaultSopsFile = ../../secrets/common.yaml;
+  sops.defaultSopsFile = ../../../secrets/common.yaml;
 
   sops.secrets = lib.optionalAttrs hasHostSecrets {
     tailscale_auth_key = {
-      sopsFile = ../../secrets/hosts/oci-melb-1/system.yaml;
+      sopsFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
       key = "tailscale/auth_key";
       path = "/run/secrets/tailscale.auth_key";
       mode = "0400";
     };
     cockpit_service_user_password_hash = {
-      sopsFile = ../../secrets/hosts/oci-melb-1/system.yaml;
+      sopsFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
       key = "cockpit/service_user/password_hash";
       path = "/run/secrets/cockpit.service_user.password_hash";
       owner = "root";

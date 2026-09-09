@@ -30,12 +30,12 @@ context: |
   - Media automation: Beets (inbox-only singleton ingestion)
   
   # Repository Structure
-  - Host-centric layout: `hosts/<host>/default.nix` with composition of reusable modules
-  - Module boundaries: `modules/core/`, `modules/profiles/`, `modules/services/`, `modules/applications/`
+  - Host-centric layout: `modules/hosts/<host>/default.nix` registered as a typed `nixos.configurations.<host>` record in the flake-parts host registry (`modules/flake/registry.nix`)
+  - Module boundaries: `modules/flake/` (flake-parts composition), `modules/core/`, `modules/profiles/`, `modules/services/`, `modules/applications/`
   - Provider isolation: `modules/providers/<provider>/` for provider-specific defaults
-  - Flake entrypoint: `flake.nix` with `nixosConfigurations.<host>` outputs
+  - Flake entrypoint: minimal flake-parts `flake.nix` discovering `modules/`; `nixosConfigurations.<host>` outputs materialized from the host registry
   - Documentation authority: `docs/` directory (architecture, decisions, plan, context-history)
-  - Secrets structure: `secrets/common.yaml` (shared), `hosts/<host>/secrets.yaml` (host-scoped)
+  - Secrets structure: `secrets/common.yaml` (shared), `secrets/hosts/<host>/*.yaml` (host-scoped), `secrets/applications/`, `secrets/services/`
   
   # Development Practices
   - Code formatting: `nix fmt` as default formatter gate before deploys

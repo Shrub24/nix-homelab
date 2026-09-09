@@ -35,13 +35,13 @@ This change is post-transition cleanup. It is deferred: it must not land, or tou
 
 **Chosen:** Move conventional host-scoped secret registration into the consuming service/application module, keyed by a typed default pointing at the host's `secrets/hosts/<host>/system.yaml`, exposed through the existing `secretFiles.*` / `secretKeys.*` contract surface (`lib/secrets.nix` helpers). Hosts that need a non-conventional source pass an explicit override; hosts otherwise drop the raw `sops.secrets` block.
 
-**Why:** The topology migration already established the contract-surface pattern (`lib/secrets.nix`, `secretHelpers.mkSecretFileOption`). Reusing it avoids a second abstraction while removing the repeated raw registrations seen in `hosts/oci-melb-1/default.nix` (tailscale, cockpit, beszel, state-backups, niks3) and `hosts/la-admin-1/default.nix`.
+**Why:** The topology migration already established the contract-surface pattern (`lib/secrets.nix`, `secretHelpers.mkSecretFileOption`). Reusing it avoids a second abstraction while removing the repeated raw registrations seen in `modules/hosts/oci-melb-1/default.nix` (tailscale, cockpit, beszel, state-backups, niks3) and `modules/hosts/la-admin-1/default.nix`.
 
 **Alternatives considered:** A new fleet-wide secret-defaults registry duplicates the module options that already exist. Leaving hosts as-is keeps the duplication that caused the drift.
 
 ### NORM-2: Consolidate edge and Cockpit overlays with equivalence proof
 
-**Chosen:** Move the pure catalog projection currently in `hosts/<host>/edge.nix` into `modules/applications/edge-ingress.nix` (edge role renders routes from `config.repo.web.currentHost.services`); delete the per-host overlays. Move Cockpit service-user wiring (enablement, name, deny-ssh posture, password-hash secret source) into `modules/services/admin/cockpit.nix` with the conventional host-system default; shrink `cockpit-auth.nix` to genuine host-specific values only (OCI's `urlRoot`/`publicHost`/`denySsh` vs LA's absence thereof). Remove redundant `mkForce` overrides only after an evaluation-equivalence proof (identical `nixos-rebuild`/`nix eval` config values or derivation output before/after) lands in the same batch.
+**Chosen:** Move the pure catalog projection currently in `modules/hosts/<host>/edge.nix` into `modules/applications/edge-ingress.nix` (edge role renders routes from `config.repo.web.currentHost.services`); delete the per-host overlays. Move Cockpit service-user wiring (enablement, name, deny-ssh posture, password-hash secret source) into `modules/services/admin/cockpit.nix` with the conventional host-system default; shrink `cockpit-auth.nix` to genuine host-specific values only (OCI's `urlRoot`/`publicHost`/`denySsh` vs LA's absence thereof). Remove redundant `mkForce` overrides only after an evaluation-equivalence proof (identical `nixos-rebuild`/`nix eval` config values or derivation output before/after) lands in the same batch.
 
 **Why:** `edge.nix` is byte-identical in shape across LA and DO and only re-projects catalog data; `cockpit-auth.nix` re-declares service-user wiring that the Cockpit module owns. The evaluation-equivalence gate makes deletion safe without a live rollout test.
 
@@ -59,13 +59,13 @@ This change is post-transition cleanup. It is deferred: it must not land, or tou
 
 **Chosen:** Add a `services.ntfy.publishers` option: a typed attrset keyed by bare hostname of `name -> { user, tokenSecret, role }` where `tokenSecret` references a secret path/template (never a value). The ntfy module renders `auth.access` ACLs, validates `auth.users` entries, and emits the expected bare-hostname publisher identities; `secrets/.templates/services/ntfy.yaml` and the scope/contract tests derive expectations from the same pure function. Host config stops hand-listing ACL subjects, and templates stop restating the identity triples.
 
-**Why:** The publisher identities are currently triplicated: host ACLs (`hosts/la-admin-1/default.nix`), template comments/placeholders (`secrets/.templates/services/ntfy.yaml`), and contract tests (`tests/phase-la-admin-contract.sh`). One typed contract with placeholder-only committed content keeps secrets out of the store while making add/remove a single change.
+**Why:** The publisher identities are currently triplicated: host ACLs (`modules/hosts/la-admin-1/default.nix`), template comments/placeholders (`secrets/.templates/services/ntfy.yaml`), and contract tests (`tests/phase-la-admin-contract.sh`). One typed contract with placeholder-only committed content keeps secrets out of the store while making add/remove a single change.
 
 **Alternatives considered:** Generating the encrypted file from the contract would require operator-only encryption inside the build — out of scope and against the repo's ciphertext-free template rule. A test-only helper without a module option leaves hosts still hand-declaring ACLs.
 
 ### NORM-5: OIDC client metadata derives from identity policy
 
-**Chosen:** Treat `policy/identity.json` as the registry: `lib/policy.nix` (or `modules/shared/identity-oidc.nix`) derives the client set, callback paths, route keys, and scope/claim maps; `modules/applications/admin/default.nix` derives its `oidcClients` secret-file map from the registry instead of hand-maintaining the host map (`hosts/la-admin-1/default.nix` lines 81–89). Security-relevant flags (`allowInsecureClientDisablePkce`, `enableLegacyCrypto`, `preferShortUsername`) stay explicit in the registry and are covered by strict scope tests that fail on unintended widening.
+**Chosen:** Treat `policy/identity.json` as the registry: `lib/policy.nix` (or `modules/shared/identity-oidc.nix`) derives the client set, callback paths, route keys, and scope/claim maps; `modules/applications/admin/default.nix` derives its `oidcClients` secret-file map from the registry instead of hand-maintaining the host map (the `oidcClients` block in `modules/hosts/la-admin-1/default.nix`). Security-relevant flags (`allowInsecureClientDisablePkce`, `enableLegacyCrypto`, `preferShortUsername`) stay explicit in the registry and are covered by strict scope tests that fail on unintended widening.
 
 **Why:** The client set is already centralized in `identity.json`; only the consumers' mirrors drifted. Deriving maps removes the triplication without a new abstraction.
 

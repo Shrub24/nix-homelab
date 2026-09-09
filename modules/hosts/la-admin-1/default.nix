@@ -4,16 +4,16 @@
 }:
 {
   imports = [
-    ../../modules/profiles/base-server.nix
-    ../../modules/profiles/fleet-standard.nix
-    ../../modules/profiles/networking.nix
-    ../../modules/shared/web-policy.nix
-    ../../modules/shared/kanidm-host-auth.nix
-    ../../modules/applications/admin/default.nix
-    ../../modules/services/notification-daemon
-    ../../modules/services/ntfy.nix
-    ../../modules/applications/edge-ingress.nix
-    ../../modules/core/users.nix
+    ../../../modules/profiles/base-server.nix
+    ../../../modules/profiles/fleet-standard.nix
+    ../../../modules/profiles/networking.nix
+    ../../../modules/shared/web-policy.nix
+    ../../../modules/shared/kanidm-host-auth.nix
+    ../../../modules/applications/admin/default.nix
+    ../../../modules/services/notification-daemon
+    ../../../modules/services/ntfy.nix
+    ../../../modules/applications/edge-ingress.nix
+    ../../../modules/core/users.nix
     ./cockpit-auth.nix
     ./edge.nix
     ./quantum.nix
@@ -64,8 +64,8 @@
 
     notification-daemon = {
       enable = true;
-      secretFiles.host = ../../secrets/services/notification-daemon.yaml;
-      secretFiles.hostSystem = ../../secrets/hosts/la-admin-1/system.yaml;
+      secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
+      secretFiles.hostSystem = ../../../secrets/hosts/la-admin-1/system.yaml;
       ntfy = {
         enable = true;
         serverUrl = "http://127.0.0.1:2586";
@@ -74,7 +74,7 @@
 
     ntfy = {
       enable = true;
-      secretFiles.firebase = ../../secrets/services/ntfy-firebase-key.json;
+      secretFiles.firebase = ../../../secrets/services/ntfy-firebase-key.json;
       auth = {
         # ACL subjects are the bare-hostname ntfy publisher users that own each
         # host's publish token (declared in secrets/.templates/services/ntfy.yaml);
@@ -84,7 +84,7 @@
           "la-admin-1:*:write-only"
           "home-forge:*:write-only"
         ];
-        secretFiles.auth = ../../secrets/services/ntfy.yaml;
+        secretFiles.auth = ../../../secrets/services/ntfy.yaml;
       };
     };
 
@@ -96,30 +96,30 @@
 
     hostRecovery = {
       enable = true;
-      secretFile = ../../secrets/hosts/la-admin-1/system.yaml;
+      secretFile = ../../../secrets/hosts/la-admin-1/system.yaml;
       rescueUser.name = "rescue";
       reboot.onCalendar = "weekly";
     };
 
     state-backups = {
       enable = true;
-      secretFile = ../../secrets/hosts/la-admin-1/system.yaml;
+      secretFile = ../../../secrets/hosts/la-admin-1/system.yaml;
       bucket = "shrublab-backup-la-admin-1";
     };
 
     admin.vaultwarden.smtpFrom = "admin@send.shrublab.xyz";
   };
 
-  sops.defaultSopsFile = ../../secrets/common.yaml;
+  sops.defaultSopsFile = ../../../secrets/common.yaml;
   sops.secrets = {
     tailscale_auth_key = {
-      sopsFile = ../../secrets/hosts/la-admin-1/system.yaml;
+      sopsFile = ../../../secrets/hosts/la-admin-1/system.yaml;
       key = "tailscale/auth_key";
       path = "/run/secrets/tailscale.auth_key";
       mode = "0400";
     };
     cockpit_service_user_password_hash = {
-      sopsFile = ../../secrets/hosts/la-admin-1/system.yaml;
+      sopsFile = ../../../secrets/hosts/la-admin-1/system.yaml;
       key = "cockpit/service_user/password_hash";
       path = "/run/secrets/cockpit.service_user.password_hash";
       mode = "0400";
@@ -135,21 +135,21 @@
     enable = true;
     dataRoot = "/srv/data";
     secretFiles = {
-      host = ../../secrets/applications/admin.yaml;
-      identity = ../../secrets/identity/kanidm.yaml;
-      identityProvisioning = ../../secrets/identity/provisioning.json;
+      host = ../../../secrets/applications/admin.yaml;
+      identity = ../../../secrets/identity/kanidm.yaml;
+      identityProvisioning = ../../../secrets/identity/provisioning.json;
       oidcClients = {
-        termix = ../../secrets/hosts/la-admin-1/oidc.yaml;
-        beszel = ../../secrets/hosts/la-admin-1/oidc.yaml;
-        quantum = ../../secrets/hosts/la-admin-1/oidc.yaml;
-        karakeep = ../../secrets/hosts/oci-melb-1/oidc.yaml;
-        paperless = ../../secrets/hosts/oci-melb-1/oidc.yaml;
-        cloudflare-access = ../../secrets/opentofu/oidc.yaml;
+        termix = ../../../secrets/hosts/la-admin-1/oidc.yaml;
+        beszel = ../../../secrets/hosts/la-admin-1/oidc.yaml;
+        quantum = ../../../secrets/hosts/la-admin-1/oidc.yaml;
+        karakeep = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
+        paperless = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
+        cloudflare-access = ../../../secrets/opentofu/oidc.yaml;
       };
     };
   };
 
-  applications.edge-ingress.secretFiles.host = ../../secrets/applications/edge-ingress.yaml;
+  applications.edge-ingress.secretFiles.host = ../../../secrets/applications/edge-ingress.yaml;
 
   system.stateVersion = "26.05";
 }

@@ -2,7 +2,6 @@
   config,
   lib,
   pkgs,
-  ociImages,
   ...
 }:
 let
@@ -18,7 +17,7 @@ in
 
     image = lib.mkOption {
       type = lib.types.str;
-      default = ociImages.phoenix;
+      default = config.repo.ociImages.phoenix;
       description = "Arize Phoenix OCI image reference.";
     };
 

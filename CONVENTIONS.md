@@ -22,7 +22,7 @@
 
 **Hosts** are thin assembly layers. They declare identity, facts, provider/storage/profile imports, feature enables, secret source bindings, and narrow host-only overrides.
 
-- Namespace: `hosts/<host>/default.nix`
+- Namespace: `modules/hosts/<host>/default.nix`, registered as a `nixos.configurations.<host>` record in `modules/flake/registry.nix`
 - Host files MUST NOT own application-internal `sops.secrets`, `sops.templates`, tmpfiles, or cross-service wiring that belongs in application/service modules.
 
 **Providers** isolate cloud/platform-specific behavior.

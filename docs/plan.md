@@ -94,7 +94,7 @@ Track D: Service baseline
 
 Track E: Future-ready evolution
 
-- adopt the accepted staged Dendritic transition (D-047): Stage 1 scaffold (flake-parts + `denful/import-tree` + typed host registry under `modules/hosts/`) is decided but not implemented; the live flake stays plain `nixosSystem` with `specialArgs` until that change lands
+- adopt the accepted staged Dendritic transition (D-047): Stage 1 scaffold (flake-parts + `denful/import-tree` + typed host registry under `modules/hosts/`) is implemented in the current change (`dendritic-stage-1-scaffold-hosts`); three-host equivalence and the full validation gates are still pending, and later stages (converting remaining leaf modules into aspects, taxonomy docs closure) remain staged
 - keep layout compatible with later fleet deployment tooling
 - reserve integration points for future media processing hooks
 - reserve path for later `rclone`/VFS transition
@@ -141,8 +141,8 @@ These documents are intended to remain current and drive implementation, not tra
 
 Active implementation anchor paths that must stay reflected in docs:
 
-- `hosts/oci-melb-1/default.nix`
-- `hosts/la-admin-1/default.nix`
+- `modules/hosts/oci-melb-1/default.nix`
+- `modules/hosts/la-admin-1/default.nix`
 - `modules/applications/music/default.nix`
 - `modules/applications/admin/default.nix`
 - `modules/services/music/` (canonical music service module subtree: `navidrome.nix`, `audiomuse.nix`, `syncthing.nix`, `beets/`, `slskd.nix`, `tagr.nix`)

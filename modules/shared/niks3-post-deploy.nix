@@ -1,15 +1,13 @@
 {
   config,
   lib,
-  pkgs,
-  self,
   ...
 }:
 let
   cfg = config.services.niks3-post-deploy;
   hook = config.services.niks3-auto-upload;
   hookPkg = hook.package;
-  filterPkg = self.packages.${pkgs.stdenv.hostPlatform.system}.nix-path-filter;
+  filterPkg = config.repo.packages.nix-path-filter;
 in
 {
   options.services.niks3-post-deploy = {

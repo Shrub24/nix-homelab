@@ -5,8 +5,8 @@
 **Overall:** Host-centric NixOS fleet infrastructure with modular service composition, provider-aware isolation, and blast-radius-secured secrets.
 
 **Key Characteristics:**
-- **Flake-driven:** Single `flake.nix` pins all inputs; `nixosConfigurations` defines each host
-- **Hosts are thin:** Host modules (`hosts/<host>/default.nix`) only declare identity, feature enables, provider/storage/profile imports, and secret path bindings
+- **Flake-driven:** Single `flake.nix` pins all inputs; flake-parts plus a typed host registry (`modules/flake/`) materializes `nixosConfigurations` per host
+- **Hosts are thin:** Host modules (`modules/hosts/<host>/default.nix`) only declare identity, feature enables, provider/storage/profile imports, and secret path bindings
 - **Applications compose services:** Application modules (`modules/applications/<name>/`) wire multi-service stacks behind one operator-facing toggle
 - **Services own their internals:** Leaf service modules own enabling runtime config, `sops.secrets`, `sops.templates`, systemd units, and assertions
 - **Provider isolation:** Cloud/platform quirks live in `modules/providers/<name>/` — workload modules stay provider-agnostic
@@ -15,19 +15,19 @@
 
 ## Layers
 
-**Flake Entrypoint (`flake.nix`):**
-- Purpose: Pins all inputs and defines host nixosConfigurations, devShell, packages, and deploy topology
-- Location: `flake.nix`
-- Contains: Input pins (`nixpkgs`, `disko`, `sops-nix`, `deploy-rs`, `niks3`), host definitions, dev shell with admin tooling
+**Flake Entrypoint (`flake.nix` + `modules/flake/`):**
+- Purpose: Pins all inputs and composes every flake output through flake-parts — host `nixosConfigurations`, devShell, packages, checks, deploy topology, and the `bootstrap.nodes` projection
+- Location: `flake.nix` (minimal entrypoint), flake-parts modules under `modules/flake/`
+- Contains: Input pins (`nixpkgs`, `disko`, `sops-nix`, `deploy-rs`, `niks3`, `flake-parts`, `import-tree`) and `denful/import-tree` discovery of `modules/` with one enumerated `filterNot` boundary (`modules/flake/_unconverted-nixos-dirs.nix`) for directories still holding plain NixOS leaves
 - Depends on: All submodules and library code
 - Used by: `nix build`, `nixos-rebuild`, `deploy-rs`, CI workflows
 
-**Host Layer (`hosts/`):**
+**Host Layer (`modules/hosts/`):**
 - Purpose: Thin host assembly — identity, facts, feature toggles, provider/storage/profile imports, secret bindings
-- Location: `hosts/<host>/default.nix`
-- Contains: `default.nix`, host-specific component overlays (vary per host — e.g., `la-admin-1` has `facter.json`, `cockpit-auth.nix`, `quantum.nix`, `edge.nix`; reimage-shaped hosts add `bootstrap-config.nix`)
-- Depends on: Modules (applications, services, profiles, providers, storage, core, shared)
-- Used by: `flake.nix` nixosConfigurations
+- Location: `modules/hosts/<host>/default.nix`, registered as a typed `nixos.configurations.<host>` record in `modules/flake/registry.nix`
+- Contains: `default.nix`, host-specific component overlays (vary per host — e.g., `la-admin-1` has `facter.json`, `cockpit-auth.nix`, `quantum.nix`, `edge.nix`; reimage-shaped hosts carry their bootstrap metadata inline in the registry record; sole-consumer disko layouts live beside their host)
+- Depends on: Modules (applications, services, profiles, providers, storage, core, shared) and published aspects (`flake.modules.nixos.<aspect>`)
+- Used by: `modules/flake/registry.nix`, which materializes `flake.nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`
 
 **Application Layer (`modules/applications/`):**
 - Purpose: Composition roots that wire multiple interacting services behind one toggle; own shared paths, ACLs, tmpfiles, and cross-service wiring
@@ -57,10 +57,10 @@
 
 - **Bifrost Gateway:** `modules/services/bifrost-gateway.nix` — AI gateway service with OpenRouter and CrofAI provider support; exposes container-base URLs for LLM provider endpoints
 
-**Storage Layer (`modules/storage/`):**
+**Storage Layer (`modules/storage/` + host-local layouts):**
 - Purpose: Declarative disk partitioning and filesystem layout via `disko`
-- Location: `modules/storage/disko-*.nix`
-- Contains: `disko-root.nix` (root-only), `disko-single-disk.nix` (single partition), `disko-single-disk-split.nix` (split root/data/nix/media)
+- Location: `modules/storage/disko-*.nix` for shared layouts; `modules/hosts/<host>/disko-*.nix` for sole-consumer host layouts
+- Contains: `disko-root.nix` (root-only), `disko-single-disk.nix` (single partition); `disko-single-disk-split.nix` (split root/data/nix/media) moved beside its only consumer to `modules/hosts/oci-melb-1/`, `disko-two-disk.nix` to `modules/hosts/home-forge/`
 - Depends on: `disko` flake input
 - Used by: Host modules, `nixos-anywhere` bootstrap
 
@@ -101,8 +101,8 @@
 
 Host initialization is conditional on target state — see `docs/runbooks/host-initialization.md`:
 
-1. **Adoption** (existing preinstalled NixOS on a live disk): consume a committed `nixos-facter` report directly (`hardware.facter.reportPath`) with only root/ESP by-UUID mounts hand-maintained, then apply the first generation with `nixos-rebuild boot --target-host <initial-user>@<addr> --use-remote-sudo --flake .#<host>` and reboot from the provider console. No `bootstrap-config.nix` or reimage tooling is involved.
-2. **Reimage** (bare, foreign OS, or destructive layout): `deploy.sh` reads host config from `hosts/<host>/bootstrap-config.nix` — `scripts/resolve-host-config.sh`; `nixos-anywhere` runs over SSH with `--flake` target and `disko` partitioning — `deploy.sh`
+1. **Adoption** (existing preinstalled NixOS on a live disk): consume a committed `nixos-facter` report directly (`hardware.facter.reportPath`) with only root/ESP by-UUID mounts hand-maintained, then apply the first generation with `nixos-rebuild boot --target-host <initial-user>@<addr> --use-remote-sudo --flake .#<host>` and reboot from the provider console. No reimage tooling is involved.
+2. **Reimage** (bare, foreign OS, or destructive layout): `just bootstrap` sources `scripts/resolve-host-config.sh`, which resolves the typed `flake.bootstrap.nodes.<host>` projection (bootstrap metadata inlined in the host's registry record; `hostName` and `flake` derived from the registry key) and passes it to `deploy.sh`; `nixos-anywhere` runs over SSH with `--flake` target and `disko` partitioning — `deploy.sh`
 3. Host installs with base config, no host-scoped secrets yet (two-step bootstrap default)
 4. Post-install: retrieve SSH host key, derive age recipient via `ssh-to-age` — `just host-age <host>`
 5. Add age recipient to `.sops.yaml`, re-encrypt host secrets, deploy — operator workflow
@@ -171,7 +171,7 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 
 **Host Identity:**
 - Purpose: Declares host name, architecture, provider, and network identity
-- Location: `hosts/<host>/default.nix`, `lib/deploy/hosts.nix`
+- Location: `modules/hosts/<host>/default.nix`, `lib/deploy/hosts.nix`
 - Pattern: Thin assembly; one file per host, one entry in deploy metadata
 
 **Application Stack:**
@@ -211,7 +211,7 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 
 **Disko Storage Layout:**
 - Purpose: Declarative partition, filesystem, and mount point definitions
-- Location: `modules/storage/disko-*.nix`
+- Location: `modules/storage/disko-*.nix` (shared), `modules/hosts/<host>/disko-*.nix` (host-local)
 - Pattern: `disko.devices.disk.main` with GPT layout, ext4 filesystems, labeled partitions
 
 **Notify CLI:**
@@ -231,9 +231,9 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 - Triggers: `nix build`, `nixos-rebuild`, `deploy-rs`, CI
 - Responsibilities: Define all outputs — `nixosConfigurations`, `devShells`, `packages`, `deploy`, `checks`
 
-**Host Assembly (`hosts/<host>/default.nix`):**
-- Location: `hosts/oci-melb-1/default.nix`, `hosts/la-admin-1/default.nix`
-- Triggers: flake evaluation for a specific host
+**Host Assembly (`modules/hosts/<host>/default.nix`):**
+- Location: `modules/hosts/oci-melb-1/default.nix`, `modules/hosts/la-admin-1/default.nix`
+- Triggers: registry materialization for a specific host (`nixos.configurations.<host>` in `modules/flake/registry.nix`)
 - Responsibilities: Import modules, set host identity, enable applications/services, bind secret files
 
 **Bootstrap (`deploy.sh`):**

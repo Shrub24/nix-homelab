@@ -4,7 +4,7 @@
   ...
 }:
 let
-  hasHostSecrets = builtins.pathExists ../../secrets/hosts/home-forge/system.yaml;
+  hasHostSecrets = builtins.pathExists ../../../secrets/hosts/home-forge/system.yaml;
 
   # Host-owned physical music root; the DJ application injects it as the
   # guest's M: share.
@@ -15,18 +15,17 @@ let
 in
 {
   imports = [
-    ../../modules/profiles/base-server.nix
-    ../../modules/profiles/fleet-standard.nix
-    ../../modules/profiles/networking.nix
-    ../../modules/shared/web-policy.nix
+    ../../../modules/profiles/base-server.nix
+    ../../../modules/profiles/fleet-standard.nix
+    ../../../modules/profiles/networking.nix
+    ../../../modules/shared/web-policy.nix
     # Hard dependency of base-server (via state-backups): declares
     # services.notification-daemon option. Infrastructure, not a workload.
-    ../../modules/services/notification-daemon
-    ../../modules/services/omniroute.nix
-    ../../modules/storage/disko-two-disk.nix
-    ../../modules/core/users.nix
-    ../../modules/applications/dj
-    ../../modules/applications/music
+    ../../../modules/services/notification-daemon
+    ../../../modules/services/omniroute.nix
+    ./disko-two-disk.nix
+    ../../../modules/core/users.nix
+    ../../../modules/applications/music
   ];
 
   networking.hostName = "home-forge";
@@ -74,10 +73,10 @@ in
     authKeyFile = "/run/secrets/tailscale.auth_key";
   };
 
-  sops.defaultSopsFile = ../../secrets/common.yaml;
+  sops.defaultSopsFile = ../../../secrets/common.yaml;
   sops.secrets = lib.optionalAttrs hasHostSecrets {
     tailscale_auth_key = {
-      sopsFile = ../../secrets/hosts/home-forge/system.yaml;
+      sopsFile = ../../../secrets/hosts/home-forge/system.yaml;
       key = "tailscale/auth_key";
       path = "/run/secrets/tailscale.auth_key";
       mode = "0400";
@@ -89,7 +88,7 @@ in
   # the rescue operator is defense-in-depth. Activates once host secrets exist.
   services.hostRecovery = lib.mkIf hasHostSecrets {
     enable = true;
-    secretFile = ../../secrets/hosts/home-forge/system.yaml;
+    secretFile = ../../../secrets/hosts/home-forge/system.yaml;
     rescueUser.name = "rescue";
     reboot.onCalendar = "weekly";
   };
@@ -100,7 +99,7 @@ in
   # from the host system secret. Activates once host secrets exist.
   services.state-backups = lib.mkIf hasHostSecrets {
     enable = true;
-    secretFile = ../../secrets/hosts/home-forge/system.yaml;
+    secretFile = ../../../secrets/hosts/home-forge/system.yaml;
     bucket = "shrublab-backup-home-forge";
     stagingRoot = "/srv/data/state-backups";
     # Baseline-only host: no workload modules contribute backup contracts
@@ -122,20 +121,20 @@ in
 
   services.notification-daemon = {
     enable = true;
-    secretFiles.host = ../../secrets/services/notification-daemon.yaml;
-    secretFiles.hostSystem = ../../secrets/hosts/home-forge/system.yaml;
+    secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
+    secretFiles.hostSystem = ../../../secrets/hosts/home-forge/system.yaml;
     ntfy.enable = true;
   };
 
   # Providers/routing/tunnels are dashboard-managed state under /srv/data/omniroute;
   # gated on the encrypted secret existing (two-step bootstrap).
-  services.omniroute = lib.mkIf (builtins.pathExists ../../secrets/services/omniroute.yaml) {
+  services.omniroute = lib.mkIf (builtins.pathExists ../../../secrets/services/omniroute.yaml) {
     enable = true;
-    secretFiles.host = ../../secrets/services/omniroute.yaml;
+    secretFiles.host = ../../../secrets/services/omniroute.yaml;
   };
 
   services.notification-daemon.monitor.services =
-    lib.optionals (builtins.pathExists ../../secrets/services/omniroute.yaml)
+    lib.optionals (builtins.pathExists ../../../secrets/services/omniroute.yaml)
       [ "podman-omniroute" ];
 
   applications.dj = {
@@ -145,7 +144,7 @@ in
       sharePath = musicStorageRoot;
       musicStorageRoot = musicStorageRoot;
       traktorStateDir = traktorStateDir;
-      secretFiles.navidrome = ../../secrets/applications/music.yaml;
+      secretFiles.navidrome = ../../../secrets/applications/music.yaml;
     };
   };
 
@@ -153,7 +152,7 @@ in
     enable = true;
     dataRoot = "/srv/data";
     storageRoot = musicStorageRoot;
-    secretFiles.host = ../../secrets/applications/music.yaml;
+    secretFiles.host = ../../../secrets/applications/music.yaml;
     navidrome.enable = true;
     audiomuse.enable = true;
     # AudioMuse DB lives in oci-melb-1's shared Postgres over Tailscale.

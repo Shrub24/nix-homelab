@@ -4,8 +4,6 @@
   lib,
   config,
   pkgs,
-  inputs,
-  self,
   ...
 }:
 let
@@ -129,7 +127,6 @@ in
 {
   imports = [
     ../../services/virtualisation/windows-vm.nix
-    inputs.traktor-m3u-sync.nixosModules.default
   ];
 
   options.applications.dj = {
@@ -155,6 +152,10 @@ in
       traktorStateDir = lib.mkOption {
         type = lib.types.str;
         description = "traktor-m3u-sync worker state root (SQLite store + inbound M3U drop). Required.";
+      };
+      setupPackage = lib.mkOption {
+        type = lib.types.package;
+        description = "Windows guest setup payload shared into the guest; provided by the flake dj aspect.";
       };
       secretFiles.navidrome = lib.mkOption {
         type = lib.types.nullOr lib.types.path;
@@ -198,7 +199,7 @@ in
               readonly = false;
             };
             setup = {
-              source = "${self.packages.${pkgs.stdenv.hostPlatform.system}.windows-dj-setup}";
+              source = "${engine.setupPackage}";
               readonly = true;
             };
           };
@@ -207,7 +208,6 @@ in
 
       traktor-m3u-sync = {
         enable = true;
-        package = inputs.traktor-m3u-sync.packages.${pkgs.stdenv.hostPlatform.system}.default;
         supplementaryGroups = [
           "media"
           "music-ingest"

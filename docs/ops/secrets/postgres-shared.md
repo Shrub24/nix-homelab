@@ -43,12 +43,12 @@ The default `passwordKey` for each consumer:
 ## Enabling a consumer on the host
 
 After the secret file exists with the required keys, enable the consumer
-in `hosts/oci-melb-1/default.nix`:
+in `modules/hosts/oci-melb-1/default.nix`:
 
 ```nix
 services.postgres-shared = {
   enable = true;
-  secretFile = ../../secrets/services/postgres-shared.yaml;
+  secretFile = ../../../secrets/services/postgres-shared.yaml;
   litellm.enable = true;
   # Existing consumers stay unchanged:
   niks3.enable = true;

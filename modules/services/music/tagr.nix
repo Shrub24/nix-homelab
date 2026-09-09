@@ -2,7 +2,6 @@
   lib,
   config,
   pkgs,
-  ociImages,
   ...
 }:
 let
@@ -110,7 +109,7 @@ in
 
     virtualisation.oci-containers.containers.tagr = {
       autoStart = true;
-      image = ociImages.tagr;
+      image = config.repo.ociImages.tagr;
       ports = [ "${cfg.listenAddress}:${toString cfg.port}:3000" ];
       environment = {
         DATABASE_URL = "file:/data/tagr.db";

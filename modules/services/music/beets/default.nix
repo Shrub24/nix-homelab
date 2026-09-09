@@ -2,13 +2,12 @@
   config,
   lib,
   pkgs,
-  self,
   ...
 }:
 let
   cfg = config.services.beets;
   secretHelpers = import ../../../../lib/secrets.nix { inherit lib; };
-  notifyPkg = self.packages.${pkgs.stdenv.hostPlatform.system}.notify;
+  notifyPkg = config.repo.packages.notify;
 
   # Shared hardened oneshot service defaults for generated beets units.
   hardenedServiceDefaults = {

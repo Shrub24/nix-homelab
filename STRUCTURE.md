@@ -12,9 +12,8 @@ nix-homelab/
 ├── .just/          # Modular justfile includes (ops, checks, backups, host-age, deps, dev)
 ├── docs/            # Human-facing architecture, planning, and runbook docs
 ├── generated/       # Committed generated artifacts (e.g., web policy JSON)
-├── hosts/           # Per-host NixOS configuration entrypoints
 ├── lib/             # Reusable Nix library functions
-├── modules/         # NixOS modules (applications, services, profiles, providers, storage, core, shared)
+├── modules/         # Flake-parts modules + NixOS modules (flake composition, hosts, applications, services, profiles, providers, storage, core, shared)
 ├── pkgs/            # Custom Nix packages/derivations (notification-daemon, notify CLI, _sources/)
 ├── openspec/        # OpenSpec change management artifacts
 ├── opentofu/        # OpenTofu infrastructure-as-code (Cloudflare)
@@ -23,7 +22,7 @@ nix-homelab/
 ├── secrets/         # SOPS-encrypted secrets with blast-radius scoping
 ├── tests/           # Validation scripts and contract checks
 ├── certs/          # TLS certificate material
-├── flake.nix        # Flake entrypoint: defines all outputs
+├── flake.nix        # Minimal flake-parts entrypoint: input pins + import-tree discovery of modules/
 ├── flake.lock      # Pinned flake input revisions
 ├── .sops.yaml      # Central SOPS recipient policy with path-scoped rules
 ├── nvfetcher.toml   # nvfetcher config for non-flake upstream sources
@@ -73,11 +72,17 @@ nix-homelab/
 - Contains: `architecture.md`, `decisions.md`, `plan.md`, `context-history.md`, `runbooks/`
 - Key files: `docs/architecture.md`, `docs/decisions.md`, `docs/runbooks/host-initialization.md` (generic host bring-up), `docs/runbooks/admin-host-migration.md` (LA transfer facts)
 
-**`hosts/`:**
+**`modules/flake/`:**
 
-- Purpose: Per-host NixOS configuration entrypoints — thin assembly of modules
-- Contains: `default.nix`, committed `facter.json` (`hardware.facter.reportPath`), `bootstrap-config.nix`, host-specific overlays
-- Key files: `hosts/oci-melb-1/default.nix`, `hosts/la-admin-1/default.nix`
+- Purpose: Flake-parts composition modules discovered by `denful/import-tree` from `flake.nix`
+- Contains: `registry.nix` (typed `nixos.configurations.<host>` host registry materialized through `inputs.nixpkgs.lib.nixosSystem`, plus the `flake.bootstrap.nodes` projection), `aspects.nix` (published `flake.modules.nixos.<aspect>` cross-cutting modules), `packages.nix`, `deploy.nix`, `dev.nix`, `dj.nix`, `scaffold.nix`, and `_unconverted-nixos-dirs.nix` (the temporary enumerated `filterNot` boundary for directories still holding plain NixOS leaves)
+- Key files: `modules/flake/registry.nix`, `modules/flake/aspects.nix`, `modules/flake/_unconverted-nixos-dirs.nix`
+
+**`modules/hosts/`:**
+
+- Purpose: Per-host NixOS configuration entrypoints — thin assembly of modules, each registered as a `nixos.configurations.<host>` record in `modules/flake/registry.nix`
+- Contains: `default.nix`, committed `facter.json` (`hardware.facter.reportPath`), host-specific overlays, and sole-consumer disko layouts beside their host; reimage bootstrap metadata lives inline in the host's registry record
+- Key files: `modules/hosts/oci-melb-1/default.nix`, `modules/hosts/la-admin-1/default.nix`, `modules/hosts/home-forge/default.nix`
 
 **`modules/applications/`:**
 
@@ -118,9 +123,9 @@ nix-homelab/
 
 **`modules/storage/`:**
 
-- Purpose: Declarative disk partitioning via disko
-- Contains: `disko-root.nix`, `disko-single-disk.nix`, `disko-single-disk-split.nix`
-- Key files: `modules/storage/disko-single-disk-split.nix` (split root/data/nix/media layout)
+- Purpose: Declarative disk partitioning via disko (shared layouts; sole-consumer layouts live beside their host under `modules/hosts/`)
+- Contains: `disko-root.nix`, `disko-single-disk.nix`
+- Key files: `modules/hosts/oci-melb-1/disko-single-disk-split.nix` (split root/data/nix/media layout), `modules/hosts/home-forge/disko-two-disk.nix`
 
 **`modules/core/`:**
 
@@ -171,15 +176,15 @@ nix-homelab/
 
 ## Key File Locations
 
-**Entry Points:** `flake.nix`: Defines all flake outputs — `nixosConfigurations`, `devShells`, `packages`, `deploy`, `checks`
+**Entry Points:** `flake.nix`: Minimal flake-parts entrypoint; outputs — `nixosConfigurations`, `devShells`, `packages`, `deploy`, `checks`, `bootstrap` — are composed by the flake-parts modules under `modules/flake/`
 
 **Configuration:** `.sops.yaml`: SOPS recipient policy with path-scoped secret rules
 
-**Host Definitions:** `hosts/oci-melb-1/default.nix` (Oracle Cloud aarch64), `hosts/la-admin-1/default.nix` (LA x86_64 admin/edge/identity): Thin host assembly modules
+**Host Definitions:** `modules/hosts/oci-melb-1/default.nix` (Oracle Cloud aarch64), `modules/hosts/la-admin-1/default.nix` (LA x86_64 admin/edge/identity): Thin host assembly modules registered in the typed host registry (`modules/flake/registry.nix`)
 
 **Deploy Metadata:** `lib/deploy/hosts.nix`: Hostname, SSH user, system architecture, remote-build flag per host; `edgeHost` and `deployOrder` are the only physical deployment facts (serial order `la-admin-1` → `oci-melb-1`)
 
-**Core Logic:** `modules/`: All NixOS module code organized by application, service, profile, provider, and storage layer
+**Core Logic:** `modules/`: Flake-parts composition (`modules/flake/`), host assemblies (`modules/hosts/`), and all NixOS module code organized by application, service, profile, provider, and storage layer
 
 **Policy SSOT:** `policy/web-services.nix`: All public web service endpoint definitions with origin, exposure mode, and Cloudflare config
 
@@ -219,13 +224,13 @@ nix-homelab/
 
 ## Where to Add New Code
 
-**New host:** `hosts/<host-name>/default.nix` — create thin assembly importing profiles, providers, storage, and applications. Add entry to `lib/deploy/hosts.nix`. Add host-scoped `.sops.yaml` rules.
+**New host:** `modules/hosts/<host-name>/default.nix` — create thin assembly importing profiles, providers, storage, and applications. Add a `nixos.configurations.<host-name>` record in `modules/flake/registry.nix`. Add entry to `lib/deploy/hosts.nix`. Add host-scoped `.sops.yaml` rules.
 
 **New application stack:** `modules/applications/<name>/default.nix` — composition root with `enable` flag, shared paths, and sub-service wiring. Use `secretFiles.host` for secret passthrough.
 
 **New edge ingress host:** `modules/applications/edge-ingress.nix` — role-based (edge/origin/none), imports `modules/services/edge-proxy-ingress.nix`.
 
-**New paperless stack deployment:** `hosts/<host>/default.nix` — set `services.paperless.enable = true` and bind `services.paperless.secretFiles.host` and `.oidc` to host-scoped secret files. Optionally enable paperless-gpt via `services.paperless.paperless-gpt = { docling.enable = true; instances.llm.enable = true; instances.docling.enable = true; }` for AI document enhancement with docling-serve sidecar. Ensure `services.postgres-shared.enable = true` on the target host.
+**New paperless stack deployment:** `modules/hosts/<host>/default.nix` — set `services.paperless.enable = true` and bind `services.paperless.secretFiles.host` and `.oidc` to host-scoped secret files. Optionally enable paperless-gpt via `services.paperless.paperless-gpt = { docling.enable = true; instances.llm.enable = true; instances.docling.enable = true; }` for AI document enhancement with docling-serve sidecar. Ensure `services.postgres-shared.enable = true` on the target host.
 
 **New service:** `modules/services/<name>.nix` (standalone) or `modules/services/<domain>/<name>.nix` (grouped) — leaf module with `enable` flag, `secretFiles.*` contracts, and `sops.secrets` ownership. Use `lib/secrets.nix` helpers.
 
@@ -233,7 +238,7 @@ nix-homelab/
 
 **New provider:** `modules/providers/<name>/default.nix` — provider-specific safe defaults. Import in relevant host's `default.nix`.
 
-**New storage layout:** `modules/storage/disko-<name>.nix` — disko disk/partition config. Add sizing options pattern from `disko-single-disk-split.nix`.
+**New storage layout:** `modules/storage/disko-<name>.nix` for shared layouts; place sole-consumer host layouts beside the host (e.g., `modules/hosts/oci-melb-1/disko-single-disk-split.nix`). Add sizing options pattern from `disko-single-disk-split.nix`.
 
 **New web service route:** `policy/web-services.nix` — add service entry under the relevant host's `services` attribute with subdomain, origin, exposure mode, and Cloudflare config.
 
@@ -251,7 +256,7 @@ nix-homelab/
 
 **New non-flake upstream source:** Add a `[[package]]` entry to `nvfetcher.toml` with the source name, fetcher, and version query. Run `just deps refresh` to regenerate `pkgs/_sources/generated.nix`. Import generated metadata from `pkgs/_sources/generated.nix` in the consuming derivation. (Do not hand-edit version/hash pairs.)
 
-**New OCI image reference:** Add the image in `image:tag@sha256:digest` form to `policy/oci-images.nix`. The image is available to service modules via `ociImages.<name>` (passed through `specialArgs`). Renovate proposes digest and tag updates on its scheduled runs.
+**New OCI image reference:** Add the image in `image:tag@sha256:digest` form to `policy/oci-images.nix`. The image is available to service modules via `config.repo.ociImages.<name>` (typed policy aspect from the `oci-images` flake module; no `specialArgs`). Renovate proposes digest and tag updates on its scheduled runs.
 
 **New notification daemon feature:** `pkgs/notification-daemon/notification_api/main.py` — add new handler or endpoint in the FastAPI app. Update `pkgs/notification-daemon/pyproject.toml` for new dependencies.
 

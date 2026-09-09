@@ -29,7 +29,7 @@ Run `nixos-facter` as root on the target, single-host report, no `--swap` or `--
 nix run github:nix-community/nixos-facter -- -o facter.json
 ```
 
-- review and commit `hosts/<host>/facter.json`; consume it directly via `hardware.facter.reportPath = ./facter.json`
+- review and commit `modules/hosts/<host>/facter.json`; consume it directly via `hardware.facter.reportPath = ./facter.json`
 - do not share or regenerate the report on another node
 - record runtime facts separately: `nixos-version`, `uname -m`, `lsblk -f`, `findmnt`, `df -h`, `ip -br addr`, `ip route`, EFI/boot mode, data-mount availability, the initial sudo account, and the provider-console reboot procedure
 - record RAM and build-plane capacity: `free -h`, `swapon`, `nproc`; size the `/build` tmpfs from the observed RAM, never from another host's defaults
@@ -120,7 +120,7 @@ The fleet baseline keeps shell accounts distinct by declaration, never by post-b
 
 ## 8. Reimage path
 
-- repo entrypoint: `just bootstrap <host> <addr>` runs `deploy.sh` with `hosts/<host>/bootstrap-config.nix` (which must declare `hostName`, `bootstrapUser`, `flake`, and, when hardware-config generation is wanted, `hardwareConfigGenerator` and `hardwareConfigPath` together). `deploy.sh` itself requires an explicit `--host-config <path>` and never assumes a default host; it runs `nixos-anywhere` over SSH from a temporary supported Linux image, with `disko` applying the declarative layout
+- repo entrypoint: `just bootstrap <host> <addr>` sources `scripts/resolve-host-config.sh`, which resolves the host's reimage metadata from the typed `flake.bootstrap.nodes.<host>` projection (bootstrap metadata inlined in the host's registry record; `hostName` and `flake` are derived from the registry key, and `bootstrapUser` plus optional `hardwareConfigGenerator`/`hardwareConfigPath` are declared inline) and passes the values to `deploy.sh`. `deploy.sh` fails closed on unresolved required values (target, bootstrap user, flake ref) before any Nix or network work; it runs `nixos-anywhere` over SSH from a temporary supported Linux image, with `disko` applying the declarative layout
 - the temporary installer image's SSH host key is **diagnostic only** — it disappears with the installer and must never be used to derive a persistent SOPS age recipient
 - two-step secrets bootstrap is the default: install the base system first, then, after first boot, enroll the persistent host-key recipient exactly as in sections 3–5 and create encrypted secrets
 - continue from rescue readiness and first-generation steps; then deploy-rs takes over

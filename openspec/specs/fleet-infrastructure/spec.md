@@ -7,23 +7,26 @@ Define the baseline infrastructure contracts for a modular NixOS homelab fleet, 
 ## Requirements
 
 ### Requirement: Host composition is host-centric and modular
-The repository SHALL organize host identity separately from reusable modules so hosts can add or remove feature stacks through explicit application/service enablement without reintroducing service ownership at the host layer.
+The repository SHALL construct fleet hosts from typed `nixos.configurations.<host>` records and SHALL organize host identity separately from reusable aspects and modules so hosts can select feature stacks explicitly without owning service implementation.
 
 #### Scenario: A host is composed from shared modules
-- **WHEN** a host configuration is declared in `hosts/<host>/default.nix`
-- **THEN** it composes reusable modules rather than embedding provider/service logic inline
-- **AND** it enables composed workloads through canonical application or standalone service entrypoints instead of hidden import-only activation
+- **WHEN** a host configuration is declared under `modules/hosts/<host>/`
+- **THEN** a typed registry entry declares its system and explicit composition
+- **AND** the flake materializes the same `nixosConfigurations.<host>` output expected by operator and CI workflows
+- **AND** the host composes reusable aspects or modules rather than embedding provider or service logic inline
+- **AND** workload selection remains explicit rather than arising from accidental import-tree discovery
 
 #### Scenario: Edge role is assigned to one host
 - **WHEN** only one host is configured as ingress edge
-- **THEN** other hosts can remain private-origin nodes with shared module composition patterns
+- **THEN** other hosts can remain private-origin nodes with shared composition patterns
 
 ### Requirement: First-host bootstrap is declarative and repeatable
-The first host SHALL be bootstrappable from repository state using `nixos-anywhere` and `disko`, and rebuildable from flake outputs.
+The first host SHALL be bootstrappable from repository state using `nixos-anywhere` and `disko`, and rebuildable from flake outputs whose host metadata is derived from the typed configuration registry.
 
 #### Scenario: Host bootstrap workflow is executed
-- **WHEN** operators run bootstrap/deploy workflows
+- **WHEN** operators run bootstrap or deploy workflows
 - **THEN** installation and post-install rebuilds derive from declarative flake/module state
+- **AND** existing host names and bootstrap-facing flake outputs remain compatible
 
 ### Requirement: Secret blast radius is path-scoped
 Secrets SHALL be split into topology-aligned application, standalone-service, and host-exception scopes with explicit path rules that do not grant implicit cross-host decryption.
@@ -87,11 +90,12 @@ The shared origin endpoint used as CNAME target for published service records SH
 - **THEN** OpenTofu plans a DNS record for the configured origin name/content/proxy posture
 
 ### Requirement: Fleet package baseline defaults to unstable
-Fleet host outputs SHALL consume the primary repository package baseline from `nixos-unstable` unless an explicit documented exception is introduced.
+Fleet host outputs SHALL consume the primary repository package baseline from `nixos-unstable` unless an explicit documented exception is introduced, independent of the system evaluating the flake.
 
 #### Scenario: Active host outputs are evaluated
-- **WHEN** `nixosConfigurations.oci-melb-1` and `nixosConfigurations.la-admin-1` are built from the flake
-- **THEN** both host outputs resolve packages from the primary unstable baseline input
+- **WHEN** `nixosConfigurations.oci-melb-1`, `nixosConfigurations.la-admin-1`, and `nixosConfigurations.home-forge` are evaluated
+- **THEN** each host resolves packages for its declared target system from the primary unstable baseline input
+- **AND** per-host checks do not force an evaluator to build another architecture locally
 
 ### Requirement: Recoverable hosts SHALL include host-scoped state backup architecture
 Fleet hosts that carry mutable service state SHALL support host-scoped declarative backup wiring as part of the recoverable baseline.

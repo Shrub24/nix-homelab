@@ -5,9 +5,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 BASE='path:.#nixosConfigurations.oci-melb-1.config'
+HF='path:.#nixosConfigurations.home-forge.config'
 nix eval --no-write-lock-file --raw "$BASE.networking.hostName" >/dev/null
 nix eval --no-write-lock-file --raw "$BASE.system.stateVersion" >/dev/null
-nix eval --no-write-lock-file --apply 'v: v == true' "$BASE.applications.music.enable" >/dev/null
+# D-045 moved the whole music composition to home-forge; assert it on its
+# current host (its absence on OCI is pinned by phase-04-service-flow).
+nix eval --no-write-lock-file --apply 'v: v == true' "$HF.applications.music.enable" >/dev/null
 
 # OCI consumes canonical policy service metadata (catalog), never admin-host
 # names, for every cross-host identity/OIDC consumer: Kanidm, Paperless,
@@ -18,12 +21,12 @@ nix eval --no-write-lock-file --apply 'cfg: if cfg.services.karakeep-pod.oidc.en
 
 # Source-level regression: no host-keyed service reads may be reintroduced, and
 # each cross-host consumer must keep its canonical catalog read.
-if grep -R -n 'repo\.web\.hosts\.' modules/ hosts/oci-melb-1/; then
+if grep -R -n 'repo\.web\.hosts\.' modules/ modules/hosts/oci-melb-1/; then
   echo "oci-melb-1: host-keyed repo.web.hosts.* reads must not be reintroduced" >&2
   exit 1
 fi
 for service in 'repo.web.catalog."kanidm-admin"' 'repo.web.catalog.paperless' 'repo.web.catalog.karakeep'; do
-  if ! grep -q "$service" hosts/oci-melb-1/default.nix; then
+  if ! grep -q "$service" modules/hosts/oci-melb-1/default.nix; then
     echo "oci-melb-1: expected catalog read ${service} missing from host wiring" >&2
     exit 1
   fi

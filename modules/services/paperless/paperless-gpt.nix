@@ -1,7 +1,6 @@
 {
   lib,
   config,
-  ociImages,
   ...
 }:
 let
@@ -134,7 +133,7 @@ in
         (lib.optionalAttrs hasDocling {
           docling-serve = {
             autoStart = true;
-            image = ociImages.doclingServe;
+            image = config.repo.ociImages.doclingServe;
             ports = [ "${cfg.docling.address}:${toString cfg.docling.port}:5001" ];
             environment = {
               DOCLING_SERVE_LOG_LEVEL = "WARNING";
@@ -158,7 +157,7 @@ in
           name: inst:
           lib.nameValuePair "paperless-gpt-${name}" {
             autoStart = true;
-            image = ociImages.paperlessGpt;
+            image = config.repo.ociImages.paperlessGpt;
             ports = [ "127.0.0.1:${toString inst.port}:8080" ];
             environment = {
               LISTEN_INTERFACE = ":8080";

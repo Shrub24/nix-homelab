@@ -14,7 +14,7 @@ Dated revalidation against the live repository during `dendritic-stage-0-pre-cle
 - **import-tree ownership/semantics:** the helper is `denful/import-tree`; underscore-prefixed path components are excluded by its default filter.
 - **`nix-fleet` rule:** future code-only library. Candidates only: Tailscale, SSH, builder access, Nix defaults, selected shell defaults, notification daemon/dispatch, niks3 post-build/post-deploy integration, Beszel agent. Extraction requires a verified local aspect plus materially identical behavior needed by both repos. Topology/inventory, `policy/web-services.nix`, domains/exposure/Cloudflare policy, OpenTofu, deploy-rs metadata/order, `.sops.yaml` readership, and encrypted secrets stay owned by `nix-homelab`.
 - **Stage 0 landed:** dead `modules/applications/paperless/` wrapper deleted (Paperless continues through `modules/services/paperless/` directly), orphan `.just/deploy.just` deleted (the root justfile owns the `deploy` recipe directly), unused `mkSimpleSecret` deleted, and the AudioMuse credential comments now match D-045's accepted two-file model. Deferred by design: OCI music-cutover soak residue, the litellm role question, and the notification composition gap.
-- **home-forge is intentional, not drift:** it is a deploy-rs node by design (kept outside the serial `deployOrder`), and `hosts/home-forge/facter.json` is committed and wired via `hardware.facter.reportPath`; the flake's "no facter report yet" comment above the `home-forge` system is stale code residue, not a missing fact file.
+- **home-forge is intentional, not drift:** it is a deploy-rs node by design (kept outside the serial `deployOrder`), and `modules/hosts/home-forge/facter.json` is committed and wired via `hardware.facter.reportPath`; the flake's "no facter report yet" comment above the `home-forge` system is stale code residue, not a missing fact file.
 
 ## Verdict
 
@@ -45,8 +45,8 @@ The transition is worth doing now because the operational roadmap (edge split fr
 
 ### Mechanics
 
-- `flake-parts` drives everything; every file under `modules/` and `hosts/` is a flake-parts module via `denful/import-tree` (underscore-prefixed path components are excluded by its default filter — that is how host data like `_bootstrap-config.nix`-shaped things stay out of the tree).
-- A `nixos.configurations.<host>` submodule option (mightyiam shape) declares each host: `system`, a `module` (deferred), `facter.reportPath`, plus bootstrap metadata. An eval shim turns each record into `nixosSystem` via `lib.evalModules` args — **no `specialArgs` bus**. `pkgs` comes from nixpkgs inside the eval; `inputs`/repo paths are lexically captured by the flake-parts modules that need them.
+- `flake-parts` drives everything; files under `modules/` become flake-parts modules via `denful/import-tree` as their legacy directory exclusions are removed. Underscore-prefixed path components remain available for genuinely private files.
+- A `nixos.configurations.<host>` submodule option declares each host's explicit target `system`, deferred `module`, and optional inline bootstrap metadata. Each record is materialized through `inputs.nixpkgs.lib.nixosSystem` with **no `specialArgs` bus**; inputs and repository paths are lexically captured by the flake-parts modules that need them.
 - Public aspects are names in `config.flake.modules.nixos.<aspect>`. Merge is two-level and additive at the flake-parts level: several source files may each contribute a definition to the same aspect name (pipewire+steam→`pc`), which is the mechanism that keeps the aspect count small while files stay feature-owned.
 - Class discipline: `nixos` for NixOS-targeted modules, `generic` for anything imported into other evals (the `deploy`/CI wiring), matching flake-parts `flakeModules` extras so inline and file-defined modules dedupe.
 - Checks wire per-system (`filterAttrs` on the host's `system`) so `nix flake check` never cross-builds aarch64 on x86 or vice versa, and `deployChecks` runs against the same filtered node set.
@@ -91,7 +91,7 @@ Host composition moves to `modules/hosts/<host>/` (settled by D-047; the earlier
 - `disko` layout **moved into the host directory** — the shared `modules/storage/disko-*.nix` menu is fake modularity: each layout today has exactly one consumer, and a reimage of a specific machine is a host fact;
 - bootstrap metadata (reimage inputs) contributed to a flake-level data output (`flake.bootstrap.nodes.<host>`) so `deploy.sh`/`resolve-host-config.sh` do `nix eval --json` instead of grepping a Nix file by indent.
 
-`hosts/home-forge/facter.json` sits beside the host file (now committed and wired). Revalidated 2026-09-09: home-forge's deploy-rs node membership is intentional — it stays a node outside the serial `deployOrder`; no `deployable = false` is wanted. The flake's stale "no facter report yet" comment remains as code residue.
+`modules/hosts/home-forge/facter.json` sits beside the host file (now committed and wired). Revalidated 2026-09-09: home-forge's deploy-rs node membership is intentional — it stays a node outside the serial `deployOrder`; no `deployable = false` is wanted. The flake's stale "no facter report yet" comment remains as code residue.
 
 ### Topology and policy
 

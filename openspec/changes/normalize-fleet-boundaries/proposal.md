@@ -13,7 +13,7 @@ Restore explicit ownership boundaries — modules own conventional secret defaul
 ## What Changes
 
 - Move conventional host secret defaults and stable service interconnections to owning modules. Hosts retain feature selection and explicit exceptions, expressed through existing module contract surfaces (`secretFiles.*`, `secretKeys.*`) rather than raw `sops.secrets` re-registration.
-- Consolidate duplicate admin overlays: move pure catalog projection from `hosts/<host>/edge.nix` into the `edge-ingress` owner; move Cockpit service-user wiring into the Cockpit admin module. Remove redundant host `mkForce` overrides only after an evaluation-equivalence proof lands in the same batch.
+- Consolidate duplicate admin overlays: move pure catalog projection from `modules/hosts/<host>/edge.nix` into the `edge-ingress` owner; move Cockpit service-user wiring into the Cockpit admin module. Remove redundant host `mkForce` overrides only after an evaluation-equivalence proof lands in the same batch.
 - Keep `lib/deploy/hosts.nix` as the physical topology SSOT. Add `nixosConfigurations` vs deploy-node consistency so new hosts must appear in topology metadata or be explicitly marked non-deployable. CI/deploy order may consume the metadata or carry an explicit mismatch check when workflow auditability requires explicit jobs.
 - Introduce one typed ntfy publisher contract owned by the ntfy module; generate host config, secret-template expectations, and test expectations from it. Bcrypt hashes and publish tokens stay in encrypted secret material (placeholder-only committed content).
 - Derive OIDC client metadata and host secret-file maps from canonical identity metadata, with security-relevant overrides (PKCE relaxation, legacy crypto, short-username preference) explicit and strict scope tests enforced.
@@ -46,7 +46,7 @@ None — this change normalizes ownership of existing behavior and introduces no
 
 ## Impact
 
-- Affected host and topology files: `hosts/oci-melb-1/default.nix`, `hosts/la-admin-1/default.nix`, `hosts/<host>/edge.nix`, `hosts/<host>/cockpit-auth.nix`, `hosts/do-admin-1/` (rollback host, only if still active).
+- Affected host and topology files: `modules/hosts/oci-melb-1/default.nix`, `modules/hosts/la-admin-1/default.nix`, `modules/hosts/<host>/edge.nix`, `modules/hosts/<host>/cockpit-auth.nix` (`do-admin-1` was decommissioned and has no active host assembly in the tree).
 - Affected modules/helpers: `modules/services/ntfy.nix`, `modules/services/notification-daemon/`, `modules/applications/edge-ingress.nix`, `modules/services/admin/cockpit.nix`, `modules/applications/admin/default.nix`, `modules/shared/identity-oidc.nix`, `lib/deploy/hosts.nix`, `lib/policy.nix`, `lib/secrets.nix`, `policy/identity.json`, `secrets/.templates/services/ntfy.yaml`.
 - Affected checks/CI: `tests/check-secret-scope.sh`, `tests/fixtures/secret-scope.nix`, `tests/phase-la-admin-contract.sh`, `tests/check-ssh-host-fingerprint.sh`, `.github/workflows/ci.yml`, `.github/workflows/deploy.yml`.
 - Affected docs: `docs/architecture.md`, `docs/decisions.md`, `docs/plan.md`, `docs/runbooks/host-initialization.md`.

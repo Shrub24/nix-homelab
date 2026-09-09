@@ -15,164 +15,25 @@
     traktor-m3u-sync.inputs.nixpkgs.follows = "nixpkgs";
     nix-index-database.url = "github:nix-community/nix-index-database";
     nix-index-database.inputs.nixpkgs.follows = "nixpkgs";
+    flake-parts.url = "github:hercules-ci/flake-parts";
+    flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
+    import-tree.url = "github:denful/import-tree";
   };
 
   outputs =
-    inputs@{
-      self,
-      nixpkgs,
-      disko,
-      sops-nix,
-      deploy-rs,
-      niks3,
-      ...
-    }:
+    inputs:
     let
-      devShellSystems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
-      mkDevShell =
-        system:
-        let
-          pkgs = import nixpkgs { inherit system; };
-        in
-        pkgs.mkShell {
-          packages =
-            with pkgs;
-            [
-              just
-              git
-              jq
-              yq
-              opentofu
-              prettier
-              shfmt
-              taplo
-              treefmt
-              sops
-              age
-              nixos-anywhere
-              nix-output-monitor
-              nixfmt
-              ruff
-              statix
-              ssh-to-age
-              lefthook
-              self.packages.${system}.notification-daemon
-              self.packages.${system}.notify
-              self.packages.${system}.niks3
-              self.packages.${system}.nix-path-filter
-            ]
-            ++ [ pkgs.deploy-rs ];
-          shellHook = ''
-            unset PYTHONPATH
-            if [ -f /tmp/notification-daemon.json ]; then
-              NOTIFICATION_DAEMON_CONFIG=/tmp/notification-daemon.json notification-daemon &
-              DAEMON_PID=$!
-              trap "kill $DAEMON_PID 2>/dev/null; echo 'notification-daemon stopped'" EXIT TERM INT
-              echo "notification-daemon started (PID: $DAEMON_PID)"
-            fi
-          '';
-        };
+      inherit (inputs.nixpkgs) lib;
 
-      ociImages = import ./policy/oci-images.nix;
-
-      deployTopology = import ./lib/deploy/hosts.nix;
-
-      deployConfig = import ./lib/deploy {
-        inherit self nixpkgs deploy-rs;
-        inherit (deployTopology) nodes;
-      };
-
+      # Temporary boundary (design DS-1): directories under modules/ that still
+      # hold plain NixOS leaves not yet converted to aspect contributors. The
+      # enumerated list is inspectable in modules/flake/_unconverted-nixos-dirs.nix;
+      # entries are removed as conversion progresses. A leaked leaf fails
+      # evaluation loudly; there is no fallback blanket-import root.
+      unconvertedNixosDirs = import ./modules/flake/_unconverted-nixos-dirs.nix;
+      discovery = inputs.import-tree.filterNot (
+        relPath: lib.any (dir: lib.hasPrefix "/${dir}/" relPath) unconvertedNixosDirs
+      ) ./modules;
     in
-    {
-      devShells = nixpkgs.lib.genAttrs devShellSystems (system: {
-        default = mkDevShell system;
-      });
-
-      packages = nixpkgs.lib.genAttrs devShellSystems (
-        system:
-        let
-          pkgs = import nixpkgs { inherit system; };
-        in
-        {
-          inherit (pkgs) deploy-rs;
-          niks3 = niks3.packages.${system}.niks3;
-          nix-path-filter = pkgs.callPackage ./pkgs/nix-path-filter { };
-          notification-daemon = pkgs.callPackage ./pkgs/notification-daemon { };
-          notify = pkgs.callPackage ./pkgs/notify { };
-          windows-dj-setup = pkgs.callPackage ./pkgs/windows-dj-setup { };
-          host-la-admin-1 = deployConfig.deploy.nodes.la-admin-1.profiles.system.path;
-          host-oci-melb-1 = deployConfig.deploy.nodes.oci-melb-1.profiles.system.path;
-        }
-      );
-
-      deployHosts = deployTopology;
-
-      formatter = nixpkgs.lib.genAttrs devShellSystems (
-        system: (import nixpkgs { inherit system; }).nixfmt
-      );
-
-      nixosConfigurations = {
-        oci-melb-1 = nixpkgs.lib.nixosSystem {
-          modules = [
-            disko.nixosModules.disko
-            sops-nix.nixosModules.sops
-            niks3.nixosModules.niks3
-            niks3.nixosModules.niks3-auto-upload
-            inputs.nix-index-database.nixosModules.nix-index
-            ./hosts/oci-melb-1/default.nix
-          ];
-          specialArgs = {
-            inherit
-              self
-              inputs
-              ociImages
-              ;
-          };
-        };
-
-        la-admin-1 = nixpkgs.lib.nixosSystem {
-          modules = [
-            sops-nix.nixosModules.sops
-            niks3.nixosModules.niks3-auto-upload
-            inputs.nix-index-database.nixosModules.nix-index
-            ./hosts/la-admin-1/default.nix
-          ];
-          specialArgs = {
-            inherit
-              self
-              inputs
-              ociImages
-              ;
-          };
-        };
-
-        home-forge = nixpkgs.lib.nixosSystem {
-          # x86_64 physical host; no facter report/hardware-configuration exists
-          # yet (captured at operator gate 8.3), so pin the architecture explicitly.
-          modules = [
-            {
-              nixpkgs.hostPlatform.system = "x86_64-linux";
-            }
-            disko.nixosModules.disko
-            sops-nix.nixosModules.sops
-            niks3.nixosModules.niks3-auto-upload
-            inputs.nix-index-database.nixosModules.nix-index
-            ./hosts/home-forge/default.nix
-          ];
-          specialArgs = {
-            inherit
-              self
-              inputs
-              ociImages
-              ;
-          };
-        };
-      };
-
-      inherit (deployConfig) deploy;
-      inherit (deployConfig) checks;
-    };
+    inputs.flake-parts.lib.mkFlake { inherit inputs; } discovery;
 }

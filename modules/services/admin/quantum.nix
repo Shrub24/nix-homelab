@@ -2,7 +2,6 @@
   lib,
   config,
   pkgs,
-  ociImages,
   ...
 }:
 let
@@ -104,7 +103,7 @@ in
 
     image = lib.mkOption {
       type = lib.types.str;
-      default = ociImages.quantum;
+      default = config.repo.ociImages.quantum;
       description = "Pinned Quantum container image.";
     };
 

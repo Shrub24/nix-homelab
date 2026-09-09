@@ -22,7 +22,6 @@ bootstrap host target:
     echo "Port 22 is open on $TARGET."; \
     source scripts/resolve-host-config.sh "{{ host }}"; \
     ./deploy.sh \
-        --host-config "$HOST_CONFIG" \
         --target "{{ target }}" \
         --bootstrap-user "$BOOTSTRAP_USER" \
         --flake "$FLAKE" \

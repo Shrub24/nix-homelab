@@ -14,7 +14,7 @@ LA='path:.#nixosConfigurations.la-admin-1.config'
 # The host assembly must not import destructive install/provider/static-network
 # inputs; the source check is feasible here because these imports would be
 # written by hand and never enter LA host declarations.
-LA_ASSEMBLY="hosts/la-admin-1/default.nix"
+LA_ASSEMBLY="modules/hosts/la-admin-1/default.nix"
 if grep -Eq 'disko|nixos-anywhere|modules/providers/digitalocean|networking\.(interfaces|defaultGateway|useDHCP|nameservers)' "$LA_ASSEMBLY"; then
   echo "la-admin-1: host assembly must not import disko/provider/static-network configuration" >&2
   exit 1

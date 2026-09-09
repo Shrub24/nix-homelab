@@ -1,21 +1,6 @@
-args:
-let
-  hasFlakeSelf = args ? self;
-  hasFlakeOutPath = hasFlakeSelf && args.self ? outPath;
-  configurationRevision =
-    if !hasFlakeSelf then null else args.self.rev or (args.self.dirtyRev or null);
-in
+# Repository provenance (configurationRevision, /etc/nixos-source) is owned by
+# the flake-level provenance aspect, not by this leaf (design DS-4).
 {
-  environment.etc =
-    if hasFlakeOutPath then
-      {
-        "nixos-source".source = args.self.outPath;
-      }
-    else
-      { };
-
-  system.configurationRevision = configurationRevision;
-
   nix.settings = {
     experimental-features = [
       "nix-command"

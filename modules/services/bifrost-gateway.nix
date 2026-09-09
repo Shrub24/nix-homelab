@@ -2,7 +2,6 @@
   config,
   lib,
   pkgs,
-  ociImages,
   ...
 }:
 let
@@ -30,7 +29,7 @@ in
 
     image = lib.mkOption {
       type = lib.types.str;
-      default = ociImages.bifrost;
+      default = config.repo.ociImages.bifrost;
     };
 
     dataDir = lib.mkOption {

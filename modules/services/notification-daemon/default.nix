@@ -2,7 +2,6 @@
   config,
   lib,
   pkgs,
-  self,
   ...
 }:
 let
@@ -22,7 +21,7 @@ let
     };
   };
 
-  notifyPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.notify;
+  notifyPackage = config.repo.packages.notify;
 
   # Python script invoked by systemd OnFailure/ExecStopPost for monitored services.
   monitorScript = pkgs.writeScriptBin "svc-monitor" ''
@@ -68,8 +67,8 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.notification-daemon;
-      defaultText = lib.literalExpression "self.packages.\${pkgs.stdenv.hostPlatform.system}.notification-daemon";
+      default = config.repo.packages.notification-daemon;
+      defaultText = lib.literalExpression "config.repo.packages.notification-daemon";
       description = "The notification-daemon package to use.";
     };
 

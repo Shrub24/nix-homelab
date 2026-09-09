@@ -10,6 +10,7 @@ all:
   @./tests/check-ssh-host-fingerprint.sh
   @./tests/check-host-age-anchor.sh
   @./tests/check-deploy-bootstrap-gate.sh
+  @./tests/check-dendritic-scaffold-contract.sh
   @./tests/check-web-services-policy.sh
   @./tests/check-web-service-catalog.sh
   @./tests/phase-la-admin-contract.sh
@@ -34,6 +35,9 @@ test-host-age-anchor:
 
 test-deploy-bootstrap-gate:
   @./tests/check-deploy-bootstrap-gate.sh
+
+test-dendritic-scaffold-contract:
+  @./tests/check-dendritic-scaffold-contract.sh
 
 test-web-policy host="la-admin-1":
   @./tests/check-web-services-policy.sh {{host}}

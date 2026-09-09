@@ -2,13 +2,12 @@
   lib,
   config,
   pkgs,
-  self,
   ...
 }:
 let
   cfg = config.services.paperless;
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
-  fqPackage = self.packages.${pkgs.stdenv.hostPlatform.system};
+  repoPackages = config.repo.packages;
   oidcEnabled = cfg.oidc.enable;
   socialAccountProvidersJson = builtins.toJSON {
     openid_connect = {
@@ -42,7 +41,7 @@ let
       DOCUMENT_TITLE="''${DOCUMENT_FILE_NAME:-Unknown}"
     fi
 
-    echo "New document: $DOCUMENT_TITLE" | ${fqPackage.notify}/bin/notify info "Paperless" "info" "services" || true
+    echo "New document: $DOCUMENT_TITLE" | ${repoPackages.notify}/bin/notify info "Paperless" "info" "services" || true
   '';
 
   # Python seed script for OIDC sync groups

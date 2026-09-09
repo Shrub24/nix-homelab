@@ -14,7 +14,7 @@ Phases:
 
 No install-specific configuration exists: the install lifecycle runs through the `windows-vm-windows-dj-install` command (staged media + unit restart in, `--clear` out). Config never changes for installation.
 
-In `hosts/home-forge/default.nix`, extend the application block:
+In `modules/hosts/home-forge/default.nix`, extend the application block:
 
 ```nix
 applications.dj = {

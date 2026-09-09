@@ -2,7 +2,6 @@
   lib,
   config,
   pkgs,
-  ociImages,
   ...
 }:
 let
@@ -23,7 +22,7 @@ in
 
     image = lib.mkOption {
       type = lib.types.str;
-      default = ociImages.audiomuse;
+      default = config.repo.ociImages.audiomuse;
       description = "Pinned AudioMuseAI container image.";
     };
 
@@ -209,7 +208,7 @@ in
 
     virtualisation.oci-containers.containers.audiomuse-redis = {
       autoStart = true;
-      image = ociImages.redis7Alpine;
+      image = config.repo.ociImages.redis7Alpine;
       extraOptions = [ "--network=${cfg.networkName}" ];
       volumes = [ "${cfg.dataDir}/redis:/data" ];
     };

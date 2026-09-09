@@ -63,7 +63,7 @@ Fleet direction:
 - reusable behavior and secret ownership belong in service modules
 - multi-service stacks and shared cross-service concerns belong in application modules
 - provider specifics should be isolated from workload modules
-- target-state direction (D-047, not yet implemented): composition will migrate in stages to flake-parts with named `flake.modules.nixos` aspects and a typed `nixos.configurations.<host>` registry; the current implementation remains plain `flake.nix` `nixosSystem` calls with `specialArgs`
+- implemented (D-047 Stage 1, in `dendritic-stage-1-scaffold-hosts`): composition uses flake-parts with `denful/import-tree` discovery over `modules/`, named `flake.modules.nixos` aspects, and a typed `nixos.configurations.<host>` registry (`modules/flake/registry.nix`) that materializes `nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`; host assemblies live under `modules/hosts/<host>/` and the old `specialArgs` bus is gone. Converting the remaining plain leaf modules into aspect contributors is staged later work
 
 3. Security blast radius minimization
 
@@ -86,10 +86,10 @@ Fleet direction:
 
 The exact file tree can evolve, but the intended shape is:
 
-- `hosts/oci-melb-1/default.nix` and `hosts/la-admin-1/default.nix` as thin host assembly entrypoints
-- `hosts/<host>/default.nix` for host identity, facts, feature enables, and narrow overrides
-- `hosts/<host>/facter.json` for committed hardware facts via `hardware.facter.reportPath`
-- `hosts/<host>/<component>.nix` for host-specific component overlays
+- `modules/hosts/oci-melb-1/default.nix` and `modules/hosts/la-admin-1/default.nix` as thin host assembly entrypoints, registered as `nixos.configurations.<host>` records in the typed flake-parts host registry (`modules/flake/registry.nix`)
+- `modules/hosts/<host>/default.nix` for host identity, facts, feature enables, and narrow overrides
+- `modules/hosts/<host>/facter.json` for committed hardware facts via `hardware.facter.reportPath`
+- `modules/hosts/<host>/<component>.nix` for host-specific component overlays (underscore-prefixed files are host-private and excluded from flake-parts discovery; reimage bootstrap metadata lives inline in the host's registry record)
 - `modules/applications/<name>/default.nix` for feature composition roots (multi-service stacks), e.g. `modules/applications/music/`
 - `modules/services/<domain>/<name>.nix` for reusable service modules grouped by domain (e.g. `modules/services/music/navidrome.nix`, `modules/services/music/audiomuse.nix`, `modules/services/music/syncthing.nix`)
 - `modules/services/<name>.nix` for standalone leaf service modules outside a domain subtree
@@ -101,6 +101,7 @@ The exact file tree can evolve, but the intended shape is:
 - `modules/providers/oci/default.nix` for OCI-specific host-safe defaults
 - `modules/storage/disko-root.nix` for declarative root disk layout
 - `modules/storage/disko-single-disk.nix` for single-disk host layout
+- sole-consumer host layouts beside their host: `modules/hosts/oci-melb-1/disko-single-disk-split.nix`, `modules/hosts/home-forge/disko-two-disk.nix`
 - `policy/globals.nix` for canonical non-secret fleet defaults
 - `policy/service-defaults.nix` for feature enablement and path defaults
 - `policy/web-services.nix` for SSOT endpoint and routing policy
@@ -193,13 +194,13 @@ Recovered `oci-melb-1` single-disk baseline:
 
 - the OCI boot volume now carries the EFI system partition plus labeled ext4 filesystems for `/`, `/srv/data`, `/nix`, and `/srv/media`
 - `modules/storage/disko-single-disk.nix` is the canonical storage boundary for that recovered host shape
-- host-specific sizing stays in `hosts/oci-melb-1/default.nix`, while the partition/mount contract remains declarative in the storage module
+- host-specific sizing stays in `modules/hosts/oci-melb-1/default.nix`, while the partition/mount contract remains declarative in the storage module
 
 Current media/data flow (music application on `home-forge`):
 
 - the complete music application (Navidrome, AudioMuse compute, Syncthing, slskd/Beets/Tagr ingest services) runs on `home-forge`; `oci-melb-1` disables `applications.music`, retains the shared PostgreSQL cluster (AudioMuse database + backup), and keeps its copied `/srv/media` tree and prior music service state on disk only as rollback insurance
 - LA edge routes `music` (Navidrome), `slskd`, and `tagr` to `home-forge` over Tailscale upstreams (`policy/web-services.nix`)
-- `home-forge` selects the music application root via `musicStorageRoot` in `hosts/home-forge/default.nix`: `storageRoot=/srv/storage/media/music` with `library/`, `playlists/`, `inbox/`, `quarantine/`, and `.versions/` beneath it; `/srv/data` remains the service-state mount (`/srv/data/syncthing/config`, `/srv/data/navidrome`, `/srv/data/tagr`, `/srv/data/audiomuse`, `/srv/data/beets`)
+- `home-forge` selects the music application root via `musicStorageRoot` in `modules/hosts/home-forge/default.nix`: `storageRoot=/srv/storage/media/music` with `library/`, `playlists/`, `inbox/`, `quarantine/`, and `.versions/` beneath it; `/srv/data` remains the service-state mount (`/srv/data/syncthing/config`, `/srv/data/navidrome`, `/srv/data/tagr`, `/srv/data/audiomuse`, `/srv/data/beets`)
 - `applications.music` requires explicit `storageRoot`/`dataRoot` host bindings with no fleet defaults (`policy/globals.nix` carries no music paths); `modules/applications/music/` is the canonical owner for creating the shared roots and layout directories under `storageRoot`; lower-level service modules may add ACLs, marker files, or service-specific subdirectories, but do not redefine those shared root directory ownership contracts
 - Navidrome's MusicFolder and Syncthing's `library` folder use `library/`; Engine DJ's `M:` share maps the whole music root through virtiofs (guest sees `M:\library`, `M:\playlists`, `M:\Engine Library`, `M:\inbox`, `M:\quarantine`). `M:\Engine Library` is a real directory on the share (host `<storageRoot>/Engine Library`) — there is no separate Engine share, mount tag, or guest junction; the operator points the Windows Music known-folder directly at `M:` so Engine resolves `Music\Engine Library` to `M:\Engine Library` (see D-044, D-046, and `docs/runbooks/engine-dj-guest-setup.md`)
 - Syncthing hub is `home-forge`: sendreceive `library/`, `quarantine/`, and `inbox/` folders are shared with the `arch` and `windows` devices, with staggered versioning archived under `.versions/`
@@ -317,7 +318,7 @@ Adding a new non-flake upstream source:
 Adding a new OCI image:
 
 1. Add the image reference in `image:tag@sha256:digest` form to `policy/oci-images.nix`.
-2. The image is available to service modules via `ociImages.<name>` (passed through `specialArgs`).
+2. The image is available to service modules via `config.repo.ociImages.<name>` (typed policy aspect sourced from `policy/oci-images.nix`; no `specialArgs`).
 3. Renovate will propose digest and tag updates on its next scheduled run.
 
 ## Network and Access Model
@@ -362,7 +363,7 @@ Current admin-service shape:
 - Quantum replaces Filebrowser as the file-management UI
 - Quantum source topology is split between reusable service wiring and host-owned source declarations:
   - reusable runtime/container logic lives in `modules/services/admin/quantum.nix`
-  - host-specific source declarations live beside the host, currently `hosts/la-admin-1/quantum.nix`
+  - host-specific source declarations live beside the host, currently `modules/hosts/la-admin-1/quantum.nix`
 - Quantum on `la-admin-1` exposes:
   - a local `la-admin-1` source
   - remote host sources that are explicitly declared and mounted through the chosen transport model
@@ -379,7 +380,7 @@ Current Cockpit shape:
   - `modules/services/admin/cockpit.nix`
   - `modules/services/admin/cockpit/loopback-tls.nix`
   - `modules/services/admin/cockpit/tailscale-serve.nix`
-- host overlays such as `hosts/la-admin-1/cockpit-auth.nix` and `hosts/oci-melb-1/cockpit-auth.nix` only provide host-specific values (service-user secret path, local enable flags, public host/urlRoot overrides)
+- host overlays such as `modules/hosts/la-admin-1/cockpit-auth.nix` and `modules/hosts/oci-melb-1/cockpit-auth.nix` only provide host-specific values (service-user secret path, local enable flags, public host/urlRoot overrides)
 
 Potential later model:
 

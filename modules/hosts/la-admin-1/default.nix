@@ -2,18 +2,23 @@
   lib,
   ...
 }:
+let
+  hasHostSecrets = builtins.pathExists ../../../secrets/hosts/la-admin-1/system.yaml;
+in
 {
   imports = [
-    ../../../modules/profiles/base-server.nix
-    ../../../modules/profiles/fleet-standard.nix
-    ../../../modules/profiles/networking.nix
+    # Deferred raw leaves (FND-6): explicit host composition until each focused
+    # ownership change; the foundation aspects above arrive via the registry.
+    ../../../modules/shared/niks3-post-deploy.nix
+    ../../../modules/shared/niks3-upload-client.nix
+    ../../../modules/shared/nixbuild-ssh.nix
+    ../../../modules/services/beszel-agent-auth.nix
+    ../../../modules/services/state-backups.nix
     ../../../modules/shared/web-policy.nix
     ../../../modules/shared/kanidm-host-auth.nix
     ../../../modules/applications/admin/default.nix
-    ../../../modules/services/notification-daemon
     ../../../modules/services/ntfy.nix
     ../../../modules/applications/edge-ingress.nix
-    ../../../modules/core/users.nix
     ./cockpit-auth.nix
     ./edge.nix
     ./quantum.nix
@@ -34,22 +39,19 @@
         "dmask=0077"
       ];
     };
-    "/build".options = lib.mkForce [
-      "size=50%"
-      "mode=0755"
-    ];
-  };
-
-  # Preserve the existing UEFI systemd-boot installation. The shared base
-  # forces GRUB removable-media plus canTouchEfiVariables = false; keep the
-  # EFI-variable policy from base (do not touch NVRAM) and only switch the
-  # loader implementation. systemd-boot updates the ESP with --no-variables.
-  boot.loader = {
-    grub.enable = lib.mkForce false;
-    systemd-boot.enable = true;
   };
 
   networking.hostName = "la-admin-1";
+
+  # Base aspect host facts (FND-2): systemd-boot loader and 50% /build tmpfs.
+  fleet.foundation = {
+    bootLoader = "systemd-boot";
+    buildTmpfsSize = "50%";
+  };
+
+  # Deferred leaf enablement (FND-6 row 10): explicit host declaration until
+  # the focused builder-access ownership change.
+  fleet.nixbuild-ssh.enable = true;
 
   # Networking aspect fact: ens18 is the LA uplink (design D4/D8). RA defaults
   # kept, no bridge, no pinned DNS today.
@@ -60,10 +62,11 @@
   services = {
     admin.quantum.enable = lib.mkForce false;
 
-    tailscale.authKeyFile = "/run/secrets/tailscale.auth_key";
+    # Tailscale foundation aspect owns auth-key registration and MTU rendering
+    # (FND-4); the host only declares its host-scoped variant.
+    tailscale.debugMtu = 1200;
 
     notification-daemon = {
-      enable = true;
       secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
       secretFiles.hostSystem = ../../../secrets/hosts/la-admin-1/system.yaml;
       ntfy = {
@@ -107,17 +110,20 @@
       bucket = "shrublab-backup-la-admin-1";
     };
 
+    # Deferred leaf enablement (FND-6 row 10): explicit host declarations until
+    # the focused Beszel/backup ownership changes.
+    beszel-agent-auth = lib.mkIf hasHostSecrets {
+      enable = true;
+      secretFiles.host = ../../../secrets/hosts/la-admin-1/system.yaml;
+    };
+
+    niks3-post-deploy.enable = true;
+
     admin.vaultwarden.smtpFrom = "admin@send.shrublab.xyz";
   };
 
   sops.defaultSopsFile = ../../../secrets/common.yaml;
   sops.secrets = {
-    tailscale_auth_key = {
-      sopsFile = ../../../secrets/hosts/la-admin-1/system.yaml;
-      key = "tailscale/auth_key";
-      path = "/run/secrets/tailscale.auth_key";
-      mode = "0400";
-    };
     cockpit_service_user_password_hash = {
       sopsFile = ../../../secrets/hosts/la-admin-1/system.yaml;
       key = "cockpit/service_user/password_hash";
@@ -125,11 +131,6 @@
       mode = "0400";
     };
   };
-
-  # Cap the LA-to-OCI Tailscale TUN MTU below the proven packet-size black hole.
-  # Host-scoped workaround: no enrollment, identity, tag, firewall, route, or
-  # experimental PMTUD change (see specs/network-access/spec.md).
-  systemd.services.tailscaled.environment.TS_DEBUG_MTU = "1200";
 
   applications.admin = {
     enable = true;

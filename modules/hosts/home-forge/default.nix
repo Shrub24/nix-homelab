@@ -15,20 +15,30 @@ let
 in
 {
   imports = [
-    ../../../modules/profiles/base-server.nix
-    ../../../modules/profiles/fleet-standard.nix
-    ../../../modules/profiles/networking.nix
+    # Deferred raw leaves (FND-6): explicit host composition until each focused
+    # ownership change; the foundation aspects above arrive via the registry.
+    ../../../modules/shared/niks3-post-deploy.nix
+    ../../../modules/shared/niks3-upload-client.nix
+    ../../../modules/shared/nixbuild-ssh.nix
+    ../../../modules/services/beszel-agent-auth.nix
+    ../../../modules/services/state-backups.nix
     ../../../modules/shared/web-policy.nix
-    # Hard dependency of base-server (via state-backups): declares
-    # services.notification-daemon option. Infrastructure, not a workload.
-    ../../../modules/services/notification-daemon
     ../../../modules/services/omniroute.nix
     ./disko-two-disk.nix
-    ../../../modules/core/users.nix
     ../../../modules/applications/music
   ];
 
   networking.hostName = "home-forge";
+
+  # Base aspect host facts (FND-2): systemd-boot loader and 50% /build tmpfs.
+  fleet.foundation = {
+    bootLoader = "systemd-boot";
+    buildTmpfsSize = "50%";
+  };
+
+  # Deferred leaf enablement (FND-6 row 10): explicit host declarations until
+  # the focused builder-access ownership change.
+  fleet.nixbuild-ssh.enable = true;
 
   # Locally-managed physical host: plain LAN DHCP via native systemd-networkd
   # (fleet networking aspect), no static addresses and no public ingress. The
@@ -47,41 +57,21 @@ in
     ];
   };
 
-  # UEFI + systemd-boot. The shared base (core/base.nix) defines GRUB as plain
-  # definitions; switch the loader implementation only and keep the base EFI
-  # policy (canTouchEfiVariables = false — do not touch NVRAM). Secure Boot off
-  # for this unencrypted local-workstation baseline.
-  boot.loader = {
-    grub.enable = lib.mkForce false;
-    systemd-boot.enable = true;
-  };
-
-  # Two-disk layout: ESP + ext4 root on the NVMe; ext4 /srv/storage on the
-  # HDD. Devices captured from the live-ISO /dev/disk/by-id at gate 8.1.
-  # LAN: eno1 84:a9:3e:6b:94:44 (DHCP + router reservation).
+  # UEFI + systemd-boot rendered by the base aspect from the typed
+  # fleet.foundation.bootLoader fact (FND-2); EFI policy stays
+  # canTouchEfiVariables = false — do not touch NVRAM.
   disko.devices.disk.main.device = "/dev/disk/by-id/nvme-SAMSUNG_MZVLB1T0HBLR-000H1_S4GRNX0RA26985";
   # Oversized ESP: room for future boot entries plus a backup copy of the
   # existing ESP contents.
   disko-esp-size = "4G";
   disko-second-disk = "/dev/disk/by-id/ata-ST1000DM010-2EP102_ZN19040F";
 
-  # Tailscale is enabled by base-server. Authentication only activates once host
-  # secrets exist (two-step sops bootstrap). The tag:homelab posture comes from
-  # the operator-provided auth key at the secret gate; the host does not
-  # advertise a per-host tag.
-  services.tailscale = lib.mkIf hasHostSecrets {
-    authKeyFile = "/run/secrets/tailscale.auth_key";
-  };
-
+  # Tailscale is enabled by the tailscale foundation aspect (FND-4). The leaf
+  # owns auth-key registration and MTU rendering: authentication only activates
+  # once host secrets exist (two-step sops bootstrap). The tag:homelab posture
+  # comes from the operator-provided auth key at the secret gate; the host does
+  # not advertise a per-host tag.
   sops.defaultSopsFile = ../../../secrets/common.yaml;
-  sops.secrets = lib.optionalAttrs hasHostSecrets {
-    tailscale_auth_key = {
-      sopsFile = ../../../secrets/hosts/home-forge/system.yaml;
-      key = "tailscale/auth_key";
-      path = "/run/secrets/tailscale.auth_key";
-      mode = "0400";
-    };
-  };
 
   # Host-scoped recovery baseline (HFG-7): rescue operator + recurring reboot
   # exercise. The physical/supplier console is the PRIMARY break-glass path;
@@ -92,7 +82,6 @@ in
     rescueUser.name = "rescue";
     reboot.onCalendar = "weekly";
   };
-
   # Host-scoped R2/restic backup (HFG-6): core/high-level system state only
   # (config, host identity, recovery material); workload-specific paths are
   # added as workloads are introduced, not speculatively. Credentials resolve
@@ -108,19 +97,21 @@ in
     services.host-core.paths = [ "/etc/ssh" ];
   };
 
+  # Deferred leaf enablement (FND-6 row 10): explicit host declarations until
+  # the focused Beszel/backup ownership changes.
+  services.beszel-agent-auth = lib.mkIf hasHostSecrets {
+    enable = true;
+    secretFiles.host = ../../../secrets/hosts/home-forge/system.yaml;
+  };
+
+  services.niks3-post-deploy.enable = true;
+
   # nixos-facter facts replace a hand-written hardware-configuration.nix. The
   # report was captured from the live ISO (operator gate 8.3); until then keep
   # facter wired but inert so base-install eval converges without the file.
   hardware.facter.reportPath = lib.mkIf (builtins.pathExists ./facter.json) ./facter.json;
-  # 32 GB RAM: raise the /build tmpfs cap from the base-server default (8G)
-  # so large remote builds don't run out of space.
-  fileSystems."/build".options = lib.mkForce [
-    "size=50%"
-    "mode=0755"
-  ];
 
   services.notification-daemon = {
-    enable = true;
     secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
     secretFiles.hostSystem = ../../../secrets/hosts/home-forge/system.yaml;
     ntfy.enable = true;

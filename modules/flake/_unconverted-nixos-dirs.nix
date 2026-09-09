@@ -6,12 +6,14 @@
 # those leaves explicitly (DS-3). Remove entries as each directory is converted
 # to aspect contributors.
 #
+# Stage 2 removed `core` and `profiles` after every leaf under those
+# directories became a foundation-aspect contributor or was relocated/deleted
+# (dendritic-stage-2-foundation-aspects FND-6).
+#
 # Contract: tests enumerate this list; entries must exist as directories.
 [
   "applications"
-  "core"
   "hosts"
-  "profiles"
   "providers"
   "services"
   "shared"

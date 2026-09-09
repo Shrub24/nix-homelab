@@ -21,8 +21,6 @@ let
     };
   };
 
-  notifyPackage = config.repo.packages.notify;
-
   # Python script invoked by systemd OnFailure/ExecStopPost for monitored services.
   monitorScript = pkgs.writeScriptBin "svc-monitor" ''
     #!${pkgs.python3}/bin/python3
@@ -67,9 +65,12 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = config.repo.packages.notification-daemon;
-      defaultText = lib.literalExpression "config.repo.packages.notification-daemon";
-      description = "The notification-daemon package to use.";
+      description = "Notification daemon package supplied by the owning aspect.";
+    };
+
+    notifyPackage = lib.mkOption {
+      type = lib.types.package;
+      description = "Notify CLI package supplied by the owning aspect.";
     };
 
     secretFiles.host = secretHelpers.mkSecretFileOption "notification-daemon-secrets";
@@ -160,7 +161,7 @@ in
     environment.systemPackages = [
       cfg.package
       pkgs.apprise
-      notifyPackage
+      cfg.notifyPackage
     ]
     ++ lib.optionals cfg.monitor.enable [ monitorScript ];
 

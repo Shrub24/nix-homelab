@@ -38,9 +38,9 @@ nix run github:nix-community/nixos-facter -- -o facter.json
 ### Fact ownership: facter vs filesystem vs bootloader
 
 - **facter owns** hardware, drivers, and virtualisation — consume the report directly, and do not hand-maintain driver or virtualisation configuration beside it. The networking aspect disables facter's detected-DHCP backend; DHCP and networkd ownership belong to the aspect, not to facter.
-- **networking is declared from captured facts, owned by the aspect** — capture the uplink and route facts, then declare them on the host as `fleet.networking.uplink.interface`; when the host bridges, also declare the bridge name and MAC (`fleet.networking.bridge`), and add a DNS override (`fleet.networking.dns.servers`) only when DNS is pinned. The import-activated networking aspect (`modules/profiles/networking.nix`) owns networkd/DHCP and renders native `systemd.network` units from these facts.
+- **networking is declared from captured facts, owned by the aspect** — capture the uplink and route facts, then declare them on the host as `fleet.networking.uplink.interface`; when the host bridges, also declare the bridge name and MAC (`fleet.networking.bridge`), and add a DNS override (`fleet.networking.dns.servers`) only when DNS is pinned. The import-activated `networking` foundation aspect (published in `modules/flake/aspects.nix`; private leaf `modules/flake/_aspects/networking.nix`) owns networkd/DHCP and renders native `systemd.network` units from these facts.
 - **filesystem mounts are not reported by facter** — hand-maintain only the observed root and ESP by-UUID mounts required to preserve the existing installation.
-- **bootloader ownership is explicit, not inherited** — an adopted host preserves its existing bootloader (e.g. UEFI `systemd-boot`); do not let the fleet base module's default (GRUB removable media) override a working installation. Record the boot mode and confirm the preserved bootloader selects the new generation.
+- **bootloader ownership is explicit, not inherited** — an adopted host preserves its existing bootloader (e.g. UEFI `systemd-boot`); declare it as the typed `fleet.foundation.bootLoader` host fact (`"grub"` | `"systemd-boot"`) and size `/build` with `fleet.foundation.buildTmpfsSize` (required string). The `base` foundation aspect renders the loader and `/build` from these facts, so hosts declare facts instead of overriding a shared default with `mkForce`.
 
 ## 3. Verify the SSH host key, then derive the age recipient
 
@@ -61,7 +61,7 @@ Host keys are the machine's decryption identity for sops-nix; the anchor becomes
 | Identity | Ownership | Purpose |
 |---|---|---|
 | Host age key | existing persistent SSH ed25519 host key, converted to the age recipient | machine decryption identity |
-| Operator auth keys | `modules/core/users.nix` | human SSH login |
+| Operator auth keys | `base` foundation aspect (`modules/flake/_aspects/base.nix`) | human SSH login |
 | Outbound identity | new per-host `identity/ssh_private_key` secret; public half added once to the central fleet trust set | `dev` reaching fleet peers |
 
 The three identities are separate. Never reuse another host's outbound identity; two live hosts sharing a principal is not acceptable.

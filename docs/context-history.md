@@ -112,7 +112,8 @@ The migration intent is intentionally aggressive:
 ## Dendritic Transition Decision (2026-09)
 
 - D-030's plain-flake restriction was superseded by D-047: the fleet adopts flake-parts plus `denful/import-tree` with named `flake.modules.nixos` aspects and a typed `nixos.configurations.<host>` registry, delivered through staged OpenSpec changes
-- Stage 1 (flake-parts scaffold, all three hosts moved atomically to `modules/hosts/<host>/`, every lower-level `self`/`inputs`/`ociImages` consumer removed instead of bridged) is decided, not implemented; the live flake is still plain `nixosSystem` with `specialArgs`
+- Stage 1 (flake-parts scaffold, all three hosts moved atomically to `modules/hosts/<host>/`, every lower-level `self`/`inputs`/`ociImages` consumer removed instead of bridged) landed in `dendritic-stage-1-scaffold-hosts`
+- Stage 2 landed foundation-first (2026-09-10, `dendritic-stage-2-foundation-aspects`): the five foundation aspects (`base`, `shell`, `networking`, `tailscale`, `notify`) publish through `flake.modules.nixos` with typed `fleet.foundation` host facts; `modules/core/` and `modules/profiles/` were deleted and removed from the import-tree exclusion; deferred operational behavior remains explicit raw-leaf imports in host records. The former music-exemplar Stage 2 is superseded/historical; the change is implementation-complete but not deployed or archived (equivalence/validation gates pending)
 - `flake-file`, Den, and topology extraction are deferred; `nix-fleet` is a future code-only library for proven reusable aspects, while concrete topology, web-services policy, OpenTofu, deploy-rs metadata/order, `.sops.yaml` readership, and encrypted secrets remain owned by this repository
 - the 2026-08-30 transition analysis was revalidated 2026-09-09: the music move to `home-forge` already completed (D-045/D-046, so it is not Stage 2 future payoff), Engine DJ added a real `inputs` consumer, home-forge is an intentional deploy-rs node with committed facter, and Stage 0 pre-clean removed the dead paperless application wrapper, the orphan `.just/deploy.just` module, and `mkSimpleSecret`
 
@@ -136,7 +137,7 @@ As of this planning update:
 - active provider boundary is `modules/providers/oci/default.nix`
 - active storage boundary is `modules/storage/disko-root.nix`
 - active single-disk storage boundary is `modules/storage/disko-single-disk.nix`
-- active reusable module boundaries are `modules/core/base.nix`, `modules/profiles/base-server.nix`, and `modules/services/tailscale.nix`
+- active reusable module boundaries are the foundation aspects (`modules/flake/aspects.nix` + `modules/flake/_aspects/`), the `tailscale` service leaf (`modules/services/tailscale.nix`), and the retained shared leaves (`modules/shared/`)
 - legacy `nixos/configuration.nix`, `nixos/digitalocean.nix`, and `nixos/disko-config.nix` are retired from active architecture
 - decisions have been formalized in `docs/decisions.md`
 - strategic planning posture is maintained in `docs/plan.md`

@@ -103,7 +103,7 @@ Canonical human-facing architecture and migration guidance lives under `docs/` (
 - Keep storage to GPT + EFI + `/` + one data mount, with Navidrome reading directly from the Syncthing path.
 - Introduce `deploy-rs` and wire its checks into `flake check`.
 - Keep `.sops.yaml` path-scoped by host so new machines do not inherit decryption access.
-- Split host roles with modules/profiles, but keep provider quirks isolated under host or provider modules.
+- Split host roles into explicitly selected foundation aspects (`flake.modules.nixos` `base`/`shell`/`networking`/`tailscale`/`notify`) plus direct feature-leaf imports, but keep provider quirks isolated under host or provider modules.
 
 ## Version Compatibility
 

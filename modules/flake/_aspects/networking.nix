@@ -1,9 +1,12 @@
-# Native systemd-networkd networking aspect (import-activated).
+# Networking foundation aspect (private leaf; the only public composition
+# unit is flake.modules.nixos.networking in modules/flake/aspects.nix). The
+# native systemd-networkd contract moved here verbatim from the legacy
+# modules/profiles/networking.nix (design FND-3) without redesign.
 #
-# Importing this module activates the aspect: the host owns its physical
-# networking through native `systemd.network` units derived from the
-# `fleet.networking` host facts, and the legacy scripted/dhcpcd backend is
-# disabled. There is no top-level enable flag.
+# Selecting this aspect activates physical networking through native
+# `systemd.network` units derived from the `fleet.networking` host facts, and
+# the legacy scripted/dhcpcd backend is disabled. There is no top-level
+# enable flag.
 #
 # Hosts contribute facts only:
 #   fleet.networking.uplink.interface = "eno1";   # required

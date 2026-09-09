@@ -13,9 +13,13 @@ in
   imports = [
     (modulesPath + "/installer/scan/not-detected.nix")
     (modulesPath + "/profiles/qemu-guest.nix")
-    ../../../modules/profiles/base-server.nix
-    ../../../modules/profiles/fleet-standard.nix
-    ../../../modules/profiles/networking.nix
+    # Deferred raw leaves (FND-6): explicit host composition until each focused
+    # ownership change; the foundation aspects above arrive via the registry.
+    ../../../modules/shared/niks3-post-deploy.nix
+    ../../../modules/shared/niks3-upload-client.nix
+    ../../../modules/shared/nixbuild-ssh.nix
+    ../../../modules/services/beszel-agent-auth.nix
+    ../../../modules/services/state-backups.nix
     ../../../modules/shared/web-policy.nix
     ../../../modules/shared/kanidm-host-auth.nix
     ../../../modules/shared/identity-oidc.nix
@@ -23,9 +27,7 @@ in
     ../../../modules/applications/edge-ingress.nix
     ../../../modules/providers/oci/default.nix
     ./disko-single-disk-split.nix
-    ../../../modules/core/users.nix
     ../../../modules/services/admin/cockpit.nix
-    ../../../modules/services/notification-daemon
     ../../../modules/services/bifrost-gateway.nix
     ../../../modules/services/phoenix.nix
     ../../../modules/services/karakeep.nix
@@ -53,6 +55,15 @@ in
       ];
     };
   };
+
+  fleet.foundation = {
+    bootLoader = "grub";
+    buildTmpfsSize = "8G";
+  };
+
+  # Deferred leaf enablement (FND-6 row 10): explicit host declaration until
+  # the focused builder-access ownership change.
+  fleet.nixbuild-ssh.enable = true;
 
   fleet.networking = {
     uplink.interface = "enp0s6";
@@ -89,11 +100,6 @@ in
           podman system prune --all --force --volumes
         '';
       };
-
-      # Cap the LA-to-OCI Tailscale TUN MTU below the proven packet-size black hole.
-      # Host-scoped workaround: no enrollment, identity, tag, firewall, route, or
-      # experimental PMTUD change (see specs/network-access/spec.md).
-      tailscaled.environment.TS_DEBUG_MTU = "1200";
     };
 
     timers.podman-storage-prune = {
@@ -176,7 +182,7 @@ in
       secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
     };
 
-    tailscale = lib.mkIf hasHostSecrets { authKeyFile = "/run/secrets/tailscale.auth_key"; };
+    tailscale.debugMtu = 1200;
 
     hostRecovery = lib.mkIf hasHostSecrets {
       enable = true;
@@ -194,6 +200,15 @@ in
       stagingRoot = "/srv/data/state-backups";
     };
 
+    # Deferred leaf enablement (FND-6 row 10): explicit host declarations until
+    # the focused Beszel/backup ownership changes.
+    beszel-agent-auth = lib.mkIf hasHostSecrets {
+      enable = true;
+      secretFiles.host = ../../../secrets/hosts/oci-melb-1/system.yaml;
+    };
+
+    niks3-post-deploy.enable = true;
+
     niks3-cache = {
       enable = true;
       hostSecretFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
@@ -209,11 +224,11 @@ in
       litellm.enable = true;
     };
 
-    # Cache server runs locally here; fleet-standard defaults point peers at it.
+    # Cache server runs locally here; the conventional cache-upload default leaf
+    # points peers at this host.
     niks3-auto-upload.serverUrl = "http://127.0.0.1:5751";
 
     notification-daemon = {
-      enable = true;
       secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
       secretFiles.hostSystem = ../../../secrets/hosts/oci-melb-1/system.yaml;
 
@@ -248,12 +263,6 @@ in
   sops.defaultSopsFile = ../../../secrets/common.yaml;
 
   sops.secrets = lib.optionalAttrs hasHostSecrets {
-    tailscale_auth_key = {
-      sopsFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
-      key = "tailscale/auth_key";
-      path = "/run/secrets/tailscale.auth_key";
-      mode = "0400";
-    };
     cockpit_service_user_password_hash = {
       sopsFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
       key = "cockpit/service_user/password_hash";

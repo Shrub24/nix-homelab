@@ -13,7 +13,7 @@ nix-homelab/
 ├── docs/            # Human-facing architecture, planning, and runbook docs
 ├── generated/       # Committed generated artifacts (e.g., web policy JSON)
 ├── lib/             # Reusable Nix library functions
-├── modules/         # Flake-parts modules + NixOS modules (flake composition, hosts, applications, services, profiles, providers, storage, core, shared)
+├── modules/             # Flake-parts modules + NixOS modules (flake composition, hosts, applications, services, providers, storage, shared, foundation-aspect leaves)
 ├── pkgs/            # Custom Nix packages/derivations (notification-daemon, notify CLI, _sources/)
 ├── openspec/        # OpenSpec change management artifacts
 ├── opentofu/        # OpenTofu infrastructure-as-code (Cloudflare)
@@ -75,8 +75,10 @@ nix-homelab/
 **`modules/flake/`:**
 
 - Purpose: Flake-parts composition modules discovered by `denful/import-tree` from `flake.nix`
-- Contains: `registry.nix` (typed `nixos.configurations.<host>` host registry materialized through `inputs.nixpkgs.lib.nixosSystem`, plus the `flake.bootstrap.nodes` projection), `aspects.nix` (published `flake.modules.nixos.<aspect>` cross-cutting modules), `packages.nix`, `deploy.nix`, `dev.nix`, `dj.nix`, `scaffold.nix`, and `_unconverted-nixos-dirs.nix` (the temporary enumerated `filterNot` boundary for directories still holding plain NixOS leaves)
-- Key files: `modules/flake/registry.nix`, `modules/flake/aspects.nix`, `modules/flake/_unconverted-nixos-dirs.nix`
+- Contains: `registry.nix` (typed `nixos.configurations.<host>` host registry materialized through `inputs.nixpkgs.lib.nixosSystem`, plus the `flake.bootstrap.nodes` projection), `aspects.nix` (published `flake.modules.nixos.<aspect>` cross-cutting modules — the five foundation aspects `base`, `shell`, `networking`, `tailscale`, `notify`), `_aspects/` (private foundation-aspect implementations: `base.nix`, `shell.nix` with `p10k.zsh`, `networking.nix`), `packages.nix`, `deploy.nix`, `dev.nix`, `dj.nix`, `scaffold.nix`, and `_unconverted-nixos-dirs.nix` (the temporary enumerated `filterNot` boundary for directories still holding plain NixOS leaves)
+- Key files: `modules/flake/registry.nix`, `modules/flake/aspects.nix`, `modules/flake/_aspects/base.nix`, `modules/flake/_unconverted-nixos-dirs.nix`
+
+The former `modules/core/` and `modules/profiles/` directories no longer exist: dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`) converted their contents into the foundation aspects above (with typed `fleet.foundation` host facts) and explicit retained leaf imports in host records; no host imports the deleted wrappers.
 
 **`modules/hosts/`:**
 
@@ -109,12 +111,6 @@ nix-homelab/
 - Contains: `default.nix` (package set aggregator), `_sources/` (nvfetcher output: `generated.nix`, `generated.json`), `notification-daemon/` (Python FastAPI daemon source, `pyproject.toml`, `default.nix`), `notify/` (CLI wrapper that POSTs to the daemon)
 - Key files: `pkgs/default.nix`, `pkgs/_sources/generated.nix`, `pkgs/notification-daemon/default.nix`, `pkgs/notify/default.nix`
 
-**`modules/profiles/`:**
-
-- Purpose: Host baseline profiles — common config imported by all hosts
-- Contains: `base-server.nix` (core base + shell + recovery + tailscale + backups + host identity), `shell-profile.nix`, `p10k.zsh`
-- Key files: `modules/profiles/base-server.nix`
-
 **`modules/providers/`:**
 
 - Purpose: Cloud/platform-specific hardware and network defaults
@@ -127,16 +123,10 @@ nix-homelab/
 - Contains: `disko-root.nix`, `disko-single-disk.nix`
 - Key files: `modules/hosts/oci-melb-1/disko-single-disk-split.nix` (split root/data/nix/media layout), `modules/hosts/home-forge/disko-two-disk.nix`
 
-**`modules/core/`:**
-
-- Purpose: Shared NixOS baseline policy — openssh, sudo, nix settings, users
-- Contains: `base.nix` (ssh, sudo, grub, nix experimental features, timezone), `users.nix` (dev + root SSH keys)
-- Key files: `modules/core/base.nix`, `modules/core/users.nix`
-
 **`modules/shared/`:**
 
-- Purpose: Shared cross-cutting modules — host recovery, identity OIDC, Kanidm auth, niks3 post-deploy, nixbuild SSH, web policy
-- Key files: `modules/shared/host-recovery.nix`, `modules/shared/identity-oidc.nix`, `modules/shared/kanidm-host-auth.nix`, `modules/shared/niks3-post-deploy.nix`, `modules/shared/nixbuild-ssh.nix`, `modules/shared/web-policy.nix`
+- Purpose: Shared cross-cutting modules — host recovery, identity OIDC, Kanidm auth, niks3 post-deploy, conventional cache-upload client defaults, nixbuild SSH, web policy
+- Key files: `modules/shared/host-recovery.nix`, `modules/shared/identity-oidc.nix`, `modules/shared/kanidm-host-auth.nix`, `modules/shared/niks3-post-deploy.nix`, `modules/shared/niks3-upload-client.nix`, `modules/shared/nixbuild-ssh.nix`, `modules/shared/web-policy.nix`
 
 **`policy/`:**
 
@@ -184,7 +174,7 @@ nix-homelab/
 
 **Deploy Metadata:** `lib/deploy/hosts.nix`: Hostname, SSH user, system architecture, remote-build flag per host; `edgeHost` and `deployOrder` are the only physical deployment facts (serial order `la-admin-1` → `oci-melb-1`)
 
-**Core Logic:** `modules/`: Flake-parts composition (`modules/flake/`), host assemblies (`modules/hosts/`), and all NixOS module code organized by application, service, profile, provider, and storage layer
+**Core Logic:** `modules/`: Flake-parts composition (`modules/flake/`), host assemblies (`modules/hosts/`), and all NixOS module code organized by application, service, provider, storage, and shared layer, plus the foundation-aspect leaves under `modules/flake/_aspects/`
 
 **Policy SSOT:** `policy/web-services.nix`: All public web service endpoint definitions with origin, exposure mode, and Cloudflare config
 
@@ -200,7 +190,7 @@ nix-homelab/
 
 ## Naming Conventions
 
-**Files:** `kebab-case.nix` for Nix files: `base-server.nix`, `disko-root.nix`, `edge-ingress.nix`, `kanidm-host-auth.nix`
+**Files:** `kebab-case.nix` for Nix files: `disko-root.nix`, `edge-ingress.nix`, `kanidm-host-auth.nix`
 
 **Directories:** `kebab-case` for module directories: `notification-daemon/`, `edge-ingress/`, `host-recovery/`
 
@@ -224,7 +214,7 @@ nix-homelab/
 
 ## Where to Add New Code
 
-**New host:** `modules/hosts/<host-name>/default.nix` — create thin assembly importing profiles, providers, storage, and applications. Add a `nixos.configurations.<host-name>` record in `modules/flake/registry.nix`. Add entry to `lib/deploy/hosts.nix`. Add host-scoped `.sops.yaml` rules.
+**New host:** `modules/hosts/<host-name>/default.nix` — create thin assembly declaring identity, typed foundation facts (`fleet.foundation.bootLoader`, `fleet.foundation.buildTmpfsSize`), feature enables, and secret bindings. Add a `nixos.configurations.<host-name>` record in `modules/flake/registry.nix` that imports the five foundation aspects (`aspects.base`, `aspects.shell`, `aspects.networking`, `aspects.tailscale`, `aspects.notify`) plus the host's feature leaves. Add entry to `lib/deploy/hosts.nix`. Add host-scoped `.sops.yaml` rules.
 
 **New application stack:** `modules/applications/<name>/default.nix` — composition root with `enable` flag, shared paths, and sub-service wiring. Use `secretFiles.host` for secret passthrough.
 
@@ -234,7 +224,7 @@ nix-homelab/
 
 **New service:** `modules/services/<name>.nix` (standalone) or `modules/services/<domain>/<name>.nix` (grouped) — leaf module with `enable` flag, `secretFiles.*` contracts, and `sops.secrets` ownership. Use `lib/secrets.nix` helpers.
 
-**New profile:** `modules/profiles/<name>.nix` — add to `base-server.nix` imports if it should apply to all hosts.
+**New foundation aspect:** `modules/flake/aspects.nix` — publish a `flake.modules.nixos.<name>` record that imports its private implementation leaf under `modules/flake/_aspects/` (or a service/shared leaf). Host registry records select the aspect explicitly; selection is enablement and no aspect imports another aspect.
 
 **New provider:** `modules/providers/<name>/default.nix` — provider-specific safe defaults. Import in relevant host's `default.nix`.
 

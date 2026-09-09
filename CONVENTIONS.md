@@ -15,15 +15,17 @@
 - Service modules live under `modules/services/<name>.nix` or `modules/services/<domain>/<name>.nix`.
 - Service option names MUST NOT be host-suffixed; keep them host-agnostic.
 
-**Profiles** are lightweight host/persona baseline modules. They import shared core, Tailscale, firewall, and operator UX defaults.
+**Foundation aspects** are the cross-cutting host baseline published through `flake.modules.nixos.<aspect>` and selected explicitly by every host registry record. Selection is enablement: there is no foundation-level `enable` option and no aspect imports another aspect.
 
-- Namespace: `modules/profiles/<name>.nix`
-- Profiles are imported by hosts and do not require enable flags at the host layer.
+- The five foundation aspects are `base`, `shell`, `networking`, `tailscale`, and `notify`.
+- An aspect may import its own private NixOS leaf (under `modules/flake/_aspects/` or a service/shared leaf) without creating a hidden public dependency — e.g. `base` imports `modules/shared/host-recovery.nix`, `tailscale` imports `modules/services/tailscale.nix`, `notify` imports `modules/services/notification-daemon/`.
+- `base` owns the typed machine facts `fleet.foundation.bootLoader` (`"grub"` | `"systemd-boot"`) and `fleet.foundation.buildTmpfsSize` (required string); hosts declare facts instead of fighting shared defaults with `mkForce`.
+- The former `modules/core/` and `modules/profiles/` directories are deleted; their behavior lives in the foundation aspects or explicit retained leaf imports in host records. Do not reintroduce profile/core wrappers.
 
-**Hosts** are thin assembly layers. They declare identity, facts, provider/storage/profile imports, feature enables, secret source bindings, and narrow host-only overrides.
+**Hosts** are thin assembly layers. They declare identity, typed foundation facts, feature enables, secret source bindings, and narrow host-only overrides.
 
 - Namespace: `modules/hosts/<host>/default.nix`, registered as a `nixos.configurations.<host>` record in `modules/flake/registry.nix`
-- Host files MUST NOT own application-internal `sops.secrets`, `sops.templates`, tmpfiles, or cross-service wiring that belongs in application/service modules.
+- The registry record owns the explicit aspect/leaf import list; host files MUST NOT own application-internal `sops.secrets`, `sops.templates`, tmpfiles, or cross-service wiring that belongs in application/service modules.
 
 **Providers** isolate cloud/platform-specific behavior.
 
@@ -56,6 +58,6 @@
 
 ### User Home Structure
 
-The standard XDG base directories for operator users (`.config`, `.cache`, `.local`, `.local/share`, `.local/state`) are declared as tmpfiles rules in `modules/core/users.nix`, next to the user declaration. Service and application modules own ONLY their leaf directories under that chain and MUST NOT declare parent home directories.
+The standard XDG base directories for operator users (`.config`, `.cache`, `.local`, `.local/share`, `.local/state`) are declared as tmpfiles rules in the `base` foundation aspect (`modules/flake/_aspects/base.nix`), next to the user declaration. Service and application modules own ONLY their leaf directories under that chain and MUST NOT declare parent home directories.
 
 Name-based home-path tmpfiles rules cannot resolve on the very first boot pass (the `users` activation has not run yet); that is benign and healed by the reboot already required by the host-initialization runbook.

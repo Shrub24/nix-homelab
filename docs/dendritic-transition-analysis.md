@@ -3,6 +3,10 @@
 Date: 2026-08-30. Revalidated: 2026-09-09. Baseline: live `main@origin` post fleet-consolidation (oci-melb-1, la-admin-1, home-forge).
 Status: scoping report, not an OpenSpec change. This analysis supersedes the `normalize-fleet-boundaries` design; surviving items from that change are absorbed into the stages below.
 
+## Stage 2 supersession (2026-09-10)
+
+The music-exemplar "Stage 2" below is **superseded/historical**. Stage 2 shipped foundation-first as `dendritic-stage-2-foundation-aspects`: the five foundation aspects (`base`, `shell`, `networking`, `tailscale`, `notify`) publish through `flake.modules.nixos` with typed `fleet.foundation` host facts; `modules/core/` and `modules/profiles/` were deleted and removed from the import-tree exclusion; deferred operational behavior remains explicit raw-leaf imports in host records (e.g. `modules/shared/niks3-upload-client.nix` preserves the conventional cache-upload client defaults). The change is implementation-complete but not deployed or archived. The music aspect surface and the Stage 3 per-need conversions remain staged; see D-048.
+
 ## Revalidation (2026-09-09)
 
 Dated revalidation against the live repository during `dendritic-stage-0-pre-clean`. Where this section contradicts the 2026-08-30 body, this section wins; body rows called out as historical below remain as scoping evidence.
@@ -134,7 +138,7 @@ deleted dead `modules/applications/paperless/` (Paperless continues through `mod
 
 **Stage 1 — scaffold + hosts** (settled by D-047): flake-parts + `denful/import-tree` + typed `nixos.configurations.<host>` registry + host dirs under `modules/hosts/<host>/` (disko and bootstrap metadata move in, `flake.bootstrap` data output lands); all three hosts migrate atomically; host-private/raw files excluded from import-tree; unconverted plain leaf modules sit behind an explicit, enumerable `import-tree.filterNot` boundary. Composition is moved verbatim — old leaf imports, no aspect renames yet. Every lower-level `self`/`inputs`/`ociImages` consumer is eliminated (no `specialArgs` bridge). Verification: `nix build` + `nix-diff` each host toplevel against pre-refactor: **must be empty**. This is the equivalence gate that makes the rest safe.
 
-**Stage 2 — music exemplar**: build the `music` aspect surface (contracts, exports, syncthing split, dj assertion), fix the tailscale/notify secret-contract pattern in passing. `nix-diff` empty on both music hosts. (The original OCI→forge payoff move was executed before the scaffold via D-045/D-046, so the portability thesis now awaits the next real placement migration instead of a toy.)
+**Stage 2 — music exemplar** *(superseded 2026-09-10 by foundation-first Stage 2, `dendritic-stage-2-foundation-aspects`; retained as historical scoping evidence)*: build the `music` aspect surface (contracts, exports, syncthing split, dj assertion), fix the tailscale/notify secret-contract pattern in passing. `nix-diff` empty on both music hosts. (The original OCI→forge payoff move was executed before the scaffold via D-045/D-046, so the portability thesis now awaits the next real placement migration instead of a toy.)
 
 **Stage 3 — conversion per need, migration-driven**: identity-provider/client split, admin splinter (vaultwarden/cockpit/termix/observability-hub), paperless onto contracts, postgres provider/consumer contract at the moment of any placement decision, ai-gateway contract before any gateway swap, endpoint-literal derivation from catalog. Each is a small change with the same empty-`nix-diff` equivalence gate, sequenced against the operational roadmap rather than a big-bang.
 
@@ -151,3 +155,5 @@ deleted dead `modules/applications/paperless/` (Paperless continues through `mod
 ## Next artifacts when approved
 
 Stage 0 and Stage 1 as OpenSpec changes (proposal + tasks) via the normal flow; stage 2's exemplar conversion ships as its own change once 1 merges. This document is the input to those proposals and can be superseded by them on archive.
+
+Since this was written: Stage 0 (`dendritic-stage-0-pre-clean`), Stage 1 (`dendritic-stage-1-scaffold-hosts`), and the foundation-first Stage 2 (`dendritic-stage-2-foundation-aspects`) have landed as OpenSpec changes (2026-09-09/2026-09-10); the music-exemplar Stage 2 above is superseded (see the 2026-09-10 note).

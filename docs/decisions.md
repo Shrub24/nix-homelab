@@ -232,9 +232,9 @@ Status: Accepted
 
 Decision:
 
-- baseline shared policy lives in `modules/core/base.nix`
-- profile composition lives in `modules/profiles/base-server.nix`
-- service boundary for private access starts in `modules/services/tailscale.nix`
+- baseline shared policy lives in the `base` foundation aspect (`modules/flake/_aspects/base.nix`; formerly `modules/core/base.nix`)
+- common-baseline composition happens by explicit foundation-aspect selection in the typed host registry (`modules/flake/aspects.nix` + `modules/flake/registry.nix`; formerly the `modules/profiles/base-server.nix` wrapper)
+- service boundary for private access starts in `modules/services/tailscale.nix` (now the `tailscale` foundation aspect's service leaf)
 
 Rationale:
 
@@ -648,7 +648,7 @@ Status: Accepted
 Decision:
 
 - canonical host-side substitute/trust defaults live in `policy/globals.nix`
-- `modules/profiles/base-server.nix` applies those defaults for active hosts as part of common host profile composition
+- the `base` foundation aspect applies those defaults for active hosts as part of common host composition
 - host files should not need separate build-profile imports or enable flags just to inherit the shared substitute baseline
 
 Rationale:
@@ -788,7 +788,7 @@ Status: Accepted
 
 Decision:
 
-- fleet hosts own physical networking through the import-activated networking aspect (`modules/profiles/networking.nix`), which renders native `systemd.network.{networks,netdevs}` units from required `fleet.networking` host facts and retires scripted networking/dhcpcd fleet-wide
+- fleet hosts own physical networking through the import-activated `networking` foundation aspect (published in `modules/flake/aspects.nix`; private leaf `modules/flake/_aspects/networking.nix`), which renders native `systemd.network.{networks,netdevs}` units from required `fleet.networking` host facts and retires scripted networking/dhcpcd fleet-wide
 - physical addressing is DHCPv4 with MAC-based client identity so provider/router leases and reservations survive migration
 - `systemd-resolved` is the fleet resolver mechanism; per-link provider/DHCP DNS stays primary for routing domains, with safe defaults (`DNSOverTLS = opportunistic`, `DNSSEC = allow-downgrade`, `FallbackDNS`)
 - `home-forge` runs an always-on host-owned `br0` bridge over `eno1` pinned to `84:a9:3e:6b:94:44` so the router reservation holds
@@ -926,3 +926,31 @@ These are known but intentionally unresolved until implementation and operationa
 - hook/event framework for future processing pipeline
 - backup policy timing once host authority increases
 - fleet tool choice and operating model once host count grows
+
+## D-048: Dendritic Stage 2 ships foundation-first; the music-exemplar Stage 2 is superseded
+
+Status: Accepted
+
+Decision:
+
+- the transition analysis's "Stage 2 — music exemplar" sequence is superseded/historical; Stage 2 shipped instead as foundation-first under `dendritic-stage-2-foundation-aspects`, because `modules/core/` (base/users) and `modules/profiles/` (four legacy wrappers plus p10k data) contained only the small duplicated fleet foundation
+- five foundation aspects are published through `flake.modules.nixos.{base,shell,networking,tailscale,notify}` (`modules/flake/aspects.nix`); selection is enablement — every host registry record imports all five explicitly and no aspect imports another aspect
+- `base` owns policy, users, and the typed per-host facts `fleet.foundation.bootLoader` (`grub` | `systemd-boot`) and `fleet.foundation.buildTmpfsSize` (required string); `oci-melb-1` declares `grub`/`8G`, `la-admin-1` and `home-forge` declare `systemd-boot`/`50%`; boot loader and `/build` render from the facts with no `mkForce`
+- `shell` owns interactive tooling including the nix-index comma input (the former `cli` aspect is deleted); `networking` publishes the existing native networkd contract unchanged; `tailscale` owns the conventional host-secret auth-key registration and nullable `services.tailscale.debugMtu` (1200 on OCI/LA, unset on forge); `notify` enables the notification daemon with withSystem-resolved packages
+- `modules/core/` and `modules/profiles/` are deleted and removed from the `_unconverted-nixos-dirs.nix` exclusion; deferred operational behavior remains explicit raw-leaf imports in host records (niks3-post-deploy, niks3-upload-client via `modules/shared/niks3-upload-client.nix`, nixbuild-ssh, beszel-agent-auth, state-backups, web-policy), with no compatibility wrapper or composition bus
+- `dendritic-stage-2-foundation-aspects` is implementation-complete but is neither deployed nor archived; equivalence validation and archival remain separate pending gates
+
+Rationale:
+
+- the live tree made foundation-first cheaper and safer than the music exemplar: the whole legacy foundation was two core files plus four profile wrappers, while music is a large, placement-coupled application whose conversion belongs with a real placement move
+- typed facts remove the old boot-loader and `/build` override conflicts at the source instead of changing priorities, matching the Stage 1 no-`mkForce` discipline
+
+Supersedes/updates:
+
+- supersedes the music-exemplar "Stage 2" sequencing in `docs/dendritic-transition-analysis.md` (Stage 3's per-need conversions and the future music-aspect work remain staged)
+- updates D-015, D-037, and D-043 to name the foundation-aspect locations for the paths they originally recorded
+
+References:
+
+- `openspec/changes/dendritic-stage-2-foundation-aspects/{proposal,design}.md` (FND-1–FND-7)
+- `docs/dendritic-transition-analysis.md` (Stages)

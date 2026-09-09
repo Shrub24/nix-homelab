@@ -72,9 +72,14 @@ in
             inputs.niks3.nixosModules.niks3
             inputs.niks3.nixosModules.niks3-auto-upload
             aspects.provenance
-            aspects.cli
             aspects.oci-images
             aspects.fleet-packages
+            # Foundation aspects (FND-1): selection is enablement.
+            aspects.base
+            aspects.shell
+            aspects.networking
+            aspects.tailscale
+            aspects.notify
             ../hosts/oci-melb-1/default.nix
           ];
         };
@@ -96,9 +101,14 @@ in
             inputs.sops-nix.nixosModules.sops
             inputs.niks3.nixosModules.niks3-auto-upload
             aspects.provenance
-            aspects.cli
             aspects.oci-images
             aspects.fleet-packages
+            # Foundation aspects (FND-1): selection is enablement.
+            aspects.base
+            aspects.shell
+            aspects.networking
+            aspects.tailscale
+            aspects.notify
             ../hosts/la-admin-1/default.nix
           ];
         };
@@ -115,10 +125,15 @@ in
             inputs.sops-nix.nixosModules.sops
             inputs.niks3.nixosModules.niks3-auto-upload
             aspects.provenance
-            aspects.cli
             aspects.oci-images
             aspects.fleet-packages
             aspects.dj
+            # Foundation aspects (FND-1): selection is enablement.
+            aspects.base
+            aspects.shell
+            aspects.networking
+            aspects.tailscale
+            aspects.notify
             ../hosts/home-forge/default.nix
           ];
         };

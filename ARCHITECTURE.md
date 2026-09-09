@@ -6,7 +6,8 @@
 
 **Key Characteristics:**
 - **Flake-driven:** Single `flake.nix` pins all inputs; flake-parts plus a typed host registry (`modules/flake/`) materializes `nixosConfigurations` per host
-- **Hosts are thin:** Host modules (`modules/hosts/<host>/default.nix`) only declare identity, feature enables, provider/storage/profile imports, and secret path bindings
+- **Aspect composition:** `flake.modules.nixos` publishes the five foundation aspects — `base`, `shell`, `networking`, `tailscale`, `notify`; host registry records select them explicitly (selection is enablement) and import remaining feature leaves directly
+- **Hosts are thin:** Host modules (`modules/hosts/<host>/default.nix`) declare identity, feature enables, typed foundation facts, provider/storage imports, and secret path bindings
 - **Applications compose services:** Application modules (`modules/applications/<name>/`) wire multi-service stacks behind one operator-facing toggle
 - **Services own their internals:** Leaf service modules own enabling runtime config, `sops.secrets`, `sops.templates`, systemd units, and assertions
 - **Provider isolation:** Cloud/platform quirks live in `modules/providers/<name>/` — workload modules stay provider-agnostic
@@ -18,7 +19,7 @@
 **Flake Entrypoint (`flake.nix` + `modules/flake/`):**
 - Purpose: Pins all inputs and composes every flake output through flake-parts — host `nixosConfigurations`, devShell, packages, checks, deploy topology, and the `bootstrap.nodes` projection
 - Location: `flake.nix` (minimal entrypoint), flake-parts modules under `modules/flake/`
-- Contains: Input pins (`nixpkgs`, `disko`, `sops-nix`, `deploy-rs`, `niks3`, `flake-parts`, `import-tree`) and `denful/import-tree` discovery of `modules/` with one enumerated `filterNot` boundary (`modules/flake/_unconverted-nixos-dirs.nix`) for directories still holding plain NixOS leaves
+- Contains: Input pins (`nixpkgs`, `disko`, `sops-nix`, `deploy-rs`, `niks3`, `flake-parts`, `import-tree`) and `denful/import-tree` discovery of `modules/` with one enumerated `filterNot` boundary (`modules/flake/_unconverted-nixos-dirs.nix`) for directories still holding plain NixOS leaves (`core` and `profiles` were removed from that boundary in dendritic Stage 2)
 - Depends on: All submodules and library code
 - Used by: `nix build`, `nixos-rebuild`, `deploy-rs`, CI workflows
 
@@ -26,7 +27,7 @@
 - Purpose: Thin host assembly — identity, facts, feature toggles, provider/storage/profile imports, secret bindings
 - Location: `modules/hosts/<host>/default.nix`, registered as a typed `nixos.configurations.<host>` record in `modules/flake/registry.nix`
 - Contains: `default.nix`, host-specific component overlays (vary per host — e.g., `la-admin-1` has `facter.json`, `cockpit-auth.nix`, `quantum.nix`, `edge.nix`; reimage-shaped hosts carry their bootstrap metadata inline in the registry record; sole-consumer disko layouts live beside their host)
-- Depends on: Modules (applications, services, profiles, providers, storage, core, shared) and published aspects (`flake.modules.nixos.<aspect>`)
+- Depends on: Published aspects (`flake.modules.nixos.<aspect>`) selected in the registry and feature modules (applications, services, providers, storage, shared)
 - Used by: `modules/flake/registry.nix`, which materializes `flake.nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`
 
 **Application Layer (`modules/applications/`):**
@@ -43,11 +44,13 @@
 - Depends on: `lib/secrets.nix`, runtime paths from application layer
 - Used by: Application modules or directly by hosts
 
-**Profile Layer (`modules/profiles/`):**
-- Purpose: Lightweight host/persona baseline — core NixOS config, shell, recovery baseline, Tailscale, and backup defaults
-- Location: `modules/profiles/base-server.nix`
-- Contains: Base server profile importing `core/base.nix`, `shell-profile.nix`, `host-recovery.nix`, `tailscale`, `beszel-agent-auth`, `state-backups`
-- Depends on: Core modules, shared modules
+**Foundation Aspect Layer (`modules/flake/aspects.nix` + `modules/flake/_aspects/`):**
+- Purpose: Cross-cutting host baseline published as five selected foundation aspects — `base`, `shell`, `networking`, `tailscale`, `notify`. Selection is enablement: every host registry record imports all five explicitly and no aspect imports another aspect
+- Location: `modules/flake/aspects.nix` (published `flake.modules.nixos.<aspect>` records); private aspect implementations live under `modules/flake/_aspects/`
+- Contains: `base` (policy, users, host-recovery import, and the typed `fleet.foundation.bootLoader` / `fleet.foundation.buildTmpfsSize` host facts), `shell` (zsh/p10k, wezterm, nix-index comma), `networking` (native networkd contract rendered from `fleet.networking` facts), `tailscale` (auth-key secret registration and nullable `services.tailscale.debugMtu`), `notify` (notification-daemon enablement with withSystem-resolved packages). An aspect may import its own private service/shared leaf — e.g. `modules/services/tailscale.nix`, `modules/services/notification-daemon/`, `modules/shared/host-recovery.nix` — without creating a public dependency
+- Depends on: Its own private leaves under `modules/services/`, `modules/shared/`, and `policy/`
+
+The former `modules/core/` and `modules/profiles/` directories were deleted in dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`); their behavior became the foundation aspects above or explicit retained leaf imports in host records (e.g. `modules/shared/niks3-upload-client.nix` preserves the conventional cache-upload client defaults).
 
 **Provider Layer (`modules/providers/`):**
 - Purpose: Isolate cloud/platform-specific hardware, kernel, and network defaults
@@ -234,7 +237,7 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 **Host Assembly (`modules/hosts/<host>/default.nix`):**
 - Location: `modules/hosts/oci-melb-1/default.nix`, `modules/hosts/la-admin-1/default.nix`
 - Triggers: registry materialization for a specific host (`nixos.configurations.<host>` in `modules/flake/registry.nix`)
-- Responsibilities: Import modules, set host identity, enable applications/services, bind secret files
+- Responsibilities: Declare identity, typed foundation facts (`fleet.foundation.bootLoader`, `fleet.foundation.buildTmpfsSize`), feature enables, and secret file bindings; the registry record owns the explicit aspect/leaf import list
 
 **Bootstrap (`deploy.sh`):**
 - Location: `deploy.sh`
@@ -270,4 +273,4 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 
 **Identity:** Kanidm-based OIDC provides single-sign-on for admin services. Kanidm is self-hosted on `la-admin-1`. OIDC client configurations are generated from `policy/identity.json`. Host-level SSH auth integrates with Kanidm groups.
 
-**Notifications:** All hosts run the notification daemon (`services.notification-daemon.enable`). Deploy outcomes, beets runner failures, and monitored systemd service lifecycle events dispatch via the daemon. The `notify` CLI wrapper provides a stdin-pipe interface for any script to send notifications.
+**Notifications:** All hosts run the notification daemon, enabled by the `notify` foundation aspect (`services.notification-daemon.enable`). Deploy outcomes, beets runner failures, and monitored systemd service lifecycle events dispatch via the daemon. The `notify` CLI wrapper provides a stdin-pipe interface for any script to send notifications.

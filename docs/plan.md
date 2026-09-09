@@ -94,7 +94,7 @@ Track D: Service baseline
 
 Track E: Future-ready evolution
 
-- adopt the accepted staged Dendritic transition (D-047): Stage 1 scaffold (flake-parts + `denful/import-tree` + typed host registry under `modules/hosts/`) is implemented in the current change (`dendritic-stage-1-scaffold-hosts`); three-host equivalence and the full validation gates are still pending, and later stages (converting remaining leaf modules into aspects, taxonomy docs closure) remain staged
+- adopt the accepted staged Dendritic transition (D-047): Stage 1 scaffold (flake-parts + `denful/import-tree` + typed host registry under `modules/hosts/`) landed in `dendritic-stage-1-scaffold-hosts`; Stage 2 landed foundation-first in `dendritic-stage-2-foundation-aspects` (five foundation aspects with typed `fleet.foundation` facts, `modules/core/` + `modules/profiles/` removed, explicit retained leaves) — implementation-complete but not deployed or archived; the transition analysis's music-exemplar Stage 2 sequencing is superseded, and remaining leaf-module conversions plus taxonomy closure stay staged
 - keep layout compatible with later fleet deployment tooling
 - reserve integration points for future media processing hooks
 - reserve path for later `rclone`/VFS transition
@@ -146,9 +146,10 @@ Active implementation anchor paths that must stay reflected in docs:
 - `modules/applications/music/default.nix`
 - `modules/applications/admin/default.nix`
 - `modules/services/music/` (canonical music service module subtree: `navidrome.nix`, `audiomuse.nix`, `syncthing.nix`, `beets/`, `slskd.nix`, `tagr.nix`)
-- `modules/core/base.nix`
-- `modules/profiles/base-server.nix`
-- `modules/services/tailscale.nix`
+- `modules/flake/aspects.nix` (foundation aspects `base`/`shell`/`networking`/`tailscale`/`notify`) and `modules/flake/_aspects/` (private aspect implementations)
+- `modules/flake/registry.nix` (host composition: aspect selection, typed facts, retained leaf imports)
+- `modules/services/tailscale.nix` (tailscale aspect service leaf)
+- `modules/services/notification-daemon/` (notify aspect service leaf)
 - `modules/services/termix.nix`
 - `modules/services/admin/quantum.nix`
 - `modules/services/admin/cockpit.nix`

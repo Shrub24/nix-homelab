@@ -63,7 +63,7 @@ Fleet direction:
 - reusable behavior and secret ownership belong in service modules
 - multi-service stacks and shared cross-service concerns belong in application modules
 - provider specifics should be isolated from workload modules
-- implemented (D-047 Stage 1, in `dendritic-stage-1-scaffold-hosts`): composition uses flake-parts with `denful/import-tree` discovery over `modules/`, named `flake.modules.nixos` aspects, and a typed `nixos.configurations.<host>` registry (`modules/flake/registry.nix`) that materializes `nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`; host assemblies live under `modules/hosts/<host>/` and the old `specialArgs` bus is gone. Converting the remaining plain leaf modules into aspect contributors is staged later work
+- implemented (D-047 Stage 1, in `dendritic-stage-1-scaffold-hosts`): composition uses flake-parts with `denful/import-tree` discovery over `modules/`, named `flake.modules.nixos` aspects, and a typed `nixos.configurations.<host>` registry (`modules/flake/registry.nix`) that materializes `nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`; host assemblies live under `modules/hosts/<host>/` and the old `specialArgs` bus is gone. Dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`) published the five foundation aspects — `base`, `shell`, `networking`, `tailscale`, `notify` — selected explicitly by every host record, and deleted `modules/core/` and `modules/profiles/`; converting the remaining plain leaf modules into aspect contributors is staged later work
 
 3. Security blast radius minimization
 
@@ -95,9 +95,10 @@ The exact file tree can evolve, but the intended shape is:
 - `modules/services/<name>.nix` for standalone leaf service modules outside a domain subtree
 - `modules/services/virtualisation/windows-vm.nix` for the reusable declarative Windows VM layer (libvirt instances, attachment to the host-owned always-on bridge, loopback SPICE, virtiofs shares)
 - `modules/applications/dj/` for the DJ composition root (Engine DJ library hosting on a Windows VM; see `docs/runbooks/engine-dj-guest-setup.md`)
-- `modules/core/base.nix` for shared baseline NixOS policy
-- `modules/core/users.nix` for shared user declarations
-- `modules/profiles/base-server.nix` for common host profile composition, including shared Nix substitute/trust defaults
+- `modules/flake/aspects.nix` for the published `flake.modules.nixos.<aspect>` records — the five foundation aspects `base`, `shell`, `networking`, `tailscale`, `notify` — with private implementations under `modules/flake/_aspects/`
+- `modules/flake/_aspects/base.nix` for shared baseline NixOS policy, users, host-recovery import, and the typed `fleet.foundation.bootLoader` / `fleet.foundation.buildTmpfsSize` host facts
+- `modules/flake/_aspects/shell.nix` for the shell baseline (zsh/p10k, wezterm, nix-index comma) with its `p10k.zsh` data beside it
+- `modules/flake/_aspects/networking.nix` for the native networkd contract rendered from `fleet.networking` host facts
 - `modules/providers/oci/default.nix` for OCI-specific host-safe defaults
 - `modules/storage/disko-root.nix` for declarative root disk layout
 - `modules/storage/disko-single-disk.nix` for single-disk host layout
@@ -325,7 +326,7 @@ Adding a new OCI image:
 
 ### Network ownership (native systemd-networkd)
 
-Fleet hosts own physical networking through the import-activated networking aspect (`modules/profiles/networking.nix`), not scripted networking or dhcpcd:
+Fleet hosts own physical networking through the import-activated `networking` foundation aspect (published in `modules/flake/aspects.nix`; private leaf `modules/flake/_aspects/networking.nix`), not scripted networking or dhcpcd:
 
 - hosts import the aspect and supply required `fleet.networking` facts: the uplink interface, plus bridge name and MAC when bridged, and a DNS override only when pinned
 - the aspect emits native `systemd.network.{networks,netdevs}` units matched by exact interface name only — Podman bridges, `tailscale0`, veth, and libvirt links stay unmanaged by construction
@@ -418,9 +419,9 @@ Fleet tooling posture:
   - GitHub Actions configures nixbuild with `nixbuild/nixbuild-action` using GitHub OIDC plus an attenuated `NIXBUILD_TOKEN`
   - CI remote-builds host toplevels against `ssh-ng://eu.nixbuild.net` so `x86_64-linux` runners can validate both active host architectures without a custom runner fleet
 - Host-side Nix consumption remains substitute-only in phase 1:
-  - hosts inherit one shared substitute/trust baseline through `modules/profiles/base-server.nix`
-  - current substitute defaults point at `nixbuild.net` over `ssh://eu.nixbuild.net`
-  - host-side substitute/trust settings are policy-driven through `policy/globals.nix` and applied by the common base-server profile rather than repeated in host files
+- hosts inherit one shared substitute/trust baseline through the `base` foundation aspect (`modules/flake/_aspects/base.nix`)
+- current substitute defaults point at `nixbuild.net` over `ssh://eu.nixbuild.net`
+- host-side substitute/trust settings are policy-driven through `policy/globals.nix` and applied by the `base` foundation aspect rather than repeated in host files
   - CI auth remains separate and uses GitHub OIDC plus `NIXBUILD_TOKEN`
   - the account-specific nixbuild signing key is public but must still be populated explicitly in `policy/globals.nix` before substitute consumption is relied on
   - repo-local `deploy-rs` topology stays unchanged for operator workflows; the CI-only `--remote-build` override exists specifically to keep GitHub-hosted deploy runs off the store-path data plane where hosts already have direct substituter access

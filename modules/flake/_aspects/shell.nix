@@ -1,3 +1,9 @@
+# Shell foundation aspect (private leaf; the only public composition unit is
+# flake.modules.nixos.shell in modules/flake/aspects.nix).
+#
+# Interactive operator tooling is a capability, not base OS policy (design
+# FND-2): packages, zsh + powerlevel10k, wezterm mux, and the p10k data file
+# (./p10k.zsh) live with this private shell implementation.
 {
   config,
   lib,
@@ -6,10 +12,10 @@
 }:
 
 let
-  weztermCfg = config.profiles.wezterm-mux;
+  weztermCfg = config.services.wezterm-mux;
 in
 {
-  options.profiles.wezterm-mux = {
+  options.services.wezterm-mux = {
     enable = lib.mkOption {
       type = lib.types.bool;
       default = true;

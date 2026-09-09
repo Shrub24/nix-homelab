@@ -889,6 +889,36 @@ References:
 
 - D-044, D-045, `docs/runbooks/engine-dj-guest-setup.md`, and the `normalize-music-storage-topology` and `navidrome-m3u-itunes-worker` change designs
 
+## D-047: Staged Dendritic transition supersedes D-030's plain-flake restriction
+
+Status: Accepted
+
+Decision:
+
+- retire the D-030 (feature-oriented host topology) clause "keep plain explicit `flake.nix` architecture (no `flake-parts` or Dendritic Nix adoption in this change)"; the fleet adopts Dendritic-style flake-parts composition through staged OpenSpec changes, with `dendritic-stage-1-scaffold-hosts` as the next change
+- Stage 1 uses flake-parts plus `denful/import-tree` (underscore-prefixed path components are excluded by its default filter), publishes aspects through `flake.modules.nixos.<aspect>`, and constructs all three hosts atomically through a typed `nixos.configurations.<host>` registry, moving host composition to `modules/hosts/<host>/`
+- host-private/raw data files stay out of import-tree; plain leaf NixOS modules remain temporarily behind an explicit `import-tree.filterNot` boundary until their feature converts to an aspect, and each conversion shrinks that boundary
+- Stage 1 removes every lower-level `self`, `inputs`, and `ociImages` consumer rather than introducing a compatibility `specialArgs` bridge: flake-input consumers close over their owning aspect, custom packages use flake-parts `perSystem`/`withSystem`, OCI image references become typed policy data instead of an argument bus, and source provenance closes over `inputs.self`
+- `flake-file`, Den, and topology extraction are deferred; `flake-file` returns only if explicit input management becomes a demonstrated maintenance problem
+- `nix-fleet` is recorded as a future code-only shared library, not a dependency of this transition. Candidates — not commitments: Tailscale, SSH, builder access, Nix defaults, selected shell defaults, notification daemon/dispatch, niks3 post-build/post-deploy integration, and Beszel agent. Code moves only after a local aspect is verified and both repositories require materially identical behavior
+- concrete topology/inventory values, `policy/web-services.nix`, domains/exposure/Cloudflare policy, OpenTofu, deploy-rs metadata and ordering, `.sops.yaml` readership, and encrypted secrets remain owned by `nix-homelab`; a cross-repository topology SSOT is a separate future decision
+
+Rationale:
+
+- D-030's plain-flake clause was scoped to that change's cutover, not a permanent architecture veto; the transition analysis revalidated 2026-09-09 established aspect composition as the direction, and Stage 0 cleanup must not optimize for the architecture being retired
+- eliminating the argument bus in the same change as the scaffold prevents a compatibility bridge from institutionalizing the `self`/`inputs`/`ociImages` wiring Stage 1 exists to remove
+- keeping topology, web policy, and secrets local preserves the D-004/D-030 blast-radius model and the D-042 catalog-versus-physical split while code organization changes
+
+Supersedes/updates:
+
+- supersedes D-030's plain-flake architecture restriction; D-030's feature-oriented composition, topology-aligned secret buckets, and thin-host principles remain in force and are carried into the aspect model
+- settles `docs/dendritic-transition-analysis.md`'s Stage 1 boundary: host dirs move to `modules/hosts/<host>/` (not top-level `hosts/`), the temporary `filterNot` leaf boundary is explicit and enumerable, and consumer removal replaces any specialArgs bridging
+
+References:
+
+- `openspec/changes/dendritic-stage-0-pre-clean/{proposal,design}.md` (PC-3, PC-4)
+- `docs/dendritic-transition-analysis.md` (Revalidation 2026-09-09)
+
 These are known but intentionally unresolved until implementation and operational learning justify final decisions.
 
 - when to introduce service-scoped secret files for movable workloads

@@ -1,3 +1,7 @@
+## Status
+
+**Superseded on 2026-09-09 by `dendritic-stage-0-pre-clean` and the staged Dendritic transition it prepares.** This change remains active and its 22 unchecked tasks remain incomplete; it is not archived or treated as implemented. Applicable ownership findings will be reconsidered as their owning aspects are converted rather than executed as one cross-cutting cleanup.
+
 ## Why
 
 The `la-admin-1` transition consolidated the fleet onto a new admin, identity, and edge host, but ownership boundaries drifted during the move. Thin host assemblies now repeat raw secret paths and cross-service wiring that owning modules should provide as typed defaults; admin/edge overlays (`edge.nix`, `cockpit-auth.nix`) are duplicated per host; physical host metadata is triplicated across flake, deploy metadata, CI, and docs; and ntfy publisher identities plus OIDC client metadata are mirrored across host config, templates, and tests. This change is post-transition cleanup: it is deferred and must not block or alter the active `migrate-admin-host-to-la` cutover.

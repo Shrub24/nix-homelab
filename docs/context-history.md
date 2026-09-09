@@ -109,6 +109,13 @@ The migration intent is intentionally aggressive:
 - keep only what is still relevant to the new fleet-oriented target
 - avoid long-lived dual-mission repository drift
 
+## Dendritic Transition Decision (2026-09)
+
+- D-030's plain-flake restriction was superseded by D-047: the fleet adopts flake-parts plus `denful/import-tree` with named `flake.modules.nixos` aspects and a typed `nixos.configurations.<host>` registry, delivered through staged OpenSpec changes
+- Stage 1 (flake-parts scaffold, all three hosts moved atomically to `modules/hosts/<host>/`, every lower-level `self`/`inputs`/`ociImages` consumer removed instead of bridged) is decided, not implemented; the live flake is still plain `nixosSystem` with `specialArgs`
+- `flake-file`, Den, and topology extraction are deferred; `nix-fleet` is a future code-only library for proven reusable aspects, while concrete topology, web-services policy, OpenTofu, deploy-rs metadata/order, `.sops.yaml` readership, and encrypted secrets remain owned by this repository
+- the 2026-08-30 transition analysis was revalidated 2026-09-09: the music move to `home-forge` already completed (D-045/D-046, so it is not Stage 2 future payoff), Engine DJ added a real `inputs` consumer, home-forge is an intentional deploy-rs node with committed facter, and Stage 0 pre-clean removed the dead paperless application wrapper, the orphan `.just/deploy.just` module, and `mkSimpleSecret`
+
 ## Current Truth Snapshot
 
 As of this planning update:

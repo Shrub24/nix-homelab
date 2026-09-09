@@ -32,7 +32,7 @@
 **Application Layer (`modules/applications/`):**
 - Purpose: Composition roots that wire multiple interacting services behind one toggle; own shared paths, ACLs, tmpfiles, and cross-service wiring
 - Location: `modules/applications/<name>/`
-- Contains: Named stacks — `music/`, `admin/`, `paperless/`, `edge-ingress.nix`
+- Contains: Named stacks — `music/`, `admin/`, `dj/`, `edge-ingress.nix` (the former `paperless/` application wrapper was dead code and has been deleted; Paperless is composed directly from `modules/services/paperless/`)
 - Depends on: Service modules, `policy/globals.nix`, `lib/secrets.nix`
 - Used by: Host modules
 
@@ -155,7 +155,7 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 
 1. `services.paperless.enable` toggles the Paperless document management stack
 2. Paperless core (`modules/services/paperless/`) runs the Django-based document management system with OIDC authentication via Kanidm
-3. Paperless-GPT (`modules/services/paperless/paperless-gpt.nix`) provides AI document enhancement with a docling-serve sidecar for OCR and document analysis (imported as a submodule of `services.paperless`, gated by `applications.paperless.enableAI` at the application layer, with per-instance enables (`instances.llm.enable`, `instances.docling.enable`))
+3. Paperless-GPT (`modules/services/paperless/paperless-gpt.nix`) provides AI document enhancement with a docling-serve sidecar for OCR and document analysis (imported as a submodule of `services.paperless`; the host file configures it directly via `services.paperless.paperless-gpt` with per-instance enables (`instances.llm.enable`, `instances.docling.enable`) and the shared sidecar toggle (`docling.enable`))
 4. Both services connect through a shared PostgreSQL instance (`modules/services/postgres-shared.nix`) with niks3-managed backup
 5. Post-consume hook triggers a notification via the notification daemon on new document ingestion
 
@@ -187,7 +187,7 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 **Paperless Service:**
 - Purpose: Document management stack with Paperless core, OIDC auth, and optional AI enhancement
 - Location: `modules/services/paperless/default.nix` (imports `paperless-gpt.nix` submodule)
-- Pattern: Enable flag + dataRoot + two secret files (host/oidc); `paperless-gpt.enable` (set by the application layer), with multi-instance enables (`instances.llm.enable`, `instances.docling.enable`); seeds Django groups for OIDC sync
+- Pattern: Enable flag + dataRoot + two secret files (host/oidc); `services.paperless.paperless-gpt` configured directly by the host, with multi-instance enables (`instances.llm.enable`, `instances.docling.enable`) and a shared docling sidecar toggle (`docling.enable`); seeds Django groups for OIDC sync
 
 **Bifrost Gateway Service:**
 - Purpose: AI gateway service with OpenRouter and CrofAI provider support
@@ -202,7 +202,7 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 **Secrets Contract:**
 - Purpose: Typed option inputs for secret file paths with required assertions
 - Location: `lib/secrets.nix`
-- Pattern: `mkSecretFileOption`, `mkSecretKeyOption`, `mkRequiredSecretAssertion`, `mkSimpleSecret`, `mkSecretsFromMap`
+- Pattern: `mkSecretFileOption`, `mkSecretKeyOption`, `mkRequiredSecretAssertion`, `mkSecretsFromMap`
 
 **Web Policy SSOT:**
 - Purpose: Declarative endpoint definitions consumed by Caddy, Cloudflare, and OpenTofu
@@ -242,8 +242,8 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 - Responsibilities: Read bootstrap config, derive age recipient, invoke `nixos-anywhere` with flake/disk config
 - Adoption path: existing preinstalled NixOS hosts follow `docs/runbooks/host-initialization.md` (`nixos-rebuild boot`) instead of `deploy.sh`
 
-**Deploy (`justfile` + `.just/deploy.just`):**
-- Location: `justfile` with `mod deploy '.just/deploy.just'`
+**Deploy (root `justfile`):**
+- Location: `deploy` recipe defined directly in the root `justfile` (the orphaned `.just/deploy.just` module was deleted)
 - Triggers: `just deploy <host>`
 - Responsibilities: Run `deploy-rs` with host profile, skip checks, optional auto-rollback, send `notify info/warning` on deploy outcome
 

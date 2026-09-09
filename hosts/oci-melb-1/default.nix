@@ -187,11 +187,6 @@ in
       reboot.onCalendar = "weekly";
     };
 
-    beszel-agent-auth = {
-      enable = true;
-      secretFiles.host = ../../secrets/hosts/oci-melb-1/system.yaml;
-    };
-
     state-backups = {
       enable = true;
       secretFile = ../../secrets/hosts/oci-melb-1/system.yaml;

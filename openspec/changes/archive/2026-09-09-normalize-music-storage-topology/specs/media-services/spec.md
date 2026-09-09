@@ -35,6 +35,8 @@ For this change scope, role permissions SHALL be explicit: `music-ingest` is the
 - **THEN** no `services.navidrome.plugins = [ pkgs.navidromePlugins.audiomuseai ]` rebuild path is used
 - **AND** the packaged WASM `.ndp` is symlinked into `${dataDir}/plugins` declaratively via tmpfiles and bind-mounted into nixpkgs' fixed plugin folder only for Navidrome, with `Plugins.Enabled/AutoReload/Agents` set, keeping stock cache-substitutable Navidrome
 
+## ADDED Requirements
+
 ### Requirement: Shared media roots are app-owned and created via tmpfiles
 The system SHALL require each host to select the physical storage root for the music application. The music application SHALL derive and create its `library`, `playlists`, `inbox`, `quarantine`, and `.versions` subtrees via `systemd.tmpfiles.rules`; fleet policy and leaf services SHALL NOT select a physical shared-media root.
 
@@ -58,8 +60,6 @@ Stateful media-stack services SHALL support backup coverage for their mutable se
 - **WHEN** backup coverage is inspected for the music application stack
 - **THEN** service configuration, databases, and runtime state can be included beneath managed service-state roots
 - **AND** music library and inbox payloads follow the host's declared storage and backup scope
-
-## ADDED Requirements
 
 ### Requirement: Engine DJ consumes one bounded music share
 The Engine DJ guest SHALL receive the host-selected music application root as one writable `M:` share. The guest-visible root SHALL contain sibling `library`, `playlists`, `inbox`, `quarantine`, and `Engine Library` paths, where `Engine Library` is a real directory beneath the music root (no separate share, mount tag, or guest junction).

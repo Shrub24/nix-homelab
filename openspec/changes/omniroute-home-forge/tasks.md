@@ -35,6 +35,6 @@
   - criteria: `nix flake check --no-build` passes; `nix build .#nixosConfigurations.home-forge.config.system.build.toplevel --no-link` succeeds; `treefmt --fail-on-change` clean; `openspec validate --strict` passes
   - verify: all four commands exit zero
 - [ ] 4.2 Deploy and bootstrap (operator, from a clean jj change)
-  - refs: `.just/deploy.just`, design.md Migration Plan
+  - refs: `justfile`, design.md Migration Plan
   - criteria: prerequisite — user has encrypted `secrets/services/omniroute.yaml`; `just deploy home-forge` activates the stack; both containers running; `/healthz` returns 200; dashboard reachable at `http://home-forge:20128` over LAN and MagicDNS over tailnet; login with `INITIAL_PASSWORD` works; imperative config persists across a redeploy
   - verify: `podman ps` shows omniroute + redis; health check and dashboard login confirmed; workstation `omniroute connect home-forge` succeeds

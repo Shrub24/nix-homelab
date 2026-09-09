@@ -1,3 +1,7 @@
+## Status
+
+**Superseded on 2026-09-09 by `dendritic-stage-0-pre-clean` and the staged Dendritic transition it prepares.** This design records useful findings but is no longer an executable implementation plan. Its unchecked tasks remain unchanged; ownership fixes will be scoped to the aspects that naturally own them.
+
 ## Context
 
 The `la-admin-1` transition (active change `migrate-admin-host-to-la`) consolidated edge, identity, and admin roles onto one host. During that transition, ownership boundaries drifted in four reproducible ways: thin host assemblies re-register raw `sops.secrets` entries and hardcode cross-service wiring; per-host `edge.nix` and `cockpit-auth.nix` overlays re-project catalog data and duplicate service-user wiring; physical host facts (identity, order, edge designation) are literal-copied across `lib/deploy/hosts.nix`, `flake.nix`, CI workflows, and docs; and typed identities — ntfy publisher users and OIDC clients — are mirrored across host config, secret templates, tests, and the web catalog. See `proposal.md` — Why for motivation.

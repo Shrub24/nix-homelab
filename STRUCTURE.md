@@ -9,7 +9,7 @@ nix-homelab/
 │   ├── prompts/     # OpenAgentsControl skill prompts (opsx-*)
 │   ├── skills/     # OpenAgentsControl skill definitions
 │   └── workflows/   # CI/CD pipeline definitions
-├── .just/          # Modular justfile includes (deploy, ops, checks, backups, host-age, deps, dev)
+├── .just/          # Modular justfile includes (ops, checks, backups, host-age, deps, dev)
 ├── docs/            # Human-facing architecture, planning, and runbook docs
 ├── generated/       # Committed generated artifacts (e.g., web policy JSON)
 ├── hosts/           # Per-host NixOS configuration entrypoints
@@ -64,7 +64,7 @@ nix-homelab/
 **`.just/`:**
 
 - Purpose: Modular justfile includes — each file covers one domain
-- Contains: `deploy.just`, `ops.just`, `checks.just`, `backups.just`, `host-age.just`, `deps.just`, `dev.just`
+- Contains: `ops.just`, `checks.just`, `backups.just`, `host-age.just`, `deps.just`, `dev.just` (the orphaned `deploy.just` was deleted; the root justfile owns the `deploy` recipe directly)
 - Imported by: `justfile` via `mod` directives
 
 **`docs/`:**

@@ -1,20 +1,33 @@
 # Dendritic Transition — Architecture Scoping Report
 
-Date: 2026-08-30. Baseline: live `main@origin` post fleet-consolidation (oci-melb-1, la-admin-1, home-forge).
+Date: 2026-08-30. Revalidated: 2026-09-09. Baseline: live `main@origin` post fleet-consolidation (oci-melb-1, la-admin-1, home-forge).
 Status: scoping report, not an OpenSpec change. This analysis supersedes the `normalize-fleet-boundaries` design; surviving items from that change are absorbed into the stages below.
+
+## Revalidation (2026-09-09)
+
+Dated revalidation against the live repository during `dendritic-stage-0-pre-clean`. Where this section contradicts the 2026-08-30 body, this section wins; body rows called out as historical below remain as scoping evidence.
+
+- **Hosts unchanged:** the live flake is still plain `nixosSystem` × 3 (`oci-melb-1`, `la-admin-1`, `home-forge`) with `specialArgs = { self; inputs; ociImages; }`. No flake-parts or Dendritic code exists yet; Stage 1 is decided, not implemented.
+- **Music migration is complete, not future payoff:** the OCI→forge move already landed via D-045/D-046 (host-selected music root on `home-forge`, AudioMuse DB in OCI). The Stage 2 "payoff" framing below is historical; the portability thesis still awaits a post-scaffold placement move.
+- **Argument consumers grew since scoping:** the original "`inputs` has zero module consumers; `self`/`ociImages` replaceable by lexical policy imports" row is superseded. `inputs` now has a real consumer (Engine DJ's `traktor-m3u-sync` module and package in `modules/applications/dj/engine-dj.nix`); `self` consumers include `modules/core/base.nix` (source provenance), `shared/niks3-post-deploy.nix`, `music/beets`, `notification-daemon`, `paperless`, and `dj`; `ociImages` consumers include phoenix, karakeep, bifrost, omniroute, tagr, audiomuse, termix, quantum, and paperless-gpt. Per D-047, Stage 1 must eliminate these consumers (aspect closure, `perSystem`/`withSystem`, typed OCI policy, `inputs.self` provenance) rather than bridge them through `specialArgs`.
+- **Settled Stage 1 structure (D-047):** flake-parts + `denful/import-tree`; aspects via `flake.modules.nixos.<aspect>`; typed `nixos.configurations.<host>` registry; all three hosts migrate atomically to `modules/hosts/<host>/`; host-private/raw files excluded from import-tree; plain leaf modules temporarily behind an explicit `import-tree.filterNot` boundary. `flake-file`, Den, and topology extraction are deferred.
+- **import-tree ownership/semantics:** the helper is `denful/import-tree`; underscore-prefixed path components are excluded by its default filter.
+- **`nix-fleet` rule:** future code-only library. Candidates only: Tailscale, SSH, builder access, Nix defaults, selected shell defaults, notification daemon/dispatch, niks3 post-build/post-deploy integration, Beszel agent. Extraction requires a verified local aspect plus materially identical behavior needed by both repos. Topology/inventory, `policy/web-services.nix`, domains/exposure/Cloudflare policy, OpenTofu, deploy-rs metadata/order, `.sops.yaml` readership, and encrypted secrets stay owned by `nix-homelab`.
+- **Stage 0 landed:** dead `modules/applications/paperless/` wrapper deleted (Paperless continues through `modules/services/paperless/` directly), orphan `.just/deploy.just` deleted (the root justfile owns the `deploy` recipe directly), unused `mkSimpleSecret` deleted, and the AudioMuse credential comments now match D-045's accepted two-file model. Deferred by design: OCI music-cutover soak residue, the litellm role question, and the notification composition gap.
+- **home-forge is intentional, not drift:** it is a deploy-rs node by design (kept outside the serial `deployOrder`), and `hosts/home-forge/facter.json` is committed and wired via `hardware.facter.reportPath`; the flake's "no facter report yet" comment above the `home-forge` system is stale code residue, not a missing fact file.
 
 ## Verdict
 
 The repo should move to **plain flake-parts + import-tree + named `flake.modules` aspects**, keeping leaf NixOS modules almost entirely unchanged behind a new composition surface. Den is deferred. The refactor is real — today the flake is hand-rolled `nixosSystem` with broad `specialArgs` — but roughly 80% of `modules/services/**` survives verbatim; what actually changes is `flake.nix`, `hosts/`, `modules/applications/`, `modules/profiles/`, and the secret-registration contracts.
 
-The transition is worth doing now because the operational roadmap (music OCI→forge, edge split from admin, postgres placement, InboxZero/degoog/OpenWebUI arrivals) is exactly the workload-placement churn that today forces host-file surgery. Without the refactor we would encode placement, secret bindings, and endpoint literals a second time during those migrations and rewrite them again afterwards.
+The transition is worth doing now because the operational roadmap (edge split from admin, postgres placement, InboxZero/degoog/OpenWebUI arrivals) is exactly the workload-placement churn that today forces host-file surgery. (Scoping-time list; the music OCI→forge move has since completed via D-045/D-046 — see Revalidation.) Without the refactor we would encode placement, secret bindings, and endpoint literals a second time during those migrations and rewrite them again afterwards.
 
 ## Current state (evidence, not vibes)
 
 | Fact | Evidence |
 | --- | --- |
 | No flake-parts; `flake.nix` hand-defines 3 `nixosSystem`s with `specialArgs = { self; inputs; ociImages; }` | `flake.nix` |
-| `inputs` specialArg has **zero** module consumers; every `self`/`ociImages` consumer is replaceable by lexical `import ../../policy/...` | discovery pass over all modules |
+| (historical, superseded 2026-09-09) `inputs` specialArg had **zero** module consumers; `self`/`ociImages` consumers were judged replaceable by lexical `import ../../policy/...` — Engine DJ has since added a real `inputs` consumer | discovery pass over all modules; see Revalidation |
 | Host files are wiring boards: oci-melb-1 275 lines (sops re-registration, podman firewall port binds, postgres consumer flags, monitor unit lists naming other features), la-admin-1 154, home-forge 165 | `hosts/*/default.nix` |
 | Host identity triplicated: flake `nixosConfigurations` keys, `lib/deploy/hosts.nix`, `.sops.yaml` anchors (`oci_melb_1_age` etc.) + CI/test literals; only `deploy-host.yml` and the secret-scope test derive from SSOTs | cross-cutting pass |
 | Repeated verbatim in all 3 hosts: `sops.defaultSopsFile`, `tailscale_auth_key` block, TS debug-MTU and `/build` 50% overrides | profile pass |
@@ -32,7 +45,7 @@ The transition is worth doing now because the operational roadmap (music OCI→f
 
 ### Mechanics
 
-- `flake-parts` drives everything; every file under `modules/` and `hosts/` is a flake-parts module via `import-tree` (underscore-prefixed path components are excluded by its default filter — that is how host data like `_bootstrap-config.nix`-shaped things stay out of the tree).
+- `flake-parts` drives everything; every file under `modules/` and `hosts/` is a flake-parts module via `denful/import-tree` (underscore-prefixed path components are excluded by its default filter — that is how host data like `_bootstrap-config.nix`-shaped things stay out of the tree).
 - A `nixos.configurations.<host>` submodule option (mightyiam shape) declares each host: `system`, a `module` (deferred), `facter.reportPath`, plus bootstrap metadata. An eval shim turns each record into `nixosSystem` via `lib.evalModules` args — **no `specialArgs` bus**. `pkgs` comes from nixpkgs inside the eval; `inputs`/repo paths are lexically captured by the flake-parts modules that need them.
 - Public aspects are names in `config.flake.modules.nixos.<aspect>`. Merge is two-level and additive at the flake-parts level: several source files may each contribute a definition to the same aspect name (pipewire+steam→`pc`), which is the mechanism that keeps the aspect count small while files stay feature-owned.
 - Class discipline: `nixos` for NixOS-targeted modules, `generic` for anything imported into other evals (the `deploy`/CI wiring), matching flake-parts `flakeModules` extras so inline and file-defined modules dedupe.
@@ -70,7 +83,7 @@ What deliberately does **not** become an aspect: leaf NixOS modules under `modul
 
 ### Hosts
 
-`hosts/<name>/` becomes a flake-parts module registering `nixos.configurations.<name>` with:
+Host composition moves to `modules/hosts/<host>/` (settled by D-047; the earlier top-level `hosts/<name>/` path is superseded). Each host dir becomes a flake-parts module registering `nixos.configurations.<name>` with:
 
 - the explicit aspect import list (the placement statement — 10–15 lines);
 - machine facts: `system`, facter report path, filesystem UUIDs, boot-loader choice, RAM-derived `/build` tmpfs, MTU debug values as data rather than override patches;
@@ -78,7 +91,7 @@ What deliberately does **not** become an aspect: leaf NixOS modules under `modul
 - `disko` layout **moved into the host directory** — the shared `modules/storage/disko-*.nix` menu is fake modularity: each layout today has exactly one consumer, and a reimage of a specific machine is a host fact;
 - bootstrap metadata (reimage inputs) contributed to a flake-level data output (`flake.bootstrap.nodes.<host>`) so `deploy.sh`/`resolve-host-config.sh` do `nix eval --json` instead of grepping a Nix file by indent.
 
-`hosts/home-forge/facter.json` sits beside the host file; the flake's stale comment and the missing `deployable` flag get fixed in stage 0.
+`hosts/home-forge/facter.json` sits beside the host file (now committed and wired). Revalidated 2026-09-09: home-forge's deploy-rs node membership is intentional — it stays a node outside the serial `deployOrder`; no `deployable = false` is wanted. The flake's stale "no facter report yet" comment remains as code residue.
 
 ### Topology and policy
 
@@ -110,18 +123,18 @@ Concrete consequences:
 9. **Placement expression** — host aspect import list + assertions where a feature requires another; eval fails with a named message if a host selects `dj` without `music`. This is visibility without pretending to be a scheduler.
 10. **Profiles** — `fleet-standard` was the accidental bundle it suspected being: decomposed into `base`, `tailscale`, `backups`, `builder-access`, `observability-agent`; the baseline becomes `base` + explicitly selected capabilities per host. `base-server.nix` as a composition alias dies with it.
 11. **Leaf survival** — `modules/services/**` largely verbatim; deleted/absorbed: `applications/music` (becomes the aspect), `applications/admin` (splintered), `applications/paperless` (already dead), `profiles/*` (decomposed), `shared/*` glue (re-homed), `hosts/*/default.nix` (rebuilt thin). SpecialArgs removal touches only the handful of consumers that used `self`/`ociImages`, via lexical policy imports.
-12. **nix-fleet intersection** — extraction candidates identified at naming time: `base`, `tailscale`, `builder-access`, and any cache/substituter policy contract have plausible workstation-side consumers. Extraction triggers only on demonstrated use from nix-dotfiles. The aspect surface is the export interface; namespaces are the eventual vehicle. Nothing homelab-only (workloads, catalog, topology) is offered upstream even as a placeholder.
+12. **nix-fleet intersection** — settled by D-047: `nix-fleet` is a future code-only library. Candidates (not commitments): Tailscale, SSH, builder access, Nix defaults, selected shell defaults, notification daemon/dispatch, niks3 post-build/post-deploy integration, Beszel agent. Extraction requires a verified local aspect plus materially identical behavior needed by both repositories. The aspect surface is the export interface; namespaces are the eventual vehicle. Nothing homelab-only (concrete topology/inventory, web-services policy, domains/exposure/Cloudflare, OpenTofu, deploy-rs metadata/order, secret readership) is offered upstream even as a placeholder; cross-repo topology SSOT is a separate future decision.
 13. **Den** — no. Its entity/policy/quirk model pays off for cross-class fan-out (hosts→users→homes) and cross-repo aspect sharing; none of the immediate problems here (placement, secrets, thin hosts) need it — the three-host fleet is exactly the case where deferred-module merging plus host lists does the job at a fraction of the machinery. The structure chosen is den-compatible (aspects as named units, contracts as options, no ambient context), so adopting it later is a wiring change, not a rewrite. Revisit trigger: homes/users managed from this repo, a 4th config class, or nix-fleet going real.
 14. **Staged boundary** — below.
 
 ## Stages
 
-**Stage 0 — pre-clean** (behavior-preserving, one change, lands first):
-stale OCI music firewall ports/monitor units/ts.net vhost after the music cutover; delete dead `applications/paperless`; delete orphan `.just/deploy.just`; delete dead secret helpers (`mkSimpleSecret`); fix home-forge (`deployable` flag or intentional node decision, stale facter comment); settle audiomuse password SSOT; check the possibly-dangling litellm postgres role. Verification: `nix flake check`, `treefmt --fail-on-change`, targeted `nix-diff` on touched hosts must be empty.
+**Stage 0 — pre-clean** (behavior-preserving, one change, lands first) — executed as `dendritic-stage-0-pre-clean`; revalidated 2026-09-09:
+deleted dead `modules/applications/paperless/` (Paperless continues through `modules/services/paperless/` directly); deleted orphan `.just/deploy.just` (root justfile owns the `deploy` recipe); deleted dead secret helper (`mkSimpleSecret`); corrected AudioMuse credential comments to D-045's accepted two-file model; home-forge settled as an intentional deploy-rs node with committed facter. Deferred by design (not drift): OCI music-cutover soak residue (firewall ports/monitor units/ts.net vhost), the litellm postgres role question, and the notification composition gap. Verification: `nix flake check`, `treefmt --fail-on-change`, targeted `nix-diff` on touched hosts must be empty.
 
-**Stage 1 — scaffold + hosts**: flake-parts + import-tree + configurations shim + host dirs (disko and bootstrap metadata move in, `flake.bootstrap` data output lands). Composition is moved verbatim — old leaf imports, no aspect renames yet. Verification: `nix build` + `nix-diff` each host toplevel against pre-refactor: **must be empty**. This is the equivalence gate that makes the rest safe.
+**Stage 1 — scaffold + hosts** (settled by D-047): flake-parts + `denful/import-tree` + typed `nixos.configurations.<host>` registry + host dirs under `modules/hosts/<host>/` (disko and bootstrap metadata move in, `flake.bootstrap` data output lands); all three hosts migrate atomically; host-private/raw files excluded from import-tree; unconverted plain leaf modules sit behind an explicit, enumerable `import-tree.filterNot` boundary. Composition is moved verbatim — old leaf imports, no aspect renames yet. Every lower-level `self`/`inputs`/`ociImages` consumer is eliminated (no `specialArgs` bridge). Verification: `nix build` + `nix-diff` each host toplevel against pre-refactor: **must be empty**. This is the equivalence gate that makes the rest safe.
 
-**Stage 2 — music exemplar**: build the `music` aspect surface (contracts, exports, syncthing split, dj assertion), fix the tailscale/notify secret-contract pattern in passing. `nix-diff` empty on both music hosts. Then the payoff: execute the already-planned OCI→forge music move as a host aspect-list edit plus `.sops.yaml` bucket change, proving the portability thesis on a real migration instead of a toy.
+**Stage 2 — music exemplar**: build the `music` aspect surface (contracts, exports, syncthing split, dj assertion), fix the tailscale/notify secret-contract pattern in passing. `nix-diff` empty on both music hosts. (The original OCI→forge payoff move was executed before the scaffold via D-045/D-046, so the portability thesis now awaits the next real placement migration instead of a toy.)
 
 **Stage 3 — conversion per need, migration-driven**: identity-provider/client split, admin splinter (vaultwarden/cockpit/termix/observability-hub), paperless onto contracts, postgres provider/consumer contract at the moment of any placement decision, ai-gateway contract before any gateway swap, endpoint-literal derivation from catalog. Each is a small change with the same empty-`nix-diff` equivalence gate, sequenced against the operational roadmap rather than a big-bang.
 

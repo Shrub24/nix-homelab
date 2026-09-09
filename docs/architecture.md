@@ -63,6 +63,7 @@ Fleet direction:
 - reusable behavior and secret ownership belong in service modules
 - multi-service stacks and shared cross-service concerns belong in application modules
 - provider specifics should be isolated from workload modules
+- target-state direction (D-047, not yet implemented): composition will migrate in stages to flake-parts with named `flake.modules.nixos` aspects and a typed `nixos.configurations.<host>` registry; the current implementation remains plain `flake.nix` `nixosSystem` calls with `specialArgs`
 
 3. Security blast radius minimization
 
@@ -153,7 +154,7 @@ Fleet-shared scope:
 
 ### Validation Contracts
 
-- `lib/secrets.nix` provides reusable helpers: `mkSecretFileOption`, `mkSecretKeyOption`, `mkRequiredSecretAssertion`, `mkSimpleSecret`, `mkSecretsFromMap`
+- `lib/secrets.nix` provides reusable helpers: `mkSecretFileOption`, `mkSecretKeyOption`, `mkRequiredSecretAssertion`, `mkSecretsFromMap`
 - `.sops.yaml` remains the source of truth for recipient policy; validation lives separately so tests do not read as authoritative configuration
 - `tests/fixtures/secret-scope.nix` defines the expected recipient contract used by secret-scope validation
 - `tests/check-secret-scope.sh` verifies `.sops.yaml` matches the intended topology and blast-radius rules

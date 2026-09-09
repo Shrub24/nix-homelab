@@ -9,10 +9,11 @@ let
   cfg = config.services.audiomuse;
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
 
-  # The audiomuse Postgres role password comes from the shared postgres-shared
-  # SOPS file (secrets/services/postgres-shared.yaml, key roles/audiomuse/password),
-  # the sole SSOT for the database password; the operator adds home-forge as a
-  # recipient with `sops updatekeys` and preserves the existing value.
+  # D-045 two-file credential contract: the database-side role password lives
+  # in the OCI-only secrets/services/postgres-shared.yaml (key
+  # roles/audiomuse/password); this service reads the client-side password
+  # from secretFiles.db (secrets/applications/music.yaml, key
+  # audiomuse/postgres_password). The operator keeps the two values matching.
   dbSecretAvailable = cfg.secretFiles.db != null && builtins.pathExists cfg.secretFiles.db;
   navidromePort = 4533;
 in

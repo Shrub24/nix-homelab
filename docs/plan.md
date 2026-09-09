@@ -94,6 +94,7 @@ Track D: Service baseline
 
 Track E: Future-ready evolution
 
+- adopt the accepted staged Dendritic transition (D-047): Stage 1 scaffold (flake-parts + `denful/import-tree` + typed host registry under `modules/hosts/`) is decided but not implemented; the live flake stays plain `nixosSystem` with `specialArgs` until that change lands
 - keep layout compatible with later fleet deployment tooling
 - reserve integration points for future media processing hooks
 - reserve path for later `rclone`/VFS transition

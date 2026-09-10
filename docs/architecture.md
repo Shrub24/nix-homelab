@@ -63,7 +63,7 @@ Fleet direction:
 - reusable behavior and secret ownership belong in service modules
 - multi-service stacks and shared cross-service concerns belong in application modules
 - provider specifics should be isolated from workload modules
-- implemented (D-047 Stage 1, in `dendritic-stage-1-scaffold-hosts`): composition uses flake-parts with `denful/import-tree` discovery over `modules/`, named `flake.modules.nixos` aspects, and a typed `nixos.configurations.<host>` registry (`modules/flake/registry.nix`) that materializes `nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`; host assemblies live under `modules/hosts/<host>/` and the old `specialArgs` bus is gone. Dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`) published the five foundation aspects — `base`, `shell`, `networking`, `tailscale`, `notify` — selected explicitly by every host record, and deleted `modules/core/` and `modules/profiles/`; converting the remaining plain leaf modules into aspect contributors is staged later work
+- implemented (D-047 Stage 1, in `dendritic-stage-1-scaffold-hosts`): composition uses flake-parts with `denful/import-tree` discovery over `modules/`, named `flake.modules.nixos` aspects, and a typed `nixos.configurations.<host>` registry (`modules/flake/registry.nix`) that materializes `nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`; host assemblies live under `modules/hosts/<host>/` and the old `specialArgs` bus is gone. Dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`) published the five foundation aspects — `base`, `shell`, `networking`, `tailscale`, `notify` — selected explicitly by every host record, and deleted `modules/core/` and `modules/profiles/`. Dendritic Stage 3 (`dendritic-stage-3-operational-aspects`) published the three operational aspects — `backups`, `builder-access`, `observability-agent` — selected by every host record, folding the five deferred operational leaves under them (see D-049); converting the remaining plain leaf modules into aspect contributors is staged later work
 
 3. Security blast radius minimization
 
@@ -95,7 +95,7 @@ The exact file tree can evolve, but the intended shape is:
 - `modules/services/<name>.nix` for standalone leaf service modules outside a domain subtree
 - `modules/services/virtualisation/windows-vm.nix` for the reusable declarative Windows VM layer (libvirt instances, attachment to the host-owned always-on bridge, loopback SPICE, virtiofs shares)
 - `modules/applications/dj/` for the DJ composition root (Engine DJ library hosting on a Windows VM; see `docs/runbooks/engine-dj-guest-setup.md`)
-- `modules/flake/aspects.nix` for the published `flake.modules.nixos.<aspect>` records — the five foundation aspects `base`, `shell`, `networking`, `tailscale`, `notify` — with private implementations under `modules/flake/_aspects/`
+- `modules/flake/aspects.nix` for the published `flake.modules.nixos.<aspect>` records — the five foundation aspects `base`, `shell`, `networking`, `tailscale`, `notify` plus the three operational aspects `backups`, `builder-access`, `observability-agent` — with private implementations under `modules/flake/_aspects/`
 - `modules/flake/_aspects/base.nix` for shared baseline NixOS policy, users, host-recovery import, and the typed `fleet.foundation.bootLoader` / `fleet.foundation.buildTmpfsSize` host facts
 - `modules/flake/_aspects/shell.nix` for the shell baseline (zsh/p10k, wezterm, nix-index comma) with its `p10k.zsh` data beside it
 - `modules/flake/_aspects/networking.nix` for the native networkd contract rendered from `fleet.networking` host facts
@@ -233,6 +233,7 @@ Current baseline:
 - each host writes to its own dedicated Cloudflare R2 bucket using host-scoped credentials and a host-unique restic password
 - non-secret transport defaults (`endpoint`, `region`, path-style behavior) stay canonical in `policy/globals.nix`
 - restic repositories are host-scoped: `shrublab-backup-la-admin-1`, `shrublab-backup-oci-melb-1`, and `shrublab-backup-home-forge`; the decommissioned host's repository was retained as migration recovery evidence
+- the `backups` operational aspect (D-049) owns the host-egress capability: it composes `modules/services/state-backups.nix`, the upstream `niks3-auto-upload` module, `modules/shared/niks3-upload-client.nix`, and `modules/shared/niks3-post-deploy.nix`; it derives the conventional host secret path `secrets/hosts/<host>/system.yaml` and the `shrublab-backup-<host>` bucket, gates enablement on the secret file's existence (two-step sops bootstrap), injects the post-deploy `nix-path-filter` package per system, and asserts `services.notification-daemon.monitor.enable` (the `notify` aspect owns monitor composition) without importing `notify`. The classified `nix.settings.post-build-hook = lib.mkForce ""` suppression is required because upstream `niks3-auto-upload` has no separate hook-disable option. The OCI cache server (`modules/services/niks3.nix`) remains a leaf.
 
 Consistency model:
 
@@ -285,7 +286,7 @@ Read path:
 - Both hosts and CI can consume the cache as a standard Nix S3 substituter via `policy/globals.nix`
 
 Write path:
-- Only hosts push, post-deploy, via `modules/services/niks3-push.nix`
+- Only hosts push, post-deploy, via `modules/shared/niks3-post-deploy.nix` (composed by the `backups` aspect; the activation-triggered `niks3-hook send` reuses the upstream `niks3-auto-upload` daemon/socket while the automatic Nix post-build-hook stays suppressed by the classified `nix.settings.post-build-hook = lib.mkForce ""`)
 - Pushers authenticate with host-scoped API tokens to the niks3 server (`http://127.0.0.1:5751` local, or `http://oci-melb-1:5751` over Tailscale)
 - Server signs NARs with its Ed25519 key (stored in `secrets/services/niks3.yaml`, only on `oci-melb-1`)
 - Consumers trust the public key from `policy/globals.nix`

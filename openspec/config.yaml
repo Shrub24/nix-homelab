@@ -31,7 +31,7 @@ context: |
   
   # Repository Structure
   - Host-centric layout: `modules/hosts/<host>/default.nix` registered as a typed `nixos.configurations.<host>` record in the flake-parts host registry (`modules/flake/registry.nix`)
-  - Module boundaries: `modules/flake/` (flake-parts composition), `modules/core/`, `modules/profiles/`, `modules/services/`, `modules/applications/`
+  - Module boundaries: `modules/flake/` (flake-parts composition), `modules/services/`, `modules/applications/`, `modules/shared/`
   - Provider isolation: `modules/providers/<provider>/` for provider-specific defaults
   - Flake entrypoint: minimal flake-parts `flake.nix` discovering `modules/`; `nixosConfigurations.<host>` outputs materialized from the host registry
   - Documentation authority: `docs/` directory (architecture, decisions, plan, context-history)

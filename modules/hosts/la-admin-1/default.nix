@@ -2,18 +2,10 @@
   lib,
   ...
 }:
-let
-  hasHostSecrets = builtins.pathExists ../../../secrets/hosts/la-admin-1/system.yaml;
-in
 {
   imports = [
-    # Deferred raw leaves (FND-6): explicit host composition until each focused
-    # ownership change; the foundation aspects above arrive via the registry.
-    ../../../modules/shared/niks3-post-deploy.nix
-    ../../../modules/shared/niks3-upload-client.nix
-    ../../../modules/shared/nixbuild-ssh.nix
-    ../../../modules/services/beszel-agent-auth.nix
-    ../../../modules/services/state-backups.nix
+    # Operational aspects (OPS-1) arrive via the registry; the five deferred
+    # leaves they fold under are no longer imported here.
     ../../../modules/shared/web-policy.nix
     ../../../modules/shared/kanidm-host-auth.nix
     ../../../modules/applications/admin/default.nix
@@ -48,10 +40,6 @@ in
     bootLoader = "systemd-boot";
     buildTmpfsSize = "50%";
   };
-
-  # Deferred leaf enablement (FND-6 row 10): explicit host declaration until
-  # the focused builder-access ownership change.
-  fleet.nixbuild-ssh.enable = true;
 
   # Networking aspect fact: ens18 is the LA uplink (design D4/D8). RA defaults
   # kept, no bridge, no pinned DNS today.
@@ -103,21 +91,6 @@ in
       rescueUser.name = "rescue";
       reboot.onCalendar = "weekly";
     };
-
-    state-backups = {
-      enable = true;
-      secretFile = ../../../secrets/hosts/la-admin-1/system.yaml;
-      bucket = "shrublab-backup-la-admin-1";
-    };
-
-    # Deferred leaf enablement (FND-6 row 10): explicit host declarations until
-    # the focused Beszel/backup ownership changes.
-    beszel-agent-auth = lib.mkIf hasHostSecrets {
-      enable = true;
-      secretFiles.host = ../../../secrets/hosts/la-admin-1/system.yaml;
-    };
-
-    niks3-post-deploy.enable = true;
 
     admin.vaultwarden.smtpFrom = "admin@send.shrublab.xyz";
   };

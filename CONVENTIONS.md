@@ -15,12 +15,14 @@
 - Service modules live under `modules/services/<name>.nix` or `modules/services/<domain>/<name>.nix`.
 - Service option names MUST NOT be host-suffixed; keep them host-agnostic.
 
-**Foundation aspects** are the cross-cutting host baseline published through `flake.modules.nixos.<aspect>` and selected explicitly by every host registry record. Selection is enablement: there is no foundation-level `enable` option and no aspect imports another aspect.
+**Foundation and operational aspects** are the cross-cutting host baseline published through `flake.modules.nixos.<aspect>` and selected explicitly by every host registry record. Selection is enablement: there is no aspect-level `enable` option and no aspect imports another aspect.
 
-- The five foundation aspects are `base`, `shell`, `networking`, `tailscale`, and `notify`.
-- An aspect may import its own private NixOS leaf (under `modules/flake/_aspects/` or a service/shared leaf) without creating a hidden public dependency — e.g. `base` imports `modules/shared/host-recovery.nix`, `tailscale` imports `modules/services/tailscale.nix`, `notify` imports `modules/services/notification-daemon/`.
+- The five foundation aspects are `base`, `shell`, `networking`, `tailscale`, and `notify`; the three operational aspects are `backups`, `builder-access`, and `observability-agent`. All current registry hosts select all eight.
+- An aspect may import its own private NixOS leaf (under `modules/flake/_aspects/` or a service/shared leaf) without creating a hidden public dependency — e.g. `base` imports `modules/shared/host-recovery.nix`, `tailscale` imports `modules/services/tailscale.nix`, `notify` imports `modules/services/notification-daemon/`, `backups` imports `modules/services/state-backups.nix` plus the upstream `niks3-auto-upload` module and the `modules/shared/niks3-{upload-client,post-deploy}.nix` leaves, `builder-access` imports `modules/shared/nixbuild-ssh.nix`, `observability-agent` imports `modules/services/beszel-agent-auth.nix`.
+- `backups` derives the conventional host secret path (`secrets/hosts/<host>/system.yaml`) and the `shrublab-backup-<host>` bucket, gates enablement on the secret file's existence (two-step sops bootstrap), injects the post-deploy `nix-path-filter` package per system, and asserts `services.notification-daemon.monitor.enable` (the `notify` aspect owns monitor composition) without importing `notify`. The classified `nix.settings.post-build-hook = lib.mkForce ""` suppression is required because upstream `niks3-auto-upload` has no separate hook-disable option.
+- `builder-access` owns only nixbuild.net SSH trust; substituter policy stays in `base`. `observability-agent` owns Beszel agent enrollment (derived host secret path, pathExists gate) but not the Beszel hub, which remains an admin-service leaf.
 - `base` owns the typed machine facts `fleet.foundation.bootLoader` (`"grub"` | `"systemd-boot"`) and `fleet.foundation.buildTmpfsSize` (required string); hosts declare facts instead of fighting shared defaults with `mkForce`.
-- The former `modules/core/` and `modules/profiles/` directories are deleted; their behavior lives in the foundation aspects or explicit retained leaf imports in host records. Do not reintroduce profile/core wrappers.
+- The former `modules/core/` and `modules/profiles/` directories are deleted; their behavior lives in the foundation aspects, the operational aspects, or feature leaves selected in host records. Do not reintroduce profile/core wrappers.
 
 **Hosts** are thin assembly layers. They declare identity, typed foundation facts, feature enables, secret source bindings, and narrow host-only overrides.
 

@@ -6,7 +6,7 @@
 
 **Key Characteristics:**
 - **Flake-driven:** Single `flake.nix` pins all inputs; flake-parts plus a typed host registry (`modules/flake/`) materializes `nixosConfigurations` per host
-- **Aspect composition:** `flake.modules.nixos` publishes the five foundation aspects — `base`, `shell`, `networking`, `tailscale`, `notify`; host registry records select them explicitly (selection is enablement) and import remaining feature leaves directly
+- **Aspect composition:** `flake.modules.nixos` publishes the five foundation aspects — `base`, `shell`, `networking`, `tailscale`, `notify` — plus the three operational aspects — `backups`, `builder-access`, `observability-agent`; host registry records select them explicitly (selection is enablement) and import remaining feature leaves directly
 - **Hosts are thin:** Host modules (`modules/hosts/<host>/default.nix`) declare identity, feature enables, typed foundation facts, provider/storage imports, and secret path bindings
 - **Applications compose services:** Application modules (`modules/applications/<name>/`) wire multi-service stacks behind one operator-facing toggle
 - **Services own their internals:** Leaf service modules own enabling runtime config, `sops.secrets`, `sops.templates`, systemd units, and assertions
@@ -45,12 +45,12 @@
 - Used by: Application modules or directly by hosts
 
 **Foundation Aspect Layer (`modules/flake/aspects.nix` + `modules/flake/_aspects/`):**
-- Purpose: Cross-cutting host baseline published as five selected foundation aspects — `base`, `shell`, `networking`, `tailscale`, `notify`. Selection is enablement: every host registry record imports all five explicitly and no aspect imports another aspect
+- Purpose: Cross-cutting host baseline published as five selected foundation aspects — `base`, `shell`, `networking`, `tailscale`, `notify` — plus three operational aspects — `backups`, `builder-access`, `observability-agent`. Selection is enablement: every host registry record imports all eight explicitly and no aspect imports another aspect
 - Location: `modules/flake/aspects.nix` (published `flake.modules.nixos.<aspect>` records); private aspect implementations live under `modules/flake/_aspects/`
 - Contains: `base` (policy, users, host-recovery import, and the typed `fleet.foundation.bootLoader` / `fleet.foundation.buildTmpfsSize` host facts), `shell` (zsh/p10k, wezterm, nix-index comma), `networking` (native networkd contract rendered from `fleet.networking` facts), `tailscale` (auth-key secret registration and nullable `services.tailscale.debugMtu`), `notify` (notification-daemon enablement with withSystem-resolved packages). An aspect may import its own private service/shared leaf — e.g. `modules/services/tailscale.nix`, `modules/services/notification-daemon/`, `modules/shared/host-recovery.nix` — without creating a public dependency
 - Depends on: Its own private leaves under `modules/services/`, `modules/shared/`, and `policy/`
 
-The former `modules/core/` and `modules/profiles/` directories were deleted in dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`); their behavior became the foundation aspects above or explicit retained leaf imports in host records (e.g. `modules/shared/niks3-upload-client.nix` preserves the conventional cache-upload client defaults).
+The former `modules/core/` and `modules/profiles/` directories were deleted in dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`); their behavior became the foundation aspects above or the operational aspects and feature leaves selected in host records. Dendritic Stage 3 (`dendritic-stage-3-operational-aspects`) converted the five deferred operational leaves into the `backups`, `builder-access`, and `observability-agent` aspects (see `docs/decisions.md` D-049): `backups` composes state backups, the niks3 upload client, and post-deploy closure upload; `builder-access` owns only nixbuild.net SSH trust; `observability-agent` owns Beszel agent enrollment. The OCI cache server (`modules/services/niks3.nix`) remains a leaf, and the `services`/`shared` import-tree exclusions remain temporarily in place.
 
 **Provider Layer (`modules/providers/`):**
 - Purpose: Isolate cloud/platform-specific hardware, kernel, and network defaults

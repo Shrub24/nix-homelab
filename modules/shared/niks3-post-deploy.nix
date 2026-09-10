@@ -7,11 +7,19 @@ let
   cfg = config.services.niks3-post-deploy;
   hook = config.services.niks3-auto-upload;
   hookPkg = hook.package;
-  filterPkg = config.repo.packages.nix-path-filter;
+  # Required typed option injected by the backups aspect (OPS-3); the leaf no
+  # longer reads config.repo.packages, so the aspect has no hidden
+  # fleet-packages dependency.
+  filterPkg = cfg.filterPackage;
 in
 {
   options.services.niks3-post-deploy = {
     enable = lib.mkEnableOption "post-deploy push of filtered system closure to niks3";
+
+    filterPackage = lib.mkOption {
+      type = lib.types.package;
+      description = "nix-path-filter package used to exclude public-key-signed paths from the pushed closure.";
+    };
 
     excludePublicKeys = lib.mkOption {
       type = lib.types.listOf lib.types.str;
@@ -25,6 +33,12 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # OPS-6: classified upstream compatibility constraint. Upstream
+    # niks3-auto-upload sets nix.settings.post-build-hook whenever it is
+    # enabled; the fleet deliberately does not run the hook on every Nix
+    # build (post-deploy closure upload is activation-triggered against the
+    # same daemon/socket), so this mkForce "" suppresses the automatic hook.
+    # Do not remove or relocate; no other override exists.
     nix.settings.post-build-hook = lib.mkForce "";
 
     # Runs on every activation (switch and boot). At boot systemd is not up

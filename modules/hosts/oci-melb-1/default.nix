@@ -13,13 +13,8 @@ in
   imports = [
     (modulesPath + "/installer/scan/not-detected.nix")
     (modulesPath + "/profiles/qemu-guest.nix")
-    # Deferred raw leaves (FND-6): explicit host composition until each focused
-    # ownership change; the foundation aspects above arrive via the registry.
-    ../../../modules/shared/niks3-post-deploy.nix
-    ../../../modules/shared/niks3-upload-client.nix
-    ../../../modules/shared/nixbuild-ssh.nix
-    ../../../modules/services/beszel-agent-auth.nix
-    ../../../modules/services/state-backups.nix
+    # Operational aspects (OPS-1) arrive via the registry; the five deferred
+    # leaves they fold under are no longer imported here.
     ../../../modules/shared/web-policy.nix
     ../../../modules/shared/kanidm-host-auth.nix
     ../../../modules/shared/identity-oidc.nix
@@ -60,10 +55,6 @@ in
     bootLoader = "grub";
     buildTmpfsSize = "8G";
   };
-
-  # Deferred leaf enablement (FND-6 row 10): explicit host declaration until
-  # the focused builder-access ownership change.
-  fleet.nixbuild-ssh.enable = true;
 
   fleet.networking = {
     uplink.interface = "enp0s6";
@@ -193,21 +184,9 @@ in
       reboot.onCalendar = "weekly";
     };
 
-    state-backups = {
-      enable = true;
-      secretFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
-      bucket = "shrublab-backup-oci-melb-1";
-      stagingRoot = "/srv/data/state-backups";
-    };
-
-    # Deferred leaf enablement (FND-6 row 10): explicit host declarations until
-    # the focused Beszel/backup ownership changes.
-    beszel-agent-auth = lib.mkIf hasHostSecrets {
-      enable = true;
-      secretFiles.host = ../../../secrets/hosts/oci-melb-1/system.yaml;
-    };
-
-    niks3-post-deploy.enable = true;
+    # Real host variant only: the backups aspect owns enablement, the derived
+    # secret path, and the derived bucket (OPS-3).
+    state-backups.stagingRoot = "/srv/data/state-backups";
 
     niks3-cache = {
       enable = true;

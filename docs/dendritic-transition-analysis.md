@@ -5,7 +5,11 @@ Status: scoping report, not an OpenSpec change. This analysis supersedes the `no
 
 ## Stage 2 supersession (2026-09-10)
 
-The music-exemplar "Stage 2" below is **superseded/historical**. Stage 2 shipped foundation-first as `dendritic-stage-2-foundation-aspects`: the five foundation aspects (`base`, `shell`, `networking`, `tailscale`, `notify`) publish through `flake.modules.nixos` with typed `fleet.foundation` host facts; `modules/core/` and `modules/profiles/` were deleted and removed from the import-tree exclusion; deferred operational behavior remains explicit raw-leaf imports in host records (e.g. `modules/shared/niks3-upload-client.nix` preserves the conventional cache-upload client defaults). The change is implementation-complete but not deployed or archived. The music aspect surface and the Stage 3 per-need conversions remain staged; see D-048.
+The music-exemplar "Stage 2" below is **superseded/historical**. Stage 2 shipped foundation-first as `dendritic-stage-2-foundation-aspects`: the five foundation aspects (`base`, `shell`, `networking`, `tailscale`, `notify`) publish through `flake.modules.nixos` with typed `fleet.foundation` host facts; `modules/core/` and `modules/profiles/` were deleted and removed from the import-tree exclusion; deferred operational behavior remained explicit raw-leaf imports in host records at that point (e.g. `modules/shared/niks3-upload-client.nix` preserves the conventional cache-upload client defaults). The change is implementation-complete but not deployed or archived. The music aspect surface and the remaining per-need conversions remain staged; see D-048.
+
+## Stage 3 supersession (2026-09-11)
+
+Stage 3 shipped operational aspects as `dendritic-stage-3-operational-aspects` (D-049): the three operational aspects (`backups`, `builder-access`, `observability-agent`) publish through `flake.modules.nixos` and are selected by all three registry hosts; the five deferred operational leaves (state-backups, niks3-upload-client, niks3-post-deploy, nixbuild-ssh, beszel-agent-auth) fold under them and are no longer host imports. The "forge may never get builder access" note in the aspect table below is **superseded**: all three hosts, including home-forge, select `builder-access`. `backups` derives the conventional host secret path and `shrublab-backup-<host>` bucket, gates enablement on the secret file's existence, injects the post-deploy `nix-path-filter` package per system, and asserts the notify-owned monitor option without importing `notify`; the classified `post-build-hook = mkForce ""` suppression is retained because upstream `niks3-auto-upload` has no hook-disable option. The OCI cache server stays a leaf and `services`/`shared` remain temporarily excluded. The change is implementation-complete but not deployed or archived.
 
 ## Revalidation (2026-09-09)
 
@@ -68,7 +72,7 @@ Proposed named aspects, with what folds into each (folded = source files contrib
 | `notify` | notification-daemon + svc-monitor + notify CLI | fixes the state-backups composition gap by owning the daemon its consumer needs; loopback-only, every host |
 | `push-server` | ntfy server + its secret/file contracts | independently placed (LA today); daemon uses it but must not force it |
 | `backups` | state-backups + niks3 upload/post-deploy + bucket naming from policy | one coherent "state leaves the host" story |
-| `builder-access` | nixbuild SSH trust | genuinely optional per host (forge may never get it) |
+| `builder-access` | nixbuild SSH trust | genuinely optional per host (superseded 2026-09-11: all three hosts, including home-forge, select `builder-access` — see Stage 3 supersession) |
 | `observability-agent` | beszel-agent + auth secret contract | distinct from hub; every monitored host |
 | `postgres` | postgres-shared server + roles DB + **provider/consumer connection contract** | answers the placement question with typed variants: a host either runs the provider (option) or points at a connection contract — the hybrid model grilled in batch 2 |
 | `identity-provider` | kanidm server | one host; client wiring must not assume it |

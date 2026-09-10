@@ -15,13 +15,8 @@ let
 in
 {
   imports = [
-    # Deferred raw leaves (FND-6): explicit host composition until each focused
-    # ownership change; the foundation aspects above arrive via the registry.
-    ../../../modules/shared/niks3-post-deploy.nix
-    ../../../modules/shared/niks3-upload-client.nix
-    ../../../modules/shared/nixbuild-ssh.nix
-    ../../../modules/services/beszel-agent-auth.nix
-    ../../../modules/services/state-backups.nix
+    # Operational aspects (OPS-1) arrive via the registry; the five deferred
+    # leaves they fold under are no longer imported here.
     ../../../modules/shared/web-policy.nix
     ../../../modules/services/omniroute.nix
     ./disko-two-disk.nix
@@ -35,10 +30,6 @@ in
     bootLoader = "systemd-boot";
     buildTmpfsSize = "50%";
   };
-
-  # Deferred leaf enablement (FND-6 row 10): explicit host declarations until
-  # the focused builder-access ownership change.
-  fleet.nixbuild-ssh.enable = true;
 
   # Locally-managed physical host: plain LAN DHCP via native systemd-networkd
   # (fleet networking aspect), no static addresses and no public ingress. The
@@ -85,26 +76,17 @@ in
   # Host-scoped R2/restic backup (HFG-6): core/high-level system state only
   # (config, host identity, recovery material); workload-specific paths are
   # added as workloads are introduced, not speculatively. Credentials resolve
-  # from the host system secret. Activates once host secrets exist.
-  services.state-backups = lib.mkIf hasHostSecrets {
-    enable = true;
-    secretFile = ../../../secrets/hosts/home-forge/system.yaml;
-    bucket = "shrublab-backup-home-forge";
+  # from the host system secret. The backups aspect owns enablement, the
+  # derived secret path, and the derived bucket (OPS-3); the host keeps only
+  # its real variants: the non-default staging root and the host-core backup
+  # contract.
+  services.state-backups = {
     stagingRoot = "/srv/data/state-backups";
     # Baseline-only host: no workload modules contribute backup contracts
     # yet, so back up the persistent host identity directly. Workload paths
     # are added as workloads are introduced.
     services.host-core.paths = [ "/etc/ssh" ];
   };
-
-  # Deferred leaf enablement (FND-6 row 10): explicit host declarations until
-  # the focused Beszel/backup ownership changes.
-  services.beszel-agent-auth = lib.mkIf hasHostSecrets {
-    enable = true;
-    secretFiles.host = ../../../secrets/hosts/home-forge/system.yaml;
-  };
-
-  services.niks3-post-deploy.enable = true;
 
   # nixos-facter facts replace a hand-written hardware-configuration.nix. The
   # report was captured from the live ISO (operator gate 8.3); until then keep

@@ -363,9 +363,8 @@ in
     # OnFailure=svc-monitor@... directly, without the generic monitor's
     # lifecycle ExecStartPost/ExecStopPost hooks (ExecStopPost would report
     # success after a failed run). The notification-daemon monitor template
-    # must exist, so monitor.enable defaults on; restic is deliberately NOT in
-    # the generic monitor.services lifecycle list.
-    services.notification-daemon.monitor.enable = lib.mkDefault true;
+    # must exist; the notify aspect owns monitor composition (OPS-4) and the
+    # backups aspect asserts it, so this leaf no longer defaults monitor.enable.
     systemd.services."restic-backups-${cfg.backupName}".onFailure = lib.mkBefore [
       "svc-monitor@restic-backups-${cfg.backupName}.service"
     ];

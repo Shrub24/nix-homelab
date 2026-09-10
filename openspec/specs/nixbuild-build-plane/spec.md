@@ -2,7 +2,9 @@
 
 ## Purpose
 Defines nixbuild.net as the canonical CI remote build plane and shared substituter contract for fleet hosts and documented local consumers.
+
 ## Requirements
+
 ### Requirement: CI builds SHALL use nixbuild.net as the primary remote build plane
 Repository CI workflows SHALL execute build-heavy Nix validation through `nixbuild.net` rather than depending on GitHub-hosted multi-architecture runners.
 
@@ -42,3 +44,15 @@ Pushes to `main` SHALL trigger validation and then host deployment in determinis
 - **THEN** deployment runs `la-admin-1` before `oci-melb-1`
 - **AND** failure on the first host stops further deployment for that run
 
+### Requirement: Builder SSH trust SHALL be owned by the builder-access aspect
+nixbuild.net SSH trust and host configuration SHALL be owned by the builder-access aspect that hosts select explicitly, while substituter policy SHALL remain in the base aspect.
+
+#### Scenario: Host selects the builder-access aspect
+- **WHEN** a host selects the builder-access aspect
+- **THEN** the nixbuild.net SSH known-hosts and host configuration are provided by the aspect
+- **AND** the host assembly does not repeat the nixbuild SSH leaf import or enablement
+
+#### Scenario: Substituter policy remains base-owned
+- **WHEN** a host's substituter configuration is inspected
+- **THEN** the nixbuild.net substituter priority and trust remain in the base aspect, unchanged by the builder-access aspect
+- **AND** selecting builder-access does not alter the shared substituter/trust baseline

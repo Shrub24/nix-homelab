@@ -70,7 +70,6 @@ in
             inputs.disko.nixosModules.disko
             inputs.sops-nix.nixosModules.sops
             inputs.niks3.nixosModules.niks3
-            inputs.niks3.nixosModules.niks3-auto-upload
             aspects.provenance
             aspects.oci-images
             aspects.fleet-packages
@@ -80,6 +79,10 @@ in
             aspects.networking
             aspects.tailscale
             aspects.notify
+            # Operational aspects (dendritic stage 3, OPS-1): selection is enablement.
+            aspects.backups
+            aspects.builder-access
+            aspects.observability-agent
             ../hosts/oci-melb-1/default.nix
           ];
         };
@@ -99,7 +102,6 @@ in
         module = {
           imports = [
             inputs.sops-nix.nixosModules.sops
-            inputs.niks3.nixosModules.niks3-auto-upload
             aspects.provenance
             aspects.oci-images
             aspects.fleet-packages
@@ -109,6 +111,10 @@ in
             aspects.networking
             aspects.tailscale
             aspects.notify
+            # Operational aspects (dendritic stage 3, OPS-1): selection is enablement.
+            aspects.backups
+            aspects.builder-access
+            aspects.observability-agent
             ../hosts/la-admin-1/default.nix
           ];
         };
@@ -123,7 +129,6 @@ in
           imports = [
             inputs.disko.nixosModules.disko
             inputs.sops-nix.nixosModules.sops
-            inputs.niks3.nixosModules.niks3-auto-upload
             aspects.provenance
             aspects.oci-images
             aspects.fleet-packages
@@ -134,6 +139,10 @@ in
             aspects.networking
             aspects.tailscale
             aspects.notify
+            # Operational aspects (dendritic stage 3, OPS-1): selection is enablement.
+            aspects.backups
+            aspects.builder-access
+            aspects.observability-agent
             ../hosts/home-forge/default.nix
           ];
         };

@@ -954,3 +954,35 @@ References:
 
 - `openspec/changes/dendritic-stage-2-foundation-aspects/{proposal,design}.md` (FND-1–FND-7)
 - `docs/dendritic-transition-analysis.md` (Stages)
+
+## D-049: Dendritic Stage 3 publishes the operational aspects; the five deferred leaves are no longer host imports
+
+Status: Accepted
+
+Decision:
+
+- three operational aspects are published through `flake.modules.nixos.{backups,builder-access,observability-agent}` (`modules/flake/aspects.nix`); selection is enablement — every host registry record imports all five foundation aspects plus all three operational aspects (eight aspects total) and no aspect imports another aspect
+- `backups` owns the host-egress capability: it imports `modules/services/state-backups.nix`, the upstream `inputs.niks3.nixosModules.niks3-auto-upload` module, `modules/shared/niks3-upload-client.nix`, and `modules/shared/niks3-post-deploy.nix`; it derives the conventional host secret path `secrets/hosts/${hostName}/system.yaml` and the `shrublab-backup-${hostName}` bucket, defaults `services.state-backups.secretFile` to the derived path, gates state-backups and post-deploy enablement on the file's existence (two-step sops bootstrap preserved on every host), and injects the required `services.niks3-post-deploy.filterPackage` per system via `withSystem` (no hidden `fleet-packages` dependency)
+- `backups` asserts `services.notification-daemon.monitor.enable` via `lib.attrByPath` and never imports `notify`; `notify` owns monitor composition (canonical apprise contract) and the state-backups leaf no longer defaults `monitor.enable`
+- the existing `nix.settings.post-build-hook = lib.mkForce ""` is classified as currently necessary (OPS-6): upstream `niks3-auto-upload` sets the hook whenever enabled and has no separate hook-disable option, so the suppression is required while the activation-triggered post-deploy send reuses the upstream daemon/socket; no new `mkForce` is introduced
+- `builder-access` owns only nixbuild.net SSH trust (`programs.ssh.knownHosts.nixbuild` + `extraConfig`); substituter policy remains in the `base` aspect and the `fleet.nixbuild-ssh.enable` option is retired
+- `observability-agent` owns Beszel agent authentication and enrollment: it derives the conventional host secret path, sets `services.beszel-agent-auth.secretFiles.host` to it, and gates enrollment on the file's existence; the Beszel hub (`modules/services/admin/beszel.nix`) remains an admin-service leaf
+- the five deferred leaves (`state-backups`, `niks3-upload-client`, `niks3-post-deploy`, `nixbuild-ssh`, `beszel-agent-auth`) are no longer imported directly by host records, and the registry no longer imports `inputs.niks3.nixosModules.niks3-auto-upload` (the `backups` aspect owns that import); OCI keeps the niks3 server module import (`inputs.niks3.nixosModules.niks3`) and its loopback cache endpoint
+- the OCI cache server (`modules/services/niks3.nix`) stays a leaf; `services/` and `shared/` remain temporarily excluded from import-tree discovery (`_unconverted-nixos-dirs.nix`) because both roots still contain unconverted leaves
+- the transition analysis's "forge may never get builder access" note is superseded: all three hosts, including home-forge, select `builder-access`
+
+Rationale:
+
+- the five leaves had clear boundaries after Stage 2 (backups + cache upload = host egress, nixbuild SSH trust = builder access, Beszel agent = observability), so publishing them as explicit aspects makes operational capabilities host selections instead of repeated raw-leaf imports
+- deriving the secret path and bucket from `networking.hostName` removes three identical host literals while preserving the exact evaluated values and the two-step bootstrap gate
+- explicit selection plus assertion (never hidden transitive imports) keeps the no-composition-bus discipline from D-047/D-048
+
+Supersedes/updates:
+
+- supersedes the Stage 2 "deferred operational behavior remains explicit raw-leaf imports in host records" statements for these five leaves in `docs/dendritic-transition-analysis.md`, `docs/context-history.md`, `docs/plan.md`, `STRUCTURE.md`, `CONVENTIONS.md`, and `ARCHITECTURE.md`
+- updates D-048's retained-leaf wording for the five converted leaves; the remaining shared/service leaves (`web-policy`, `kanidm-host-auth`, `identity-oidc`, and the rest of the service tree) stay staged
+
+References:
+
+- `openspec/changes/dendritic-stage-3-operational-aspects/{proposal,design}.md` (OPS-1–OPS-11)
+- `docs/dendritic-transition-analysis.md` (Stages)

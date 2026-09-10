@@ -75,10 +75,10 @@ nix-homelab/
 **`modules/flake/`:**
 
 - Purpose: Flake-parts composition modules discovered by `denful/import-tree` from `flake.nix`
-- Contains: `registry.nix` (typed `nixos.configurations.<host>` host registry materialized through `inputs.nixpkgs.lib.nixosSystem`, plus the `flake.bootstrap.nodes` projection), `aspects.nix` (published `flake.modules.nixos.<aspect>` cross-cutting modules — the five foundation aspects `base`, `shell`, `networking`, `tailscale`, `notify`), `_aspects/` (private foundation-aspect implementations: `base.nix`, `shell.nix` with `p10k.zsh`, `networking.nix`), `packages.nix`, `deploy.nix`, `dev.nix`, `dj.nix`, `scaffold.nix`, and `_unconverted-nixos-dirs.nix` (the temporary enumerated `filterNot` boundary for directories still holding plain NixOS leaves)
+- Contains: `registry.nix` (typed `nixos.configurations.<host>` host registry materialized through `inputs.nixpkgs.lib.nixosSystem`, plus the `flake.bootstrap.nodes` projection), `aspects.nix` (published `flake.modules.nixos.<aspect>` cross-cutting modules — the five foundation aspects `base`, `shell`, `networking`, `tailscale`, `notify` plus the three operational aspects `backups`, `builder-access`, `observability-agent`), `_aspects/` (private foundation-aspect implementations: `base.nix`, `shell.nix` with `p10k.zsh`, `networking.nix`), `packages.nix`, `deploy.nix`, `dev.nix`, `dj.nix`, `scaffold.nix`, and `_unconverted-nixos-dirs.nix` (the temporary enumerated `filterNot` boundary for directories still holding plain NixOS leaves)
 - Key files: `modules/flake/registry.nix`, `modules/flake/aspects.nix`, `modules/flake/_aspects/base.nix`, `modules/flake/_unconverted-nixos-dirs.nix`
 
-The former `modules/core/` and `modules/profiles/` directories no longer exist: dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`) converted their contents into the foundation aspects above (with typed `fleet.foundation` host facts) and explicit retained leaf imports in host records; no host imports the deleted wrappers.
+The former `modules/core/` and `modules/profiles/` directories no longer exist: dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`) converted their contents into the foundation aspects above (with typed `fleet.foundation` host facts), and dendritic Stage 3 (`dendritic-stage-3-operational-aspects`) converted the five deferred operational leaves into the `backups`, `builder-access`, and `observability-agent` aspects; no host imports the deleted wrappers or the five leaves directly.
 
 **`modules/hosts/`:**
 
@@ -214,7 +214,7 @@ The former `modules/core/` and `modules/profiles/` directories no longer exist: 
 
 ## Where to Add New Code
 
-**New host:** `modules/hosts/<host-name>/default.nix` — create thin assembly declaring identity, typed foundation facts (`fleet.foundation.bootLoader`, `fleet.foundation.buildTmpfsSize`), feature enables, and secret bindings. Add a `nixos.configurations.<host-name>` record in `modules/flake/registry.nix` that imports the five foundation aspects (`aspects.base`, `aspects.shell`, `aspects.networking`, `aspects.tailscale`, `aspects.notify`) plus the host's feature leaves. Add entry to `lib/deploy/hosts.nix`. Add host-scoped `.sops.yaml` rules.
+**New host:** `modules/hosts/<host-name>/default.nix` — create thin assembly declaring identity, typed foundation facts (`fleet.foundation.bootLoader`, `fleet.foundation.buildTmpfsSize`), feature enables, and secret bindings. Add a `nixos.configurations.<host-name>` record in `modules/flake/registry.nix` that imports the five foundation aspects (`aspects.base`, `aspects.shell`, `aspects.networking`, `aspects.tailscale`, `aspects.notify`) plus the three operational aspects (`aspects.backups`, `aspects.builder-access`, `aspects.observability-agent`) and the host's feature leaves. Add entry to `lib/deploy/hosts.nix`. Add host-scoped `.sops.yaml` rules.
 
 **New application stack:** `modules/applications/<name>/default.nix` — composition root with `enable` flag, shared paths, and sub-service wiring. Use `secretFiles.host` for secret passthrough.
 
@@ -224,7 +224,7 @@ The former `modules/core/` and `modules/profiles/` directories no longer exist: 
 
 **New service:** `modules/services/<name>.nix` (standalone) or `modules/services/<domain>/<name>.nix` (grouped) — leaf module with `enable` flag, `secretFiles.*` contracts, and `sops.secrets` ownership. Use `lib/secrets.nix` helpers.
 
-**New foundation aspect:** `modules/flake/aspects.nix` — publish a `flake.modules.nixos.<name>` record that imports its private implementation leaf under `modules/flake/_aspects/` (or a service/shared leaf). Host registry records select the aspect explicitly; selection is enablement and no aspect imports another aspect.
+**New foundation/operational aspect:** `modules/flake/aspects.nix` — publish a `flake.modules.nixos.<name>` record that imports its private implementation leaf under `modules/flake/_aspects/` (or a service/shared leaf). Host registry records select the aspect explicitly; selection is enablement and no aspect imports another aspect.
 
 **New provider:** `modules/providers/<name>/default.nix` — provider-specific safe defaults. Import in relevant host's `default.nix`.
 

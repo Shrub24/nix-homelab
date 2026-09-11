@@ -13,7 +13,7 @@ nix-homelab/
 ├── docs/            # Human-facing architecture, planning, and runbook docs
 ├── generated/       # Committed generated artifacts (e.g., web policy JSON)
 ├── lib/             # Reusable Nix library functions
-├── modules/             # Flake-parts modules + NixOS modules (flake composition, hosts, applications, services, providers, storage, shared, foundation-aspect leaves)
+├── modules/             # Flake-parts modules + NixOS modules (flake composition, hosts, applications, services, providers, aspect contributors + private aspect leaves)
 ├── pkgs/            # Custom Nix packages/derivations (notification-daemon, notify CLI, _sources/)
 ├── openspec/        # OpenSpec change management artifacts
 ├── opentofu/        # OpenTofu infrastructure-as-code (Cloudflare)
@@ -75,10 +75,10 @@ nix-homelab/
 **`modules/flake/`:**
 
 - Purpose: Flake-parts composition modules discovered by `denful/import-tree` from `flake.nix`
-- Contains: `registry.nix` (typed `nixos.configurations.<host>` host registry materialized through `inputs.nixpkgs.lib.nixosSystem`, plus the `flake.bootstrap.nodes` projection), concern-owned `flake.modules.nixos.<aspect>` contributors — the five foundation aspects `base.nix`, `shell.nix`, `networking.nix`, `tailscale.nix`, `notify.nix`, the three operational aspects `backups.nix`, `builder-access.nix`, `observability-agent.nix`, and the `dj.nix` application aspect — plus the infrastructure support modules `provenance.nix`, `oci-images.nix`, `fleet-packages.nix`, `_aspects/` (private aspect implementations: `base.nix`, `shell.nix` with `p10k.zsh`, `networking.nix`), `packages.nix`, `deploy.nix`, `dev.nix`, `scaffold.nix`, and `_unconverted-nixos-dirs.nix` (the transitional enumerated `filterNot` boundary for the six directories still holding plain NixOS leaves; it must shrink as converted roots empty — underscore-renaming whole roots is not completion)
+- Contains: `registry.nix` (typed `nixos.configurations.<host>` host registry materialized through `inputs.nixpkgs.lib.nixosSystem`, plus the `flake.bootstrap.nodes` projection), concern-owned `flake.modules.nixos.<aspect>` contributors — the five foundation aspects `base.nix`, `shell.nix`, `networking.nix`, `tailscale.nix`, `notify.nix`, the three operational aspects `backups.nix`, `builder-access.nix`, `observability-agent.nix`, the `dj.nix` application aspect, and the `identity-client` aspect (two separately discovered contributors, `identity-oidc.nix` + `kanidm-host-auth.nix`, each nesting its own options/config inline) — plus the infrastructure support quartet `provenance.nix`, `oci-images.nix`, `fleet-packages.nix`, `web-policy.nix`, the concern-owned private paths `_aspects/` (foundation private implementations: `base.nix`, `shell.nix` with `p10k.zsh`, `networking.nix`, `host-recovery.nix`), `_backups/` (`niks3-upload-client.nix`, `niks3-post-deploy.nix`), and `_builder-access/` (`nixbuild-ssh.nix`), `packages.nix`, `deploy.nix`, `dev.nix`, `scaffold.nix`, and `_unconverted-nixos-dirs.nix` (the transitional enumerated `filterNot` boundary for the four directories still holding plain NixOS leaves; it must shrink as converted roots empty — underscore-renaming whole roots is not completion)
 - Key files: `modules/flake/registry.nix`, `modules/flake/base.nix`, `modules/flake/dj.nix`, `modules/flake/_aspects/base.nix`, `modules/flake/_unconverted-nixos-dirs.nix`
 
-The former `modules/core/` and `modules/profiles/` directories no longer exist: dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`) converted their contents into the foundation aspects above (with typed `fleet.foundation` host facts), and dendritic Stage 3 (`dendritic-stage-3-operational-aspects`) converted the five deferred operational leaves into the `backups`, `builder-access`, and `observability-agent` aspects; no host imports the deleted wrappers or the five leaves directly. Dendritic Stage 4 (`dendritic-stage-4-source-model-realignment`) replaced the central `aspects.nix` publication file with concern-owned discovered contributors and classified `provenance`/`oci-images`/`fleet-packages` as infrastructure support (D-050).
+The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules/storage/` directories no longer exist: dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`) converted the core/profile contents into the foundation aspects above (with typed `fleet.foundation` host facts), and dendritic Stage 3 (`dendritic-stage-3-operational-aspects`) converted the five deferred operational leaves into the `backups`, `builder-access`, and `observability-agent` aspects; no host imports the deleted wrappers or the five leaves directly. Dendritic Stage 4 (`dendritic-stage-4-source-model-realignment`) replaced the central `aspects.nix` publication file with concern-owned discovered contributors and classified `provenance`/`oci-images`/`fleet-packages` as infrastructure support (D-050). Dendritic Stage 5 (`dendritic-stage-5-shared-source-contributors`, D-051) deleted the `shared`/`storage` roots, relocated the remaining private leaves beside their aspect owners (`_aspects`, `_backups`, `_builder-access`), promoted `web-policy` to a discovered all-host support contributor, merged `identity-oidc`/`kanidm-host-auth` into the single `identity-client` aspect, and shrank the filter from six entries to four.
 
 **`modules/hosts/`:**
 
@@ -117,16 +117,11 @@ The former `modules/core/` and `modules/profiles/` directories no longer exist: 
 - Contains: `oci/default.nix`
 - Key files: `modules/providers/oci/default.nix`
 
-**`modules/storage/`:**
+**`modules/flake/_aspects/`, `_backups/`, `_builder-access/`:**
 
-- Purpose: Declarative disk partitioning via disko (shared layouts; sole-consumer layouts live beside their host under `modules/hosts/`)
-- Contains: `disko-root.nix`, `disko-single-disk.nix`
-- Key files: `modules/hosts/oci-melb-1/disko-single-disk-split.nix` (split root/data/nix/media layout), `modules/hosts/home-forge/disko-two-disk.nix`
-
-**`modules/shared/`:**
-
-- Purpose: Shared cross-cutting modules — host recovery, identity OIDC, Kanidm auth, niks3 post-deploy, conventional cache-upload client defaults, nixbuild SSH, web policy
-- Key files: `modules/shared/host-recovery.nix`, `modules/shared/identity-oidc.nix`, `modules/shared/kanidm-host-auth.nix`, `modules/shared/niks3-post-deploy.nix`, `modules/shared/niks3-upload-client.nix`, `modules/shared/nixbuild-ssh.nix`, `modules/shared/web-policy.nix`
+- Purpose: Concern-owned private implementation leaves reached only through their aspect owner's imports; underscore semantics keep them out of import-tree discovery and they publish no `flake.modules.nixos.<name>` (D-051). The split is deliberate and not normalized later.
+- Contains: `_aspects/` foundation implementations (`base.nix`, `shell.nix` + `p10k.zsh`, `networking.nix`, `host-recovery.nix`), `_backups/` (`niks3-upload-client.nix`, `niks3-post-deploy.nix`), `_builder-access/` (`nixbuild-ssh.nix`)
+- Key files: `modules/flake/_aspects/base.nix`, `modules/flake/_aspects/host-recovery.nix`, `modules/flake/_backups/niks3-post-deploy.nix`, `modules/flake/_builder-access/nixbuild-ssh.nix`
 
 **`policy/`:**
 
@@ -174,7 +169,7 @@ The former `modules/core/` and `modules/profiles/` directories no longer exist: 
 
 **Deploy Metadata:** `lib/deploy/hosts.nix`: Hostname, SSH user, system architecture, remote-build flag per host; `edgeHost` and `deployOrder` are the only physical deployment facts (serial order `la-admin-1` → `oci-melb-1`)
 
-**Core Logic:** `modules/`: Flake-parts composition (`modules/flake/`), host assemblies (`modules/hosts/`), and all NixOS module code organized by application, service, provider, storage, and shared layer, plus the foundation-aspect leaves under `modules/flake/_aspects/`
+**Core Logic:** `modules/`: Flake-parts composition (`modules/flake/`), host assemblies (`modules/hosts/`), and all NixOS module code organized by application, service, and provider layer, plus the aspect contributors under `modules/flake/` and their private implementation leaves under `modules/flake/_aspects/`, `_backups/`, and `_builder-access/`
 
 **Policy SSOT:** `policy/web-services.nix`: All public web service endpoint definitions with origin, exposure mode, and Cloudflare config
 
@@ -214,7 +209,7 @@ The former `modules/core/` and `modules/profiles/` directories no longer exist: 
 
 ## Where to Add New Code
 
-**New host:** `modules/hosts/<host-name>/default.nix` — create thin assembly declaring identity, typed foundation facts (`fleet.foundation.bootLoader`, `fleet.foundation.buildTmpfsSize`), feature enables, and secret bindings. Add a `nixos.configurations.<host-name>` record in `modules/flake/registry.nix` that imports the five foundation aspects (`aspects.base`, `aspects.shell`, `aspects.networking`, `aspects.tailscale`, `aspects.notify`) plus the three operational aspects (`aspects.backups`, `aspects.builder-access`, `aspects.observability-agent`) and the host's feature leaves. Add entry to `lib/deploy/hosts.nix`. Add host-scoped `.sops.yaml` rules.
+**New host:** `modules/hosts/<host-name>/default.nix` — create thin assembly declaring identity, typed foundation facts (`fleet.foundation.bootLoader`, `fleet.foundation.buildTmpfsSize`), feature enables, and secret bindings. Add a `nixos.configurations.<host-name>` record in `modules/flake/registry.nix` that imports the support quartet (`aspects.provenance`, `aspects.oci-images`, `aspects.fleet-packages`, `aspects.web-policy`), the five foundation aspects (`aspects.base`, `aspects.shell`, `aspects.networking`, `aspects.tailscale`, `aspects.notify`), the three operational aspects (`aspects.backups`, `aspects.builder-access`, `aspects.observability-agent`), any host-facing application aspects (`aspects.dj`, `aspects.identity-client`), and the host's feature leaves. Add entry to `lib/deploy/hosts.nix`. Add host-scoped `.sops.yaml` rules.
 
 **New application stack:** `modules/applications/<name>/default.nix` — composition root with `enable` flag, shared paths, and sub-service wiring. Use `secretFiles.host` for secret passthrough.
 
@@ -224,11 +219,11 @@ The former `modules/core/` and `modules/profiles/` directories no longer exist: 
 
 **New service:** `modules/services/<name>.nix` (standalone) or `modules/services/<domain>/<name>.nix` (grouped) — leaf module with `enable` flag, `secretFiles.*` contracts, and `sops.secrets` ownership. Use `lib/secrets.nix` helpers.
 
-**New foundation/operational aspect:** add a concern-owned contributor under `modules/flake/` (e.g. `base.nix`, `backups.nix`) that publishes a `flake.modules.nixos.<name>` record and imports its private implementation leaf under `modules/flake/_aspects/` (or a service/shared leaf). Host registry records select the aspect explicitly; selection is enablement. Aspect relationships follow the three composition modes (intrinsic composition, policy co-selection, optional integration); direct public-aspect imports require intrinsic-composition justification.
+**New foundation/operational aspect:** add a concern-owned contributor under `modules/flake/` (e.g. `base.nix`, `backups.nix`) that publishes a `flake.modules.nixos.<name>` record and imports its private implementation leaf under its concern-owned private path (`modules/flake/_aspects/`, `_backups/`, `_builder-access/`) or a service leaf. Several contributors may define the same aspect name when a capability is composed from independent source files (the `identity-client` pattern); each contributor nests its own body inline with no wrapper or cross-contributor import. Host registry records select the aspect explicitly; selection is enablement. Aspect relationships follow the three composition modes (intrinsic composition, policy co-selection, optional integration); direct public-aspect imports require intrinsic-composition justification.
 
 **New provider:** `modules/providers/<name>/default.nix` — provider-specific safe defaults. Import in relevant host's `default.nix`.
 
-**New storage layout:** `modules/storage/disko-<name>.nix` for shared layouts; place sole-consumer host layouts beside the host (e.g., `modules/hosts/oci-melb-1/disko-single-disk-split.nix`). Add sizing options pattern from `disko-single-disk-split.nix`.
+**New storage layout:** place the layout beside its host (e.g., `modules/hosts/oci-melb-1/disko-single-disk-split.nix`, `modules/hosts/home-forge/disko-two-disk.nix`); there is no shared storage menu. Add sizing options pattern from `disko-single-disk-split.nix`.
 
 **New web service route:** `policy/web-services.nix` — add service entry under the relevant host's `services` attribute with subdomain, origin, exposure mode, and Cloudflare config.
 

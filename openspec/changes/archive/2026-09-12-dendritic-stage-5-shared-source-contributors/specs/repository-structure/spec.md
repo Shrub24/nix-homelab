@@ -1,10 +1,6 @@
-# Spec: Repository Structure
+# Delta Spec: Repository Structure
 
-## Purpose
-
-Define the canonical repository layout contracts: explicit directory boundaries between policy data, transformation helpers, service and application modules, host assembly, and secret scopes; centralized documentation authority; and root-level formatting configuration.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Host and module boundaries are explicit
 Repository structure SHALL separate host composition from reusable feature ownership within one Dendritic discovery tree and SHALL preserve explicit boundaries between policy data (`policy/`), feature contributors (`modules/`), private lower-level implementations, host assembly, and topology-aligned secret scopes (`secrets/`). Legacy evaluator-class roots SHALL remain transitional rather than define the endpoint taxonomy.
@@ -34,22 +30,6 @@ Repository structure SHALL separate host composition from reusable feature owner
 - **THEN** host-local disk layouts remain host-private under `modules/hosts/<host>/`
 - **AND** no shared storage wrapper, template re-export, or composition replaces the deleted root
 - **AND** removing the shared root changes neither host storage evaluation nor per-host disk layout
-
-### Requirement: Documentation authority is centralized
-Architecture, decision, process, and structural documents SHALL remain centralized and referenced by entrypoint docs to avoid drift, including when module and host layout changes are introduced.
-
-#### Scenario: Structure or workflow changes are introduced
-- **WHEN** the Stage 1 host and flake layout changes
-- **THEN** factual current-path and operator references are updated in the same change
-- **AND** broader target taxonomy documentation may remain staged only when it is explicitly labeled future work rather than current architecture
-
-### Requirement: Repository formatting configuration is explicit
-The repository SHALL keep `.editorconfig` and `treefmt.toml` at the repository root. `.editorconfig` SHALL provide editor defaults only, while `treefmt.toml` SHALL define the canonical cross-language formatter configuration and formatting exclusions.
-
-#### Scenario: Repository formatting configuration is audited
-- **WHEN** the repository root is inspected
-- **THEN** `.editorconfig` covers the repository's source file classes without path-specific exclusions
-- **AND** `treefmt.toml` defines the formatter mappings and excludes managed/generated paths, including secrets, generated artifacts, source-generation outputs, and lockfiles
 
 ### Requirement: Converted compatibility roots SHALL leave the temporary import-tree exclusion boundary
 Once every file under a temporary evaluator-class root — for example `modules/core/`, `modules/profiles/`, `modules/shared/`, or `modules/storage/` — has become a Dendritic aspect contributor, has been relocated beside its aspect owner, or has been deleted, that directory SHALL be removed from the single temporary import-tree exclusion boundary; the boundary SHALL continue to enumerate only directories that still contain non-contributing leaves, and no second permanent module discovery root SHALL be introduced.

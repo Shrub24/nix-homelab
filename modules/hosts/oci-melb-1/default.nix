@@ -15,9 +15,6 @@ in
     (modulesPath + "/profiles/qemu-guest.nix")
     # Operational aspects (OPS-1) arrive via the registry; the five deferred
     # leaves they fold under are no longer imported here.
-    ../../../modules/shared/web-policy.nix
-    ../../../modules/shared/kanidm-host-auth.nix
-    ../../../modules/shared/identity-oidc.nix
     ../../../modules/services/paperless
     ../../../modules/applications/edge-ingress.nix
     ../../../modules/providers/oci/default.nix

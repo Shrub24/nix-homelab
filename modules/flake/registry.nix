@@ -73,6 +73,8 @@ in
             aspects.provenance
             aspects.oci-images
             aspects.fleet-packages
+            aspects.web-policy
+            aspects.identity-client
             # Foundation aspects (FND-1): selection is enablement.
             aspects.base
             aspects.shell
@@ -105,6 +107,8 @@ in
             aspects.provenance
             aspects.oci-images
             aspects.fleet-packages
+            aspects.web-policy
+            aspects.identity-client
             # Foundation aspects (FND-1): selection is enablement.
             aspects.base
             aspects.shell
@@ -132,6 +136,7 @@ in
             aspects.provenance
             aspects.oci-images
             aspects.fleet-packages
+            aspects.web-policy
             aspects.dj
             # Foundation aspects (FND-1): selection is enablement.
             aspects.base

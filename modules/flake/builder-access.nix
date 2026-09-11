@@ -4,6 +4,6 @@
 { ... }:
 {
   flake.modules.nixos.builder-access = {
-    imports = [ ../shared/nixbuild-ssh.nix ];
+    imports = [ ./_builder-access/nixbuild-ssh.nix ];
   };
 }

@@ -31,9 +31,10 @@ context: |
   
   # Repository Structure
   - Host-centric layout: `modules/hosts/<host>/default.nix` registered as a typed `nixos.configurations.<host>` record in the flake-parts host registry (`modules/flake/registry.nix`)
-  - Module boundaries: `modules/flake/` (flake-parts composition), `modules/services/`, `modules/applications/`, `modules/shared/`
+  - Module boundaries: `modules/flake/` (flake-parts composition including concern-owned aspect contributors and private `_aspects`/`_backups`/`_builder-access` paths), `modules/services/`, `modules/applications/`
   - Provider isolation: `modules/providers/<provider>/` for provider-specific defaults
-  - Flake entrypoint: minimal flake-parts `flake.nix` discovering `modules/`; `nixosConfigurations.<host>` outputs materialized from the host registry
+  - Flake entrypoint: minimal flake-parts `flake.nix` discovering `modules/` behind one temporary four-entry `filterNot` boundary (`applications`, `hosts`, `providers`, `services`); `nixosConfigurations.<host>` outputs materialized from the host registry
+  - Disko layouts are host-local beside their consumer under `modules/hosts/<host>/`; there is no shared `modules/storage/` menu
   - Documentation authority: `docs/` directory (architecture, decisions, plan, context-history)
   - Secrets structure: `secrets/common.yaml` (shared), `secrets/hosts/<host>/*.yaml` (host-scoped), `secrets/applications/`, `secrets/services/`
   

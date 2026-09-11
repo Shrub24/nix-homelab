@@ -14,7 +14,7 @@
 # values (oci-melb-1 points serverUrl at its loopback cache).
 { config, lib, ... }:
 let
-  hostSystemSecret = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
+  hostSystemSecret = ../../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
   hasHostSecrets = builtins.pathExists hostSystemSecret;
 in
 {

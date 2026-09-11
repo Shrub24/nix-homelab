@@ -16,6 +16,4 @@
   "hosts"
   "providers"
   "services"
-  "shared"
-  "storage"
 ]

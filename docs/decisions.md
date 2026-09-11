@@ -1018,3 +1018,32 @@ Supersedes/updates:
 References:
 
 - `openspec/changes/dendritic-stage-4-source-model-realignment/{proposal,design}.md` (S4-1–S4-6)
+
+## D-051: Stage 5 removes the shared/storage roots and proves the multi-contributor aspect
+
+Status: Accepted
+
+Decision:
+
+- the last two legacy evaluator-class roots leave the import-tree exclusion boundary: `modules/storage/` is deleted (both `disko-root.nix` and `disko-single-disk.nix` were zero-consumer templates) and `modules/shared/` is emptied and removed with no default or wrapper contributor; sole-consumer disk layouts remain host-local (`modules/hosts/oci-melb-1/disko-single-disk-split.nix`, `modules/hosts/home-forge/disko-two-disk.nix`; LA is a preinstalled-NixOS adoption with no disko layout)
+- the four private implementation leaves relocate beside their aspect owners under underscore-private concern paths, which is the recorded private-path convention: `_aspects/host-recovery.nix` (base), `_backups/niks3-upload-client.nix` and `_backups/niks3-post-deploy.nix` (backups), and `_builder-access/nixbuild-ssh.nix` (builder-access); each remains reachable only through its owner's imports, publishes no `flake.modules.nixos.<name>`, and is not discovered as a top-level contributor (`niks3-upload-client.nix` adjusts its conventional secret read `../../secrets/hosts` → `../../../secrets/hosts` for the deeper path; the other three have no relative repo reads)
+- the three private paths split by owner concern and are not normalized or reorganized later without a new decision: `_aspects` holds foundation private implementations, `_backups` holds backups private leaves, and `_builder-access` holds builder-access private leaves
+- `web-policy` becomes the discovered top-level contributor `modules/flake/web-policy.nix`, publishing `flake.modules.nixos.web-policy` and carrying the existing `repo.web` options/defaults unchanged; it is classified as an infrastructure support module alongside `provenance`, `oci-images`, and `fleet-packages` (the support quartet), not a deployable edge capability, and all three hosts select `aspects.web-policy` because all three consume `config.repo.web` (the notification-daemon ntfy default derives from the policy catalog)
+- `identity-client` is the first production instance of D-050's multi-contributor single-aspect merge: two separately discovered top-level contributors — `modules/flake/identity-oidc.nix` and `modules/flake/kanidm-host-auth.nix` — each nest their existing NixOS option/config body directly inside their own `flake.modules.nixos.identity-client` definition, with no `_identity-client/` private leaves, no central wrapper, and no cross-contributor import; `aspects.identity-client` is selected on `oci-melb-1` and `la-admin-1` only, and the host-auth body reads `config.services.identity.oidc.providerUrl` through config rather than importing the OIDC contributor
+- the one temporary import-tree filter shrinks from six entries to exactly four — `applications`, `hosts`, `providers`, `services` — and both removed directories are deleted rather than merely unlisted
+
+Rationale:
+
+- the shared root mixed already-private leaves with directly host-imported modules, so the source/deployment separation D-050 describes could not be proven while they stayed behind the filter; relocating the leaves beside their owners and converting the three importable modules into a support contributor plus two collector contributors removes the root without a compatibility wrapper
+- the two identity contributors demonstrate the collector pattern in production: selecting one aspect enables both bodies, and deleting either contributor removes its own OIDC or host-auth/Kanidm configuration, with the sibling still publishing the aspect
+- recording the private-path split now prevents a later cleanup from "normalizing" `_backups`/`_builder-access` back into a generic private directory and re-hiding ownership
+
+Supersedes/updates:
+
+- supersedes only D-050's deferral clause for `web-policy` and `identity-client` ("web, identity, and music conversions are deferred"): web-policy and identity-client are now converted, while **music remains deferred**; D-050's separation of source ownership from deployment granularity, its support-module classification, and its composition modes remain in force
+- updates D-049's `modules/shared/niks3-upload-client.nix` / `modules/shared/niks3-post-deploy.nix` and D-048/D-049's `modules/shared/` leaf locations to the concern-owned private paths above without changing the aspects' evaluated behavior; D-020/D-025/D-032's `modules/storage/disko-*.nix` references are historical decision bodies and remain unchanged — those templates are now deleted and the layouts live host-local
+- updates the Stage 4 "`services`/`shared` remain temporarily excluded" statements in `docs/dendritic-transition-analysis.md`, `docs/context-history.md`, `docs/plan.md`, `STRUCTURE.md`, `CONVENTIONS.md`, and `ARCHITECTURE.md`
+
+References:
+
+- `openspec/changes/dendritic-stage-5-shared-source-contributors/{proposal,design}.md` (S5-1–S5-10)

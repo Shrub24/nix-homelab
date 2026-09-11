@@ -23,7 +23,6 @@ let
 in
 {
   imports = [
-    ../../shared/identity-oidc.nix
     ../../services/admin/termix.nix
     ../../services/admin/kanidm.nix
     ../../services/admin/cockpit.nix

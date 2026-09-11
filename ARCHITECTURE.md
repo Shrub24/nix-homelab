@@ -6,7 +6,7 @@
 
 **Key Characteristics:**
 - **Flake-driven:** Single `flake.nix` pins all inputs; flake-parts plus a typed host registry (`modules/flake/`) materializes `nixosConfigurations` per host
-- **Aspect composition:** Source ownership and deployment variability are independent axes. Normal feature source files are auto-discovered flake-parts contributors under `modules/flake/`; several may merge into one `flake.modules.nixos.<aspect>` deployment aspect. Host registry records select deployment aspects explicitly (selection is enablement) — the five foundation aspects `base`, `shell`, `networking`, `tailscale`, `notify`, the three operational aspects `backups`, `builder-access`, `observability-agent`, and the `dj` application aspect. `provenance`, `oci-images`, and `fleet-packages` are infrastructure support modules, not host-facing capabilities
+- **Aspect composition:** Source ownership and deployment variability are independent axes. Normal feature source files are auto-discovered flake-parts contributors under `modules/flake/`; several may merge into one `flake.modules.nixos.<aspect>` deployment aspect — `identity-client` is composed from two such contributors. Host registry records select deployment aspects explicitly (selection is enablement) — the five foundation aspects `base`, `shell`, `networking`, `tailscale`, `notify`, the three operational aspects `backups`, `builder-access`, `observability-agent`, and the `dj` and `identity-client` deployment aspects. `provenance`, `oci-images`, `fleet-packages`, and `web-policy` are infrastructure support modules, not host-facing capabilities
 - **Hosts are thin:** Host modules (`modules/hosts/<host>/default.nix`) declare identity, feature enables, typed foundation facts, provider/storage imports, and secret path bindings
 - **Applications compose services:** Application modules (`modules/applications/<name>/`) wire multi-service stacks behind one operator-facing toggle
 - **Services own their internals:** Leaf service modules own enabling runtime config, `sops.secrets`, `sops.templates`, systemd units, and assertions
@@ -19,7 +19,7 @@
 **Flake Entrypoint (`flake.nix` + `modules/flake/`):**
 - Purpose: Pins all inputs and composes every flake output through flake-parts — host `nixosConfigurations`, devShell, packages, checks, deploy topology, and the `bootstrap.nodes` projection
 - Location: `flake.nix` (minimal entrypoint), flake-parts modules under `modules/flake/`
-- Contains: Input pins (`nixpkgs`, `disko`, `sops-nix`, `deploy-rs`, `niks3`, `flake-parts`, `import-tree`) and `denful/import-tree` discovery of `modules/` with one enumerated `filterNot` boundary (`modules/flake/_unconverted-nixos-dirs.nix`) for the six directories still holding plain NixOS leaves (`core` and `profiles` were removed from that boundary in dendritic Stage 2). The filter is transitional and must shrink as converted roots empty; underscore-renaming whole roots is not completion
+- Contains: Input pins (`nixpkgs`, `disko`, `sops-nix`, `deploy-rs`, `niks3`, `flake-parts`, `import-tree`) and `denful/import-tree` discovery of `modules/` with one enumerated `filterNot` boundary (`modules/flake/_unconverted-nixos-dirs.nix`) for the four directories still holding plain NixOS leaves — `applications`, `hosts`, `providers`, `services` (`core`/`profiles` left in Stage 2, `shared`/`storage` in Stage 5). The filter is transitional and must shrink as converted roots empty; underscore-renaming whole roots is not completion
 - Depends on: All submodules and library code
 - Used by: `nix build`, `nixos-rebuild`, `deploy-rs`, CI workflows
 
@@ -27,7 +27,7 @@
 - Purpose: Thin host assembly — identity, facts, feature toggles, provider/storage/profile imports, secret bindings
 - Location: `modules/hosts/<host>/default.nix`, registered as a typed `nixos.configurations.<host>` record in `modules/flake/registry.nix`
 - Contains: `default.nix`, host-specific component overlays (vary per host — e.g., `la-admin-1` has `facter.json`, `cockpit-auth.nix`, `quantum.nix`, `edge.nix`; reimage-shaped hosts carry their bootstrap metadata inline in the registry record; sole-consumer disko layouts live beside their host)
-- Depends on: Published aspects (`flake.modules.nixos.<aspect>`) selected in the registry and feature modules (applications, services, providers, storage, shared)
+- Depends on: Published aspects (`flake.modules.nixos.<aspect>`) selected in the registry and feature modules (applications, services, providers)
 - Used by: `modules/flake/registry.nix`, which materializes `flake.nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`
 
 **Application Layer (`modules/applications/`):**
@@ -44,19 +44,19 @@
 - Depends on: `lib/secrets.nix`, runtime paths from application layer
 - Used by: Application modules or directly by hosts
 
-**Deployment Aspect Layer (`modules/flake/` + `modules/flake/_aspects/`):**
-- Purpose: Cross-cutting host baseline published as selected deployment aspects — the five foundation aspects `base`, `shell`, `networking`, `tailscale`, `notify`, the three operational aspects `backups`, `builder-access`, `observability-agent`, and the `dj` application aspect. Selection is enablement: host registry records select the aspects they enable, and selecting `dj` enables `applications.dj`. Aspect relationships are modeled by semantics — intrinsic composition (the owner directly imports a required implementation with no meaningful independent placement), policy co-selection (independently placeable capabilities selected together by host policy, optionally with a named assertion), and optional integration (activates only when both contracts are present; neither selects the other) — rather than a universal no-aspect-import rule
-- Location: concern-owned contributors discovered under `modules/flake/` (`base.nix`, `shell.nix`, `networking.nix`, `tailscale.nix`, `notify.nix`, `backups.nix`, `builder-access.nix`, `observability-agent.nix`, `dj.nix`); private aspect implementations live under `modules/flake/_aspects/`
-- Contains: `base` (policy, users, host-recovery import, and the typed `fleet.foundation.bootLoader` / `fleet.foundation.buildTmpfsSize` host facts), `shell` (zsh/p10k, wezterm, nix-index comma), `networking` (native networkd contract rendered from `fleet.networking` facts), `tailscale` (auth-key secret registration and nullable `services.tailscale.debugMtu`), `notify` (notification-daemon enablement with withSystem-resolved packages), `backups`/`builder-access`/`observability-agent` (operational capabilities, D-049), `dj` (application enablement, D-050). An aspect may import its own private service/shared leaf — e.g. `modules/services/tailscale.nix`, `modules/services/notification-daemon/`, `modules/shared/host-recovery.nix` — without creating a public dependency
-- Depends on: Its own private leaves under `modules/services/`, `modules/shared/`, and `policy/`
+**Deployment Aspect Layer (`modules/flake/` + concern-owned private paths):**
+- Purpose: Cross-cutting host baseline published as selected deployment aspects — the five foundation aspects `base`, `shell`, `networking`, `tailscale`, `notify`, the three operational aspects `backups`, `builder-access`, `observability-agent`, and the `dj` and `identity-client` deployment aspects. Selection is enablement: host registry records select the aspects they enable, selecting `dj` enables `applications.dj`, and selecting `identity-client` enables both of its contributors. Aspect relationships are modeled by semantics — intrinsic composition (the owner directly imports a required implementation with no meaningful independent placement), policy co-selection (independently placeable capabilities selected together by host policy, optionally with a named assertion), and optional integration (activates only when both contracts are present; neither selects the other) — rather than a universal no-aspect-import rule
+- Location: concern-owned contributors discovered under `modules/flake/` (`base.nix`, `shell.nix`, `networking.nix`, `tailscale.nix`, `notify.nix`, `backups.nix`, `builder-access.nix`, `observability-agent.nix`, `dj.nix`, `identity-oidc.nix`, `kanidm-host-auth.nix`); private implementation leaves live under the concern-owned paths `modules/flake/_aspects/`, `modules/flake/_backups/`, and `modules/flake/_builder-access/`
+- Contains: `base` (policy, users, host-recovery import, and the typed `fleet.foundation.bootLoader` / `fleet.foundation.buildTmpfsSize` host facts), `shell` (zsh/p10k, wezterm, nix-index comma), `networking` (native networkd contract rendered from `fleet.networking` facts), `tailscale` (auth-key secret registration and nullable `services.tailscale.debugMtu`), `notify` (notification-daemon enablement with withSystem-resolved packages), `backups`/`builder-access`/`observability-agent` (operational capabilities, D-049), `dj` (application enablement, D-050), `identity-client` (two discovered contributors nesting their own OIDC and host-auth/Kanidm bodies inline; D-051). An aspect may import its own private leaf — e.g. `modules/services/tailscale.nix`, `modules/services/notification-daemon/`, `modules/flake/_aspects/host-recovery.nix`, `modules/flake/_backups/niks3-*.nix`, `modules/flake/_builder-access/nixbuild-ssh.nix` — without creating a public dependency
+- Depends on: Its own private leaves under `modules/services/` and the concern-owned `modules/flake/_aspects/`, `_backups/`, `_builder-access/` paths, plus `policy/`
 
-**Infrastructure Support Modules (`modules/flake/provenance.nix`, `oci-images.nix`, `fleet-packages.nix`):**
-- Purpose: Typed repository data, package projections, and provenance for lower-level consumers — infrastructure wiring, not host-facing deployment capabilities
+**Infrastructure Support Modules (`modules/flake/provenance.nix`, `oci-images.nix`, `fleet-packages.nix`, `web-policy.nix`):**
+- Purpose: Typed repository data, package projections, provenance, and resolved web policy for lower-level consumers — infrastructure wiring, not host-facing deployment capabilities
 - Location: concern-owned contributors under `modules/flake/`
-- Contains: `provenance` (source provenance), `oci-images` (typed OCI image policy data), `fleet-packages` (per-system package projection)
+- Contains: `provenance` (source provenance), `oci-images` (typed OCI image policy data), `fleet-packages` (per-system package projection), `web-policy` (resolved `repo.web` hosts/catalog/currentHost from `policy/web-services.nix`; selected on every host because the notification defaults and host policy consume it, D-051)
 - Retirement: each support module disappears as its consumers migrate to native projections (feature-owned lexical capture, intrinsic registry/base composition, feature contributors injecting their own packages)
 
-The former `modules/core/` and `modules/profiles/` directories were deleted in dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`); their behavior became the foundation aspects above or the operational aspects and feature leaves selected in host records. Dendritic Stage 3 (`dendritic-stage-3-operational-aspects`) converted the five deferred operational leaves into the `backups`, `builder-access`, and `observability-agent` aspects (see `docs/decisions.md` D-049): `backups` composes state backups, the niks3 upload client, and post-deploy closure upload; `builder-access` owns only nixbuild.net SSH trust; `observability-agent` owns Beszel agent enrollment. Dendritic Stage 4 (`dendritic-stage-4-source-model-realignment`, D-050) replaced the central `modules/flake/aspects.nix` with concern-owned discovered contributors, classified `provenance`/`oci-images`/`fleet-packages` as infrastructure support, made `dj` selection enable `applications.dj`, and reframed plain class-oriented leaves and the six-directory filter as transitional (see `docs/decisions.md` D-050). The OCI cache server (`modules/services/niks3.nix`) remains a leaf, and the `services`/`shared` import-tree exclusions remain temporarily in place.
+The former `modules/core/` and `modules/profiles/` directories were deleted in dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`); their behavior became the foundation aspects above or the operational aspects and feature leaves selected in host records. Dendritic Stage 3 (`dendritic-stage-3-operational-aspects`) converted the five deferred operational leaves into the `backups`, `builder-access`, and `observability-agent` aspects (see `docs/decisions.md` D-049): `backups` composes state backups, the niks3 upload client, and post-deploy closure upload; `builder-access` owns only nixbuild.net SSH trust; `observability-agent` owns Beszel agent enrollment. Dendritic Stage 4 (`dendritic-stage-4-source-model-realignment`, D-050) replaced the central `modules/flake/aspects.nix` with concern-owned discovered contributors, classified `provenance`/`oci-images`/`fleet-packages` as infrastructure support, made `dj` selection enable `applications.dj`, and reframed plain class-oriented leaves and the filter as transitional (see `docs/decisions.md` D-050). Dendritic Stage 5 (`dendritic-stage-5-shared-source-contributors`, D-051) deleted the `shared`/`storage` roots, relocated the private leaves to `_aspects`/`_backups`/`_builder-access`, promoted `web-policy` to the all-host support quartet, merged the two identity contributors into `identity-client`, and shrank the filter from six entries to four. The OCI cache server (`modules/services/niks3.nix`) remains a leaf, and only the `applications`/`hosts`/`providers`/`services` import-tree exclusions remain.
 
 **Provider Layer (`modules/providers/`):**
 - Purpose: Isolate cloud/platform-specific hardware, kernel, and network defaults
@@ -66,10 +66,10 @@ The former `modules/core/` and `modules/profiles/` directories were deleted in d
 
 - **Bifrost Gateway:** `modules/services/bifrost-gateway.nix` — AI gateway service with OpenRouter and CrofAI provider support; exposes container-base URLs for LLM provider endpoints
 
-**Storage Layer (`modules/storage/` + host-local layouts):**
+**Storage Layer (host-local layouts):**
 - Purpose: Declarative disk partitioning and filesystem layout via `disko`
-- Location: `modules/storage/disko-*.nix` for shared layouts; `modules/hosts/<host>/disko-*.nix` for sole-consumer host layouts
-- Contains: `disko-root.nix` (root-only), `disko-single-disk.nix` (single partition); `disko-single-disk-split.nix` (split root/data/nix/media) moved beside its only consumer to `modules/hosts/oci-melb-1/`, `disko-two-disk.nix` to `modules/hosts/home-forge/`
+- Location: host-local layouts only, beside their consumer under `modules/hosts/<host>/disko-*.nix`; the shared `modules/storage/` menu was removed in dendritic Stage 5 (D-051)
+- Contains: `disko-single-disk-split.nix` (split root/data/nix/media) on `modules/hosts/oci-melb-1/`, `disko-two-disk.nix` on `modules/hosts/home-forge/`; LA is a preinstalled-NixOS adoption with no disko layout
 - Depends on: `disko` flake input
 - Used by: Host modules, `nixos-anywhere` bootstrap
 
@@ -220,7 +220,7 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 
 **Disko Storage Layout:**
 - Purpose: Declarative partition, filesystem, and mount point definitions
-- Location: `modules/storage/disko-*.nix` (shared), `modules/hosts/<host>/disko-*.nix` (host-local)
+- Location: `modules/hosts/<host>/disko-*.nix` (host-local only)
 - Pattern: `disko.devices.disk.main` with GPT layout, ext4 filesystems, labeled partitions
 
 **Notify CLI:**
@@ -271,7 +271,7 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 
 **Caching:** Nix store optimization via `auto-optimise-store = true`. Substituters: `nixbuild.net` (priority 0), nix-community cachix, sovereign niks3 cache (`cache.shrublab.xyz`). CI uses nixbuild.net as the remote build plane.
 
-**Storage:** Mutable service state on `/srv/data/<service>` mount (ext4, labeled `srv-data`). Media on `/srv/media` (ext4, labeled `srv-media`). Nix store on separate `/nix` partition on split-disk layouts. Backup via restic to per-host Cloudflare R2 buckets.
+**Storage:** Mutable service state on `/srv/data/<service>` mount (ext4, labeled `srv-data`). Media on `/srv/media` (ext4, labeled `srv-media`). Nix store on separate `/nix` partition on split-disk layouts. Disk layouts are host-local disko files beside their host. Backup via restic to per-host Cloudflare R2 buckets.
 
 **Secrets:** All secrets encrypted with `sops` + `age`. Decrypted at activation time by `sops-nix`. Path-scoped `.sops.yaml` rules enforce blast-radius boundaries. No plaintext secrets in git.
 

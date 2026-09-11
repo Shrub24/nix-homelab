@@ -6,8 +6,6 @@
   imports = [
     # Operational aspects (OPS-1) arrive via the registry; the five deferred
     # leaves they fold under are no longer imported here.
-    ../../../modules/shared/web-policy.nix
-    ../../../modules/shared/kanidm-host-auth.nix
     ../../../modules/applications/admin/default.nix
     ../../../modules/services/ntfy.nix
     ../../../modules/applications/edge-ingress.nix

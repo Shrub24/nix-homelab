@@ -41,7 +41,7 @@ in
 {
   # Host recovery is a private leaf owned by the base aspect (FND-6): it is
   # part of break-glass base policy, not an independently selected capability.
-  imports = [ ../../shared/host-recovery.nix ];
+  imports = [ ./host-recovery.nix ];
 
   options = {
     fleet.foundation = {

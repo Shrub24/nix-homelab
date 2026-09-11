@@ -31,8 +31,8 @@
       imports = [
         inputs.niks3.nixosModules.niks3-auto-upload
         ../services/state-backups.nix
-        ../shared/niks3-upload-client.nix
-        ../shared/niks3-post-deploy.nix
+        ./_backups/niks3-upload-client.nix
+        ./_backups/niks3-post-deploy.nix
       ];
 
       # The whole host-egress capability activates only when the conventional

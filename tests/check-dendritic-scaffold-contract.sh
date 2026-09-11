@@ -2,16 +2,20 @@
 set -euo pipefail
 
 # Dendritic scaffold contract (openspec changes dendritic-stage-1-scaffold-hosts
-# task 4.1/6.4, dendritic-stage-2-foundation-aspects task 6.1, and
-# dendritic-stage-3-operational-aspects task 4.1; design DS-1..DS-6, FND-1..FND-6,
-# OPS-1..OPS-11).
+# task 4.1/6.4, dendritic-stage-2-foundation-aspects task 6.1,
+# dendritic-stage-3-operational-aspects task 4.1, and
+# dendritic-stage-4-source-model-realignment tasks 4.1/4.2; design DS-1..DS-6,
+# FND-1..FND-6, OPS-1..OPS-11, S4-1/S4-4/S4-5/S4-8).
 #
 # Prefers observable evaluations; exact source invariants are used only where
-# import-tree behavior cannot be observed from outside. A plain NixOS leaf
-# leaking into flake-parts discovery fails the flake evals below loudly, and
-# the Stage 0 path/shape fails check 1 immediately (no boundary list file).
-# Negative mutation checks (7i/7j) run against throwaway repo copies so the
-# working tree is never modified.
+# import-tree behavior cannot be observed from outside. Publications are now
+# distributed across auto-discovered per-concern contributors, so check 7
+# discovers them across the discovered contributor set and verifies per-host
+# selections semantically rather than pinning one central file or import order.
+# A plain NixOS leaf leaking into flake-parts discovery fails the flake evals
+# below loudly, and the Stage 0 path/shape fails check 1 immediately (no
+# boundary list file). Negative mutation checks (7i/7j/7k) run against
+# throwaway repo copies so the working tree is never modified.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -191,35 +195,69 @@ fail "ociImages may only be read as config.repo.ociImages"
 fi
 
 # --- 7. Foundation and operational aspects (FND-1..FND-6, OPS-1..OPS-11) ----
-# (openspec changes dendritic-stage-2-foundation-aspects task 6.1 and
-# dendritic-stage-3-operational-aspects task 4.1)
+# (openspec changes dendritic-stage-2-foundation-aspects task 6.1,
+# dendritic-stage-3-operational-aspects task 4.1, and
+# dendritic-stage-4-source-model-realignment task 4.1; design S4-5, S4-8)
 #
 # flake.modules.nixos is an internal flake-parts option, so publication
-# exactness is pinned at its source (modules/flake/aspects.nix) and at the
-# registry selection; the selection-is-enablement contract is then proven
-# observationally per host below. FND-2 typed facts and the boot/`/build`
+# exactness is discovered across the auto-discovered contributor set (not one
+# central file) and the per-host registry selections are verified semantically,
+# independent of import order. The selection-is-enablement contract is then
+# proven observationally per host below. FND-2 typed facts and the boot/`/build`
 # render are exact evaluated values, not restatements of module source.
 
-# Source-invariant helpers shared by the main checks and the tamper-proof
-# checks (7j): each returns the exact capture the corresponding check pins.
-pub_names_of() { # $1 dir
-  grep -oE '^[[:space:]]*flake\.modules\.nixos\.[a-z-]+' "$1/modules/flake/aspects.nix" | tr -d ' ' | sort
+# Files import-tree actually treats as first-party flake-parts contributors:
+# modules/ minus the six enumerated unconverted roots and minus underscore
+# private paths (import-tree underscore semantics, matching flake.nix filterNot).
+discovered_contributors() { # $1 repo root
+  find "$1/modules" -type f -name '*.nix' \
+    ! -path '*/_*' \
+    ! -path '*/applications/*' ! -path '*/hosts/*' ! -path '*/providers/*' \
+    ! -path '*/services/*' ! -path '*/shared/*' ! -path '*/storage/*' \
+    -print
 }
-registry_selection() { # $1 dir
-  awk '/# Foundation aspects \(FND-1\)/ { grab = 1; next } grab && /\.\.\/hosts\// { grab = 0 } grab && /^[[:space:]]*#/ { next } grab { gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print }' "$1/modules/flake/registry.nix"
+publication_files() { # $1 repo root -> discovered files that define a publication
+  local f
+  while IFS= read -r f; do
+    if grep -qE '^[[:space:]]*flake\.modules\.nixos\.[a-z-]+[[:space:]]*=' "$f"; then
+      printf '%s\n' "$f"
+    fi
+  done < <(discovered_contributors "$1")
+}
+pub_names_of() { # $1 repo root -> sorted flake.modules.nixos.<name> definitions
+  discovered_contributors "$1" \
+    | xargs -r grep -hoE '^[[:space:]]*flake\.modules\.nixos\.[a-z-]+[[:space:]]*=' \
+    | sed -E 's/^[[:space:]]*//; s/[[:space:]]*=$//' | LC_ALL=C sort -u
+}
+registry_selections() { # $1 repo root -> "host aspect" pairs, in source order
+  awk '
+    /^      [a-z0-9-]+ = \{/ { host = $1; next }
+    host != "" {
+      s = $0
+      while (match(s, /aspects\.[a-z-]+/)) {
+        print host, substr(s, RSTART, RLENGTH)
+        s = substr(s, RSTART + RLENGTH)
+      }
+    }
+  ' "$1/modules/flake/registry.nix"
+}
+host_aspects() { # $1 repo root, $2 host -> sorted selected aspect names
+  registry_selections "$1" | awk -v h="$2" '$1 == h { print $2 }' | LC_ALL=C sort -u
 }
 host_leaf_imports_of() { # $1 dir
   grep -RnE --include='*.nix' 'modules/(services|shared)/(state-backups|niks3-upload-client|niks3-post-deploy|nixbuild-ssh|beszel-agent-auth)\.nix' "$1/modules/hosts" || true
 }
 
-# 7a. Exactly the infra trio, the five foundation aspects, and the three
-# operational aspects are published (eleven total); the deleted `cli` aspect
-# must not be resurrected, and the private aspect leaves are exactly
-# base/shell/networking plus the p10k data file.
+# 7a. Exactly twelve publications are discovered across the distributed
+# contributors: the infrastructure support trio, the eight host-selected
+# foundation/operational aspects, and dj. Registry references are not
+# definition sites. No central publication file or private filename inventory
+# is pinned.
 expected_pub="$(printf '%s\n' \
 flake.modules.nixos.backups \
 flake.modules.nixos.base \
 flake.modules.nixos.builder-access \
+flake.modules.nixos.dj \
 flake.modules.nixos.fleet-packages \
 flake.modules.nixos.networking \
 flake.modules.nixos.notify \
@@ -230,24 +268,44 @@ flake.modules.nixos.shell \
 flake.modules.nixos.tailscale)"
 pub_names="$(pub_names_of "$ROOT")"
 if [ "$pub_names" != "$expected_pub" ]; then
-  fail "flake.modules.nixos publication drifted from infra trio + five foundation + three operational aspects: $pub_names"
+  fail "discovered publications drifted from the support trio + eight deployment aspects + dj: $pub_names"
 fi
 if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.cli|_aspects/cli|aspects\.cli' modules; then
 fail "the deleted cli aspect must not be resurrected"
 fi
-if [ "$(find modules/flake/_aspects -maxdepth 1 -type f -printf '%f\n' | sort | tr '\n' ' ')" != "base.nix networking.nix p10k.zsh shell.nix " ]; then
-fail "modules/flake/_aspects must contain exactly base.nix networking.nix p10k.zsh shell.nix"
+# Underscore-private implementation leaves are not auto-discovered (import-tree
+# underscore semantics, proven by the successful flake evals below) and must
+# not smuggle a publication past discovery. Owner assertions stay where they
+# are semantically meaningful: typed base facts (7c) and the shell leaf + p10k
+# data (7g). No exact private-filename inventory is pinned.
+test -d modules/flake/_aspects || fail "private foundation implementation dir missing"
+if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z-]+[[:space:]]*=' modules/flake/_aspects; then
+fail "underscore-private paths must not publish flake.modules.nixos aspects"
 fi
 
-# 7b. Every registry host selects exactly the eight aspects (five foundation
-# plus three operational), in canonical order (selection is enablement). Host
-# assemblies receive them only via the registry and never import the deleted
-# compatibility roots.
-foundation_block="$(registry_selection "$ROOT")"
-canonical="$(printf 'aspects.base\naspects.shell\naspects.networking\naspects.tailscale\naspects.notify\naspects.backups\naspects.builder-access\naspects.observability-agent\n%.0s' {1..3})"
-if [ "$foundation_block" != "$canonical" ]; then
-  fail "registry selection must be exactly base,shell,networking,tailscale,notify,backups,builder-access,observability-agent per host: $foundation_block"
-fi
+# 7b. Per-host registry selections are semantically exact: every host selects
+# the support trio and the eight foundation/operational aspects; OCI and LA do
+# not select dj, home-forge does. Aspect order is not part of the contract, and
+# host assemblies receive aspects only via the registry.
+support_trio="aspects.provenance
+aspects.oci-images
+aspects.fleet-packages"
+foundation_operational="aspects.base
+aspects.shell
+aspects.networking
+aspects.tailscale
+aspects.notify
+aspects.backups
+aspects.builder-access
+aspects.observability-agent"
+regular_sel="$(printf '%s\n%s\n' "$support_trio" "$foundation_operational" | LC_ALL=C sort)"
+forge_sel="$(printf '%s\n%s\naspects.dj\n' "$support_trio" "$foundation_operational" | LC_ALL=C sort)"
+for host in oci-melb-1 la-admin-1; do
+  [ "$(host_aspects "$ROOT" "$host")" = "$regular_sel" ] ||
+    fail "registry: $host must select the support trio + eight deployment aspects and not dj: $(host_aspects "$ROOT" "$host")"
+done
+[ "$(host_aspects "$ROOT" home-forge)" = "$forge_sel" ] ||
+  fail "registry: home-forge must additionally select aspects.dj: $(host_aspects "$ROOT" home-forge)"
 if grep -RnE 'aspects\.|_aspects' modules/hosts; then
 fail "host assemblies must receive foundation aspects only via the registry"
 fi
@@ -256,6 +314,29 @@ test ! -e modules/profiles || fail "modules/profiles must be deleted (FND-6)"
 if grep -RnE --include='*.nix' 'import.*modules/(core|profiles)/' modules; then
 fail "no module may import a deleted core/profiles path"
 fi
+
+# 7b-2. Composition is relationship-specific (S4-5). A public aspect definition
+# may only import another public aspect when an adjacent comment justifies it as
+# intrinsic composition; no such import exists today. Registry selection
+# references are not definition sites and are not scanned.
+unjustified_aspect_refs_of() { # $1 file -> "<file>:<line>" for unmarked aspect refs
+  awk '
+    /aspects\.[a-z-]+/ { ref[NR] = 1 }
+    /^[[:space:]]*#.*intrinsic/ { just[NR] = 1 }
+    END {
+      for (n in ref) {
+        ok = 0
+        for (i = n - 2; i <= n + 2; i++) if (i in just) ok = 1
+        if (!ok) print FILENAME ":" n
+      }
+    }
+  ' "$1"
+}
+unjustified_aspect_refs="$(publication_files "$ROOT" | while IFS= read -r f; do
+  unjustified_aspect_refs_of "$f"
+done)"
+[ -z "$unjustified_aspect_refs" ] ||
+  fail "direct public-aspect imports require an adjacent intrinsic-composition justification: $unjustified_aspect_refs"
 
 # 7c. Typed base facts: enum bootLoader ("grub" | "systemd-boot") and a
 # required string buildTmpfsSize, rendered by the base aspect without a
@@ -271,7 +352,8 @@ fi
 
 # 7d. Per-host observable contract: typed facts, boot/`/build` rendering,
 # the five aspect markers (selection is enablement), Tailscale MTU/auth-key
-# ownership, and notify composition with the repo packages.
+# ownership, notify composition with the repo packages, and DJ selection
+# enablement (S4-4: forge true; OCI/LA discovered-but-unselected false).
 probe() { # $1 host, $2 expected JSON (python dict literal)
 host="$1"
 json="$(ne --json --apply 'c: {
@@ -291,6 +373,7 @@ tsAuthKeyFile = c.services.tailscale.authKeyFile or null;
 daemon = c.services.notification-daemon.enable or false;
 daemonPkg = (c.services.notification-daemon.package or {}).name or "";
 notifyPkg = (c.services.notification-daemon.notifyPackage or {}).name or "";
+dj = c.applications.dj.enable or false;
 }' "path:.#nixosConfigurations.${host}.config")" ||
 fail "${host}: foundation probe does not evaluate"
 python3 - "$host" "$2" "$json" <<'PYEOF' || fail "${host}: observable foundation contract violated"
@@ -318,9 +401,9 @@ if errs:
 PYEOF
 }
 
-probe oci-melb-1 '{"bootLoader":"grub","buildTmpfsSize":"8G","systemdBoot":false,"grub":true,"efiRemovable":true,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemon":true}'
-probe la-admin-1 '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemon":true}'
-probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":null,"tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemon":true}'
+probe oci-melb-1 '{"bootLoader":"grub","buildTmpfsSize":"8G","systemdBoot":false,"grub":true,"efiRemovable":true,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemon":true,"dj":false}'
+probe la-admin-1 '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemon":true,"dj":false}'
+probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":null,"tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemon":true,"dj":true}'
 
 # 7e. Tailscale ownership (FND-4, secrets-management spec): the module leaf
 # owns auth-key registration and MTU rendering; hosts never repeat them.
@@ -336,10 +419,10 @@ fi
 # 7f. Notify composition (FND-5, apprise-notification-module spec): the notify
 # aspect composes the notification-daemon leaf, enables it, and resolves the
 # repo packages via withSystem; hosts keep only host-specific inputs.
-grep -q 'imports = \[ ../services/notification-daemon \]' modules/flake/aspects.nix || fail "notify aspect must compose the notification-daemon leaf"
-grep -q 'enable = true;' modules/flake/aspects.nix || fail "notify aspect must enable the daemon"
-grep -q 'package = packages.notification-daemon;' modules/flake/aspects.nix || fail "notify aspect must pass the repo notification-daemon package"
-grep -q 'notifyPackage = packages.notify;' modules/flake/aspects.nix || fail "notify aspect must pass the repo notify package"
+grep -q 'imports = \[ ../services/notification-daemon \]' modules/flake/notify.nix || fail "notify aspect must compose the notification-daemon leaf"
+grep -q 'enable = true;' modules/flake/notify.nix || fail "notify aspect must enable the daemon"
+grep -q 'package = packages.notification-daemon;' modules/flake/notify.nix || fail "notify aspect must pass the repo notification-daemon package"
+grep -q 'notifyPackage = packages.notify;' modules/flake/notify.nix || fail "notify aspect must pass the repo notify package"
 if grep -RnE 'notification-daemon\.enable|notification-daemon\]' modules/hosts; then
 fail "hosts must not re-enable or import the notification-daemon leaf"
 fi
@@ -360,13 +443,13 @@ for leaf in \
   modules/services/beszel-agent-auth.nix; do
   test -f "$leaf" || fail "operational leaf $leaf missing"
 done
-grep -q '../services/state-backups.nix' modules/flake/aspects.nix || fail "backups aspect must import the state-backups leaf"
-grep -q '../shared/niks3-upload-client.nix' modules/flake/aspects.nix || fail "backups aspect must import the niks3-upload-client leaf"
-grep -q '../shared/niks3-post-deploy.nix' modules/flake/aspects.nix || fail "backups aspect must import the niks3-post-deploy leaf"
-grep -q '../shared/nixbuild-ssh.nix' modules/flake/aspects.nix || fail "builder-access aspect must import the nixbuild-ssh leaf"
-grep -q '../services/beszel-agent-auth.nix' modules/flake/aspects.nix || fail "observability-agent aspect must import the beszel-agent-auth leaf"
-grep -q 'inputs.niks3.nixosModules.niks3-auto-upload' modules/flake/aspects.nix || fail "backups aspect must import the upstream niks3-auto-upload module"
-if grep -Rn 'niks3-auto-upload' modules/flake | grep -v '^modules/flake/aspects.nix:'; then
+grep -q '../services/state-backups.nix' modules/flake/backups.nix || fail "backups aspect must import the state-backups leaf"
+grep -q '../shared/niks3-upload-client.nix' modules/flake/backups.nix || fail "backups aspect must import the niks3-upload-client leaf"
+grep -q '../shared/niks3-post-deploy.nix' modules/flake/backups.nix || fail "backups aspect must import the niks3-post-deploy leaf"
+grep -q '../shared/nixbuild-ssh.nix' modules/flake/builder-access.nix || fail "builder-access aspect must import the nixbuild-ssh leaf"
+grep -q '../services/beszel-agent-auth.nix' modules/flake/observability-agent.nix || fail "observability-agent aspect must import the beszel-agent-auth leaf"
+grep -q 'inputs.niks3.nixosModules.niks3-auto-upload' modules/flake/backups.nix || fail "backups aspect must import the upstream niks3-auto-upload module"
+if grep -Rn 'niks3-auto-upload' modules/flake | grep -v '^modules/flake/backups.nix:'; then
   fail "niks3-auto-upload must be imported only by the backups aspect (not the registry)"
 fi
 grep -qE 'inputs\.niks3\.nixosModules\.niks3[[:space:]]*$' modules/flake/registry.nix || fail "OCI must keep the niks3 server module import"
@@ -382,11 +465,11 @@ if grep -RnE '^[^#]*fleet\.nixbuild-ssh' modules; then
 fi
 grep -q 'filterPackage' modules/shared/niks3-post-deploy.nix || fail "post-deploy leaf must define the typed filterPackage option"
 grep -q 'type = lib.types.package' modules/shared/niks3-post-deploy.nix || fail "filterPackage must be a typed package option"
-grep -q 'filterPackage = packages.nix-path-filter' modules/flake/aspects.nix || fail "backups aspect must inject nix-path-filter into post-deploy"
+grep -q 'filterPackage = packages.nix-path-filter' modules/flake/backups.nix || fail "backups aspect must inject nix-path-filter into post-deploy"
 if grep -nE '^[^#]*config\.repo\.packages' modules/shared/niks3-post-deploy.nix; then
   fail "post-deploy leaf must not read config.repo.packages (no hidden fleet-packages dependency)"
 fi
-grep -q 'inputs.nix-index-database.nixosModules.nix-index' modules/flake/aspects.nix || fail "shell aspect must import the nix-index-database module"
+grep -q 'inputs.nix-index-database.nixosModules.nix-index' modules/flake/shell.nix || fail "shell aspect must import the nix-index-database module"
 test -f modules/flake/_aspects/p10k.zsh || fail "p10k data must live with the private shell implementation"
 grep -q 'builtins.readFile ./p10k.zsh' modules/flake/_aspects/shell.nix || fail "shell aspect must render the p10k data file"
 
@@ -491,9 +574,10 @@ expect_eval_fail "$D" oci-melb-1 "services.notification-daemon.monitor.enable mu
 
 # 7i-2. A derived bucket outside the S3 rule fails with the named assertion
 # (OPS-11). nixpkgs itself rejects a trailing-hyphen hostName at the type
-# level, so the tamper forces the trailing hyphen into the derived bucket.
+# level, so the tamper forces the trailing hyphen into the derived bucket. The
+# bucket expression lives in the backups concern contributor (S4-2).
 D="$(make_copy)"
-python3 - "$D/modules/flake/aspects.nix" <<'PY'
+python3 - "$D/modules/flake/backups.nix" <<'PY'
 import sys
 p = sys.argv[1]
 s = open(p).read()
@@ -526,16 +610,65 @@ PY
 
 # 7j. Tamper-proof source checks: the 7a/7b/7g pipelines must detect a
 # Stage-2-shaped regression (aspect unpublished, selection dropped, leaf
-# re-imported by a host) on a throwaway copy.
+# re-imported by a host) on a throwaway copy. The publication tamper targets
+# one distributed contributor (backups.nix), not the deleted central file.
 D="$(make_copy)"
-sed -i 's/flake.modules.nixos.backups =/flake.modules.nixos.backups-tampered =/' "$D/modules/flake/aspects.nix"
+sed -i 's/flake.modules.nixos.backups =/flake.modules.nixos.backups-tampered =/' "$D/modules/flake/backups.nix"
 sed -i '/aspects.backups/d' "$D/modules/flake/registry.nix"
 sed -i '/modules\/shared\/web-policy.nix/a\  ../../../modules/services/state-backups.nix' "$D/modules/hosts/oci-melb-1/default.nix"
 [ "$(pub_names_of "$D")" != "$expected_pub" ] ||
 fail "7a publication check must detect an unpublished backups aspect"
-[ "$(registry_selection "$D")" != "$canonical" ] ||
-fail "7b canonical selection check must detect a dropped aspect"
+[ "$(host_aspects "$D" oci-melb-1)" != "$regular_sel" ] ||
+fail "7b selection check must detect a dropped aspect"
 [ -n "$(host_leaf_imports_of "$D")" ] ||
 fail "7g host-import check must detect a re-imported leaf"
+
+# 7k. DJ selection semantics (S4-4, S4-8; tasks 4.1/4.2). DJ enablement comes
+# from selecting the dj deployment aspect, not from discovery. The observable
+# is the evaluated applications.dj.enable value; the throwaway mutations below
+# prove discovery-only placement does not activate and selection owns
+# enablement.
+dj_enabled() { # $1 repo root, $2 host -> "true"/"false" through aspect selection
+  local d="$1" host="$2" out rc
+  set +e
+  out="$(nix eval --no-write-lock-file --raw --apply \
+    'c: if ((c.applications.dj or { }).enable or false) then "true" else "false"' \
+    "path:${d}#nixosConfigurations.${host}.config" 2>&1)"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "dj probe ${host}: config does not evaluate: $(printf '%s' "$out" | tail -2)"
+  printf '%s' "$out"
+}
+# Discovery alone is not placement: the dj publication exists for every host,
+# yet OCI/LA never select it and expose no DJ contract, while forge selects it
+# and evaluates DJ enabled.
+[ "$(dj_enabled "$ROOT" home-forge)" = true ] || fail "unmodified home-forge must activate DJ via aspect selection"
+[ "$(dj_enabled "$ROOT" oci-melb-1)" = false ] || fail "unmodified oci-melb-1 must not activate discovered-but-unselected DJ"
+[ "$(dj_enabled "$ROOT" la-admin-1)" = false ] || fail "unmodified la-admin-1 must not activate discovered-but-unselected DJ"
+
+# 7k-1. Removing DJ's top-level enablement from the selected dj aspect leaves
+# the selection in place but no longer satisfies forge's DJ contract. The test
+# names the failure (no eval assertion exists for a disabled aspect).
+D="$(make_copy)"
+sed -i '/applications\.dj\.enable = true;/d' "$D/modules/flake/dj.nix"
+[ "$(dj_enabled "$D" home-forge)" = false ] ||
+  fail "7k-1: forge must fail the DJ enablement contract when the selected dj aspect does not set applications.dj.enable"
+
+# 7k-2. Removing one distributed required contributor is detected by the
+# publication inventory (there is no central publication file to fall back on).
+D="$(make_copy)"
+rm "$D/modules/flake/base.nix"
+[ "$(pub_names_of "$D")" != "$expected_pub" ] ||
+  fail "7k-2: publication discovery must detect a deleted distributed contributor"
+
+# 7k-3. A new direct public-aspect import without intrinsic justification is
+# rejected by the 7b-2 scanner, and the same import with the marker is allowed.
+D="$(make_copy)"
+printf '\n  flake.modules.nixos.base = { imports = [ aspects.notify ]; };\n' >>"$D/modules/flake/base.nix"
+[ -n "$(unjustified_aspect_refs_of "$D/modules/flake/base.nix")" ] ||
+  fail "7k-3: scanner must reject a direct public-aspect import without intrinsic justification"
+printf '  # intrinsic composition: base requires notify placement\n' >>"$D/modules/flake/base.nix"
+[ -z "$(unjustified_aspect_refs_of "$D/modules/flake/base.nix")" ] ||
+  fail "7k-3: scanner must accept a direct public-aspect import with adjacent intrinsic justification"
 
 echo "check-dendritic-scaffold-contract: PASS"

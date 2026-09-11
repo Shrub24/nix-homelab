@@ -233,7 +233,7 @@ Status: Accepted
 Decision:
 
 - baseline shared policy lives in the `base` foundation aspect (`modules/flake/_aspects/base.nix`; formerly `modules/core/base.nix`)
-- common-baseline composition happens by explicit foundation-aspect selection in the typed host registry (`modules/flake/aspects.nix` + `modules/flake/registry.nix`; formerly the `modules/profiles/base-server.nix` wrapper)
+- common-baseline composition happens by explicit foundation-aspect selection in the typed host registry (concern-owned `modules/flake/*.nix` contributors + `modules/flake/registry.nix`; formerly the `modules/profiles/base-server.nix` wrapper)
 - service boundary for private access starts in `modules/services/tailscale.nix` (now the `tailscale` foundation aspect's service leaf)
 
 Rationale:
@@ -788,7 +788,7 @@ Status: Accepted
 
 Decision:
 
-- fleet hosts own physical networking through the import-activated `networking` foundation aspect (published in `modules/flake/aspects.nix`; private leaf `modules/flake/_aspects/networking.nix`), which renders native `systemd.network.{networks,netdevs}` units from required `fleet.networking` host facts and retires scripted networking/dhcpcd fleet-wide
+- fleet hosts own physical networking through the import-activated `networking` foundation aspect (published in `modules/flake/networking.nix`; private leaf `modules/flake/_aspects/networking.nix`), which renders native `systemd.network.{networks,netdevs}` units from required `fleet.networking` host facts and retires scripted networking/dhcpcd fleet-wide
 - physical addressing is DHCPv4 with MAC-based client identity so provider/router leases and reservations survive migration
 - `systemd-resolved` is the fleet resolver mechanism; per-link provider/DHCP DNS stays primary for routing domains, with safe defaults (`DNSOverTLS = opportunistic`, `DNSSEC = allow-downgrade`, `FallbackDNS`)
 - `home-forge` runs an always-on host-owned `br0` bridge over `eno1` pinned to `84:a9:3e:6b:94:44` so the router reservation holds
@@ -986,3 +986,35 @@ References:
 
 - `openspec/changes/dendritic-stage-3-operational-aspects/{proposal,design}.md` (OPS-1–OPS-11)
 - `docs/dendritic-transition-analysis.md` (Stages)
+
+## D-050: Source ownership and deployment aspects are independent axes; Stage 4 realigns the documented model
+
+Status: Accepted
+
+Decision:
+
+- top-level source ownership and public deployment variability are independent axes: an import-tree-discovered file is a top-level flake-parts contributor, while a deployment aspect is a deferred NixOS module explicitly selected by a host; several source modules may contribute to one coherent aspect, and discovery registers contributions without deploying them
+- the central `modules/flake/aspects.nix` publication file is replaced by concern-owned contributors discovered under `modules/flake/` — support (`provenance.nix`, `oci-images.nix`, `fleet-packages.nix`), foundation (`base.nix`, `shell.nix`, `networking.nix`, `tailscale.nix`, `notify.nix`), operational (`backups.nix`, `builder-access.nix`, `observability-agent.nix`), and the existing `dj.nix` — preserving every `flake.modules.nixos.<name>` contract
+- `provenance`, `oci-images`, and `fleet-packages` are infrastructure support modules (typed repository data, package projections, provenance for lower-level consumers), not host-facing deployment capabilities; they remain only until consumers migrate to native projections (feature-owned lexical capture, intrinsic registry/base composition, feature contributors injecting their own packages)
+- `dj` is a host-facing selected deployment aspect: selecting it enables `applications.dj`, while Engine DJ enablement, paths, and secret inputs remain host-configurable; home-specific variants remain host-owned
+- aspect relationships are modeled by semantics rather than a universal no-aspect-import rule: intrinsic composition (the owner directly imports a required implementation or aspect with no meaningful independent placement), policy co-selection (independently placeable capabilities selected together by host policy, optionally with a named assertion), and optional integration (activates only when both contracts are present; neither selects the other); direct public-aspect imports are not globally forbidden but require intrinsic-composition justification — Stage 4 adds none
+- conventional plain class-oriented NixOS leaves and the six-directory enumerated import-tree filter are transitional, not the endpoint: the filter must shrink as converted roots empty, and underscore-renaming whole roots solely to hide unchanged code is not completion; genuine private implementation/data may remain private with underscore-prefixed or otherwise explicit private paths
+- Stage 4 is a realignment only: web, identity, and music conversions are deferred
+
+Rationale:
+
+- the documented endpoint conflated source-file granularity with deployment-aspect granularity, producing a central publication file, a permanent-hybrid narrative, and a `dj` selection that did not itself enable DJ
+- classifying support modules separately prevents them from becoming permanent ambient buses and gives each a concrete retirement path
+- relationship-specific composition rules match how capabilities actually relate (backups→notify is policy co-selection, not a hidden import) while keeping optional integrations free of hidden activation
+
+Supersedes/updates:
+
+- supersedes D-047's "plain leaf NixOS modules remain temporarily behind an explicit `import-tree.filterNot` boundary until their feature converts to an aspect" endpoint framing: plain class-oriented leaves and the six-directory filter are transitional, and private lower-level modules are justified exceptions rather than the default endpoint
+- supersedes D-048's and D-049's universal "no aspect imports another aspect" rule with the three composition modes (intrinsic composition, policy co-selection, optional integration)
+- updates D-048's and D-049's central `modules/flake/aspects.nix` publication location: aspect definitions now live in concern-owned discovered contributors under `modules/flake/`
+- reclassifies the `provenance`, `oci-images`, and `fleet-packages` modules published since Stage 1 as infrastructure support rather than deployment capabilities
+- supersedes the "80% plain leaves" endpoint framing in `docs/dendritic-transition-analysis.md`: conventional leaves and the filter are transitional, not the permanent target
+
+References:
+
+- `openspec/changes/dendritic-stage-4-source-model-realignment/{proposal,design}.md` (S4-1–S4-6)

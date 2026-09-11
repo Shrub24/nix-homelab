@@ -1,5 +1,5 @@
-# Networking foundation aspect (private leaf; the only public composition
-# unit is flake.modules.nixos.networking in modules/flake/aspects.nix). The
+# Networking foundation aspect (private leaf; the public contributor is
+# modules/flake/networking.nix). The
 # native systemd-networkd contract moved here verbatim from the legacy
 # modules/profiles/networking.nix (design FND-3) without redesign.
 #

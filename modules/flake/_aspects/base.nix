@@ -1,5 +1,5 @@
-# Base foundation aspect (private leaf; the only public composition unit is
-# flake.modules.nixos.base in modules/flake/aspects.nix).
+# Base foundation aspect (private leaf; the public contributor is
+# modules/flake/base.nix).
 #
 # Owns base OS policy, users, Nix/`nh` tuning, the outbound dev SSH identity
 # convention, host recovery, and the two typed machine facts that replaced the

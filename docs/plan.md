@@ -94,7 +94,7 @@ Track D: Service baseline
 
 Track E: Future-ready evolution
 
-- adopt the accepted staged Dendritic transition (D-047): Stage 1 scaffold (flake-parts + `denful/import-tree` + typed host registry under `modules/hosts/`) landed in `dendritic-stage-1-scaffold-hosts`; Stage 2 landed foundation-first in `dendritic-stage-2-foundation-aspects` (five foundation aspects with typed `fleet.foundation` facts, `modules/core/` + `modules/profiles/` removed) — implementation-complete but not deployed or archived; Stage 3 landed operational aspects in `dendritic-stage-3-operational-aspects` (`backups`, `builder-access`, `observability-agent` selected by all three hosts, folding the five deferred operational leaves under them, D-049) — implementation-complete but not deployed or archived; the transition analysis's music-exemplar Stage 2 sequencing is superseded, and remaining leaf-module conversions plus taxonomy closure stay staged
+- adopt the accepted staged Dendritic transition (D-047): Stage 1 scaffold (flake-parts + `denful/import-tree` + typed host registry under `modules/hosts/`) landed in `dendritic-stage-1-scaffold-hosts`; Stage 2 landed foundation-first in `dendritic-stage-2-foundation-aspects` (five foundation aspects with typed `fleet.foundation` facts, `modules/core/` + `modules/profiles/` removed) — implementation-complete but not deployed or archived; Stage 3 landed operational aspects in `dendritic-stage-3-operational-aspects` (`backups`, `builder-access`, `observability-agent` selected by all three hosts, folding the five deferred operational leaves under them, D-049) — implementation-complete but not deployed or archived; Stage 4 (`dendritic-stage-4-source-model-realignment`, D-050) realigned the documented model: source ownership and deployment granularity are independent axes, the central `aspects.nix` was replaced by concern-owned contributors, the support trio is classified as infrastructure wiring, `dj` selection enables the application, and plain class-oriented leaves plus the six-directory filter are transitional; the transition analysis's music-exemplar Stage 2 sequencing is superseded, and web/identity/music conversions stay staged
 - keep layout compatible with later fleet deployment tooling
 - reserve integration points for future media processing hooks
 - reserve path for later `rclone`/VFS transition
@@ -146,7 +146,7 @@ Active implementation anchor paths that must stay reflected in docs:
 - `modules/applications/music/default.nix`
 - `modules/applications/admin/default.nix`
 - `modules/services/music/` (canonical music service module subtree: `navidrome.nix`, `audiomuse.nix`, `syncthing.nix`, `beets/`, `slskd.nix`, `tagr.nix`)
-- `modules/flake/aspects.nix` (foundation aspects `base`/`shell`/`networking`/`tailscale`/`notify` plus operational aspects `backups`/`builder-access`/`observability-agent`) and `modules/flake/_aspects/` (private aspect implementations)
+- `modules/flake/` concern-owned aspect contributors (`base.nix`, `shell.nix`, `networking.nix`, `tailscale.nix`, `notify.nix`, `backups.nix`, `builder-access.nix`, `observability-agent.nix`, `dj.nix`) plus infrastructure support modules (`provenance.nix`, `oci-images.nix`, `fleet-packages.nix`) and `modules/flake/_aspects/` (private aspect implementations)
 - `modules/flake/registry.nix` (host composition: aspect selection, typed facts, feature leaf imports)
 - `modules/services/tailscale.nix` (tailscale aspect service leaf)
 - `modules/services/notification-daemon/` (notify aspect service leaf)

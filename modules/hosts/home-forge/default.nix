@@ -111,7 +111,6 @@ in
       [ "podman-omniroute" ];
 
   applications.dj = {
-    enable = true;
     engine = {
       enable = true;
       sharePath = musicStorageRoot;

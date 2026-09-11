@@ -1,5 +1,5 @@
-# Shell foundation aspect (private leaf; the only public composition unit is
-# flake.modules.nixos.shell in modules/flake/aspects.nix).
+# Shell foundation aspect (private leaf; the public contributor is
+# modules/flake/shell.nix).
 #
 # Interactive operator tooling is a capability, not base OS policy (design
 # FND-2): packages, zsh + powerlevel10k, wezterm mux, and the p10k data file

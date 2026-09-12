@@ -16,7 +16,7 @@ The system SHALL keep concrete Beets stage instantiation under the music applica
 #### Scenario: Stage runners are declared
 - **WHEN** the music application composes Beets workflow stages
 - **THEN** it declares which runner instances exist, which configs they use, and which timers or manual invocation paths apply
-- **AND** Beets config assets are owned under `modules/applications/music/files/`
+- **AND** Beets config assets are owned under `modules/services/music/beets/files/`
 
 ### Requirement: Beets service structure MUST stay internally cohesive
 The system SHALL keep reusable Beets service implementation under a dedicated `modules/services/beets/` folder rather than scattering Beets framework files across the broader services directory.

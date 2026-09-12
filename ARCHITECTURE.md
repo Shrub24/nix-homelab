@@ -31,11 +31,11 @@
 - Used by: `modules/flake/registry.nix`, which materializes `flake.nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`
 
 **Application Layer (`modules/applications/`):**
-- Purpose: Composition roots that wire multiple interacting services behind one toggle; own shared paths, ACLs, tmpfiles, and cross-service wiring
+- Purpose: Composition roots that wire multiple interacting services behind one toggle; own shared paths and cross-service wiring, while concrete leaf mechanics live with their service owners
 - Location: `modules/applications/<name>/`
-- Contains: Named stacks — `music/`, `admin/`, `dj/`, `edge-ingress.nix` (the former `paperless/` application wrapper was dead code and has been deleted; Paperless is composed directly from `modules/services/paperless/`)
+- Contains: Named stacks — `admin/`, `dj/`, `edge-ingress.nix` (the former `music/` coordinator was converted in dendritic Stage 6 / D-052 into the discovered home-forge-only `music` aspect `modules/flake/music.nix`, whose private implementation leaves live under `modules/services/music/**`; the former `paperless/` application wrapper was dead code and has been deleted; Paperless is composed directly from `modules/services/paperless/`)
 - Depends on: Service modules, `policy/globals.nix`, `lib/secrets.nix`
-- Used by: Host modules
+- Used by: Host modules (and, for converted stacks such as `music`, host registry aspect selection)
 
 **Service Layer (`modules/services/`):**
 - Purpose: Leaf implementation modules for individual workloads — systemd services, Podman containers, runtime config

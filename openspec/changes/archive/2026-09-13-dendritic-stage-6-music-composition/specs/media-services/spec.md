@@ -1,10 +1,4 @@
-# Spec: Media Services
-
-## Purpose
-
-Define media service contracts for mount awareness, permission reconciliation, media composition, and Navidrome integration.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Media services remain mount-aware and permission-reconciling
 Media services SHALL declare mount prerequisites and SHALL reconcile permissions after promotion/sync operations where required. Permission reconciliation SHALL run as root via a standalone service, decoupled from the beets runner framework. The permission-reconcile implementation body and its tmpfiles ACL rules SHALL be owned by the media-owning leaf service, while the observable reconciliation behavior, unit name, and permissions SHALL remain unchanged.
@@ -66,17 +60,6 @@ For this change scope, role permissions SHALL be explicit: `music-ingest` is the
 - **THEN** no `services.navidrome.plugins = [ pkgs.navidromePlugins.audiomuseai ]` rebuild path is used
 - **AND** the packaged WASM `.ndp` is symlinked into `${dataDir}/plugins` declaratively via tmpfiles and bind-mounted into nixpkgs' fixed plugin folder only for Navidrome, with `Plugins.Enabled/AutoReload/Agents` set, keeping stock cache-substitutable Navidrome
 
-### Requirement: Navidrome reads composed media paths without owning media root
-Navidrome SHALL consume application/service-composed media paths, SHALL not own shared media roots via tmpfiles, and SHALL remain aligned with the repository's existing exposure policy.
-
-For this change scope, Navidrome media scope SHALL include `library` and `quarantine`, SHALL exclude `inbox` from the listening surface, and MAY include nixpkgs-provided plugin packages in the Navidrome plugin directory for similarity extensions.
-
-#### Scenario: Navidrome starts after media prerequisites
-- **WHEN** Navidrome service is started
-- **THEN** it depends on required mount/service ordering and reads configured media/library paths without creating shared media roots itself
-- **AND** inbox content is not included in Navidrome media scope
-- **AND** the Navidrome plugin directory is populated from `pkgs.navidromePlugins.audiomuseai` before the daemon starts
-
 ### Requirement: Music service implementation files SHALL be grouped under a coherent music service subtree
 Music-owned leaf service modules SHALL live under `modules/services/music/` while preserving existing public option names and application composition semantics. These files SHALL remain private leaves imported through the discovered music concern owner, and SHALL NOT be published as deployment aspects.
 
@@ -91,23 +74,6 @@ Music-owned leaf service modules SHALL live under `modules/services/music/` whil
 - **THEN** those leaves under `modules/services/music/` are not published as deployment aspects
 - **AND** the four-root top-level discovery boundary remains unchanged
 
-### Requirement: Navidrome similarity extensions SHALL use AudioMuse integration without changing exposure policy
-When the music stack enables AudioMuseAI-backed similarity, Navidrome SHALL expose the required plugin runtime posture without redesigning the existing Caddy/Cloudflare mTLS/Tailscale exposure model.
-
-#### Scenario: AudioMuse-backed similarity is enabled
-- **WHEN** the music stack enables the AudioMuse Navidrome plugin path
-- **THEN** Navidrome SHALL enable plugin runtime support and load the AudioMuse plugin from its service state
-- **AND** the AudioMuse core service SHALL be reachable by the plugin through the configured host/internal service path
-- **AND** this change SHALL NOT require a new public route unless existing exposure policy explicitly composes one
-
-### Requirement: Shared media roots are app-owned and created via tmpfiles
-The system SHALL require each host to select the physical storage root for the music application. The music application SHALL derive and create its `library`, `playlists`, `inbox`, `quarantine`, and `.versions` subtrees via `systemd.tmpfiles.rules`; fleet policy and leaf services SHALL NOT select a physical shared-media root.
-
-#### Scenario: Shared music paths are reconciled
-- **WHEN** the music application is enabled with a host-selected storage root
-- **THEN** its conventional shared subtrees are present beneath that root with declared ownership and modes
-- **AND** enabled leaf services receive their required paths from the application composition
-
 ### Requirement: Application injects shared media directories
 The music application composition SHALL derive shared directories from the host-supplied application storage root and pass them to dependent services rather than relying on service-local hardcoded shared paths.
 
@@ -115,20 +81,3 @@ The music application composition SHALL derive shared directories from the host-
 - **WHEN** a host configures the music application's required storage root
 - **THEN** Syncthing, Navidrome, Beets, slskd, Tagr, and other enabled music leaves consume explicitly injected paths
 - **AND** a missing required leaf path fails evaluation instead of falling back to a hardcoded filesystem location
-
-### Requirement: Media-stack service backups SHALL declare service state coverage and media policy
-Stateful media-stack services SHALL support backup coverage for their mutable service state. Coverage for music payloads beneath the host-selected application storage root SHALL be controlled by host backup policy.
-
-#### Scenario: Music-stack backup scope is reviewed
-- **WHEN** backup coverage is inspected for the music application stack
-- **THEN** service configuration, databases, and runtime state can be included beneath managed service-state roots
-- **AND** music library and inbox payloads follow the host's declared storage and backup scope
-
-### Requirement: Engine DJ consumes one bounded music share
-The Engine DJ guest SHALL receive the host-selected music application root as one writable `M:` share. The guest-visible root SHALL contain sibling `library`, `playlists`, `inbox`, `quarantine`, and `Engine Library` paths, where `Engine Library` is a real directory beneath the music root (no separate share, mount tag, or guest junction).
-
-#### Scenario: Engine DJ music share is evaluated
-- **WHEN** Engine DJ is enabled on a host with the music application
-- **THEN** the guest share is rooted at that host's music application storage root
-- **AND** unrelated future media categories outside the music root are not exposed to the guest
-- **AND** Engine database backup coverage rides the music storage root (deduplicated with the media backup)

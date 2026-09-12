@@ -1047,3 +1047,33 @@ Supersedes/updates:
 References:
 
 - `openspec/changes/dendritic-stage-5-shared-source-contributors/{proposal,design}.md` (S5-1–S5-10)
+
+## D-052: Stage 6 converts music into a home-forge-only deployment aspect with a typed DJ contract
+
+Status: Accepted
+
+Decision:
+
+- the music application converts from the directly host-imported evaluator-class coordinator `modules/applications/music/default.nix` (deleted with its `files/` directory) into the discovered top-level contributor `modules/flake/music.nix`, which publishes `flake.modules.nixos.music`; selecting the aspect is its top-level enablement (`applications.music.enable = true`), and only `home-forge` selects `aspects.music` in `modules/flake/registry.nix`; `music` and `dj` remain separately selected aspects and neither imports or enables the other
+- the aspect keeps composition ownership only: the public `applications.music.*` options (`enable`, `dataRoot`, `storageRoot`, `syncthingDevices`, `syncthingFolders`, `audiomuse.*`, `navidrome.enable`, `secretFiles.host`, `slskdDomain`, `configFiles`) plus the read-only `contract`, `mediaPaths` derivation, secret-file passthrough with the required-secret assertion, service selection/wiring for Syncthing/Navidrome/AudioMuse/Beets/slskd/Tagr, runner-instance selection, backup policy contracts, `users.users.dev.extraGroups`, `programs.zsh.shellAliases.b`, and the success-chain intent (`services.beets.onSuccessUnits`, `services.beets.importReadyFlag`, `services.musicIngest.onSuccessUnit`)
+- concrete implementation ownership moves into private leaves under `modules/services/music/**`, imported only by `modules/flake/music.nix`, publishing no aspects, and never host-imported: the Beets owner (`modules/services/music/beets/default.nix`) owns the Beets SOPS secrets/templates, the read-only `services.beets.renderedConfigFiles.{standard,quarantine}` interface (option declaration and value outside the secret-file gate), the four operator CLIs (`beets-interactive`, `beets-dupes`, `beets-merge-splits`, `beets-prune-empty`), the moved config assets (`modules/services/music/beets/files/beets-{config,quarantine-config}.yaml`), and its own Beets-state tmpfiles; the new private ingest leaf (`modules/services/music/ingest.nix`, options `services.musicIngest`) owns `ffmpeg-preprocess` plus the dropbox path/poke/settle units, the slskd completion hook, and the scoped slskd-settle polkit rule (`modules/services/music/files/ffmpeg-preprocess.sh`); the new private storage leaf (`modules/services/music/storage.nix`, options `services.musicStorage`) owns the `music-ingest` (990) and `media` (987) GIDs, the media root/layout tmpfiles and ACL rules, `media-permission-reconcile`, and the `media-fixperms` CLI; `modules/services/music/beets/runners.nix` is unchanged
+- the composition exposes the read-only typed `applications.music.contract.{storageRoot,libraryDir,playlistsDir}`; `dj` consumes it with `config.applications.music.contract or null`, keeps `applications.dj.engine.{sharePath,musicStorageRoot}` typed `lib.types.str` with contract-derived `""`-safe defaults (never `nullOr`), and enforces one named assertion (`musicContract != null || (sharePath != "" && musicStorageRoot != "")`, active only when the engine is enabled), so DJ without music is permitted only with both explicit values and otherwise fails the named assertion; `home-forge` drops the duplicate DJ root/share literals and keeps only `enable`, `traktorStateDir`, and `secretFiles.navidrome`
+- behavior is frozen for the conversion: every public option namespace, path, unit name, timer, script, ACL, secret key/path/owner/mode, package name, backup path, and the playlist/Traktor worker logic/input is unchanged; worker adoption of `contract.libraryDir`/`contract.playlistsDir` inside the Engine export job paths is deferred
+- the four-root import-tree filter stays exactly `applications`, `hosts`, `providers`, `services` (`modules/flake/_unconverted-nixos-dirs.nix`), so the private music leaves remain reachable only through the discovered music owner. This does not make `services` permanent; the retirement criterion for the transitional `services` root is that when `modules/services/` is scheduled for conversion these leaves either move beside the music contributor under a concern-owned underscore path (`modules/flake/_music/**`) or become top-level contributors if they gain independent placement
+- no secret bootstrap change: no `secrets/**`, `.sops.yaml`, key, ciphertext, or SOPS recipient edit is part of this conversion; the change is implementation-complete but not deployed and not archived
+
+Rationale:
+
+- the deleted coordinator doubled as composition root and implementation owner: Beets secret/template assembly, operator binaries, concrete runner/timer/path/polkit mechanics, the permission-reconcile body, and the media tmpfiles/ACL implementation all lived in it, while `dj` reached music through host-supplied path literals rather than an explicit contract
+- moving mechanisms to their owners makes each independently reviewable while a thin aspect keeps the placement decision (`home-forge` only) and the cross-service wiring visible in one place
+- an explicit typed contract plus a named assertion removes the hidden host-literal coupling and keeps DJ-without-music evaluation safe (`types.str` with `""` defaults), preserving the behavior-freeze requirement
+- keeping the leaves under the transitional `services` root with a recorded retirement criterion matches D-050's source/deployment separation without forcing a filter shrink as part of this change
+
+Supersedes/updates:
+
+- supersedes only D-050's and D-051's music-deferral clause ("web, identity, and music conversions are deferred" / "music remains deferred"): `music` is now converted, while D-050's separation of source ownership from deployment granularity, its support-module classification, its composition modes, and D-051's web-policy/identity-client conversion and private-path split remain in force
+- updates the current-state music paths in `docs/architecture.md`, `docs/plan.md`, `docs/context-history.md`, `docs/dendritic-transition-analysis.md`, `STRUCTURE.md`, `ARCHITECTURE.md`, and `CONVENTIONS.md`; historical decision bodies (D-019, D-033, D-040, D-044–D-046) remain unchanged
+
+References:
+
+- `openspec/changes/dendritic-stage-6-music-composition/{proposal,design}.md` (S6-1–S6-13)

@@ -6,8 +6,8 @@
 let
   hasHostSecrets = builtins.pathExists ../../../secrets/hosts/home-forge/system.yaml;
 
-  # Host-owned physical music root; the DJ application injects it as the
-  # guest's M: share.
+  # Host-owned physical music root; the music aspect derives the storage
+  # library contract from it and the DJ application consumes that contract.
   musicStorageRoot = "/srv/storage/media/music";
   # Playlist-sync worker state (SQLite store + inbound M3U drop), outside the
   # media library so state/input files never surface as music.
@@ -19,7 +19,6 @@ in
     # leaves they fold under are no longer imported here.
     ../../../modules/services/omniroute.nix
     ./disko-two-disk.nix
-    ../../../modules/applications/music
   ];
 
   networking.hostName = "home-forge";
@@ -112,15 +111,14 @@ in
   applications.dj = {
     engine = {
       enable = true;
-      sharePath = musicStorageRoot;
-      musicStorageRoot = musicStorageRoot;
       traktorStateDir = traktorStateDir;
       secretFiles.navidrome = ../../../secrets/applications/music.yaml;
     };
   };
 
+  # Music composition is provided by the `music` deployment aspect (selected
+  # in the registry); the host keeps only its real variants.
   applications.music = {
-    enable = true;
     dataRoot = "/srv/data";
     storageRoot = musicStorageRoot;
     secretFiles.host = ../../../secrets/applications/music.yaml;

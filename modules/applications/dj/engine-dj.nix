@@ -10,6 +10,10 @@ let
   cfg = config.applications.dj;
   inherit (cfg) engine;
 
+  # Read-only music library/storage contract (S6-3). Null when the music
+  # aspect is not selected or not enabled; never an import edge.
+  musicContract = config.applications.music.contract or null;
+
   engineEnabled = cfg.enable && engine.enable;
   vmUnit = "windows-vm-${engine.vmName}.service";
 
@@ -141,12 +145,14 @@ in
 
       sharePath = lib.mkOption {
         type = lib.types.str;
-        description = "Root exported to the guest (drive M:). Required; injected by the caller.";
+        default = if musicContract != null then musicContract.storageRoot else "";
+        description = "Root exported to the guest (drive M:). Defaults to the selected music contract's storage root; explicit values win.";
       };
 
       musicStorageRoot = lib.mkOption {
         type = lib.types.str;
-        description = "Music library root (Engine Database2, playlists); host/music-owned. Required.";
+        default = if musicContract != null then musicContract.storageRoot else "";
+        description = "Music library root (Engine Database2, playlists); defaults to the selected music contract's storage root.";
       };
 
       traktorStateDir = lib.mkOption {
@@ -281,6 +287,10 @@ in
       {
         assertion = engine.secretFiles.navidrome != null;
         message = "applications.dj.engine.secretFiles.navidrome must be set (Navidrome API credentials for playlist-sync).";
+      }
+      {
+        assertion = musicContract != null || (engine.sharePath != "" && engine.musicStorageRoot != "");
+        message = "applications.dj.engine requires applications.music.contract; select the music aspect on this host (or set applications.dj.engine.sharePath and musicStorageRoot explicitly).";
       }
     ];
 

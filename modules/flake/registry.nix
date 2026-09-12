@@ -138,6 +138,7 @@ in
             aspects.fleet-packages
             aspects.web-policy
             aspects.dj
+            aspects.music
             # Foundation aspects (FND-1): selection is enablement.
             aspects.base
             aspects.shell

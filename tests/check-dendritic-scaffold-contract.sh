@@ -4,9 +4,10 @@ set -euo pipefail
 # Dendritic scaffold contract (openspec changes dendritic-stage-1-scaffold-hosts
 # task 4.1/6.4, dendritic-stage-2-foundation-aspects task 6.1,
 # dendritic-stage-3-operational-aspects task 4.1,
-# dendritic-stage-4-source-model-realignment tasks 4.1/4.2, and
-# dendritic-stage-5-shared-source-contributors task 5.2; design DS-1..DS-6,
-# FND-1..FND-6, OPS-1..OPS-11, S4-1/S4-4/S4-5/S4-8, S5-6/S5-7).
+# dendritic-stage-4-source-model-realignment tasks 4.1/4.2,
+# dendritic-stage-5-shared-source-contributors task 5.2, and
+# dendritic-stage-6-music-composition tasks 5.1/5.2; design DS-1..DS-6,
+# FND-1..FND-6, OPS-1..OPS-11, S4-1/S4-4/S4-5/S4-8, S5-6/S5-7, S6-2..S6-11).
 #
 # Prefers observable evaluations; exact source invariants are used only where
 # import-tree behavior cannot be observed from outside. Publications are now
@@ -271,12 +272,12 @@ host_leaf_imports_of() { # $1 dir
   grep -RnE --include='*.nix' 'modules/(services/(state-backups|beszel-agent-auth)|flake/(_backups/(niks3-upload-client|niks3-post-deploy)|_builder-access/nixbuild-ssh))\.nix' "$1/modules/hosts" || true
 }
 
-# 7a. Exactly fourteen publications are discovered across the distributed
-# contributors: the infrastructure support quartet plus the ten host-selected
+# 7a. Exactly fifteen publications are discovered across the distributed
+# contributors: the infrastructure support quartet plus the eleven host-selected
 # deployment aspects (base, shell, networking, tailscale, notify, backups,
-# builder-access, observability-agent, dj, identity-client). Registry references
-# are not definition sites. No central publication file or private filename
-# inventory is pinned.
+# builder-access, observability-agent, dj, music, identity-client). Registry
+# references are not definition sites. No central publication file or private
+# filename inventory is pinned.
 expected_pub="$(printf '%s\n' \
 flake.modules.nixos.backups \
 flake.modules.nixos.base \
@@ -284,6 +285,7 @@ flake.modules.nixos.builder-access \
 flake.modules.nixos.dj \
 flake.modules.nixos.fleet-packages \
 flake.modules.nixos.identity-client \
+flake.modules.nixos.music \
 flake.modules.nixos.networking \
 flake.modules.nixos.notify \
 flake.modules.nixos.observability-agent \
@@ -294,7 +296,7 @@ flake.modules.nixos.tailscale \
 flake.modules.nixos.web-policy)"
 pub_names="$(pub_names_of "$ROOT")"
 if [ "$pub_names" != "$expected_pub" ]; then
-  fail "discovered publications drifted from the support quartet + ten deployment aspects: $pub_names"
+  fail "discovered publications drifted from the support quartet + eleven deployment aspects: $pub_names"
 fi
 if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.cli|_aspects/cli|aspects\.cli' modules; then
 fail "the deleted cli aspect must not be resurrected"
@@ -313,9 +315,9 @@ done
 
 # 7b. Per-host registry selections are semantically exact: every host selects
 # the support quartet and the eight foundation/operational aspects; OCI and LA
-# additionally select identity-client, home-forge selects dj instead. Aspect
-# order is not part of the contract, and host assemblies receive aspects only
-# via the registry.
+# additionally select identity-client, while home-forge selects dj and music
+# instead. Aspect order is not part of the contract, and host assemblies
+# receive aspects only via the registry.
 support_quartet="aspects.provenance
 aspects.oci-images
 aspects.fleet-packages
@@ -329,13 +331,13 @@ aspects.backups
 aspects.builder-access
 aspects.observability-agent"
 regular_sel="$(printf '%s\n%s\naspects.identity-client\n' "$support_quartet" "$foundation_operational" | LC_ALL=C sort)"
-forge_sel="$(printf '%s\n%s\naspects.dj\n' "$support_quartet" "$foundation_operational" | LC_ALL=C sort)"
+forge_sel="$(printf '%s\n%s\naspects.dj\naspects.music\n' "$support_quartet" "$foundation_operational" | LC_ALL=C sort)"
 for host in oci-melb-1 la-admin-1; do
   [ "$(host_aspects "$ROOT" "$host")" = "$regular_sel" ] ||
     fail "registry: $host must select the support quartet + eight deployment aspects + identity-client: $(host_aspects "$ROOT" "$host")"
 done
 [ "$(host_aspects "$ROOT" home-forge)" = "$forge_sel" ] ||
-  fail "registry: home-forge must select the support quartet + eight deployment aspects + dj: $(host_aspects "$ROOT" home-forge)"
+  fail "registry: home-forge must select the support quartet + eight deployment aspects + dj + music: $(host_aspects "$ROOT" home-forge)"
 if grep -RnE 'aspects\.|_aspects' modules/hosts; then
 fail "host assemblies must receive foundation aspects only via the registry"
 fi
@@ -891,5 +893,311 @@ case "$hostauth_out" in
   *"services.identity.hostAuth' does not exist"*) ;;
   *) fail "7l-7: expected missing services.identity.hostAuth, got: $(printf '%s' "$hostauth_out" | tail -3)" ;;
 esac
+
+# --- 7m. Stage 6 music composition (S6-2..S6-11) -----------------------------
+# (openspec change dendritic-stage-6-music-composition tasks 5.1/5.2)
+#
+# The `music` deployment aspect is published from the discovered contributor
+# modules/flake/music.nix and selected only on home-forge; selecting it is its
+# top-level enablement. Its private implementation leaves under
+# modules/services/music/** publish no aspect and are imported only by that
+# concern owner. DJ consumes the read-only applications.music.contract through
+# a named assertion. Privacy is asserted by owner (host-import grep +
+# publication exclusion + owner-import check), never by a hardcoded
+# operational predicate.
+
+music_host_imports_of() { # $1 repo root
+  grep -RnE --include='*.nix' 'modules/services/music' "$1/modules/hosts" || true
+}
+music_leaf_publishers_of() { # $1 repo root
+  grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z-]+[[:space:]]*=' "$1/modules/services/music" || true
+}
+music_leaf_import_sites_of() { # $1 repo root -> leaf imports outside the concern owner
+  grep -REl --include='*.nix' \
+    'services/music/(audiomuse|syncthing|navidrome|slskd|tagr|beets/default|ingest|storage)\.nix' \
+    "$1/modules" | grep -vE '/modules/flake/music\.nix$' || true
+}
+strip_host_block() { # $1 file, $2 "<option> = {" marker
+  python3 - "$1" "$2" <<'PYEOF'
+import sys
+path, marker = sys.argv[1], sys.argv[2]
+s = open(path).read()
+start = s.index(marker)
+i = s.index("{", start)
+depth = 0
+while True:
+    if s[i] == "{":
+        depth += 1
+    elif s[i] == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    i += 1
+end = i + 1
+if end < len(s) and s[end] == ";":
+    end += 1
+open(path, "w").write(s[:start] + s[end:])
+PYEOF
+}
+
+# 7m-1. Privacy by owner and the legacy-coordinator deletion precondition.
+test -f modules/flake/music.nix || fail "7m-1: discovered music contributor missing"
+test ! -e modules/applications/music || fail "7m-1: legacy music coordinator must be deleted"
+grep -q 'flake.modules.nixos.music' modules/flake/music.nix ||
+  fail "7m-1: modules/flake/music.nix must publish flake.modules.nixos.music"
+for leaf in audiomuse syncthing navidrome slskd tagr beets/default ingest storage; do
+  grep -q "services/music/${leaf}\.nix" modules/flake/music.nix ||
+    fail "7m-1: music owner must import the ${leaf} leaf"
+done
+[ -z "$(music_host_imports_of "$ROOT")" ] ||
+  fail "7m-1: host assemblies must not import modules/services/music directly: $(music_host_imports_of "$ROOT")"
+[ -z "$(music_leaf_publishers_of "$ROOT")" ] ||
+  fail "7m-1: private music leaves must not publish flake.modules.nixos aspects: $(music_leaf_publishers_of "$ROOT")"
+[ -z "$(music_leaf_import_sites_of "$ROOT")" ] ||
+  fail "7m-1: only modules/flake/music.nix may import the private music leaves: $(music_leaf_import_sites_of "$ROOT")"
+
+# 7m-2. Focused observable probe. Every field is forced through the full
+# toplevel derivation (`drv`) so option-merge and assertion failures surface.
+# home-forge proves selection-owned enablement, the contract, leaf activation,
+# and DJ values; OCI/LA prove discovery without selection activates nothing.
+MUSIC_PROBE='c:
+let
+  # S6-3 declares the contract as a typed submodule with no nullable/default
+  # sentinel and assigns it only inside the enable-gated body: on a
+  # selected-but-disabled host the declared option has no value, so a field
+  # read fails ("accessed but has no value defined") instead of yielding null.
+  # Probe each field under tryEval so "absent" covers both the unselected host
+  # (option namespace missing) and the selected-but-disabled host (no value).
+  contractField = field:
+    builtins.tryEval (
+      if (c.applications.music or { }) ? contract
+      then (c.applications.music.contract.${field} or null)
+      else null
+    );
+  contractText = field:
+    let r = contractField field; in
+    if r.success && r.value != null then r.value else "";
+in {
+  drv = c.system.build.toplevel.drvPath;
+  musicOptionCount = builtins.length (builtins.attrNames (c.applications.music or { }));
+  enable = (c.applications.music or { }).enable or false;
+  contractPresent = (contractField "storageRoot").success && (contractField "storageRoot").value != null;
+  contractStorageRoot = contractText "storageRoot";
+  contractLibraryDir = contractText "libraryDir";
+  contractPlaylistsDir = contractText "playlistsDir";
+  storageRoot = (c.applications.music or { }).storageRoot or "";
+  ingest = c.services.musicIngest.enable or false;
+  storage = c.services.musicStorage.enable or false;
+  ffmpegUnit = c.systemd.services ? ffmpeg-preprocess;
+  reconcileUnit = c.systemd.services ? media-permission-reconcile;
+  dropboxPath = c.systemd.paths ? dropbox-inbox;
+  dropboxTimer = c.systemd.timers ? dropbox-settle;
+  slskdTimer = c.systemd.timers ? slskd-settle;
+  gidMusicIngest = (c.users.groups.music-ingest or { }).gid or null;
+  gidMedia = (c.users.groups.media or { }).gid or null;
+  onSuccess = c.services.beets.onSuccessUnits or [ ];
+  importReadyFlag = c.services.beets.importReadyFlag or "";
+  renderedStandard = if (c.applications.music or { }).enable or false then (c.services.beets.renderedConfigFiles.standard or "") else "";
+  renderedQuarantine = if (c.applications.music or { }).enable or false then (c.services.beets.renderedConfigFiles.quarantine or "") else "";
+  djEnable = (c.applications.dj or { }).enable or false;
+  djShare = ((c.applications.dj or { }).engine or { }).sharePath or "";
+  djRoot = ((c.applications.dj or { }).engine or { }).musicStorageRoot or "";
+  djTraktor = ((c.applications.dj or { }).engine or { }).traktorStateDir or "";
+  musicPkgs = builtins.sort builtins.lessThan (builtins.filter (n: builtins.elem n [ "ffmpeg-preprocess" "beets-interactive" "beets-dupes" "beets-merge-splits" "beets-prune-empty" "media-fixperms" ]) (builtins.map (p: p.name or "") (c.environment.systemPackages or [ ])));
+  tmpfilesHasStorageRoot = builtins.elem "d /srv/storage/media/music 0755 root root - -" (c.systemd.tmpfiles.rules or [ ]);
+  tmpfilesHasUntagged = builtins.elem "d /srv/storage/media/music/quarantine/untagged 2775 root music-ingest - -" (c.systemd.tmpfiles.rules or [ ]);
+  tmpfilesHasSlskdEnv = builtins.elem "f /var/lib/slskd/environment 0640 slskd slskd - -" (c.systemd.tmpfiles.rules or [ ]);
+}'
+
+probe_music() { # $1 host, $2 expected JSON (python dict literal)
+  local host="$1" json
+  json="$(ne --json --apply "$MUSIC_PROBE" "path:.#nixosConfigurations.${host}.config")" ||
+    fail "${host}: music probe does not evaluate"
+  python3 - "$host" "$2" "$json" <<'PYEOF' || fail "${host}: observable music contract violated"
+import json, sys
+host, exp_raw, got_raw = sys.argv[1], sys.argv[2], sys.argv[3]
+exp = json.loads(exp_raw)
+got = json.loads(got_raw)
+errs = []
+music_clis = ["beets-dupes", "beets-interactive", "beets-merge-splits", "beets-prune-empty", "ffmpeg-preprocess", "media-fixperms"]
+if host == "home-forge":
+    if got["musicOptionCount"] <= 0:
+        errs.append("music options must exist on the selected host")
+    if got["musicPkgs"] != music_clis:
+        errs.append(f"music package contributions drifted: {got['musicPkgs']!r}")
+else:
+    if got["musicOptionCount"] != 0:
+        errs.append(f"discovered-but-unselected host exposes music options: {got['musicOptionCount']}")
+    if got["musicPkgs"]:
+        errs.append(f"discovered-but-unselected host exposes music packages: {got['musicPkgs']!r}")
+for k, v in exp.items():
+    if got.get(k) != v:
+        errs.append(f"{k}: got {got.get(k)!r} want {v!r}")
+if errs:
+    print(f"{host}: " + "; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+}
+
+probe_music home-forge '{"enable":true,"contractPresent":true,"contractStorageRoot":"/srv/storage/media/music","contractLibraryDir":"/srv/storage/media/music/library","contractPlaylistsDir":"/srv/storage/media/music/playlists","storageRoot":"/srv/storage/media/music","ingest":true,"storage":true,"ffmpegUnit":true,"reconcileUnit":true,"dropboxPath":true,"dropboxTimer":true,"slskdTimer":true,"gidMusicIngest":990,"gidMedia":987,"onSuccess":["media-permission-reconcile.service","navidrome-scan.service"],"importReadyFlag":"/var/lib/beets/ffmpeg-preprocess/inbox-ready","renderedStandard":"/run/secrets/rendered/beets-config.yaml","renderedQuarantine":"/run/secrets/rendered/beets-quarantine-config.yaml","djEnable":true,"djShare":"/srv/storage/media/music","djRoot":"/srv/storage/media/music","djTraktor":"/srv/data/traktor-m3u-sync","tmpfilesHasStorageRoot":true,"tmpfilesHasUntagged":true,"tmpfilesHasSlskdEnv":true}'
+probe_music oci-melb-1 '{"enable":false,"contractPresent":false,"contractStorageRoot":"","contractLibraryDir":"","contractPlaylistsDir":"","storageRoot":"","ingest":false,"storage":false,"ffmpegUnit":false,"reconcileUnit":false,"dropboxPath":false,"dropboxTimer":false,"slskdTimer":false,"gidMusicIngest":null,"gidMedia":null,"onSuccess":[],"importReadyFlag":"","renderedStandard":"","renderedQuarantine":"","djEnable":false,"djShare":"","djRoot":"","djTraktor":"","tmpfilesHasStorageRoot":false,"tmpfilesHasUntagged":false,"tmpfilesHasSlskdEnv":false}'
+probe_music la-admin-1 '{"enable":false,"contractPresent":false,"contractStorageRoot":"","contractLibraryDir":"","contractPlaylistsDir":"","storageRoot":"","ingest":false,"storage":false,"ffmpegUnit":false,"reconcileUnit":false,"dropboxPath":false,"dropboxTimer":false,"slskdTimer":false,"gidMusicIngest":null,"gidMedia":null,"onSuccess":[],"importReadyFlag":"","renderedStandard":"","renderedQuarantine":"","djEnable":false,"djShare":"","djRoot":"","djTraktor":"","tmpfilesHasStorageRoot":false,"tmpfilesHasUntagged":false,"tmpfilesHasSlskdEnv":false}'
+
+# 7m-3. Semantic throwaway mutations (S6-12). Each runs in a fresh copy and
+# forces the full toplevel through the probe expression.
+music_mutation_probe() { # $1 copy, $2 host -> JSON (toplevel forced via drv)
+  nix eval --json --no-write-lock-file --apply "$MUSIC_PROBE" "path:${1}#nixosConfigurations.${2}.config"
+}
+assert_probe() { # $1 host, $2 json, $3 semantic check name
+  python3 - "$1" "$2" "$3" <<'PYEOF' || fail "7m mutation $1: $3 failed"
+import json, sys
+host, raw, check = sys.argv[1], sys.argv[2], sys.argv[3]
+got = json.loads(raw)
+errs = []
+if check == "disabled":
+    if got["enable"]:
+        errs.append(f"enable still {got['enable']!r}")
+    if got["contractPresent"]:
+        errs.append("contract still present")
+    if got["ingest"] or got["storage"]:
+        errs.append("private leaves still enabled")
+    if got["ffmpegUnit"] or got["reconcileUnit"]:
+        errs.append("music units still active")
+elif check == "explicit-dj":
+    if got["musicOptionCount"] != 0:
+        errs.append("music options must stay absent without selection")
+    if got["djShare"] != "/srv/storage/media/music" or got["djRoot"] != "/srv/storage/media/music":
+        errs.append(f"explicit DJ values not honoured: {got['djShare']!r}/{got['djRoot']!r}")
+elif check == "music-no-dj":
+    if not got["enable"] or not got["contractPresent"]:
+        errs.append("music must stay enabled with its contract")
+    if not got["ffmpegUnit"] or not got["reconcileUnit"]:
+        errs.append("music units missing")
+    if got["djEnable"]:
+        errs.append("dj must stay disabled")
+else:
+    errs.append(f"unknown check {check}")
+if errs:
+    print(f"{host}: " + "; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+}
+
+assert_probe_result() { # $1 host, $2 copy, $3 semantic check name
+  local host="$1" copy="$2" check="$3" result
+  result="$(music_mutation_probe "$copy" "$host")" || fail "7m mutation ${host}: ${check} probe did not evaluate"
+  assert_probe "$host" "$result" "$check"
+}
+
+# 7m-3a. Discovery is not placement: adding aspects.music without host
+# bindings cannot silently activate the stack (selection is the activation
+# edge and requires explicit host values).
+D="$(make_copy)"
+python3 - "$D/modules/flake/registry.nix" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+i = s.index("la-admin-1 = {")
+j = s.index("aspects.identity-client", i)
+k = s.index("\n", j)
+open(p, "w").write(s[: k + 1] + "            aspects.music\n" + s[k + 1 :])
+PYEOF
+expect_eval_fail "$D" la-admin-1 "applications.music.dataRoot"
+
+# 7m-3b. Removing the selected aspect's enablement leaves the selection in
+# place but disables the application (enable false, contract unset, leaves and
+# units inert). The copy restores pre-contract explicit DJ values so the named
+# DJ assertion is not what this probe exercises.
+D="$(make_copy)"
+sed -i '/applications\.music\.enable = true;/d' "$D/modules/flake/music.nix"
+python3 - "$D/modules/hosts/home-forge/default.nix" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """  applications.dj = {
+    engine = {
+      enable = true;
+"""
+new = """  applications.dj = {
+    engine = {
+      enable = true;
+      sharePath = musicStorageRoot;
+      musicStorageRoot = musicStorageRoot;
+"""
+assert old in s
+open(p, "w").write(s.replace(old, new))
+PYEOF
+assert_probe_result home-forge "$D" disabled
+
+# 7m-3c. A host direct import of a private music leaf is detected by the
+# owner-import predicate, and the host toplevel still evaluates (import alone
+# activates nothing).
+D="$(make_copy)"
+sed -i '/\.\/disko-two-disk\.nix/a\    ../../../modules/services/music/ingest.nix' "$D/modules/hosts/home-forge/default.nix"
+[ -n "$(music_host_imports_of "$D")" ] ||
+  fail "7m-3c: host-import predicate must detect a direct modules/services/music import"
+nix eval --raw --no-write-lock-file "path:${D}#nixosConfigurations.home-forge.config.system.build.toplevel.drvPath" >/dev/null ||
+  fail "7m-3c: importing a private leaf must not break the host toplevel eval"
+
+# 7m-3d. A publication smuggled into the private music subtree is rejected by
+# the publication-exclusion scan and stays invisible to discovery (the
+# services root remains filtered).
+D="$(make_copy)"
+cat >"$D/modules/services/music/evil-pub.nix" <<'EOF'
+{ ... }:
+{
+  flake.modules.nixos.evil-music-pub = { };
+}
+EOF
+[ -n "$(music_leaf_publishers_of "$D")" ] ||
+  fail "7m-3d: private-leaf publication scan must reject a flake.modules.nixos publication"
+case "$(pub_names_of "$D")" in
+  *evil-music-pub*) fail "7m-3d: a private music leaf publication must not be discovered" ;;
+esac
+nix eval --raw --no-write-lock-file "path:${D}#nixosConfigurations.oci-melb-1.config.system.build.toplevel.drvPath" >/dev/null ||
+  fail "7m-3d: unimported private leaf must not affect the host toplevel eval"
+
+# 7m-3e. Deleting the music contributor is detected by publication discovery
+# and breaks the selected home-forge aspect.
+D="$(make_copy)"
+rm "$D/modules/flake/music.nix"
+[ "$(pub_names_of "$D")" != "$expected_pub" ] ||
+  fail "7m-3e: publication discovery must detect the deleted music contributor"
+expect_eval_fail "$D" home-forge "attribute 'music' missing"
+
+# 7m-3f. DJ selected/enabled without music and without explicit values fails
+# with the exact named assertion; with both values explicit it succeeds.
+D="$(make_copy)"
+sed -i '/aspects\.music/d' "$D/modules/flake/registry.nix"
+strip_host_block "$D/modules/hosts/home-forge/default.nix" "applications.music = {"
+expect_eval_fail "$D" home-forge "applications.dj.engine requires applications.music.contract"
+
+D="$(make_copy)"
+sed -i '/aspects\.music/d' "$D/modules/flake/registry.nix"
+strip_host_block "$D/modules/hosts/home-forge/default.nix" "applications.music = {"
+python3 - "$D/modules/hosts/home-forge/default.nix" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """  applications.dj = {
+    engine = {
+      enable = true;
+"""
+new = """  applications.dj = {
+    engine = {
+      enable = true;
+      sharePath = musicStorageRoot;
+      musicStorageRoot = musicStorageRoot;
+"""
+assert old in s
+open(p, "w").write(s.replace(old, new))
+PYEOF
+assert_probe_result home-forge "$D" explicit-dj
+
+# 7m-3g. Music selected without DJ succeeds and retains its observables.
+D="$(make_copy)"
+sed -i '/aspects\.dj/d' "$D/modules/flake/registry.nix"
+strip_host_block "$D/modules/hosts/home-forge/default.nix" "applications.dj = {"
+assert_probe_result home-forge "$D" music-no-dj
 
 echo "check-dendritic-scaffold-contract: PASS"

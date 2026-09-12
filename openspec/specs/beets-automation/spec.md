@@ -32,7 +32,7 @@ Beets automation SHALL produce deterministic outcomes for promoted, non-promoted
 - **AND** the runner SHALL exit with the non-zero code to trigger systemd failure hooks
 
 ### Requirement: Beets processing is transfer-safe
-The Beets runner SHALL use transfer-safety controls (including temporary-file lockout and settle timing) before processing files. The Beets inbox service SHALL trigger downstream post-success automation through systemd only after the inbox service completes successfully.
+The Beets runner SHALL use transfer-safety controls (including temporary-file lockout and settle timing) before processing files. The Beets inbox service SHALL trigger downstream post-success automation through systemd only after the inbox service completes successfully. The ffmpeg-preprocess and path ingest units SHALL be owned by the music implementation leaf, while their observable trigger behavior remains unchanged.
 
 #### Scenario: Inbox processing is triggered
 - **WHEN** Beets runner starts against a target path
@@ -130,7 +130,7 @@ The Beets notify configuration SHALL expose a single `tier` option that referenc
 - **AND** runner failures are silent (logged only)
 
 ### Requirement: Reusable Beets framework and workflow policy MUST remain separate
-The system SHALL keep reusable Beets execution scaffolding separate from music-specific workflow composition.
+The system SHALL keep reusable Beets execution scaffolding separate from music-specific workflow composition. The reusable framework leaf SHALL own Beets secret registration, rendered config-template assembly, the operator CLI binaries generated from built-in runner kinds, and concrete runner runtime/hardening, while the music workflow composition SHALL retain selection of configs, runner instances, and the `OnSuccess` chain intent.
 
 #### Scenario: Generic Beets mechanism is declared
 - **WHEN** the Beets service layer is evaluated
@@ -139,6 +139,11 @@ The system SHALL keep reusable Beets execution scaffolding separate from music-s
 #### Scenario: Music workflow composition is declared
 - **WHEN** the music application is evaluated
 - **THEN** it selects concrete Beets configs, runner instances, timers, and stage semantics through the reusable framework interface
+
+#### Scenario: Beets implementation ownership is leaf-owned
+- **WHEN** the reusable Beets leaf registers secrets, assembles rendered config templates, generates operator CLI binaries, or applies runner runtime/hardening
+- **THEN** that implementation ownership lives in the leaf rather than the music workflow composition
+- **AND** existing secret names, template paths, operator binary names, runner unit behavior, and `OnSuccess` chaining remain unchanged
 
 ### Requirement: Runner instances MUST be generated from built-in Beets runner kinds
 The system SHALL define Beets runner instances as generated systemd service units created from built-in runner kinds, with defaulted-but-overridable args and config.
@@ -157,7 +162,7 @@ The system SHALL support optional pre/post command hooks and optional triggers f
 - **AND** the core runner behavior still comes from the declared built-in runner kind
 
 ### Requirement: The slskd ingest trigger SHALL debounce through a settle timer
-The music application SHALL trigger the ingest pipeline from slskd completions by restarting a persistent systemd timer, not by touching watched files. Each `DownloadDirectoryComplete` event SHALL re-arm the timer; the pipeline SHALL start once, after the settle window elapses with no further events.
+The music application SHALL trigger the ingest pipeline from slskd completions by restarting a persistent systemd timer, not by touching watched files. Each `DownloadDirectoryComplete` event SHALL re-arm the timer; the pipeline SHALL start once, after the settle window elapses with no further events. The settle timer and its polkit rule SHALL be owned by the music implementation leaf, while their observable timing and authorization behavior remain unchanged.
 
 #### Scenario: Download directory completes
 - **WHEN** slskd fires `DownloadDirectoryComplete`

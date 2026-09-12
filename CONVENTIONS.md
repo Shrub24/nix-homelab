@@ -60,7 +60,7 @@ Direct public-aspect imports are not globally forbidden but require intrinsic-co
 | Feature | Current (pre-refactor) | Target (post-refactor) |
 |---------|----------------------|----------------------|
 | Karakeep | `services.karakeep-oci` | `services.karakeep-pod` |
-| Music | `applications.music` | `applications.music` (add `enable`) |
+| Music | `applications.music` | `applications.music` (enablement provided by the selected `music` aspect) |
 | Admin | `applications.admin` | `applications.admin` |
 | Edge Ingress | `applications."edge-ingress"` | `applications."edge-ingress"` |
 | Tailscale | `services.tailscale` | `services.tailscale` (no change) |

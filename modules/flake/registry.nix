@@ -75,6 +75,17 @@ in
             aspects.fleet-packages
             aspects.web-policy
             aspects.identity-client
+            # Stage 7 placement aspects (D-053): one selection per deployed
+            # product/platform capability; no host imports its implementation.
+            aspects.oci
+            aspects.edge
+            aspects.cockpit
+            aspects.paperless
+            aspects.postgres
+            aspects.ai-gateway
+            aspects.karakeep
+            aspects.niks3-cache
+            aspects.phoenix
             # Foundation aspects (FND-1): selection is enablement.
             aspects.base
             aspects.shell
@@ -109,6 +120,13 @@ in
             aspects.fleet-packages
             aspects.web-policy
             aspects.identity-client
+            # Stage 7 placement aspects (D-053): one selection per deployed
+            # product/platform capability; no host imports its implementation.
+            aspects.edge
+            aspects.cockpit
+            aspects.push-server
+            aspects.identity-provider
+            aspects.admin-hub
             # Foundation aspects (FND-1): selection is enablement.
             aspects.base
             aspects.shell
@@ -139,6 +157,10 @@ in
             aspects.web-policy
             aspects.dj
             aspects.music
+            # Stage 7 placement aspect (D-053): OmniRoute service and its
+            # notification-daemon monitor registration, gated on the
+            # conventional service secret.
+            aspects.omniroute
             # Foundation aspects (FND-1): selection is enablement.
             aspects.base
             aspects.shell

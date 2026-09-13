@@ -1,6 +1,6 @@
 # Engine DJ Guest Setup Runbook
 
-Operator procedure for bootstrapping and validating the Windows guest that hosts Engine DJ Desktop on `home-forge`. Nix owns the VM shape, shares, locks, and backup contract (`modules/services/virtualisation/windows-vm.nix`, `modules/applications/dj/`); everything here happens at the operator console, over SSH/Tailscale, or inside the guest.
+Operator procedure for bootstrapping and validating the Windows guest that hosts Engine DJ Desktop on `home-forge`. Nix owns the VM shape, shares, locks, and backup contract (`modules/services/virtualisation/windows-vm.nix`, `modules/flake/_dj/`); everything here happens at the operator console, over SSH/Tailscale, or inside the guest.
 
 Phases:
 

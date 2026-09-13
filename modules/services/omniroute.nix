@@ -139,6 +139,9 @@ in
             OMNIROUTE_MEMORY_MB = toString cfg.memoryMb;
             OMNIROUTE_SERVER_HOST = "0.0.0.0";
             AUTH_COOKIE_SECURE = "false";
+            CHAT_DEBUG_FILE = "true";
+            CHAT_LOG_MAX_BODY_KB = "8192";
+            CALL_LOG_PIPELINE_MAX_SIZE_KB = "8192";
             REDIS_URL = "redis://omniroute-redis:6379";
           };
           environmentFiles = [ environmentFile ];

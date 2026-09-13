@@ -13,18 +13,10 @@ in
   imports = [
     (modulesPath + "/installer/scan/not-detected.nix")
     (modulesPath + "/profiles/qemu-guest.nix")
-    # Operational aspects (OPS-1) arrive via the registry; the five deferred
-    # leaves they fold under are no longer imported here.
-    ../../../modules/services/paperless
-    ../../../modules/applications/edge-ingress.nix
-    ../../../modules/providers/oci/default.nix
+    # Every deployed product, provider, and workload implementation arrives via
+    # the placement aspects selected in the registry (D-053); this host keeps
+    # only machine facts, explicit variants, and host-local fragments.
     ./disko-single-disk-split.nix
-    ../../../modules/services/admin/cockpit.nix
-    ../../../modules/services/bifrost-gateway.nix
-    ../../../modules/services/phoenix.nix
-    ../../../modules/services/karakeep.nix
-    ../../../modules/services/niks3.nix
-    ../../../modules/services/postgres-shared.nix
     ./cockpit-auth.nix
   ];
 
@@ -101,14 +93,12 @@ in
     };
   };
 
-  applications."edge-ingress" = {
-    enable = true;
-    role = "origin";
-  };
+  # Edge placement comes from the selected `edge` aspect; this host keeps only
+  # its explicit origin role.
+  applications."edge-ingress".role = "origin";
 
   services = {
     paperless = {
-      enable = true;
       dataRoot = "/srv/data";
       secretFiles.host = ../../../secrets/services/paperless.yaml;
       secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
@@ -145,18 +135,12 @@ in
     };
 
     bifrost-gateway = {
-      enable = true;
       dataDir = "/srv/data/bifrost";
       configFile = globals.aiGateway.configFile;
       secretFiles.host = ../../../secrets/services/bifrost-gateway.yaml;
     };
 
-    phoenix = {
-      enable = true;
-    };
-
     karakeep-pod = {
-      enable = true;
       oidc = {
         enable = config.repo.web.catalog.karakeep.access.oidc.enabled;
         clientId = config.services.identity.oidc.clients.karakeep.clientId;
@@ -186,13 +170,11 @@ in
     state-backups.stagingRoot = "/srv/data/state-backups";
 
     niks3-cache = {
-      enable = true;
       hostSecretFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
       secretFiles.host = ../../../secrets/services/niks3.yaml;
     };
 
     postgres-shared = {
-      enable = true;
       secretFile = ../../../secrets/services/postgres-shared.yaml;
       niks3.enable = true;
       paperless.enable = true;
@@ -237,17 +219,6 @@ in
   ];
 
   sops.defaultSopsFile = ../../../secrets/common.yaml;
-
-  sops.secrets = lib.optionalAttrs hasHostSecrets {
-    cockpit_service_user_password_hash = {
-      sopsFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
-      key = "cockpit/service_user/password_hash";
-      path = "/run/secrets/cockpit.service_user.password_hash";
-      owner = "root";
-      group = "root";
-      mode = "0400";
-    };
-  };
 
   programs.nix-ld = {
     enable = true;

@@ -7,16 +7,17 @@ Define the layered ownership boundaries for admin configuration, from policy dat
 ## Requirements
 
 ### Requirement: Admin modules SHALL follow layered ownership boundaries
-Admin configuration SHALL follow a layered structure where policy data remains under `policy/`, policy transformation logic remains under `lib/`, service-owned behavior is implemented directly in `modules/services/admin/`, application composition remains in the portable `modules/applications/admin/` layer, and host-local assembly remains under `modules/hosts/<host>/`. Thin forwarding wrappers that only proxy admin-owned services into generic service modules SHALL NOT be the canonical implementation boundary, and thin application composition splits that only separate tightly coupled admin glue SHALL be merged back into the portable admin composition module.
+Admin configuration SHALL keep policy data under `policy/`, policy transformation logic under `lib/`, and service-owned behavior in concern-owned private implementations. Deployment composition SHALL be published by the discovered `identity-provider`, `cockpit`, and `admin-hub` contributors rather than retained under a permanent `modules/applications/admin/` evaluator-class root. Host-local assembly SHALL retain only explicit variants and machine-specific exceptions under `modules/hosts/<host>/`.
 
 #### Scenario: Admin module tree is reviewed
 - **WHEN** operators inspect admin-related repository paths
-- **THEN** service-owned admin logic is located under `modules/services/admin/`
-- **AND** `applications.admin` composition is located under `modules/applications/admin/`
-- **AND** host-local admin overlays are located beside their host under `modules/hosts/<host>/`
+- **THEN** Kanidm server/provisioning composition is owned by the `identity-provider` concern
+- **AND** independently placed Cockpit composition is owned by the `cockpit` concern
+- **AND** the coupled Termix, Vaultwarden, Homepage, Gatus, Beszel hub, Webhook, and current Quantum policy are owned by the `admin-hub` concern
+- **AND** private service implementations are located beside those concern owners or remain temporarily under the service migration root
+- **AND** host-local admin overlays contain only genuine host variants and do not directly import implementations
 - **AND** policy data and transforms are not embedded in service or host files
-- **AND** admin-owned services do not rely on redundant generic wrapper modules as their primary implementation path
-- **AND** trivial split composition files are not required for tightly coupled portable admin wiring
+- **AND** no `modules/applications/admin/` compatibility wrapper remains
 
 ### Requirement: Complex admin services SHALL support adjacent data files
 Complex admin services with large declarative payloads SHALL support adjacent data/config files within service subdirectories to keep module logic focused and maintainable.

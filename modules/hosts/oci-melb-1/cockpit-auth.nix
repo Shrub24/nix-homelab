@@ -1,15 +1,11 @@
-{ config, lib, ... }:
+{ lib, ... }:
 {
+  # Cockpit composition is owned by the selected `cockpit` aspect (service
+  # user, common secret registration, and Tailscale Serve enablement). This
+  # host keeps only its genuine OCI variants: the policy-shaped public host and
+  # URL root for a published Cockpit behind the LA edge.
   services.admin.cockpit = {
-    serviceUser = {
-      enable = true;
-      name = "cockpit-svc";
-      denySsh = true;
-      hashedPasswordFile = config.sops.secrets.cockpit_service_user_password_hash.path;
-    };
-
     publicHost = lib.mkForce "cockpit.shrublab.xyz";
     urlRoot = lib.mkForce "/oci-melb-1";
-    tailscaleServe.enable = true;
   };
 }

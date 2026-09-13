@@ -4,13 +4,10 @@
 }:
 {
   imports = [
-    # Operational aspects (OPS-1) arrive via the registry; the five deferred
-    # leaves they fold under are no longer imported here.
-    ../../../modules/applications/admin/default.nix
-    ../../../modules/services/ntfy.nix
-    ../../../modules/applications/edge-ingress.nix
+    # Every deployed product and platform capability arrives via the placement
+    # aspects selected in the registry (D-053); this host keeps only machine
+    # facts, explicit variants, and host-local fragments.
     ./cockpit-auth.nix
-    ./edge.nix
     ./quantum.nix
   ];
 
@@ -62,7 +59,6 @@
     };
 
     ntfy = {
-      enable = true;
       secretFiles.firebase = ../../../secrets/services/ntfy-firebase-key.json;
       auth = {
         # ACL subjects are the bare-hostname ntfy publisher users that own each
@@ -94,17 +90,10 @@
   };
 
   sops.defaultSopsFile = ../../../secrets/common.yaml;
-  sops.secrets = {
-    cockpit_service_user_password_hash = {
-      sopsFile = ../../../secrets/hosts/la-admin-1/system.yaml;
-      key = "cockpit/service_user/password_hash";
-      path = "/run/secrets/cockpit.service_user.password_hash";
-      mode = "0400";
-    };
-  };
 
+  # Admin-hub placement comes from the selected `admin-hub` aspect; this host
+  # keeps only its explicit data root and secret-source bindings.
   applications.admin = {
-    enable = true;
     dataRoot = "/srv/data";
     secretFiles = {
       host = ../../../secrets/applications/admin.yaml;
@@ -121,7 +110,12 @@
     };
   };
 
-  applications.edge-ingress.secretFiles.host = ../../../secrets/applications/edge-ingress.yaml;
+  # Edge placement comes from the selected `edge` aspect; this host keeps only
+  # its explicit edge role and application-scoped secret binding.
+  applications."edge-ingress" = {
+    role = "edge";
+    secretFiles.host = ../../../secrets/applications/edge-ingress.yaml;
+  };
 
   system.stateVersion = "26.05";
 }

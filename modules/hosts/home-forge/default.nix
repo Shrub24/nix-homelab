@@ -15,9 +15,9 @@ let
 in
 {
   imports = [
-    # Operational aspects (OPS-1) arrive via the registry; the five deferred
-    # leaves they fold under are no longer imported here.
-    ../../../modules/services/omniroute.nix
+    # Every deployed product arrives via the placement aspects selected in the
+    # registry (D-053); this host keeps only machine facts, explicit variants,
+    # and its host-local disk layout.
     ./disko-two-disk.nix
   ];
 
@@ -96,17 +96,6 @@ in
     secretFiles.hostSystem = ../../../secrets/hosts/home-forge/system.yaml;
     ntfy.enable = true;
   };
-
-  # Providers/routing/tunnels are dashboard-managed state under /srv/data/omniroute;
-  # gated on the encrypted secret existing (two-step bootstrap).
-  services.omniroute = lib.mkIf (builtins.pathExists ../../../secrets/services/omniroute.yaml) {
-    enable = true;
-    secretFiles.host = ../../../secrets/services/omniroute.yaml;
-  };
-
-  services.notification-daemon.monitor.services =
-    lib.optionals (builtins.pathExists ../../../secrets/services/omniroute.yaml)
-      [ "podman-omniroute" ];
 
   applications.dj = {
     engine = {

@@ -1,13 +1,7 @@
-{ config, ... }:
 {
-  services.admin.cockpit = {
-    serviceUser = {
-      enable = true;
-      name = "cockpit-svc";
-      hashedPasswordFile = config.sops.secrets.cockpit_service_user_password_hash.path;
-    };
-
-    tailscaleServe.enable = true;
-    loopbackTls.enable = true;
-  };
+  # Cockpit composition is owned by the selected `cockpit` aspect (service
+  # user, common secret registration, and Tailscale Serve enablement). This
+  # host keeps only its genuine LA variant: host-local loopback TLS material
+  # for trusted local HTTPS proxying.
+  services.admin.cockpit.loopbackTls.enable = true;
 }

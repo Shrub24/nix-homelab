@@ -5,10 +5,10 @@
 }:
 let
   cfg = config.applications."edge-ingress";
-  secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+  secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
 in
 {
-  imports = [ ../../modules/services/edge-proxy-ingress.nix ];
+  imports = [ ../../services/edge-proxy-ingress.nix ];
 
   options.applications."edge-ingress" = {
     enable = lib.mkOption {

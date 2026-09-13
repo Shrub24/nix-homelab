@@ -7,7 +7,7 @@
     {
       imports = [
         inputs.traktor-m3u-sync.nixosModules.default
-        ../applications/dj
+        ./_dj
       ];
 
       services.traktor-m3u-sync.package =

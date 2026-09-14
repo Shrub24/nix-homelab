@@ -7,7 +7,9 @@ set -euo pipefail
 # dendritic-stage-4-source-model-realignment tasks 4.1/4.2,
 # dendritic-stage-5-shared-source-contributors task 5.2,
 # dendritic-stage-6-music-composition tasks 5.1/5.2, and
-# dendritic-stage-7-placement-aspects tasks 6.1-6.3; design DS-1..DS-6,
+# dendritic-stage-7-placement-aspects tasks 6.1-6.3;
+# feature-owned-service-monitoring tasks 2.1-2.3 and 3.1/3.2 (MON-1..MON-4);
+# design DS-1..DS-6,
 # FND-1..FND-6, OPS-1..OPS-11, S4-1/S4-4/S4-5/S4-8, S5-6/S5-7, S6-2..S6-11,
 # S7-2..S7-9).
 #
@@ -703,29 +705,15 @@ expect_eval_fail() { # $1 copy, $2 host, $3 expected message substring
   esac
 }
 
-# 7i-1. Backups without notify fails with the named monitor assertion (OPS-4).
-# The host's own notification-daemon block is removed too, otherwise the
-# undefined-option error masks the assertion.
+# 7i-1. Backups without monitor enablement fails with the named monitor
+# assertion (OPS-4). The notify leaf stays selected because every monitoring
+# contributor (base, observability-agent, music, omniroute, and the OCI host
+# assembly) now defines services.notification-daemon.monitor.units, so the
+# monitor contract namespace is a hard prerequisite of those contributions;
+# the mutation removes exactly the enablement the notify aspect owns. The host
+# assembly no longer duplicates monitor.enable (MON-1/MON-3: one authority).
 D="$(make_copy)"
-sed -i '/aspects.notify/d' "$D/modules/flake/registry.nix"
-python3 - "$D/modules/hosts/oci-melb-1/default.nix" <<'PY'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-start = s.index("notification-daemon = {")
-i = s.index("{", start)
-depth = 0
-while True:
-    if s[i] == "{": depth += 1
-    elif s[i] == "}":
-        depth -= 1
-        if depth == 0: break
-    i += 1
-end = i + 1
-if end < len(s) and s[end] == ";":
-    end += 1
-open(p, "w").write(s[:start] + s[end:])
-PY
+sed -i '/monitor\.enable = true;/d' "$D/modules/flake/notify.nix"
 expect_eval_fail "$D" oci-melb-1 "services.notification-daemon.monitor.enable must be true"
 
 # 7i-2. A derived bucket outside the S3 rule fails with the named assertion
@@ -1366,8 +1354,8 @@ PLACEMENT_PROBE='c: {
   niks3ServerEnable = c.services.niks3.enable or false;
   phoenixEnable = c.services.phoenix.enable or false;
   omnirouteEnable = c.services.omniroute.enable or false;
-  omnirouteMonitor = builtins.elem "podman-omniroute" (c.services.notification-daemon.monitor.services or [ ]);
-  monitorServices = c.services.notification-daemon.monitor.services or [ ];
+  omnirouteMonitor = builtins.hasAttr "podman-omniroute" (c.services.notification-daemon.monitor.units or { });
+  monitorUnits = builtins.attrNames (c.services.notification-daemon.monitor.units or { });
 }'
 
 probe_placement() { # $1 repo root, $2 host -> JSON
@@ -1461,7 +1449,10 @@ cat >"$D/modules/flake/tamper-aspect.nix" <<'EOF'
 { ... }:
 {
   flake.modules.nixos.tamper-aspect = {
-    services.notification-daemon.monitor.services = [ "tamper-probe" ];
+    # A REAL unit (`podman-prune` is implemented on every host) so the
+    # fail-closed monitor contract stays satisfied and only contribution
+    # visibility is under test (MON-1/MON-3).
+    services.notification-daemon.monitor.units."podman-prune".onFailure = true;
   };
 }
 EOF
@@ -1469,8 +1460,8 @@ json="$(probe_placement "$D" la-admin-1)" || fail "7n-3e: LA must still evaluate
 python3 - "$json" <<'PYEOF' || fail "7n-3e: an unselected discovered aspect must not activate"
 import json, sys
 got = json.loads(sys.argv[1])
-if "tamper-probe" in got["monitorServices"]:
-    raise SystemExit(f"discovery alone activated an aspect: {got['monitorServices']!r}")
+if "podman-prune" in got["monitorUnits"]:
+    raise SystemExit(f"discovery alone activated an aspect: {got['monitorUnits']!r}")
 PYEOF
 python3 - "$D/modules/flake/registry.nix" <<'PYEOF'
 import sys
@@ -1485,15 +1476,15 @@ json="$(probe_placement "$D" la-admin-1)" || fail "7n-3e: LA must evaluate with 
 python3 - "$json" <<'PYEOF' || fail "7n-3e: selecting the discovered aspect must activate it"
 import json, sys
 got = json.loads(sys.argv[1])
-if "tamper-probe" not in got["monitorServices"]:
-    raise SystemExit(f"selection did not activate the aspect: {got['monitorServices']!r}")
+if "podman-prune" not in got["monitorUnits"]:
+    raise SystemExit(f"selection did not activate the aspect: {got['monitorUnits']!r}")
 PYEOF
 json="$(probe_placement "$D" oci-melb-1)" || fail "7n-3e: OCI must still evaluate with the tamper contributor present"
 python3 - "$json" <<'PYEOF' || fail "7n-3e: a selection on one host must not activate another host"
 import json, sys
 got = json.loads(sys.argv[1])
-if "tamper-probe" in got["monitorServices"]:
-    raise SystemExit(f"unselected host activated the aspect: {got['monitorServices']!r}")
+if "podman-prune" in got["monitorUnits"]:
+    raise SystemExit(f"unselected host activated the aspect: {got['monitorUnits']!r}")
 PYEOF
 
 # 7n-3f. A publication smuggled into an underscore-private leaf is rejected by
@@ -1549,6 +1540,211 @@ sed -i 's/"services"//' "$D/modules/flake/_unconverted-nixos-dirs.nix"
 test -d "$D/modules/services" || fail "7n-3h: prepared copy must still contain modules/services"
 [ "$(unconverted_roots "$D")" != '["hosts","services"]' ] ||
   fail "7n-3h: an unbacked boundary shrink must be rejected"
+
+# --- 7o. Feature-owned monitor contract (MON-1..MON-4) ----------------------
+# (openspec change feature-owned-service-monitoring tasks 2.1-2.3, 3.1, 3.2.)
+# Monitoring participation is contributed by the capability that owns each
+# unit, so the observable contract is per host: the old list option and every
+# reverse index are gone, only real implementations are monitored, the Beets
+# units follow the music placement (home-forge yes, OCI no synthetic
+# fragments), and owner-defined hooks survive the additive merge.
+
+# 7o-1. The host-maintained list option is gone: no assignment survives in
+# source, and the checks probe the typed contract instead of the removed list.
+if grep -RnE --include='*.nix' 'monitor\.services' modules lib policy; then
+  fail "7o-1: the removed monitor.services list must have no assignment left"
+fi
+if grep -RnE --include='*.nix' 'monitor\.services' tests; then
+  fail "7o-1: checks must probe monitor.units, not the removed monitor.services list"
+fi
+grep -q 'monitor\.units' modules/services/notification-daemon/default.nix ||
+  fail "7o-1: the typed monitor.units contract must be declared in the daemon leaf"
+
+# 7o-2. Per-host observable monitoring contract. Every contributed unit must
+# have a real implementation, the contribution set must match the owning
+# capabilities exactly (no host reverse index, no phantom Beets fragment), and
+# each contributed unit must really receive its declared generic hooks.
+MONITOR_PROBE='c: let
+  units = c.services.notification-daemon.monitor.units or { };
+  svc = c.systemd.services or { };
+  isReal = n: let s = svc.${n} or null; in
+    s != null && ((s.serviceConfig.ExecStart or null) != null || ((s.script or "") != ""));
+  render = e:
+    if builtins.isString e then e
+    else if builtins.isPath e then builtins.toString e
+    else builtins.toJSON e;
+  cmds = v:
+    if v == null then [ ]
+    else if builtins.isList v then builtins.map render v
+    else [ (render v) ];
+  isBeets = n: builtins.match "beets-.*" n != null;
+  names = builtins.attrNames units;
+  beets = builtins.filter isBeets (builtins.attrNames svc);
+in {
+  drv = c.system.build.toplevel.drvPath;
+  enable = c.services.notification-daemon.monitor.enable or false;
+  names = builtins.sort builtins.lessThan names;
+  unreal = builtins.filter (n: !(isReal n)) names;
+  beetsAttrs = builtins.sort builtins.lessThan beets;
+  beetsReal = builtins.filter isReal (builtins.filter isBeets names);
+  beetsInboxPresent = svc ? "beets-inbox";
+  hooks = builtins.listToAttrs (map (n: {
+    name = n;
+    value = {
+      onFailure = svc.${n}.onFailure or [ ];
+      execStartPost = cmds (svc.${n}.serviceConfig.ExecStartPost or null);
+      execStopPost = cmds (svc.${n}.serviceConfig.ExecStopPost or null);
+    };
+  }) names);
+}'
+
+probe_monitor() { # $1 host -> JSON
+  nix eval --json --no-write-lock-file --apply "$MONITOR_PROBE" "path:${ROOT}#nixosConfigurations.${1}.config"
+}
+
+monitor_json="$(probe_monitor oci-melb-1)" || fail "7o-2: oci-melb-1 monitor probe does not evaluate"
+python3 - oci-melb-1 "$monitor_json" <<'PYEOF' || fail "7o-2: oci-melb-1 monitor contract violated"
+import json, sys
+host, got = sys.argv[1], json.loads(sys.argv[2])
+errs = []
+if not got["enable"]:
+    errs.append("monitor.enable must be true on a notify-selected host")
+if got["unreal"]:
+    errs.append(f"contributed units without an implementation: {got['unreal']!r}")
+if got["names"] != ["beszel-agent", "nh-clean", "podman-storage-prune"]:
+    errs.append(f"contributed units drifted from the owning capabilities: {got['names']!r}")
+if got["beetsAttrs"]:
+    errs.append(f"OCI must evaluate no Beets service fragments: {got['beetsAttrs']!r}")
+if got["beetsInboxPresent"]:
+    errs.append("OCI must not define a beets-inbox unit")
+for name, hooks in got["hooks"].items():
+    if not any(c.endswith(f"{name}.service") and "svc-monitor" in c for c in hooks["onFailure"]):
+        errs.append(f"{name}: OnFailure monitor hook missing ({hooks['onFailure']!r})")
+    if not any("svc-monitor" in c and "onStart" in c for c in hooks["execStartPost"]):
+        errs.append(f"{name}: ExecStartPost monitor hook missing ({hooks['execStartPost']!r})")
+    if not any("svc-monitor" in c and "onSuccess" in c for c in hooks["execStopPost"]):
+        errs.append(f"{name}: ExecStopPost monitor hook missing ({hooks['execStopPost']!r})")
+if errs:
+    print(f"{host}: " + "; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+monitor_json="$(probe_monitor la-admin-1)" || fail "7o-2: la-admin-1 monitor probe does not evaluate"
+python3 - la-admin-1 "$monitor_json" <<'PYEOF' || fail "7o-2: la-admin-1 monitor contract violated"
+import json, sys
+host, got = sys.argv[1], json.loads(sys.argv[2])
+errs = []
+if not got["enable"]:
+    errs.append("monitor.enable must be true on a notify-selected host")
+if got["unreal"]:
+    errs.append(f"contributed units without an implementation: {got['unreal']!r}")
+if got["names"] != ["beszel-agent", "nh-clean"]:
+    errs.append(f"contributed units drifted from the owning capabilities: {got['names']!r}")
+if got["beetsAttrs"]:
+    errs.append(f"la-admin-1 must evaluate no Beets service fragments: {got['beetsAttrs']!r}")
+if errs:
+    print(f"{host}: " + "; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+monitor_json="$(probe_monitor home-forge)" || fail "7o-2: home-forge monitor probe does not evaluate"
+python3 - home-forge "$monitor_json" <<'PYEOF' || fail "7o-2: home-forge Beets monitoring contract violated"
+import json, sys
+host, got = sys.argv[1], json.loads(sys.argv[2])
+errs = []
+if not got["enable"]:
+    errs.append("monitor.enable must be true on a notify-selected host")
+if got["unreal"]:
+    errs.append(f"contributed units without an implementation: {got['unreal']!r}")
+expected = ["beets-duplicates", "beets-inbox", "beets-reconcile", "beszel-agent", "nh-clean", "podman-omniroute"]
+if got["names"] != expected:
+    errs.append(f"contributed units drifted from the owning capabilities: {got['names']!r}")
+if got["beetsReal"] != ["beets-duplicates", "beets-inbox", "beets-reconcile"]:
+    errs.append(f"real Beets units drifted: {got['beetsReal']!r}")
+# The interactive quarantine review worker is not an automated runner and must
+# stay unmonitored (it keeps only its own failure hook).
+hooks = got["hooks"]
+for unit in ("beets-inbox", "beets-reconcile", "beets-duplicates"):
+    h = hooks.get(unit)
+    if h is None:
+        errs.append(f"{unit}: no monitor hooks")
+        continue
+    if not any(c.endswith(f"{unit}.service") and "svc-monitor" in c for c in h["onFailure"]):
+        errs.append(f"{unit}: OnFailure monitor hook missing ({h['onFailure']!r})")
+    if not any("svc-monitor" in c and "onStart" in c for c in h["execStartPost"]):
+        errs.append(f"{unit}: ExecStartPost monitor hook missing ({h['execStartPost']!r})")
+    if not any("svc-monitor" in c and "onSuccess" in c for c in h["execStopPost"]):
+        errs.append(f"{unit}: ExecStopPost monitor hook missing ({h['execStopPost']!r})")
+# Feature-owned Beets hooks (deployed baseline: OnFailure retry timer plus the
+# failure notification template) survive the additive merge.
+inbox = hooks.get("beets-inbox", {})
+if "beets-inbox-retry.timer" not in inbox.get("onFailure", []):
+    errs.append(f"beets-inbox: feature-owned retry timer lost ({inbox.get('onFailure')!r})")
+if not any("beets-notify-failure" in c for c in inbox.get("onFailure", [])):
+    errs.append(f"beets-inbox: feature-owned failure notification lost ({inbox.get('onFailure')!r})")
+# Preprocess cleanup ExecStartPost is preserved and deterministically ordered
+# after the monitor's start report.
+post = inbox.get("execStartPost", [])
+if not any("rm -f" in c and "inbox-ready" in c for c in post):
+    errs.append(f"beets-inbox: feature-owned preprocess cleanup lost ({post!r})")
+elif not ("svc-monitor" in post[0] and "rm -f" in post[-1]):
+    errs.append(f"beets-inbox: ExecStartPost order is not monitor-then-cleanup ({post!r})")
+if errs:
+    print(f"{host}: " + "; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+# 7o-3. Negative: a contribution naming a unit with no implementation fails
+# closed and names that unit.
+D="$(make_copy)"
+python3 - "$D/modules/hosts/oci-melb-1/default.nix" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+anchor = '      monitor.units."podman-storage-prune" = {\n'
+assert anchor in s, "monitor anchor drifted"
+s = s.replace(anchor, '      monitor.units."phantom-unit".onFailure = true;\n' + anchor, 1)
+open(p, "w").write(s)
+PYEOF
+expect_eval_fail "$D" oci-melb-1 "'phantom-unit' is contributed for monitoring but has no systemd service implementation"
+
+# 7o-4. Negative: the stale wrong-host Beets registration is rejected instead of
+# silently materialising a fragment. OCI owns no Beets unit, so a Beets monitor
+# contribution there must fail closed (this is the deployed-baseline drift).
+D="$(make_copy)"
+python3 - "$D/modules/hosts/oci-melb-1/default.nix" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+anchor = '      monitor.units."podman-storage-prune" = {\n'
+assert anchor in s, "monitor anchor drifted"
+s = s.replace(anchor, '      monitor.units."beets-inbox".onFailure = true;\n' + anchor, 1)
+open(p, "w").write(s)
+PYEOF
+expect_eval_fail "$D" oci-melb-1 "'beets-inbox' is contributed for monitoring but has no systemd service implementation"
+
+# 7o-5. Negative: a phantom target contributed through a throwaway aspect is
+# rejected too, so the fail-closed check is about the implementation and not
+# about which file the contribution came from.
+D="$(make_copy)"
+cat >"$D/modules/flake/tamper-monitor-aspect.nix" <<'EOF'
+{ ... }:
+{
+  flake.modules.nixos.tamper-monitor-aspect = {
+    services.notification-daemon.monitor.units."ghost-unit".onStart = true;
+  };
+}
+EOF
+python3 - "$D/modules/flake/registry.nix" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+i = s.index("oci-melb-1 = {")
+j = s.index("            aspects.oci", i)
+k = s.index("\n", j)
+open(p, "w").write(s[: k + 1] + "            aspects.tamper-monitor-aspect\n" + s[k + 1 :])
+PYEOF
+expect_eval_fail "$D" oci-melb-1 "'ghost-unit' is contributed for monitoring but has no systemd service implementation"
 
 
 echo "check-dendritic-scaffold-contract: PASS"

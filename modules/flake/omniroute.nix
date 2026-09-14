@@ -23,11 +23,14 @@
         secretFiles.host = secretFile;
       };
 
-      # Monitor registration only exists once the service can start; the
+      # Monitor participation is owned by this aspect, not by a host reverse
+      # index (MON-1/MON-3). It only exists once the service can start; the
       # notification-daemon option namespace is owned by the co-selected
       # `notify` foundation aspect.
-      services.notification-daemon.monitor.services = lib.optionals hasSecret [
-        "podman-omniroute"
-      ];
+      services.notification-daemon.monitor.units."podman-omniroute" = lib.mkIf hasSecret {
+        onFailure = true;
+        onStart = true;
+        onStop = true;
+      };
     };
 }

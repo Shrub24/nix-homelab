@@ -218,6 +218,14 @@ in
       };
     };
 
+    # MON-1/MON-3: this leaf owns the `nh-clean` unit through
+    # programs.nh.clean, so it also owns its monitoring participation.
+    services.notification-daemon.monitor.units."nh-clean" = {
+      onFailure = true;
+      onStart = true;
+      onStop = true;
+    };
+
     # --- Outbound dev SSH identity (FND-6) -----------------------------------
     # Conventional default: the host system scope, when it exists. The
     # conditional option/template contract below is unchanged from the legacy

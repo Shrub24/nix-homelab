@@ -405,6 +405,26 @@
             paths = [ "${cfg.dataRoot}/beets" ];
           };
 
+          # MON-1/MON-3: the music capability owns the `beets-<runner>` units
+          # instantiated from beetsRunnerInstances above, so it also owns their
+          # monitoring participation; the OCI host no longer maintains a
+          # reverse index of remotely placed Beets units. Only the automated
+          # runners are monitored (the interactive quarantine review worker has
+          # no unattended lifecycle worth reporting). A renamed runner makes
+          # this contract fail closed instead of leaving a silent fragment.
+          services.notification-daemon.monitor.units =
+            lib.genAttrs
+              [
+                "beets-inbox"
+                "beets-reconcile"
+                "beets-duplicates"
+              ]
+              (_: {
+                onFailure = true;
+                onStart = true;
+                onStop = true;
+              });
+
           # Ingest mechanisms are owned by the private musicIngest leaf (S6-6);
           # the composition injects only explicit paths and reads back the ready
           # flag and slskd completion hook.

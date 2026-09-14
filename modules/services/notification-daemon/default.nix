@@ -21,6 +21,18 @@ let
     };
   };
 
+  # MON-2 (fail-closed): a monitor contribution may only name a unit with a real
+  # service implementation. The predicate reads only implementation attributes
+  # (serviceConfig.ExecStart or a non-empty script) and never the hooks this
+  # module injects (OnFailure, ExecStartPost, ExecStopPost), so a monitor-created
+  # fragment can never satisfy its own assertion.
+  monitorUnitImplemented =
+    unit:
+    let
+      svc = config.systemd.services.${unit} or null;
+    in
+    svc != null && ((svc.serviceConfig.ExecStart or null) != null || (svc.script or "") != "");
+
   # Python script invoked by systemd OnFailure/ExecStopPost for monitored services.
   monitorScript = pkgs.writeScriptBin "svc-monitor" ''
     #!${pkgs.python3}/bin/python3
@@ -115,10 +127,39 @@ in
     monitor = {
       enable = lib.mkEnableOption "systemd service notification monitors";
 
-      services = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
-        default = [ ];
-        description = "Systemd units to inject notification hooks into.";
+      # MON-1/MON-3: participation is declared by the capability that owns each
+      # unit, per lifecycle event. An attribute set (not a list) keeps module
+      # merging additive and lets owners request only meaningful events.
+      units = lib.mkOption {
+        type = lib.types.attrsOf (
+          lib.types.submodule {
+            options = {
+              onFailure = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "Activate svc-monitor@<unit>.service when <unit> enters the failed state (OnFailure).";
+              };
+
+              onStart = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "Report each start attempt of <unit> (ExecStartPost).";
+              };
+
+              onStop = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "Report each termination of <unit> (ExecStopPost).";
+              };
+            };
+          }
+        );
+        default = { };
+        description = ''
+          Systemd units to monitor, contributed by the capability that owns
+          them. Only the declared lifecycle events are hooked, and every entry
+          must name a real service implementation (MON-2).
+        '';
       };
     };
   };
@@ -151,6 +192,12 @@ in
         feature = "services.notification-daemon.ntfy";
         label = "secretFiles.hostSystem";
       }
+    )
+    ++ lib.optionals cfg.monitor.enable (
+      lib.mapAttrsToList (unit: _events: {
+        assertion = monitorUnitImplemented unit;
+        message = "services.notification-daemon.monitor.units: '${unit}' is contributed for monitoring but has no systemd service implementation (serviceConfig.ExecStart or script); monitor-generated hooks do not count. Contribute monitoring from the capability that owns the unit.";
+      }) cfg.monitor.units
     );
 
     environment.etc."notification-daemon/config.json" = {
@@ -205,26 +252,35 @@ in
           };
         };
       }
-      // builtins.foldl' (
-        acc: name:
-        acc
-        // {
-          "${name}" = {
-            # OnFailure activates svc-monitor@<unit>.service when the unit
-            # enters the failed state; the Exec hooks fire on every run.
-            onFailure = lib.mkBefore [ "${mon}${name}.service" ];
-            serviceConfig = {
-              # Notification delivery is best-effort and must not decide unit health.
-              ExecStartPost = lib.mkBefore [
-                "-${monitorScript}/bin/svc-monitor ${name} onStart"
-              ];
-              ExecStopPost = lib.mkAfter [
-                "-${monitorScript}/bin/svc-monitor ${name} onSuccess"
-              ];
-            };
-          };
-        }
-      ) { } cfg.monitor.services
+      //
+        lib.mapAttrs'
+          (
+            unit: events:
+            lib.nameValuePair unit (
+              # OnFailure activates svc-monitor@<unit>.service when the unit
+              # enters the failed state; the Exec hooks fire on every run. The
+              # hooks are merged into (never replaced over) whatever the owning
+              # capability already defined for the unit.
+              lib.optionalAttrs events.onFailure {
+                onFailure = lib.mkBefore [ "${mon}${unit}.service" ];
+              }
+              // lib.optionalAttrs (events.onStart || events.onStop) {
+                serviceConfig =
+                  # Notification delivery is best-effort and must not decide unit health.
+                  lib.optionalAttrs events.onStart {
+                    ExecStartPost = lib.mkBefore [
+                      "-${monitorScript}/bin/svc-monitor ${unit} onStart"
+                    ];
+                  }
+                  // lib.optionalAttrs events.onStop {
+                    ExecStopPost = lib.mkAfter [
+                      "-${monitorScript}/bin/svc-monitor ${unit} onSuccess"
+                    ];
+                  };
+              }
+            )
+          )
+          (lib.filterAttrs (_: events: events.onFailure || events.onStart || events.onStop) cfg.monitor.units)
     );
 
     sops.secrets."notification-daemon/telegram_bot_token" = {

@@ -194,16 +194,14 @@ in
         enable = true;
       };
 
-      monitor = {
-        enable = true;
-        services = [
-          "beets-inbox"
-          "beets-reconcile"
-          "beets-duplicates"
-          "podman-storage-prune"
-          "nh-clean-all"
-          "beszel-agent"
-        ];
+      # MON-1/MON-3: the host contributes monitoring only for units it really
+      # owns (`podman-storage-prune` is defined in this host assembly below).
+      # Remotely placed workloads contribute their own units from their owning
+      # capability, and the notify aspect owns monitor enablement (OPS-4).
+      monitor.units."podman-storage-prune" = {
+        onFailure = true;
+        onStart = true;
+        onStop = true;
       };
     };
   };

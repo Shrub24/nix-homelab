@@ -32,6 +32,28 @@ The `state-backups` aspect SHALL derive the conventional host secret path `secre
 - **THEN** state-backups remains disabled without failing base activation
 - **AND** cache publication follows its own independent bootstrap gate
 
+## MODIFIED Requirements
+
+### Requirement: Derived backup bucket name SHALL be a valid S3 bucket name
+
+The `state-backups` aspect SHALL derive the existing `shrublab-backup-${hostName}` bucket convention from the host name and SHALL assert that the result is a valid S3 bucket name: 3–63 characters, lowercase alphanumerics and hyphens only.
+
+#### Scenario: Backup bucket convention is derived from the host name
+
+- **WHEN** the `state-backups` aspect is evaluated for a host
+- **THEN** the restic repository target derives `shrublab-backup-${hostName}` from that host name
+- **AND** host-specific staging roots and path variants remain configurable per host
+
+#### Scenario: Derived bucket name is valid
+
+- **WHEN** the `state-backups` aspect derives the bucket name for a host
+- **THEN** the name matches the 3–63 lowercase alnum/hyphen rule and evaluation succeeds
+
+#### Scenario: Derived bucket name is invalid
+
+- **WHEN** a host name would produce a bucket name outside the 3–63 lowercase alnum/hyphen rule
+- **THEN** evaluation fails with an explicit assertion naming the bucket-name rule
+
 ## REMOVED Requirements
 
 ### Requirement: Backups aspect SHALL own state backup and cache-upload composition

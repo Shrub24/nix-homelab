@@ -11,6 +11,14 @@
       identityPolicy = builtins.fromJSON (builtins.readFile ../../policy/identity.json);
       oauth2Policy = identityPolicy.systems.oauth2 or { };
       enabledOauth2Clients = lib.filterAttrs (_name: client: client.enable or true) oauth2Policy;
+      # Canonical provider URL authority (decouple-identity-admin-capabilities
+      # IDB-2): the Kanidm web-policy route is the single source of the
+      # provider URL. Both identity-client (via this default) and
+      # identity-provider (by direct consumption) read the same resolved
+      # route; neither capability writes the other's option namespace.
+      webPolicyKanidmUrl = (
+        lib.attrByPath [ "repo" "web" "currentHost" "services" "kanidm-admin" "publicUrl" ] null config
+      );
       providerUrlMatch =
         if cfg.providerUrl == null then null else builtins.match "https://([^/]+).*" cfg.providerUrl;
       providerUrlValid = cfg.providerUrl == null || providerUrlMatch != null;
@@ -28,8 +36,9 @@
       options.services.identity.oidc = {
         providerUrl = lib.mkOption {
           type = lib.types.nullOr lib.types.str;
-          default = null;
-          description = "Canonical public URL for the active identity provider.";
+          default = webPolicyKanidmUrl;
+          defaultText = "repo.web.currentHost.services.\"kanidm-admin\".publicUrl";
+          description = "Canonical public URL for the active identity provider. Defaults to the canonical web-policy Kanidm route.";
         };
 
         clientPathPrefix = lib.mkOption {

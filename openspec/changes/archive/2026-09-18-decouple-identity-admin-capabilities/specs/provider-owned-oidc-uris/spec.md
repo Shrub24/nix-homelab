@@ -1,3 +1,10 @@
+## RENAMED Requirements
+
+- FROM: `### Requirement: Pocket ID module SHALL own and emit OIDC endpoint URIs`
+- TO: `### Requirement: Canonical identity contract SHALL own and emit OIDC endpoint URIs`
+- FROM: `### Requirement: OIDC consumers SHALL reference provider-owned outputs`
+- TO: `### Requirement: OIDC consumers SHALL reference canonical identity outputs`
+
 ## MODIFIED Requirements
 
 ### Requirement: Canonical identity contract SHALL own and emit OIDC endpoint URIs
@@ -15,11 +22,23 @@ The canonical identity-client contract SHALL derive OIDC endpoint URIs from the 
 
 Service modules and host configurations that require OIDC endpoint URIs SHALL reference canonical identity-client outputs rather than independently constructing URIs from a base URL or requiring the runtime provider aspect to be colocated.
 
-#### Scenario: Admin application services consume canonical OIDC issuer
+#### Scenario: Admin application services consume SSOT OIDC issuer
 
-- **WHEN** Termix and Quantum OIDC wiring is evaluated
+- **WHEN** the OIDC wiring of an enabled admin workload is evaluated
 - **THEN** issuer values are sourced from the canonical identity-client `oidc.issuerUrl` output
 - **AND** no independent base URL string interpolation is used to derive the issuer URL
+
+#### Scenario: Host-level OIDC env templates consume SSOT endpoints
+
+- **WHEN** a host-level OIDC env template for an enabled consumer is rendered
+- **THEN** OIDC endpoint values are sourced from canonical identity-client `oidc.*` outputs
+- **AND** no host-local URL construction is used for endpoint values
+
+#### Scenario: Karakeep OIDC wellknown URL uses provider-owned endpoint
+
+- **WHEN** Karakeep OIDC configuration is evaluated on `oci-melb-1`
+- **THEN** the wellknown URL is derived from canonical identity-client OIDC outputs for the active identity provider
+- **AND** no hardcoded host-local OIDC endpoint string is used
 
 #### Scenario: Remote OIDC consumer resolves endpoints
 

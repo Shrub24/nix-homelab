@@ -4,7 +4,6 @@
   ...
 }:
 let
-  appCfg = config.applications.admin;
   cfg = config.services.admin.termix;
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
 in
@@ -13,7 +12,7 @@ in
     enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Enable admin-owned Termix composition wiring.";
+      description = "Enable the Termix composition wiring.";
     };
 
     dataDir = lib.mkOption {
@@ -69,7 +68,7 @@ in
     secretFiles.oidc = secretHelpers.mkSecretFileOption "termix-oidc-secrets";
   };
 
-  config = lib.mkIf (appCfg.enable && cfg.enable) {
+  config = lib.mkIf cfg.enable {
     assertions = [
       (secretHelpers.mkRequiredSecretAssertion {
         enable = cfg.oidc.enabled;

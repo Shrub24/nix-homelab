@@ -14,6 +14,7 @@ all:
   @./tests/check-web-services-policy.sh
   @./tests/check-web-service-catalog.sh
   @./tests/phase-la-admin-contract.sh
+  @./tests/check-identity-contract-directionality.sh
   @./tests/kanidm-restore-contract.sh
   @./tests/check-shell-account-contract.sh
   @./tests/check-backup-surface-contract.sh

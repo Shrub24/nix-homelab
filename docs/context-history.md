@@ -143,4 +143,12 @@ As of this planning update:
 - strategic planning posture is maintained in `docs/plan.md`
 - architecture intent and boundaries are in `docs/architecture.md`
 
+## Identity/Admin Decoupling (2026-09-18)
+
+- the `decouple-identity-admin-capabilities` change (D-054) dissolved the Stage 7 `admin-hub` placement aspect and the `applications.admin` namespace with no replacement bundle: Termix, Vaultwarden, Homepage, Gatus, Beszel hub, and Webhook became self-contained placement aspects (`modules/flake/{termix,vaultwarden,homepage,gatus,beszel,webhook}.nix`) selected individually by `la-admin-1`, Cockpit moved to canonical web policy inputs, and the residual `/srv/data` operator ACL/reconcile unit and Quantum SSH secret registrations moved to explicit host-local configuration (`modules/hosts/la-admin-1/_admin-runtime.nix`)
+- identity consumption is directional: `identity-provider` solely owns Kanidm runtime, provisioning, and the client-keyed OIDC provisioning secret-source map; `identity-client` and `identity-provider` both read the canonical Kanidm URL from web policy and neither writes the other's namespace; admin workloads consume the identity-client contract and never configure the provider
+- the mandatory `admin-hub`/`identity-provider`/`identity-client` policy co-selection on `la-admin-1` was dissolved (D-053's admin-hub clauses and count superseded by D-054; D-050's co-selection mode narrowed — co-location alone no longer justifies it)
+- Quantum is removed from the active module graph as disabled/deferred: `modules/flake/admin-hub.nix`, `modules/hosts/la-admin-1/quantum.nix`, and `modules/services/admin/quantum.nix` were deleted; any future re-enable lands as a self-contained aspect consuming canonical identity contracts and does not restore admin-hub coupling. Host-local SSH registrations remain recorded debt (`TD-07`)
+- this entry is append-only; prior entries above are unchanged
+
 This context document exists to preserve why the repository changed, so future implementation steps stay aligned with the intended direction.

@@ -9,7 +9,9 @@ Stage 7 exposed a mutual implementation dependency between `admin-hub` and `iden
 - Make `identity-provider` own Kanidm runtime, provisioning, provider data paths, identity secrets, and the explicit per-client OIDC provisioning secret-source map.
 - Make `identity-client` derive its canonical provider URL from the existing web-service catalog; the provider consumes the same canonical URL instead of writing client-owned state.
 - Remove all reads of `applications.admin` from provider code and all writes to `services.admin.kanidm` from admin composition.
-- Decompose independently portable admin workloads into self-contained placement aspects where no substantial shared implementation dependency exists; retain only justified aggregator composition for Homepage/Gatus or other true shared policy.
+- Decompose the enabled independently portable admin workloads — Termix, Vaultwarden, Homepage, Gatus, Beszel hub, and Webhook — into self-contained placement aspects; the remaining services share placement and catalog inputs, not intrinsic composition, so no admin-suite bundle remains.
+- Record Quantum as removed from the active module graph and disabled/deferred rather than silently omitted: its service and host modules are deleted, it is not force-disabled in composition, and it is not an extraction or completion gate for this change. Termix extraction is mostly complete and remains in scope, preserving its self-contained aspect and current LA selection/runtime behavior while its focused contract test is finished.
+- Preserve the architectural rule that any future Quantum re-enable lands as a self-contained concern/aspect, consumes canonical identity contracts, and does not restore admin-hub coupling.
 - Keep logical client metadata in `policy/identity.json`, while keeping security-relevant SOPS source/readership mapping explicit and provider-owned.
 - Preserve OIDC callback URLs, client identifiers, claim/scope policy, secret paths/readership, Kanidm state, and runtime behavior.
 
@@ -29,6 +31,8 @@ None.
 ## Impact
 
 - Affects `modules/flake/{identity-provider,identity-oidc,admin-hub}.nix`, Kanidm and admin service leaves, LA host bindings, registry aspect selections, identity policy checks, and architecture docs.
+- Termix and Vaultwarden are the task-3.1 extractions; Quantum remains disabled/deferred.
 - No `la-admin` mega-aspect or compatibility wrapper is introduced.
+- No enabled service leaf is deleted and no secret ciphertext or `.sops.yaml` rule changes; the dormant Quantum service/host modules are removed as disabled/deferred, with secrets and `.sops.yaml` untouched.
 - No secret is decrypted, re-encrypted, or manually edited; only typed source-path contracts may move.
 - This change precedes host discovery because it removes the current mutual aspect cycle.

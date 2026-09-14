@@ -278,22 +278,27 @@ host_leaf_imports_of() { # $1 dir
   grep -RnE --include='*.nix' 'modules/(services/(state-backups|beszel-agent-auth)|flake/(_backups/(niks3-upload-client|niks3-post-deploy)|_builder-access/nixbuild-ssh))\.nix' "$1/modules/hosts" || true
 }
 
-# 7a. Exactly twenty-eight publications are discovered across the distributed
+# 7a. Exactly thirty-three publications are discovered across the distributed
 # contributors: the infrastructure support quartet, the eleven Stage 2-6
 # deployment aspects (base, shell, networking, tailscale, notify, backups,
 # builder-access, observability-agent, dj, music, identity-client), and the
-# thirteen Stage 7 placement aspects (S7-2). Registry references are not
-# definition sites. No central publication file is pinned.
+# eighteen Stage 7 placement aspects (S7-2). decouple-identity-admin-capabilities
+# task 3.3 extracted the six admin capabilities (termix, vaultwarden, gatus,
+# beszel, homepage, webhook) into their own published aspects; admin-hub stays
+# deleted. Registry references are not definition sites. No central publication
+# file is pinned.
 expected_pub="$(printf '%s\n' \
-flake.modules.nixos.admin-hub \
 flake.modules.nixos.ai-gateway \
 flake.modules.nixos.backups \
 flake.modules.nixos.base \
+flake.modules.nixos.beszel \
 flake.modules.nixos.builder-access \
 flake.modules.nixos.cockpit \
 flake.modules.nixos.dj \
 flake.modules.nixos.edge \
 flake.modules.nixos.fleet-packages \
+flake.modules.nixos.gatus \
+flake.modules.nixos.homepage \
 flake.modules.nixos.identity-client \
 flake.modules.nixos.identity-provider \
 flake.modules.nixos.karakeep \
@@ -312,10 +317,13 @@ flake.modules.nixos.provenance \
 flake.modules.nixos.push-server \
 flake.modules.nixos.shell \
 flake.modules.nixos.tailscale \
-flake.modules.nixos.web-policy)"
+flake.modules.nixos.termix \
+flake.modules.nixos.vaultwarden \
+flake.modules.nixos.web-policy \
+flake.modules.nixos.webhook)"
 pub_names="$(pub_names_of "$ROOT")"
 if [ "$pub_names" != "$expected_pub" ]; then
-  fail "discovered publications drifted from the support quartet + eleven deployment aspects + thirteen Stage 7 placement aspects: $pub_names"
+  fail "discovered publications drifted from the support quartet + eleven deployment aspects + eighteen Stage 7 placement aspects: $pub_names"
 fi
 if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.cli|_aspects/cli|aspects\.cli' modules; then
 fail "the deleted cli aspect must not be resurrected"
@@ -359,18 +367,26 @@ aspects.ai-gateway
 aspects.karakeep
 aspects.niks3-cache
 aspects.phoenix"
+# The six admin capabilities extracted by decouple-identity-admin-capabilities
+# task 3.3 are placed by their own aspects on la-admin-1 (exactly once, and
+# admin-hub stays deleted).
 la_placement="aspects.edge
 aspects.cockpit
 aspects.push-server
 aspects.identity-provider
-aspects.admin-hub"
+aspects.termix
+aspects.vaultwarden
+aspects.gatus
+aspects.beszel
+aspects.homepage
+aspects.webhook"
 oci_sel="$(printf '%s\n%s\n%s\naspects.identity-client\n' "$support_quartet" "$foundation_operational" "$oci_placement" | LC_ALL=C sort)"
 la_sel="$(printf '%s\n%s\n%s\naspects.identity-client\n' "$support_quartet" "$foundation_operational" "$la_placement" | LC_ALL=C sort)"
 forge_sel="$(printf '%s\n%s\naspects.dj\naspects.music\naspects.omniroute\n' "$support_quartet" "$foundation_operational" | LC_ALL=C sort)"
 [ "$(host_aspects "$ROOT" oci-melb-1)" = "$oci_sel" ] ||
   fail "registry: oci-melb-1 must select the support quartet + eight deployment aspects + identity-client + its nine placement aspects: $(host_aspects "$ROOT" oci-melb-1)"
 [ "$(host_aspects "$ROOT" la-admin-1)" = "$la_sel" ] ||
-  fail "registry: la-admin-1 must select the support quartet + eight deployment aspects + identity-client + its five placement aspects: $(host_aspects "$ROOT" la-admin-1)"
+  fail "registry: la-admin-1 must select the support quartet + eight deployment aspects + identity-client + its ten placement aspects: $(host_aspects "$ROOT" la-admin-1)"
 [ "$(host_aspects "$ROOT" home-forge)" = "$forge_sel" ] ||
   fail "registry: home-forge must select the support quartet + eight deployment aspects + dj + music + omniroute: $(host_aspects "$ROOT" home-forge)"
 if grep -RnE 'aspects\.|_aspects' modules/hosts; then
@@ -387,9 +403,13 @@ fi
 # intrinsic composition; no such import exists today. Registry selection
 # references are not definition sites and are not scanned.
 unjustified_aspect_refs_of() { # $1 file -> "<file>:<line>" for unmarked aspect refs
+  # Only code references count: contributor header prose legitimately names the
+  # aspect it publishes (e.g. `aspects.termix` in its own comment), which is
+  # not an import expression. Comment-only refs are skipped, so mutation 7k-3
+  # still proves a real `imports = [ aspects.x ]` is caught.
   awk '
+    /^[[:space:]]*#/ { if ($0 ~ /intrinsic/) just[NR] = 1; next }
     /aspects\.[a-z0-9-]+/ { ref[NR] = 1 }
-    /^[[:space:]]*#.*intrinsic/ { just[NR] = 1 }
     END {
       for (n in ref) {
         ok = 0
@@ -1232,8 +1252,13 @@ assert_probe_result home-forge "$D" music-no-dj
 # against a throwaway copy and forces the full toplevel derivation through
 # PLACEMENT_PROBE.
 
-stage7_aspects="oci edge cockpit push-server identity-provider admin-hub paperless postgres ai-gateway karakeep niks3-cache phoenix omniroute"
-for a in $stage7_aspects; do
+# Placement contributors: the eleven historical Stage 7 aspects (S7-2) plus
+# the six capabilities extracted by decouple-identity-admin-capabilities
+# (termix, vaultwarden, gatus, beszel, homepage, webhook). Every placement
+# contributor must live at modules/flake/<name>.nix and publish its own
+# flake.modules.nixos.<name> aspect.
+placement_aspects="oci edge cockpit push-server identity-provider paperless postgres ai-gateway karakeep niks3-cache phoenix omniroute termix vaultwarden gatus beszel homepage webhook"
+for a in $placement_aspects; do
   test -f "modules/flake/$a.nix" || fail "7n: placement contributor modules/flake/$a.nix missing"
   grep -qE "^[[:space:]]*flake\.modules\.nixos\.${a}[[:space:]]*=" "modules/flake/$a.nix" ||
     fail "7n: modules/flake/$a.nix must publish flake.modules.nixos.$a"
@@ -1304,11 +1329,10 @@ host_workload_imports_of() { # $1 repo root
 for f in \
   modules/hosts/oci-melb-1/disko-single-disk-split.nix \
   modules/hosts/oci-melb-1/facter.json \
-  modules/hosts/la-admin-1/quantum.nix \
   modules/hosts/home-forge/disko-two-disk.nix; do
   test -e "$f" || fail "7n-1: host-local fragment $f must be retained"
 done
-grep -q '\./quantum\.nix' modules/hosts/la-admin-1/default.nix ||
+grep -q '\./cockpit-auth\.nix' modules/hosts/la-admin-1/default.nix ||
   fail "7n-1: the direct-import guard must permit host-private fragments"
 
 # 7n-2. Semantic placement matrix. Each field is read defensively so an
@@ -1338,12 +1362,9 @@ PLACEMENT_PROBE='c: {
   cockpitServiceUser = c.services.admin.cockpit.serviceUser.name or "";
   cockpitSecret = c.sops.secrets.cockpit_service_user_password_hash.path or "";
   ntfyServerEnable = c.services.ntfy.enable or false;
-  kanidmEnable = c.services.admin.kanidm.enable or false;
-  kanidmAppUrl = c.services.admin.kanidm.appUrl or "";
-  adminEnable = c.applications.admin.enable or false;
-  adminDataRoot = c.applications.admin.dataRoot or "";
+  kanidmEnable = c.services.identity.kanidm.enable or false;
+  kanidmAppUrl = c.services.identity.kanidm.appUrl or "";
   termixEnable = c.services.admin.termix.enable or false;
-  quantumEnable = c.services.admin.quantum.enable or false;
   adminSshSecrets = builtins.length (builtins.filter (n: n == "admin_ssh_identity" || n == "admin_ssh_known_hosts") (builtins.attrNames c.sops.secrets));
   paperlessEnable = c.services.paperless.enable or false;
   postgresEnable = c.services.postgres-shared.enable or false;
@@ -1378,11 +1399,11 @@ PYEOF
 }
 
 placement_json="$(probe_placement "$ROOT" oci-melb-1)" || fail "7n-2: oci-melb-1 placement probe does not evaluate"
-assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresRoles":[true,true,true,true],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheEnable":true,"niks3ServerEnable":true,"phoenixEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresRoles":[true,true,true,true],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheEnable":true,"niks3ServerEnable":true,"phoenixEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" la-admin-1)" || fail "7n-2: la-admin-1 placement probe does not evaluate"
-assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","adminEnable":true,"adminDataRoot":"/srv/data","termixEnable":true,"quantumEnable":false,"adminSshSecrets":2,"paperlessEnable":false,"postgresEnable":false,"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":true,"adminSshSecrets":2,"paperlessEnable":false,"postgresEnable":false,"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" home-forge)" || fail "7n-2: home-forge placement probe does not evaluate"
-assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
+assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
 
 # 7n-3. Semantic throwaway mutations (tasks 6.2/6.3). Each fails for its
 # intended semantic reason rather than a generic parse error, and the working
@@ -1412,7 +1433,7 @@ assert_placement oci-melb-1 "$json" '{"phoenixEnable":false}'
 # 7n-3d. A direct host import of a workload implementation is detected by the
 # guard, and the import alone still activates nothing (import != placement).
 D="$(make_copy)"
-sed -i '/^\( *#\)\{0,1\}    \.\/quantum\.nix$/i\    ../../../modules/services/phoenix.nix' "$D/modules/hosts/la-admin-1/default.nix"
+sed -i '/^    \.\/cockpit-auth\.nix$/i\    ../../../modules/services/phoenix.nix' "$D/modules/hosts/la-admin-1/default.nix"
 [ -n "$(host_workload_imports_of "$D")" ] ||
   fail "7n-3d: the host-import guard must detect a directly imported workload leaf"
 json="$(probe_placement "$D" la-admin-1)" || fail "7n-3d: LA must still evaluate with a directly imported leaf"
@@ -1428,9 +1449,9 @@ python3 - "$D/modules/hosts/la-admin-1/default.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
-assert s.count("    ./quantum.nix\n") == 1, "import anchor drifted"
+assert s.count("    ./cockpit-auth.nix\n") == 1, "import anchor drifted"
 assert s.count("  services = {\n") == 1, "services anchor drifted"
-s = s.replace("    ./quantum.nix\n", "    ../../services/phoenix.nix\n    ./quantum.nix\n", 1)
+s = s.replace("    ./cockpit-auth.nix\n", "    ../../services/phoenix.nix\n    ./cockpit-auth.nix\n", 1)
 s = s.replace("  services = {\n", "  services = {\n    phoenix.enable = true;\n", 1)
 open(p, "w").write(s)
 PYEOF
@@ -1468,7 +1489,7 @@ import sys
 p = sys.argv[1]
 s = open(p).read()
 i = s.index("la-admin-1 = {")
-j = s.index("            aspects.admin-hub", i)
+j = s.index("            aspects.identity-provider", i)
 k = s.index("\n", j)
 open(p, "w").write(s[: k + 1] + "            aspects.tamper-aspect\n" + s[k + 1 :])
 PYEOF

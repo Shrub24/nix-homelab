@@ -7,27 +7,25 @@
 let
   cfg = config.services.admin.cockpit;
   svcUser = cfg.serviceUser;
-  hasCockpitPublicHost = lib.hasAttrByPath [
-    "applications"
-    "admin"
-    "policyServices"
-    "cockpit-admin"
-    "publicHost"
-  ] config;
-  cockpitPublicHost =
-    if cfg.publicHost != null then
-      cfg.publicHost
-    else if hasCockpitPublicHost then
-      config.applications.admin.policyServices."cockpit-admin".publicHost
+
+  # Canonical web-policy consumption (decouple-identity-admin-capabilities
+  # 3.3): the policy-shaped public host and URL root come from
+  # `repo.web.currentHost.services."cockpit-admin"`, never the retired
+  # `applications.admin.policyServices` namespace. A host that composes this
+  # leaf without the route fails through this named contract throw instead of a
+  # raw missing-attribute error. Explicit host variants stay authoritative and
+  # never force the route read.
+  webServices = config.repo.web.currentHost.services or { };
+  cockpitRoute =
+    if webServices ? "cockpit-admin" then
+      webServices."cockpit-admin"
     else
-      null;
-  cockpitUrlRoot =
-    if cfg.urlRoot != null then
-      cfg.urlRoot
-    else if hasCockpitPublicHost then
-      config.applications.admin.policyServices."cockpit-admin".path
-    else
-      "/";
+      throw "cockpit: required canonical web-policy route 'repo.web.currentHost.services.\"cockpit-admin\"' is missing for host '${
+        config.networking.hostName or "?"
+      }'";
+
+  cockpitPublicHost = if cfg.publicHost != null then cfg.publicHost else cockpitRoute.publicHost;
+  cockpitUrlRoot = if cfg.urlRoot != null then cfg.urlRoot else cockpitRoute.path;
 in
 {
   imports = [

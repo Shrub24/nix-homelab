@@ -1,19 +1,21 @@
 # Identity-provider deployment aspect (dendritic Stage 7, D-053). Published
 # from this discovered contributor and selected only on `la-admin-1` (S7-2).
 # It owns the Kanidm server/provisioning composition, the Kanidm top-level
-# enablement, and the canonical OIDC provider URL consumed by
-# `identity-client`.
+# enablement, the provider data root, and the provider's identity and OIDC
+# provisioning secret sources.
 #
-# Mandatory policy co-selection (D-050/D-053): selecting this aspect is the
-# Kanidm capability's top-level enablement, but `la-admin-1` must also select
-# `admin-hub` and `identity-client`. The coupling is config reads only, never
-# imports (S7-2/S7-3):
-#   * `applications.admin` (owned by `admin-hub`) supplies `policyServices`,
-#     `dataRoot`, and the identity secret sources read below;
-#   * `services.identity.oidc` (owned by `identity-client`) owns the
-#     `providerUrl` option this aspect sets.
-# A lone selection therefore fails evaluation loudly with the missing sibling
-# option namespace rather than silently reconfiguring a sibling.
+# Directional contracts (decouple-identity-admin-capabilities IDB-1/IDB-2):
+#   * the provider never reads an admin workload namespace
+#     (`applications.admin` is not referenced anywhere below);
+#   * the canonical provider URL is consumed from the identity-client
+#     contract (`services.identity.oidc.providerUrl`), whose default is
+#     derived from canonical web policy — the provider never writes client
+#     namespace state;
+#   * endpoint/TLS data comes from canonical web policy
+#     (`repo.web.currentHost.services."kanidm-admin"`), never from an admin
+#     namespace re-export.
+# A host selecting this aspect without `identity-client` fails through the
+# named provider-URL assertion in the Kanidm leaf, not a missing-option error.
 { ... }:
 {
   flake.modules.nixos.identity-provider =
@@ -23,32 +25,56 @@
       ...
     }:
     let
-      cfg = config.applications.admin;
+      cfg = config.services.identity.kanidm;
+      kanidmRoute = config.repo.web.currentHost.services."kanidm-admin" or null;
+      # Named contract failure (decouple-identity-admin-capabilities: a
+      # missing required identity/web contract must fail through a named
+      # assertion-style throw, not a missing-option namespace error).
+      providerPublicUrl =
+        if kanidmRoute == null then
+          throw "identity-provider: required canonical web-policy route 'repo.web.currentHost.services.\"kanidm-admin\"' is missing for host '${
+            config.networking.hostName or "?"
+          }'; select the host's web policy with a kanidm-admin route"
+        else
+          kanidmRoute.publicUrl;
     in
     {
       imports = [ ../services/admin/kanidm.nix ];
 
-      config = lib.mkIf cfg.enable (
-        lib.mkMerge [
-          {
-            services.identity.oidc.providerUrl = cfg.policyServices."kanidm-admin".publicUrl;
-            # Selecting this aspect is the Kanidm capability's top-level
-            # enablement (D-053); declared outside the enable check below, which
-            # reads it.
-            services.admin.kanidm.enable = lib.mkDefault true;
-          }
+      config = lib.mkMerge [
+        # Selecting this aspect is the Kanidm capability's top-level
+        # enablement; the aspect consumes the canonical client-contract URL.
+        {
+          services.identity.kanidm.enable = true;
+        }
 
-          # Kanidm data/app URL/TLS composition.
-          (lib.mkIf config.services.admin.kanidm.enable {
-            services.admin.kanidm = {
-              dataDir = "${cfg.dataRoot}/kanidm";
-              appUrl = cfg.policyServices."kanidm-admin".publicUrl;
-              tlsChainFile = "/var/lib/acme/${cfg.policyServices."kanidm-admin".primaryDomain}/fullchain.pem";
-              tlsKeyFile = "/var/lib/acme/${cfg.policyServices."kanidm-admin".primaryDomain}/key.pem";
-              tlsReaderGroups = [ "caddy" ];
+        (lib.mkIf cfg.enable {
+          services.identity.kanidm = {
+            dataDir = "/srv/data/kanidm";
+            appUrl = providerPublicUrl;
+            tlsChainFile = "/var/lib/acme/${kanidmRoute.primaryDomain}/fullchain.pem";
+            tlsKeyFile = "/var/lib/acme/${kanidmRoute.primaryDomain}/key.pem";
+            tlsReaderGroups = [ "caddy" ];
+
+            secretFiles = {
+              identity = ../../secrets/identity/kanidm.yaml;
+              provisioning = ../../secrets/identity/provisioning.json;
+              # Explicit provider-owned OIDC provisioning secret-source map
+              # keyed by canonical oauth2 client id (IDB-1). Paths stay
+              # explicit — they encode SOPS readership and blast radius and
+              # are never inferred from logical client metadata. Missing or
+              # extra keys fail the leaf's key assertions.
+              oauth2Clients = {
+                beszel = ../../secrets/hosts/la-admin-1/oidc.yaml;
+                quantum = ../../secrets/hosts/la-admin-1/oidc.yaml;
+                termix = ../../secrets/hosts/la-admin-1/oidc.yaml;
+                karakeep = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+                paperless = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+                cloudflare-access = ../../secrets/opentofu/oidc.yaml;
+              };
             };
-          })
-        ]
-      );
+          };
+        })
+      ];
     };
 }

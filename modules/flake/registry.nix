@@ -126,7 +126,12 @@ in
             aspects.cockpit
             aspects.push-server
             aspects.identity-provider
-            aspects.admin-hub
+            aspects.vaultwarden
+            aspects.termix
+            aspects.gatus
+            aspects.beszel
+            aspects.homepage
+            aspects.webhook
             # Foundation aspects (FND-1): selection is enablement.
             aspects.base
             aspects.shell

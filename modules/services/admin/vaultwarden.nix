@@ -5,19 +5,35 @@
   ...
 }:
 let
-  appCfg = config.applications.admin;
   cfg = config.services.admin.vaultwarden;
-  vaultRoute = appCfg.policyServices."vaultwarden-admin";
+  # Named dependency failure (same pattern as termix): a host consuming the
+  # leaf without the canonical web-policy route must fail through this throw,
+  # not a raw missing-attribute error. The safe `or { }` lookup keeps the
+  # guard independent of whether any sibling declared `repo.web`.
+  vaultRoute =
+    let
+      route = config.repo.web.currentHost.services or { };
+    in
+    if route ? "vaultwarden-admin" then
+      route."vaultwarden-admin"
+    else
+      throw "vaultwarden: required canonical web-policy route 'repo.web.currentHost.services.\"vaultwarden-admin\"' is missing for host '${
+        config.networking.hostName or "?"
+      }'";
   vaultHost = vaultRoute.origin.host;
   vaultPort = vaultRoute.origin.port;
+  vaultwardenExportFile = "${config.services.state-backups.stagingRoot}/vaultwarden/db.sqlite3";
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
 in
 {
   options.services.admin.vaultwarden = {
     enable = lib.mkOption {
       type = lib.types.bool;
-      default = true;
-      description = "Enable admin-owned Vaultwarden service wiring.";
+      # Selection of the `vaultwarden` aspect is the top-level enablement
+      # (D-053): the leaf default stays off so an unselected import cannot
+      # silently re-enable the service.
+      default = false;
+      description = "Enable Vaultwarden service wiring.";
     };
 
     smtpFrom = lib.mkOption {
@@ -32,16 +48,10 @@ in
       description = "Persistent data directory for Vaultwarden state.";
     };
 
-    backup.exportFile = lib.mkOption {
-      type = lib.types.str;
-      default = "${config.services.state-backups.stagingRoot}/vaultwarden/db.sqlite3";
-      description = "SQLite backup artifact path captured alongside Vaultwarden raw state. Parent directory is created declaratively by services.state-backups under its staging root.";
-    };
-
     secretFiles.host = secretHelpers.mkSecretFileOption "vaultwarden-host-secrets";
   };
 
-  config = lib.mkIf (appCfg.enable && cfg.enable) {
+  config = lib.mkIf cfg.enable {
     assertions = [
       (secretHelpers.mkRequiredSecretAssertion {
         inherit (cfg) enable;
@@ -160,7 +170,7 @@ in
       "z ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
       # SQLite export parent: the export prepare command runs in the restic
       # backup unit as root, so the staging dir is root-owned 0700.
-      "d ${builtins.dirOf cfg.backup.exportFile} 0700 root root - -"
+      "d ${builtins.dirOf vaultwardenExportFile} 0700 root root - -"
     ];
 
     systemd.services.vaultwarden = {
@@ -172,13 +182,13 @@ in
       enable = true;
       mode = "export";
       paths = [ cfg.dataDir ];
-      exportPaths = [ cfg.backup.exportFile ];
+      exportPaths = [ vaultwardenExportFile ];
       prepareCommands = [
         ''
-          tmp_export="${cfg.backup.exportFile}.tmp"
+          tmp_export="${vaultwardenExportFile}.tmp"
           rm -f "$tmp_export"
           ${pkgs.sqlite}/bin/sqlite3 ${cfg.dataDir}/db.sqlite3 ".backup $tmp_export"
-          mv "$tmp_export" ${cfg.backup.exportFile}
+          mv "$tmp_export" ${vaultwardenExportFile}
         ''
       ];
     };

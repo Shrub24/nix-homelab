@@ -1,10 +1,9 @@
-# admin-module-structure Specification
+## RENAMED Requirements
 
-## Purpose
+- FROM: `### Requirement: Admin modules SHALL follow layered ownership boundaries`
+- TO: `### Requirement: Admin modules SHALL follow capability-owned boundaries`
 
-Define the layered ownership boundaries for admin configuration, from policy data and transforms through service-owned modules, portable application composition, and host-local assembly.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Admin modules SHALL follow capability-owned boundaries
 
@@ -21,20 +20,7 @@ Admin configuration SHALL keep policy data under `policy/`, policy transformatio
 - **AND** no admin composition writes identity-provider internals
 - **AND** policy data and transforms are not embedded in service or host files
 
-### Requirement: Complex admin services SHALL support adjacent data files
-Complex admin services with large declarative payloads SHALL support adjacent data/config files within service subdirectories to keep module logic focused and maintainable.
-
-#### Scenario: Homepage and Gatus service modules are evaluated
-- **WHEN** service module structure is reviewed
-- **THEN** Homepage and Gatus support files are organized as service subdirectories with `default.nix` and adjacent data/helper files
-
-### Requirement: Canonical endpoint values SHALL be consumed via policy projections
-Admin modules SHALL consume canonical service endpoint values (including route path and origin port) through policy resolution/projection helpers rather than re-defining those values in multiple module locations.
-
-#### Scenario: Admin consumer wiring is evaluated
-- **WHEN** admin service or monitoring modules configure route/endpoint values
-- **THEN** path and port values are sourced from resolved policy/projection outputs
-- **AND** equivalent literals are not duplicated in unrelated module files
+## ADDED Requirements
 
 ### Requirement: Admin OIDC consumers SHALL depend directionally on identity contracts
 

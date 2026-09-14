@@ -1,14 +1,31 @@
+# Gatus monitoring composition (decoupled from the `applications.admin`
+# namespace in decouple-identity-admin-capabilities 3.2): the policy origin,
+# the catalog-derived endpoint sweep, and the alert transport come from the
+# canonical web policy (`repo.web.currentHost.services`).
 {
   lib,
   config,
   ...
 }:
 let
-  appCfg = config.applications.admin;
   cfg = config.services.admin.gatus;
 
-  webAddress = appCfg.policyServices."gatus-admin".origin.host;
-  webPort = appCfg.policyServices."gatus-admin".origin.port;
+  # Named dependency failure (same pattern as vaultwarden/termix): a host
+  # consuming this leaf without the canonical web-policy route must fail
+  # through this throw, not a raw missing-attribute error. The safe `or { }`
+  # lookup keeps the guard independent of whether any sibling declared
+  # `repo.web`.
+  webServices = config.repo.web.currentHost.services or { };
+  gatusRoute =
+    if webServices ? "gatus-admin" then
+      webServices."gatus-admin"
+    else
+      throw "gatus: required canonical web-policy route 'repo.web.currentHost.services.\"gatus-admin\"' is missing for host '${
+        config.networking.hostName or "?"
+      }'";
+
+  webAddress = gatusRoute.origin.host;
+  webPort = gatusRoute.origin.port;
 
   mkEndpoint = serviceName: svc: {
     name = serviceName;
@@ -17,19 +34,19 @@ let
     conditions = [ "[STATUS] == ${toString svc.health.expectedStatus}" ];
   };
 
-  endpoints = lib.mapAttrsToList mkEndpoint appCfg.policyServices;
+  endpoints = lib.mapAttrsToList mkEndpoint webServices;
 in
 {
   options.services.admin.gatus = {
     enable = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = "Enable admin-owned Gatus service wiring.";
     };
 
   };
 
-  config = lib.mkIf (appCfg.enable && cfg.enable) {
+  config = lib.mkIf cfg.enable {
     services.gatus = {
       enable = true;
       openFirewall = false;

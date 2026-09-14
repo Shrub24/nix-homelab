@@ -16,6 +16,6 @@ Fleet hosts SHALL declare their operational stack by selecting explicit NixOS op
 
 - **WHEN** the combined backups aspect is decomposed without an intended runtime change
 - **THEN** `nixosConfigurations.oci-melb-1`, `nixosConfigurations.la-admin-1`, and `nixosConfigurations.home-forge` retain their existing backup units, timers, repositories, upload client, publication trigger, secret paths, monitoring behavior, and bootstrap gates
-- **AND** all three hosts explicitly select both `state-backups` and `cache-publisher`, while retaining builder access on home-forge
-- **AND** the registry continues not to import the upstream Niks3 auto-upload module
+- **AND** all three hosts explicitly select both `state-backups` and `cache-publisher`, and continue to select `builder-access` and `observability-agent`, including builder access on `home-forge`
+- **AND** the registry continues not to import the upstream Niks3 auto-upload module, while OCI retains the Niks3 server module import
 - **AND** no support module, generic composition bus, compatibility wrapper, or new `mkForce` workaround is introduced

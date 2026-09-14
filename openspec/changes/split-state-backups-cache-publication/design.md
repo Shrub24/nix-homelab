@@ -13,7 +13,9 @@ The `backups` aspect imports restic state backup, Niks3 upload-client, and post-
 **Non-Goals:**
 - changing backup coverage, schedules, retention, or restore procedures;
 - changing Niks3 server/read architecture or publication triggers;
+- migrating the cache-publisher upload client to the Stage 8 `niks3Write` internal contract, introducing canonical host IDs, or any endpoint redesign;
 - extracting to `nix-fleet` now;
+- relocating source folders or converting broader service leaves;
 - retaining a compatibility bundle.
 
 ## Decisions
@@ -44,7 +46,7 @@ Keeping `backups` as a bundle would preserve ambiguous ownership and a second se
 
 1. Capture current state-backup and cache-publication observables for every host.
 2. Publish both aspects and co-select them atomically.
-3. Move implementation ownership and delete `backups`.
-4. Validate closure/structured equivalence and deploy one host at a time.
+3. Move implementation ownership and delete `backups`. Each aspect independently derives `secrets/hosts/${hostName}/system.yaml` and gates only its own capability; the upload-client and post-deploy leaves stay beside their owner under the existing `modules/flake/_backups/` private convention — no source-folder relocation.
+4. Validate closure/structured equivalence and deploy one host at a time. The validation gates are: (a) per-aspect subset evaluation — each aspect composes alone and introduces only its own units; (b) old-aspect absence — no `flake.modules.nixos.backups` output and no `aspects.backups` selection remains; (c) the before/after observable comparison from task 3.2.
 
 Rollback restores the single aspect and previous selections; no persistent data changes.

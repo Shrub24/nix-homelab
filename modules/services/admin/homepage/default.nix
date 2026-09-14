@@ -1,31 +1,47 @@
+# Homepage dashboard composition (decoupled from the `applications.admin`
+# namespace in decouple-identity-admin-capabilities 3.2): the policy origin,
+# public host, and the catalog-derived dashboard data come from the canonical
+# web policy (`repo.web.currentHost.services`).
 {
   lib,
   config,
   ...
 }:
 let
-  appCfg = config.applications.admin;
   cfg = config.services.admin.homepage;
-  homepageRoute = appCfg.policyServices."admin-homepage";
+
+  # Named dependency failure (same pattern as gatus/beszel): a host consuming
+  # this leaf without the canonical web-policy route must fail through this
+  # throw, not a raw missing-attribute error. The safe `or { }` lookup keeps
+  # the guard independent of whether any sibling module declared `repo.web`.
+  webServices = config.repo.web.currentHost.services or { };
+  homepageRoute =
+    if webServices ? "admin-homepage" then
+      webServices."admin-homepage"
+    else
+      throw "homepage: required canonical web-policy route 'repo.web.currentHost.services.\"admin-homepage\"' is missing for host '${
+        config.networking.hostName or "?"
+      }'";
+
   listenPort = homepageRoute.origin.port;
   secretHelpers = import ../../../../lib/secrets.nix { inherit lib; };
 
   homepageData = import ./data.nix {
     inherit config;
-    inherit (appCfg) policyServices;
+    policyServices = webServices;
   };
 in
 {
   options.services.admin.homepage.enable = lib.mkOption {
     type = lib.types.bool;
-    default = true;
+    default = false;
     description = "Enable admin-owned Homepage Dashboard wiring.";
   };
 
   options.services.admin.homepage.secretFiles.host =
     secretHelpers.mkSecretFileOption "homepage-host-secrets";
 
-  config = lib.mkIf (appCfg.enable && cfg.enable) {
+  config = lib.mkIf cfg.enable {
     assertions = [
       (secretHelpers.mkRequiredSecretAssertion {
         inherit (cfg) enable;

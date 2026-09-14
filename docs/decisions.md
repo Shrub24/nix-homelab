@@ -1107,3 +1107,26 @@ References:
 
 - `openspec/changes/dendritic-stage-7-placement-aspects/{proposal,design}.md` (S7-1-S7-11) and its five delta specs
 - `ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md`, `docs/architecture.md`, `docs/plan.md`, `docs/context-history.md`, `docs/dendritic-transition-analysis.md`
+
+## D-054: Identity consumes admin directionally; admin capabilities decompose into self-contained placement aspects
+
+Status: Accepted
+
+Decision:
+
+- capability independence follows a revised boundary criterion: independent placement is sufficient but not necessary for a separate aspect; security ownership (who may read which secret), lifecycle (enable/upgrade/recover independently), portability (can move hosts without sibling rewiring), and independently evaluable contracts justify separate aspects even when capabilities are currently co-located. Convenience bundling is not a justification; a multi-service composition exists only where shared implementation or aggregation behavior is intrinsic
+- `admin-hub` and the `applications.admin` namespace are removed with no replacement bundle and no compatibility wrapper. Termix, Vaultwarden, Homepage, Gatus, Beszel hub, and Webhook are self-contained placement aspects selected individually; Cockpit moves to canonical web policy inputs; the residual `/srv/data` operator ACL/reconcile unit and Quantum SSH secret registrations are explicit `la-admin-1` host-local configuration
+- `identity-provider` solely owns Kanidm runtime, provisioning, provider data paths, and the client-keyed OIDC provisioning secret-source map; `identity-client` and `identity-provider` both read the canonical Kanidm URL from web policy and neither writes the other's namespace; admin workloads consume the identity-client contract and never configure the provider
+- the mandatory `admin-hub`/`identity-provider`/`identity-client` policy co-selection on `la-admin-1` is dissolved; LA host policy selects the capabilities it wants and real cross-aspect dependencies fail through named contract assertions, not missing-option errors
+- Quantum is recorded as removed from the active module graph and deferred: `modules/flake/admin-hub.nix`, `modules/hosts/la-admin-1/quantum.nix`, and `modules/services/admin/quantum.nix` were deleted by this change, so Quantum is not force-disabled in composition and not an extraction or completion gate; the Quantum SSH registrations survive only as `la-admin-1` host-local debt. Any re-enable lands as a self-contained concern/aspect consuming canonical identity contracts and never restores admin-hub coupling
+
+Supersedes/updates:
+
+- supersedes D-053's `admin-hub` placement aspect, its `applications.admin` enablement flag, its "discovered publication set is exactly twenty-eight" count, and the mandatory co-selection of `admin-hub`/`identity-provider`/`identity-client` on `la-admin-1`; D-053's placement-surface completion, source relocation, and validation history remain in force
+- narrows D-050's policy co-selection interpretation: co-location alone no longer justifies the mode; only security ownership, lifecycle, portability, or independently evaluable contracts (or explicit shared placement policy) does; D-050's source/deployment separation and composition-mode framework remain in force
+- updates the current-state aspect enumeration and counts in `ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md`, `docs/architecture.md`, `docs/plan.md`, and `docs/dendritic-transition-analysis.md`; `docs/context-history.md` receives an appended entry; historical decision bodies are unchanged
+
+References:
+
+- `openspec/changes/decouple-identity-admin-capabilities/{proposal,design}.md` (IDB-1-IDB-4) and its four delta specs
+- `ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md`, `docs/architecture.md`, `docs/plan.md`, `docs/context-history.md`, `docs/dendritic-transition-analysis.md`

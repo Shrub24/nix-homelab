@@ -1,3 +1,12 @@
+# Kanidm server/provisioning leaf — owned by the `identity-provider` concern
+# (decouple-identity-admin-capabilities IDB-1/IDB-2). This module declares the
+# complete Kanidm runtime contract under `services.identity.kanidm`: provider
+# state paths, bootstrap/provisioning secret sources, and the explicit
+# per-client OIDC provisioning secret-source map keyed by canonical oauth2
+# client id. It never reads an admin workload namespace; the only endpoint
+# source is canonical web policy (`repo.web.currentHost.services`) and the
+# provider URL comes from the identity-client contract, which the provider
+# consumes but never writes.
 {
   lib,
   config,
@@ -5,8 +14,7 @@
   ...
 }:
 let
-  appCfg = config.applications.admin;
-  cfg = config.services.admin.kanidm;
+  cfg = config.services.identity.kanidm;
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
   identityPolicy = builtins.fromJSON (builtins.readFile ../../../policy/identity.json);
   oauth2Policy = identityPolicy.systems.oauth2;
@@ -14,6 +22,16 @@ let
     _name: clientPolicy: clientPolicy.enable or true
   ) oauth2Policy;
 
+  # Provider endpoint data comes from canonical web policy, not from any admin
+  # namespace. Route-key clients resolve their callback origin through the same
+  # resolved host services map that admin workloads consume.
+  policyServices = config.repo.web.currentHost.services or { };
+
+  # Explicit provider-owned credential-source map keyed by canonical oauth2
+  # client id. Keys are validated against the enabled canonical client set
+  # (missing and extra keys both fail); the paths themselves stay explicit
+  # because they encode SOPS readership/blast radius and are never inferred
+  # from logical client metadata.
   oauth2Clients = lib.mapAttrs (
     _name: clientPolicy:
     {
@@ -25,8 +43,8 @@ let
       claimMaps = clientPolicy.claimMaps or { };
     }
     // lib.optionalAttrs (clientPolicy ? routeKey) {
-      route = appCfg.policyServices.${clientPolicy.routeKey};
-      originLanding = appCfg.policyServices.${clientPolicy.routeKey}.publicUrl;
+      route = policyServices.${clientPolicy.routeKey} or null;
+      originLanding = (policyServices.${clientPolicy.routeKey} or { }).publicUrl or null;
     }
     // lib.optionalAttrs (clientPolicy ? allowInsecureClientDisablePkce) {
       inherit (clientPolicy) allowInsecureClientDisablePkce;
@@ -200,12 +218,8 @@ let
   '';
 in
 {
-  options.services.admin.kanidm = {
-    enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Enable admin-owned Kanidm service wiring.";
-    };
+  options.services.identity.kanidm = {
+    enable = lib.mkEnableOption "Kanidm identity-provider runtime and provisioning";
 
     dataDir = lib.mkOption {
       type = lib.types.str;
@@ -297,21 +311,34 @@ in
     };
   };
 
-  config = lib.mkIf (appCfg.enable && cfg.enable) {
+  config = lib.mkIf cfg.enable {
     assertions = [
       {
         assertion = originHost != null;
-        message = "services.admin.kanidm.appUrl must be a valid https URL.";
+        message = "services.identity.kanidm.appUrl must be a valid https URL.";
       }
       {
         assertion = config.services.identity.oidc.providerUrl == cfg.appUrl;
-        message = "services.admin.kanidm.appUrl must stay aligned with services.identity.oidc.providerUrl.";
+        message = "services.identity.kanidm.appUrl must stay aligned with services.identity.oidc.providerUrl.";
       }
     ]
     ++ lib.mapAttrsToList (name: _client: {
       assertion = builtins.hasAttr name cfg.secretFiles.oauth2Clients;
-      message = "services.admin.kanidm.secretFiles.oauth2Clients.${name} must be set when system.oauth2.${name}.enable=true.";
+      message = "services.identity.kanidm.secretFiles.oauth2Clients.${name} must be set when system.oauth2.${name}.enable=true.";
     }) oauth2Clients
+    ++ (
+      let
+        extraKeys = lib.subtractLists (builtins.attrNames oauth2ClientPolicies) (
+          builtins.attrNames cfg.secretFiles.oauth2Clients
+        );
+      in
+      [
+        {
+          assertion = extraKeys == [ ];
+          message = "services.identity.kanidm.secretFiles.oauth2Clients has keys that are not enabled canonical identity clients: ${lib.concatStringsSep ", " extraKeys}.";
+        }
+      ]
+    )
     ++ lib.mapAttrsToList (name: client: {
       assertion = client.originUrl != null || ((client.route != null) && (client.callbackPath != null));
       message = "system.oauth2.${name} must define originUrl directly or provide both routeKey and callbackPath.";
@@ -348,7 +375,7 @@ in
       // oauth2SecretSpecs;
 
     services = {
-      admin.kanidm.oidc = {
+      identity.kanidm.oidc = {
         clientPathPrefix = config.services.identity.oidc.clientPathPrefix;
         tokenUrl = config.services.identity.oidc.tokenUrl;
         clients = config.services.identity.oidc.clients;

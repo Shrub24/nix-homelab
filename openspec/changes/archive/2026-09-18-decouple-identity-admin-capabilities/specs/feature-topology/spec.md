@@ -11,6 +11,11 @@ Independently placeable capabilities SHALL expose directional typed contracts an
 - **AND** any real external dependency fails through a named contract assertion
 - **AND** evaluation does not fail because a sibling-owned namespace is absent
 
+#### Scenario: Revised boundary criterion is recorded
+
+- **WHEN** the decision log records the capability-boundary criterion for this change
+- **THEN** independent placement is sufficient but not necessary, and security ownership, lifecycle, portability, and independently evaluable contracts justify a boundary with no convenience bundling
+
 #### Scenario: Current colocation changes
 
 - **WHEN** one capability moves to another host

@@ -1,5 +1,4 @@
 {
-  lib,
   ...
 }:
 {
@@ -8,7 +7,8 @@
     # aspects selected in the registry (D-053); this host keeps only machine
     # facts, explicit variants, and host-local fragments.
     ./cockpit-auth.nix
-    ./quantum.nix
+    # Host-local admin runtime remainder (decouple-identity-admin-capabilities 3.3).
+    ./_admin-runtime.nix
   ];
 
   hardware.facter.reportPath = ./facter.json;
@@ -40,10 +40,20 @@
   # kept, no bridge, no pinned DNS today.
   fleet.networking.uplink.interface = "ens18";
 
-  # Quantum deferred on LA for the initial cutover: force-disables the
-  # ./quantum.nix import (which sets enable = true); OIDC wiring stays intact.
   services = {
-    admin.quantum.enable = lib.mkForce false;
+    # Termix placement comes from the selected `termix` aspect; the host keeps
+    # only its host-scoped OIDC client secret source.
+    admin.termix.secretFiles.oidc = ../../../secrets/hosts/la-admin-1/oidc.yaml;
+
+    # Vaultwarden placement comes from the selected `vaultwarden` aspect; the
+    # host keeps only its host-scoped secret source
+    # (decouple-identity-admin-capabilities 3.1).
+    admin.vaultwarden.secretFiles.host = ../../../secrets/applications/admin.yaml;
+
+    # Homepage placement comes from the selected `homepage` aspect; the host
+    # keeps only its host-scoped secret source
+    # (decouple-identity-admin-capabilities 3.2).
+    admin.homepage.secretFiles.host = ../../../secrets/applications/admin.yaml;
 
     # Tailscale foundation aspect owns auth-key registration and MTU rendering
     # (FND-4); the host only declares its host-scoped variant.
@@ -90,25 +100,6 @@
   };
 
   sops.defaultSopsFile = ../../../secrets/common.yaml;
-
-  # Admin-hub placement comes from the selected `admin-hub` aspect; this host
-  # keeps only its explicit data root and secret-source bindings.
-  applications.admin = {
-    dataRoot = "/srv/data";
-    secretFiles = {
-      host = ../../../secrets/applications/admin.yaml;
-      identity = ../../../secrets/identity/kanidm.yaml;
-      identityProvisioning = ../../../secrets/identity/provisioning.json;
-      oidcClients = {
-        termix = ../../../secrets/hosts/la-admin-1/oidc.yaml;
-        beszel = ../../../secrets/hosts/la-admin-1/oidc.yaml;
-        quantum = ../../../secrets/hosts/la-admin-1/oidc.yaml;
-        karakeep = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
-        paperless = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
-        cloudflare-access = ../../../secrets/opentofu/oidc.yaml;
-      };
-    };
-  };
 
   # Edge placement comes from the selected `edge` aspect; this host keeps only
   # its explicit edge role and application-scoped secret binding.

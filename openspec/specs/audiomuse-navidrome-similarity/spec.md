@@ -1,6 +1,10 @@
 # Delta Spec: AudioMuse Navidrome Similarity
 
-## ADDED Requirements
+## Purpose
+
+Define the AudioMuse and Navidrome similarity integration contract, including its enablement, bootstrap, and secret handling.
+
+## Requirements
 
 ### Requirement: AudioMuseAI SHALL extend Navidrome similarity behavior for Symfonium
 The system SHALL integrate AudioMuseAI as a Navidrome-facing music intelligence extension so Symfonium can use similar-track and radio behavior through the existing Navidrome listening path.

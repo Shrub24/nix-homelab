@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Define the Phoenix OpenTelemetry collector capability, including its persistence, ingestion endpoints, access posture, and retention bounds.
+
+## Requirements
 
 ### Requirement: Phoenix container runs with SQLite persistence
 

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Provide the shared PostgreSQL module used by cross-host consumers, covering external consumer databases and roles, Postgres-owned credentials, and Tailscale-scoped authentication.
+
+## Requirements
 
 ### Requirement: Shared Postgres can provision external LiteLLM access
 

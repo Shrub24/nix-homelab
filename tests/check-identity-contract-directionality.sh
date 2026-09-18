@@ -407,7 +407,8 @@ if "aspects.admin-hub" in la:
     raise SystemExit("LA registry record must not re-select the deleted admin-hub aspect")
 for a in ["provenance", "oci-images", "fleet-packages", "web-policy", "identity-client",
           "base", "shell", "networking", "tailscale", "notify",
-          "backups", "builder-access", "observability-agent"]:
+          "state-backups", "cache-publisher",
+          "builder-access", "observability-agent"]:
     if la.count(f"            aspects.{a}\n") != 1:
         raise SystemExit(f"LA registry record must explicitly select aspects.{a} exactly once")
 PYEOF

@@ -1130,3 +1130,24 @@ References:
 
 - `openspec/changes/decouple-identity-admin-capabilities/{proposal,design}.md` (IDB-1-IDB-4) and its four delta specs
 - `ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md`, `docs/architecture.md`, `docs/plan.md`, `docs/context-history.md`, `docs/dendritic-transition-analysis.md`
+
+## D-055: State backups and cache publication are independent operational aspects
+
+Status: Accepted
+
+Decision:
+
+- the combined `backups` aspect is deleted with no compatibility bundle; restic mutable-state recovery and Niks3 closure publication are separate placement aspects: `state-backups` (owns `modules/services/state-backups.nix`, the derived `shrublab-backup-<host>` bucket convention, and the host secret gate for restic) and `cache-publisher` (owns the upstream `niks3-auto-upload` module import, the private upload-client and post-deploy leaves, the typed `withSystem` `nix-path-filter` injection, and the host secret gate for publication)
+- both aspects derive their own `hasHostSecrets` gate from the conventional `secrets/hosts/<host>/system.yaml` path (two-step sops bootstrap preserved per capability) and assert the notify-owned `services.notification-daemon.monitor.enable` option without importing `notify` (D-049 monitoring convention)
+- all three hosts co-select `aspects.state-backups` and `aspects.cache-publisher` explicitly in the registry; neither aspect imports the other and no sibling public-aspect import exists
+- the private Niks3 leaves stay beside their owner under `modules/flake/_backups/` per D-051 — this change performs no source-folder relocation
+- Stage 8 (`dendritic-stage-8-host-identity-contracts`) owns the canonical host IDs and the `niks3Write` internal-contract migration of the `cache-publisher` upload client; this change deliberately preserves the literal Niks3 endpoint/credential flow
+
+Supersedes/updates:
+
+- supersedes D-049's combined `backups` operational-aspect composition (the D-049 monitoring and builder-access guarantees remain in force, now carried by the split aspects)
+- updates the aspect enumerations in `ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md`, `docs/architecture.md`, and `docs/plan.md` from three to four operational aspects
+
+References:
+
+- `openspec/changes/split-state-backups-cache-publication/` (OPSPLIT-1..4)

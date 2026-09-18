@@ -45,7 +45,7 @@
           # fails with a named message instead of silently missing its
           # failure-monitoring template.
           assertion = lib.attrByPath [ "services" "notification-daemon" "monitor" "enable" ] false config;
-          message = "cache-publisher aspect: services.notification-daemon.monitor.enable must be true (select the notify aspect) so Niks3 upload failures route through svc-monitor.";
+          message = "cache-publisher aspect: services.notification-daemon.monitor.enable must be true (select the notify aspect).";
         }
       ];
     };

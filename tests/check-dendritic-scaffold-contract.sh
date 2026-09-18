@@ -279,10 +279,13 @@ host_leaf_imports_of() { # $1 dir
 }
 
 # 7a. Exactly thirty-four publications are discovered across the distributed
-# contributors: the infrastructure support quartet, the eleven Stage 2-6
-# deployment aspects (base, shell, networking, tailscale, notify, backups,
-# builder-access, observability-agent, dj, music, identity-client), and the
-# eighteen Stage 7 placement aspects (S7-2). decouple-identity-admin-capabilities
+# contributors: the infrastructure support quartet, the twelve Stage 2-6
+# deployment aspects (base, shell, networking, tailscale, notify,
+# state-backups, cache-publisher, builder-access, observability-agent, dj,
+# music, identity-client), and the eighteen Stage 7 placement aspects (S7-2).
+# split-state-backups-cache-publication replaced the combined backups aspect
+# with independent state-backups and cache-publisher aspects.
+# decouple-identity-admin-capabilities
 # task 3.3 extracted the six admin capabilities (termix, vaultwarden, gatus,
 # beszel, homepage, webhook) into their own published aspects; admin-hub stays
 # deleted. Registry references are not definition sites. No central publication
@@ -324,7 +327,7 @@ flake.modules.nixos.web-policy \
 flake.modules.nixos.webhook)"
 pub_names="$(pub_names_of "$ROOT")"
 if [ "$pub_names" != "$expected_pub" ]; then
-  fail "discovered publications drifted from the support quartet + eleven deployment aspects + eighteen placement aspects + the split backup aspects: $pub_names"
+  fail "discovered publications drifted from the support quartet + twelve deployment aspects + eighteen placement aspects: $pub_names"
 fi
 if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.cli|_aspects/cli|aspects\.cli' modules; then
 fail "the deleted cli aspect must not be resurrected"
@@ -779,10 +782,13 @@ PY
 
 # 7i-4. Backup-split subset isolation (split-state-backups-cache-publication
 # 3.3a): selecting one of the split aspects alone must introduce only its own
-# units. Each composition imports the copy's contributor module directly over
-# a minimal nixosSystem, so an unimported leaf's options are hard absences,
-# not defaults. The home-forge fixture hostname keeps the conventional host
-# secret present so the gated enables are true.
+# units. Each leg takes a FRESH make_copy (7i-3's copy legitimately tests the
+# absent-secret gate and must not be reused). The composition imports the
+# copy's contributor module plus the notify/monitor provider module over a
+# minimal nixosSystem, so an unimported leaf's options are hard absences, and
+# the state-backups contributor's monitor-enable assertion is satisfied by the
+# imported notify leaf. The home-forge fixture hostname keeps the conventional
+# host secret present so the gated enables are true.
 subset_probe() { # $1 copy root, $2 aspect name -> eval report JSON
   local d="$1" aspect="$2" t out rc
   t="$(mktemp -d /tmp/scaffold-subset.XXXXXX)"
@@ -791,21 +797,27 @@ subset_probe() { # $1 copy root, $2 aspect name -> eval report JSON
   inputs.repo.url = "path:$d";
   outputs = { self, repo }: {
     report = let
-      c = repo.inputs.nixpkgs.lib.nixosSystem {
+      sys = repo.inputs.nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = [
           repo.inputs.sops-nix.nixosModules.sops
+          repo.modules.nixos.notify
           repo.modules.nixos.$aspect
           { networking.hostName = "home-forge"; system.stateVersion = "25.11"; }
         ];
       };
+      c = sys.config;
     in {
-      resticBackupsEmpty = c.services.restic.backups == { };
-      resticUnitAbsent = !(c.systemd.services ? "restic-backups-state");
+      resticBackupsEmpty = (c.services.restic.backups or { }) == { };
+      resticUnitAbsent = !((c.systemd.services or { }) ? "restic-backups-state");
       clientEnable = c.services.niks3-auto-upload.enable or false;
-      clientOptionAbsent = !(c.services.niks3-auto-upload ? enable);
-      postOptionAbsent = !(c.services.niks3-post-deploy ? enable);
+      clientOptionAbsent = !((c.services.niks3-auto-upload or { }) ? enable);
+      postEnable = c.services.niks3-post-deploy.enable or false;
+      postOptionAbsent = !((c.services.niks3-post-deploy or { }) ? enable);
+      postActivationPresent = (c.system.activationScripts.niks3-post-deploy or null) != null;
       postActivationAbsent = (c.system.activationScripts.niks3-post-deploy or null) == null;
+      uploadUnitPresent = (c.systemd.services or { }) ? "niks3-auto-upload";
+      postUnitPresent = (c.systemd.services or { }) ? "niks3-post-deploy";
     };
   };
 }
@@ -815,25 +827,30 @@ EOF2
   printf '%s' "$out"
 }
 
+D="$(make_copy)"
 json="$(subset_probe "$D" cache-publisher)" ||
   fail "cache-publisher-only subset: composition must evaluate"
 python3 - "$json" <<'PY' || fail "cache-publisher-only subset: observables violated: $json"
 import json, sys
 got = json.loads(sys.argv[1])
 want = {"resticBackupsEmpty": True, "resticUnitAbsent": True,
-        "clientEnable": True, "postOptionAbsent": False, "clientOptionAbsent": False}
+        "clientEnable": True, "postEnable": True, "uploadUnitPresent": True,
+        "postUnitPresent": True, "postActivationPresent": True,
+        "postActivationAbsent": False,
+        "postOptionAbsent": False, "clientOptionAbsent": False}
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in want.items() if got.get(k) != v]
 if errs:
     raise SystemExit("; ".join(errs))
 PY
 
+D="$(make_copy)"
 json="$(subset_probe "$D" state-backups)" ||
   fail "state-backups-only subset: composition must evaluate"
 python3 - "$json" <<'PY' || fail "state-backups-only subset: observables violated: $json"
 import json, sys
 got = json.loads(sys.argv[1])
-want = {"clientOptionAbsent": True, "postOptionAbsent": True,
-        "postActivationAbsent": True, "resticUnitAbsent": False}
+want = {"resticBackupsEmpty": False, "resticUnitAbsent": False,
+        "clientOptionAbsent": True, "postOptionAbsent": True}
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in want.items() if got.get(k) != v]
 if errs:
     raise SystemExit("; ".join(errs))

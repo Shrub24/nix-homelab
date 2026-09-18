@@ -32,6 +32,12 @@ in
     description = "Secondary Navidrome library path for quarantine. Required; injected by the caller.";
   };
 
+  options.services.navidrome.extraDirs = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    description = "Additional media directories to expose (read-write) in the Navidrome mount namespace.";
+  };
+
   options.services.navidrome.audiomuse = {
     enable = lib.mkEnableOption "AudioMuseAI Navidrome plugin wiring";
     devArtistInfoTimeToLive = lib.mkOption {
@@ -122,7 +128,8 @@ in
         cfg.libraryDir
         cfg.quarantineDir
         cfg.dataDir
-      ];
+      ]
+      ++ cfg.extraDirs;
       wants = [
         "network-online.target"
         "syncthing.service"
@@ -135,12 +142,19 @@ in
         cfg.libraryDir
         cfg.quarantineDir
       ];
-      # nixpkgs fixes Plugins.Folder at finalPackage/share/plugins. Bind the
-      # declarative data-dir link there only in Navidrome's mount namespace so
-      # the cached stock package remains immutable and cache-substitutable.
-      serviceConfig.BindReadOnlyPaths = lib.mkAfter [
-        "${cfg.dataDir}/plugins:${config.services.navidrome.finalPackage}/share/plugins"
-      ];
+      # RootDirectory=/run/navidrome means only bind-mounted paths exist in the
+      # service namespace. nixpkgs binds MusicFolder; the secondary and extra
+      # libraries need the same treatment or Navidrome cannot stat them.
+      # nixpkgs also fixes Plugins.Folder at finalPackage/share/plugins, so the
+      # declarative data-dir link is bound there to keep the stock package
+      # immutable and cache-substitutable.
+      serviceConfig.BindReadOnlyPaths = lib.mkAfter (
+        [
+          cfg.quarantineDir
+          "${cfg.dataDir}/plugins:${config.services.navidrome.finalPackage}/share/plugins"
+        ]
+        ++ cfg.extraDirs
+      );
       serviceConfig.PrivateMounts = lib.mkForce false;
       serviceConfig.SupplementaryGroups = lib.mkAfter [
         "media"

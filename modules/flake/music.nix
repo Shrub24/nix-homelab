@@ -32,6 +32,7 @@
         versionArchiveRoot = "${cfg.storageRoot}/.versions";
         untaggedDir = "${quarantineDir}/untagged";
         approvedDir = "${quarantineDir}/approved";
+        setsDir = "${cfg.storageRoot}/sets";
       };
 
       beetsRunnerInstances = {
@@ -362,6 +363,7 @@
             enable = cfg.navidrome.enable;
             libraryDir = mediaPaths.libraryDir;
             quarantineDir = mediaPaths.quarantineDir;
+            extraDirs = [ mediaPaths.setsDir ];
             dataDir = "${cfg.dataRoot}/navidrome";
             audiomuse.enable = cfg.audiomuse.enable;
           };

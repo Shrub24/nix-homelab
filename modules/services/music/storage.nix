@@ -23,6 +23,7 @@ let
       ;
     untaggedDir = "${quarantineDir}/untagged";
     approvedDir = "${quarantineDir}/approved";
+    setsDir = "${cfg.storageRoot}/sets";
   };
 
   mediaFixPermsBin = pkgs.writeShellApplication {
@@ -155,6 +156,13 @@ in
       "a+ ${mediaPaths.quarantineDir} - - - - default:group:music-ingest:rwX"
       "a+ ${mediaPaths.quarantineDir} - - - - group:media:r-X"
       "a+ ${mediaPaths.quarantineDir} - - - - default:group:media:r-X"
+      # Recorded-set uploads are a sibling of library, not a child: Navidrome
+      # reads library/, so storing sets under it would index them as tracks.
+      "d ${mediaPaths.setsDir} 2775 root music-ingest - -"
+      "a+ ${mediaPaths.setsDir} - - - - group:music-ingest:rwX"
+      "a+ ${mediaPaths.setsDir} - - - - default:group:music-ingest:rwX"
+      "a+ ${mediaPaths.setsDir} - - - - group:media:r-X"
+      "a+ ${mediaPaths.setsDir} - - - - default:group:media:r-X"
       "d ${mediaPaths.inboxDir} 2775 root music-ingest - -"
       "z ${mediaPaths.inboxDir} 2775 root music-ingest - -"
       "d ${mediaPaths.inboxDir}/dropbox 2775 root music-ingest - -"

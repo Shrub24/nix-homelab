@@ -16,11 +16,20 @@
 let
   hostSystemSecret = ../../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
   hasHostSecrets = builtins.pathExists hostSystemSecret;
+
+  # Private write endpoint resolved through the internal transport contract
+  # (stage 8 task 4.2, HIC-4) instead of a provider literal. The `scheme`/
+  # `host`/`port` fields are used rather than `url`: `url` carries the derived
+  # FQDN, while this client has always addressed the provider by its short
+  # tailnet hostname, so composing from host+port keeps the rendered value
+  # byte-identical. Still mkDefault, so an explicit host override (oci-melb-1
+  # points at its loopback cache) continues to win.
+  niks3Write = config.repo.internal.niks3Write;
 in
 {
   services.niks3-auto-upload = lib.mkIf hasHostSecrets {
     enable = lib.mkDefault true;
-    serverUrl = lib.mkDefault "http://oci-melb-1:5751";
+    serverUrl = lib.mkDefault "${niks3Write.scheme}://${niks3Write.host}:${toString niks3Write.port}";
     authTokenFile = "/run/secrets/niks3.api_token";
   };
 

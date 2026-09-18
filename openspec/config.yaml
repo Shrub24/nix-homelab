@@ -18,7 +18,7 @@ context: |
   - Complexity: Native NixOS services and simple rollout flow before orchestration tooling
   
   # Technology Stack
-  - Base OS: NixOS 25.11 stable
+  - Base OS: nixpkgs unstable baseline for active host configs (see research/STACK.md)
   - Package management: Nix flakes (built into current Nix)
   - Remote bootstrap: `nixos-anywhere` 1.13.0
   - Declarative partitioning: `disko` 1.13.0
@@ -30,17 +30,19 @@ context: |
   - Media automation: Beets (inbox-only singleton ingestion)
   
   # Repository Structure
-  - Host-centric layout: `modules/hosts/<host>/default.nix` registered as a typed `nixos.configurations.<host>` record in the flake-parts host registry (`modules/flake/registry.nix`)
-  - Module boundaries: `modules/flake/` (flake-parts composition including concern-owned aspect contributors and private `_aspects`/`_backups`/`_builder-access` paths), `modules/services/`, `modules/applications/`
-  - Provider isolation: `modules/providers/<provider>/` for provider-specific defaults
-  - Flake entrypoint: minimal flake-parts `flake.nix` discovering `modules/` behind one temporary four-entry `filterNot` boundary (`applications`, `hosts`, `providers`, `services`); `nixosConfigurations.<host>` outputs materialized from the host registry
-  - Disko layouts are host-local beside their consumer under `modules/hosts/<host>/`; there is no shared `modules/storage/` menu
+  - Host-centric layout: `modules/hosts/<host>/default.nix` declares a typed `nixos.hosts.<id>` record (target system, Tailscale identity, aspect selection, reimage facts); `modules/flake/host-registry.nix` validates the records and materializes `nixosConfigurations`, and host-private composition stays beside the record under underscore-prefixed names (`_nixos.nix`, `_disko-*.nix`)
+  - Module boundaries: domain aspect contributors own their private leaves (`modules/identity/`, `modules/notifications/`, `modules/cache/`, `modules/music/`, `modules/admin/`, `modules/edge/`, `modules/oci/`), `modules/fleet/` holds the internal transport contracts, `modules/flake/` holds flake materialization plus the fleet baseline and support quartet, and `modules/services/` holds the transitional unconverted leaves
+  - Import boundary: the import-tree filter is exactly `[ "services" ]` (D-056); every other root is discovered, and aspect selection is enablement
+  - Cross-host transports: exactly two typed internal contracts (`postgres`, `niks3Write`) in `modules/fleet/internal-contracts.nix`, resolved from the provider's canonical host record; identity and ntfy deliberately stay web-catalog contracts
+  - Flake entrypoint: minimal flake-parts `flake.nix` discovering `modules/`; local evaluation uses the Git-tree form `.#`, and `path:` only where no Git repository exists (D-057)
+  - Disko layouts are host-local under `modules/hosts/<host>/_disko-*.nix`; there is no shared `modules/storage/` menu
   - Documentation authority: `docs/` directory (architecture, decisions, plan, context-history)
   - Secrets structure: `secrets/common.yaml` (shared), `secrets/hosts/<host>/*.yaml` (host-scoped), `secrets/applications/`, `secrets/services/`
   
   # Development Practices
-  - Code formatting: `nix fmt` as default formatter gate before deploys
-  - Validation: `nix flake check` for flake outputs
+  - Code formatting: `treefmt` (all languages) and `nix fmt` (Nix only); gate with `treefmt --fail-on-change`
+  - Validation: `just checks all` for the contract suites, `nix flake check` for flake outputs, `openspec validate <change> --strict` for change artifacts
+  - Flake references: local evaluation uses the Git-tree form `.#`; `path:` only where no Git repository exists, and the Git index is a guarded precondition (D-057)
   - Initial bootstrap: `nixos-anywhere`
   - Host updates: `nixos-rebuild --target-host`
   - Fleet deployment: `deploy-rs`

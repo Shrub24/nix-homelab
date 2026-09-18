@@ -1151,3 +1151,51 @@ Supersedes/updates:
 References:
 
 - `openspec/changes/split-state-backups-cache-publication/` (OPSPLIT-1..4)
+
+## D-056: Canonical host identity, discovered host contributors, and internal transport contracts
+
+Status: Accepted
+
+Decision:
+
+- host identity is a typed record: each host declares `nixos.hosts.<id>` from its own discovered contributor `modules/hosts/<host>/default.nix`, owning the target system, the Tailscale identity (`hostname` plus a `tailnetSuffix` read from the single suffix authority), the deferred NixOS composition (`composition.extraModules` / `.aspects` / `.fragments`), and its reimage bootstrap metadata. The schema and the generic materializer (`inputs.nixpkgs.lib.nixosSystem` per record) live in `modules/flake/host-registry.nix`, which names no concrete host. Duplicate host IDs, malformed IDs, ID/key mismatches, duplicate Tailscale identities, and missing required fields fail closed with named `host-registry:` errors
+- hosts are discovered contributors: `hosts` left the import-tree exclusion, every host-private NixOS fragment and disko layout is underscore-private (`_nixos.nix`, `_disko-*.nix`, `_cockpit-auth.nix`, `_admin-runtime.nix`), and `facter.json` keeps its name because its path is a host-derivation input. `modules/flake/registry.nix` is reduced to the `flake.bootstrap.nodes` projection over `config.nixos.hosts` (with `hostName` and `flake` derived from the record key); the transitional loader and the concrete `nixos.configurations` table are deleted. The import filter is exactly `[ "services" ]`
+- deploy and web metadata reference canonical host IDs and fail on unknown references ("reference, do not merge"): `modules/flake/deploy.nix` validates node keys, `edgeHost`, and `deployOrder` entries against declared IDs (`deploy: unknown host reference '<name>' is not a declared canonical host ID`), while `lib/deploy/hosts.nix` keeps owning every physical SSH/deploy fact; `modules/flake/web-policy.nix` validates web-policy host keys against declared IDs and every host-backed origin FQDN against the matching record's derived `tailscale.fqdn` (host-backed = the origin carries the tailnet suffix), while externally managed public names and `127.0.0.1` loopback origins stay literal
+- the tailnet suffix has exactly one authority, `policy/globals.nix` `tailnet.suffix`, read by the host records and by `policy/web-services.nix`; `policy/web-services.nix` remains plain data so its module, script, and test consumers are unchanged
+- exactly two internal transport contracts exist (`modules/fleet/internal-contracts.nix`): the shared PostgreSQL substrate and the private Niks3 write API. Each declares a provider host ID, a port, and the resolved private endpoint (`host`/`fqdn`/`url`); consumers read `config.repo.internal.*` instead of restating a provider literal, and three named checks fail closed — unknown provider host, provider host that does not enable the required capability, and declared-port drift against the port the provider actually listens on. Identity (Kanidm) and ntfy deliberately remain web-catalog contracts (`repo.web.catalog`) and MUST NOT gain an internal contract; `tests/check-internal-contracts.sh` pins the contract surface to exactly those two
+- settled concerns moved into semantic domain paths while `modules/flake/` retains materialization: `modules/identity/` (the two `identity-client` contributors plus `identity-provider`), `modules/notifications/` (`notify`, `push-server`), `modules/cache/` (`state-backups`, `cache-publisher`, `niks3-cache`, with the private Niks3 leaves under `modules/cache/_backups/`), `modules/music/` (`music`, `dj`, with `_dj/`), `modules/admin/` (`cockpit`, `termix`, `vaultwarden`, `homepage`, `gatus`, `beszel`, `webhook`), `modules/edge/` (`edge` + `_edge/`), `modules/oci/` (`oci` + `_oci/`), and `modules/fleet/` (the internal contracts). `modules/flake/` keeps `registry.nix`, `host-registry.nix`, `deploy.nix`, `packages.nix`, `dev.nix`, `scaffold.nix`, the support quartet (`provenance`, `oci-images`, `fleet-packages`, `web-policy`), the foundation aspects `base`/`shell`/`networking`/`tailscale` with `_aspects/`, `_builder-access/`, and the remaining placement aspects. Aspect names are unchanged and discovery still reaches every contributor
+
+Supersedes/updates:
+
+- supersedes the typed `nixos.configurations.<host>` registry records and the `hosts` import-tree exclusion introduced by D-047 Stage 1; the concern-owned contributor model (D-050), the multi-contributor single-aspect merge (D-051), and the placement surface (D-053, D-054) remain in force
+- supersedes D-055's path statement that the private Niks3 leaves live under `modules/flake/_backups/` — they now live under `modules/cache/_backups/`; the `state-backups`/`cache-publisher` split itself remains in force, and D-055's literal-endpoint clause is discharged by this decision's Niks3-write contract
+- updates the current-state path and layout statements in `ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md`, `docs/architecture.md`, `docs/plan.md`, and `docs/context-history.md`; historical decision bodies are unchanged
+
+References:
+
+- `openspec/changes/dendritic-stage-8-host-identity-contracts/` (HIC-1-HIC-5)
+- `modules/flake/host-registry.nix`, `modules/flake/registry.nix`, `modules/flake/deploy.nix`, `modules/flake/web-policy.nix`, `modules/fleet/internal-contracts.nix`, `policy/globals.nix`
+- `tests/check-internal-contracts.sh`, `tests/check-dendritic-scaffold-contract.sh`
+
+## D-057: Tracked-only provenance and the Git-tree flake reference form
+
+Status: Accepted
+
+Decision:
+
+- `environment.etc."nixos-source".source = self.outPath` stays as written, and every local reference to this repository's flake uses the Git-tree form (`.#` / `.#<output>`): the `justfile` recipes, the workflow files, `scripts/resolve-host-config.sh`, the documented cutover command, and the `flake.bootstrap.nodes.<host>.flake` projection consumed by `nixos-anywhere`. The published copy is therefore the tracked configuration set (~5.5 MB) instead of the raw working directory (440 MB, including `.git`, `opentofu/**/.terraform`, `.hp-forge-esp-backup`, editor caches, and the plaintext `mTLS.key`, `secrets.auto.tfvars`, and `terraform.tfstate` files)
+- tracking is the single filtering authority: no `lib.fileset`, `cleanSourceWith`, or `filterSource` call is added, and the temporary exclusion list written during this change's first pass is deleted. `lib.fileset.gitTracked` is unusable for a `path:`-resolved flake by design, `lib.fileset.toSource` is `cleanSourceWith` underneath, and filtering a store path would name the copy against the unfiltered hash and rebuild every host per commit
+- `path:` is retained in exactly three places: contract tests that evaluate a copied tree with no Git repository (the harness's `make_copy` excludes `.git`/`.jj`, so `.#` cannot resolve) or that evaluate the working tree while injecting untracked fixtures; the `nvfetcher-refresh` validation, which must see freshly regenerated sources that may be untracked; and `scripts/export-web-services-policy.sh`, which resolves the tree rather than evaluating host configuration. Every other local reference uses `.#`
+- `system.configurationRevision` is meaningful again, because `self.rev`/`self.dirtyRev` are populated for the Git-tree form; under `path:` it was `null`
+- the Git index is a precondition for evaluation. Colocated jj keeps it in sync (a file is staged when jj first tracks it), but an external index command removed 19 tracked entries during Stage 8 and evaluation silently used a partial tree. `tests/check-flake-source-tracking.sh`, wired into `just checks all`, fails when a jj-tracked file is missing from the index and names the repair (`git add -A`); index-mutating Git commands (`git reset`, `git checkout`, `git stash`) are not used in this colocated repository
+- project-owned agent policy — the reference-form rule, the index rule, and the delegation/apply discipline — lives in `AGENTS.md`, because `openspec update` regenerates the OpenSpec-managed integration files under `.pi/`, `.github/`, and `.opencode/` and would drop anything stored only there
+
+Supersedes/updates:
+
+- resolves `TD-19` (the provenance copy carrying working-directory debris) and removes the null-`configurationRevision` consequence recorded for the `path:` form
+- updates the current-state statements about local evaluation and published provenance in `ARCHITECTURE.md`, `STRUCTURE.md`, `docs/architecture.md`, and `CONVENTIONS.md`; historical decision bodies are unchanged
+
+References:
+
+- `openspec/changes/restrict-provenance-source-copy/` (PSC-1-PSC-4)
+- `modules/flake/provenance.nix`, `tests/check-flake-source-tracking.sh`, `AGENTS.md`

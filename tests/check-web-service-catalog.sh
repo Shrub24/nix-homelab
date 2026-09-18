@@ -75,4 +75,65 @@ nix eval --impure --no-write-lock-file --expr '
 ' > /dev/null
 echo "deploy default-target boundary: PASS"
 
+# Stage 8 task 3.2 (HIC-3): host-backed web routing references canonical host
+# identities. Every `hosts` table key must be a declared canonical host ID, and
+# every host-backed origin FQDN must be composed from a canonical host ID plus
+# the single tailnet suffix authority (policy/globals.nix).
+web_refs="$(nix eval --impure --raw --no-write-lock-file --expr '
+  let
+    flake = builtins.getFlake (toString ./.);
+    globals = import ./policy/globals.nix;
+    policy = import ./policy/web-services.nix;
+    hostsTable = policy.hosts or { };
+    origins = builtins.concatMap (
+      hostName:
+      builtins.map (svc: svc.origin.host or null) (builtins.attrValues (hostsTable.${hostName}.services or { }))
+    ) (builtins.attrNames hostsTable);
+  in
+  builtins.toJSON {
+    suffix = globals.tailnet.suffix;
+    policyHostKeys = builtins.attrNames hostsTable;
+    canonicalHostKeys = builtins.attrNames flake.nixosConfigurations;
+    hostNames = builtins.mapAttrs (_: c: c.config.networking.hostName or null) flake.nixosConfigurations;
+    originHosts = builtins.filter (h: h != null) origins;
+  }
+')" || { echo "web routing references must evaluate" >&2; exit 1; }
+python3 - "$web_refs" <<'PYEOF'
+import json
+import sys
+
+got = json.loads(sys.argv[1])
+suffix = got["suffix"]
+canonical = set(got["canonicalHostKeys"])
+errors = []
+
+if not canonical:
+    errors.append("no canonical host IDs resolved")
+
+unknown_keys = sorted(set(got["policyHostKeys"]) - canonical)
+if unknown_keys:
+    errors.append(f"policy hosts keys are not canonical host IDs: {unknown_keys!r}")
+
+# Non-vacuity: the policy must actually contain host-backed origins to check.
+host_backed = sorted({h for h in got["originHosts"] if h.endswith("." + suffix)})
+if not host_backed:
+    errors.append("no host-backed origin FQDN found (this check would be vacuous)")
+
+for fqdn in host_backed:
+    host_id = fqdn[: -(len(suffix) + 1)]
+    if host_id not in canonical:
+        errors.append(f"origin FQDN {fqdn!r} does not name a canonical host ID")
+        continue
+    if got["hostNames"].get(host_id) != host_id:
+        errors.append(
+            f"origin FQDN {fqdn!r} disagrees with canonical host {host_id!r} "
+            f"(networking.hostName {got['hostNames'].get(host_id)!r})"
+        )
+
+if errors:
+    print("; ".join(errors), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+echo "web routing canonical-host references: PASS"
+
 echo "check-web-service-catalog: PASS"

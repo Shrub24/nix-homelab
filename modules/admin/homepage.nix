@@ -1,4 +1,4 @@
-# Homepage dashboard deployment aspect (dendritic Stage 7, D-053). Published
+# Homepage dashboard deployment aspect (dendritic Stage 7, D-053; self-contained placement aspect since D-054). Published
 # from this discovered contributor and selected only on `la-admin-1` (explicit
 # `aspects.homepage`). Selecting the aspect imports the Homepage leaf and owns
 # its enablement; the runtime composition — policy origin host/port, the

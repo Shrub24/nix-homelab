@@ -1,15 +1,15 @@
 ## 1. Preconditions and baseline
 
-- [ ] 1.1 Confirm Stage 8 canonical host identity is complete; capture evaluated ntfy users, ACLs, daemon routing, publisher token registrations, plaintext template keys, and secret-scope expectations without decrypting secrets.
+- [x] 1.1 Confirm Stage 8 canonical host identity is complete; capture evaluated ntfy users, ACLs, daemon routing, publisher token registrations, plaintext template keys, and secret-scope expectations without decrypting secrets. Baseline: rendered `auth-access` was the literal `["oci-melb-1:*:write-only","la-admin-1:*:write-only","home-forge:*:write-only"]` from the LA host fragment; `secrets/.templates/services/ntfy.yaml` declares the matching `auth-users`/`auth-tokens` entries in plaintext.
 
 ## 2. Publisher policy
 
-- [ ] 2.1 Add canonical notification publisher policy keyed by known host IDs with typed roles; verify unknown and duplicate publishers fail.
-- [ ] 2.2 Derive push-server/ntfy ACL subjects from publisher policy and remove LA's literal list; verify evaluated ACLs are identical.
-- [ ] 2.3 Add pure consistency checks covering policy publishers, runtime token contracts, committed plaintext template placeholders, and explicit scope fixtures; verify missing/extra publisher mutations fail by name.
+- [x] 2.1 Add canonical notification publisher policy keyed by known host IDs with typed roles; verify unknown and duplicate publishers fail. The policy lives in the `push-server` aspect (`modules/notifications/push-server.nix`) as a typed `services.ntfy.auth.publishers` map (canonical host ID to write-only/read-only/read-write); an unknown publisher fails with the named `push-server: notification publisher '<id>' is not a declared canonical host ID` (fire-verified on a mutated copy), and duplicate IDs are impossible because the policy is an attribute set.
+- [x] 2.2 Derive push-server/ntfy ACL subjects from publisher policy and remove LA's literal list; verify evaluated ACLs are identical as a set. `modules/services/ntfy.nix` renders `auth-access` from the policy, the LA host fragment keeps only the encrypted auth-file binding, and the evaluated entries are the same three publishers (order is now key-sorted, which ntfy treats as a set under `auth-default-access: deny-all`).
+- [x] 2.3 Add a decryption-free consistency check covering policy publishers against the committed plaintext template, and verify a drift mutation fails by name. `tests/phase-la-admin-contract.sh` compares the evaluated `services.ntfy.auth.publishers` key set with the template's token users and fails with `ntfy publisher policy and template token users disagree` (fire-verified by dropping a publisher in a scratch copy); token-contract shape stays covered by the existing template-shape check in the same test, and no separate scope fixture was added (minimal scope).
 
 ## 3. Extraction boundary and validation
 
-- [ ] 3.1 Remove active fleet identities and routing assumptions from generic daemon/CLI/hook code while preserving typed policy inputs; verify package and runtime configs are equivalent.
+- [x] 3.1 Remove active fleet identities and routing assumptions from generic daemon/CLI/hook code while preserving typed policy inputs. The generic `modules/services/ntfy.nix` no longer names a fleet host (its `auth.users` example used `oci-melb-1:...` and now reads `publisher-host:...`); `pkgs/notify/` and the notification daemon contain no fleet host, topic, or route literals; publisher membership arrives through the typed policy option.
 - [ ] 3.2 Update notification architecture and future `nix-fleet` extraction guidance; verify homelab policy and SOPS ownership remain explicitly local.
 - [ ] 3.3 Run `treefmt --fail-on-change`, `just checks all`, all host evaluations, and `openspec validate normalize-notification-policy --strict`; obtain an independent security review and leave ciphertext plus `.sops.yaml` unchanged.

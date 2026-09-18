@@ -2,7 +2,7 @@
 # mechanisms moved out of the music coordinator — the ffmpeg-preprocess
 # binary/service, the dropbox path unit and debounce poke/timers, the scoped
 # slskd-settle polkit rule, and the slskd completion hook. Imported only by
-# the music composition (modules/flake/music.nix); publishes no aspect and is
+# the music composition (modules/music/music.nix); publishes no aspect and is
 # never host-imported. Paths/units/hardening/ready flag are unchanged.
 {
   lib,

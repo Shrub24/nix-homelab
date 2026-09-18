@@ -7,10 +7,12 @@
 # Directional contracts (decouple-identity-admin-capabilities IDB-1/IDB-2):
 #   * the provider never reads an admin workload namespace
 #     (`applications.admin` is not referenced anywhere below);
-#   * the canonical provider URL is consumed from the identity-client
-#     contract (`services.identity.oidc.providerUrl`), whose default is
-#     derived from canonical web policy — the provider never writes client
-#     namespace state;
+#   * the provider derives its own public URL from canonical web policy
+#     (`repo.web.currentHost.services."kanidm-admin".publicUrl`, the
+#     `providerPublicUrl` binding below) and never reads or writes the client
+#     namespace (`services.identity.oidc.*` is only asserted to agree, in the
+#     Kanidm leaf), so the identity-client contract is consumed by clients,
+#     not by the provider;
 #   * endpoint/TLS data comes from canonical web policy
 #     (`repo.web.currentHost.services."kanidm-admin"`), never from an admin
 #     namespace re-export.

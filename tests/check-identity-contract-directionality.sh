@@ -100,26 +100,27 @@ import sys
 
 d = sys.argv[1]
 
-p = d + "/modules/flake/registry.nix"
+p = d + "/modules/hosts/la-admin-1/default.nix"
 s = open(p).read()
-assert s.count("            aspects.vaultwarden\n") == 1, "vaultwarden selection anchor drifted"
-assert s.count("            aspects.gatus\n") == 1, "gatus selection anchor drifted"
-assert s.count("            aspects.beszel\n") == 1, "beszel selection anchor drifted"
-assert s.count("            aspects.homepage\n") == 1, "homepage selection anchor drifted"
-assert s.count("            aspects.webhook\n") == 1, "webhook selection anchor drifted"
-s = s.replace("            aspects.vaultwarden\n", "", 1)
-s = s.replace("            aspects.gatus\n", "", 1)
-s = s.replace("            aspects.beszel\n", "", 1)
-s = s.replace("            aspects.homepage\n", "", 1)
-s = s.replace("            aspects.webhook\n", "", 1)
+n = s.count("aspects.vaultwarden\n")
+assert n == 1, f"vaultwarden selection anchor drifted (count={n})"
+assert s.count("        aspects.gatus\n") == 1, "gatus selection anchor drifted"
+assert s.count("        aspects.beszel\n") == 1, "beszel selection anchor drifted"
+assert s.count("        aspects.homepage\n") == 1, "homepage selection anchor drifted"
+assert s.count("        aspects.webhook\n") == 1, "webhook selection anchor drifted"
+s = s.replace("        aspects.vaultwarden\n", "", 1)
+s = s.replace("        aspects.gatus\n", "", 1)
+s = s.replace("        aspects.beszel\n", "", 1)
+s = s.replace("        aspects.homepage\n", "", 1)
+s = s.replace("        aspects.webhook\n", "", 1)
 open(p, "w").write(s)
 
-p = d + "/modules/hosts/la-admin-1/default.nix"
+p = d + "/modules/hosts/la-admin-1/_nixos.nix"
 s = open(p).read()
 # The applications.admin block, the ./quantum.nix import, and the quantum
 # force-disable were deleted from the host in task 3.3; only the host-local
 # variant fragment removal remains.
-s = s.replace("    ./cockpit-auth.nix\n", "", 1)
+s = s.replace("    ./_cockpit-auth.nix\n", "", 1)
 vaultwarden_secret = "    admin.vaultwarden.secretFiles.host = ../../../secrets/applications/admin.yaml;\n"
 assert s.count(vaultwarden_secret) == 1, "vaultwarden secret binding anchor drifted"
 s = s.replace(vaultwarden_secret, "", 1)
@@ -181,14 +182,11 @@ import sys
 
 d = sys.argv[1]
 
-p = d + "/modules/flake/registry.nix"
-s = open(p).read()
-i = s.index("      la-admin-1 = {")
-j = s.index("      home-forge = {", i)
-la = s[i:j]
-assert la.count("            aspects.identity-provider\n") == 1, "identity-provider selection anchor drifted"
-la = la.replace("            aspects.identity-provider\n", "", 1)
-s = s[:i] + la + s[j:]
+p = d + "/modules/hosts/la-admin-1/default.nix"
+la = open(p).read()
+assert la.count("        aspects.identity-provider\n") == 1, "identity-provider selection anchor drifted"
+la = la.replace("        aspects.identity-provider\n", "", 1)
+s = la
 open(p, "w").write(s)
 PYEOF
 
@@ -238,14 +236,11 @@ import sys
 
 d = sys.argv[1]
 
-p = d + "/modules/flake/registry.nix"
-s = open(p).read()
-i = s.index("      la-admin-1 = {")
-j = s.index("      home-forge = {", i)
-la = s[i:j]
-assert la.count("            aspects.identity-client\n") == 1, "identity-client selection anchor drifted"
-la = la.replace("            aspects.identity-client\n", "", 1)
-s = s[:i] + la + s[j:]
+p = d + "/modules/hosts/la-admin-1/default.nix"
+la = open(p).read()
+assert la.count("        aspects.identity-client\n") == 1, "identity-client selection anchor drifted"
+la = la.replace("        aspects.identity-client\n", "", 1)
+s = la
 open(p, "w").write(s)
 
 # The copied host also carries an unrelated identity-client consumer
@@ -254,7 +249,7 @@ open(p, "w").write(s)
 # "The option services.identity does not exist" error fires before Termix's
 # named contract throw. Remove the exact host block (anchor + drift
 # assertion) so the negative case exercises only the Termix guard.
-p = d + "/modules/hosts/la-admin-1/default.nix"
+p = d + "/modules/hosts/la-admin-1/_nixos.nix"
 s = open(p).read()
 hostauth = """    identity.hostAuth = {
       enable = true;
@@ -343,7 +338,7 @@ fi
 # dependency fails these greps.
 # Comment-only lines are excluded: the contract headers document the
 # forbidden namespace by name, and a name mention is not a read.
-if grep -RnE --include='*.nix' 'applications\.admin' modules/flake/identity-provider.nix modules/services/admin/kanidm.nix \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/identity/identity-provider.nix modules/services/admin/kanidm.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "identity-provider/Kanidm leaf must not read the applications.admin namespace"
 fi
@@ -378,7 +373,7 @@ import sys
 
 # 1. The LA host imports only its two host-private fragments: no direct
 # host-to-service implementation import may return (D-053/D-054 invariant).
-host = open("modules/hosts/la-admin-1/default.nix").read()
+host = open("modules/hosts/la-admin-1/_nixos.nix").read()
 i = host.index("  imports = [")
 j = host.index("\n  ];", i)
 imports = host[i:j].splitlines()[1:]  # skip the opening 'imports = [' line
@@ -386,73 +381,70 @@ for line in imports:
     entry = line.strip()
     if not entry or entry.startswith("#"):
         continue
-    if entry not in ("./cockpit-auth.nix", "./_admin-runtime.nix"):
+    if entry not in ("./_cockpit-auth.nix", "./_admin-runtime.nix"):
         raise SystemExit(f"LA host imports must contain only cockpit-auth/_admin-runtime fragments, found: {entry!r}")
 
 # 2. LA must select exactly the ten extracted/explicit placement aspects,
 # one selection line each, plus the support quartet and foundation/operational
 # aspects; no admin-hub selection may return.
-registry = open("modules/flake/registry.nix").read()
-i = registry.index("      la-admin-1 = {")
-j = registry.index("      home-forge = {", i)
-la = registry[i:j]
+la = open("modules/hosts/la-admin-1/default.nix").read()
 placement = [
     "edge", "cockpit", "push-server", "identity-provider", "vaultwarden",
     "termix", "gatus", "beszel", "homepage", "webhook",
 ]
 for a in placement:
-    if la.count(f"            aspects.{a}\n") != 1:
-        raise SystemExit(f"LA registry record must select aspects.{a} exactly once")
+    if la.count(f"        aspects.{a}\n") != 1:
+        raise SystemExit(f"LA host record must select aspects.{a} exactly once")
 if "aspects.admin-hub" in la:
-    raise SystemExit("LA registry record must not re-select the deleted admin-hub aspect")
+    raise SystemExit("LA host record must not re-select the deleted admin-hub aspect")
 for a in ["provenance", "oci-images", "fleet-packages", "web-policy", "identity-client",
           "base", "shell", "networking", "tailscale", "notify",
           "state-backups", "cache-publisher",
           "builder-access", "observability-agent"]:
-    if la.count(f"            aspects.{a}\n") != 1:
-        raise SystemExit(f"LA registry record must explicitly select aspects.{a} exactly once")
+    if la.count(f"        aspects.{a}\n") != 1:
+        raise SystemExit(f"LA host record must explicitly select aspects.{a} exactly once")
 PYEOF
-if ! grep -q 'oauth2Clients = {' modules/flake/identity-provider.nix \
-  || ! grep -q 'webPolicyKanidmUrl' modules/flake/identity-oidc.nix; then
+if ! grep -q 'oauth2Clients = {' modules/identity/identity-provider.nix \
+  || ! grep -q 'webPolicyKanidmUrl' modules/identity/identity-oidc.nix; then
   fail "provider-owned explicit oauth2 secret-source map / web-policy URL default missing"
 fi
 if grep -nE 'services\.identity\.oidc(\.[A-Za-z0-9_]+)?[[:space:]]*(=[^=]|=$)' \
-  modules/flake/identity-provider.nix modules/services/admin/kanidm.nix; then
+  modules/identity/identity-provider.nix modules/services/admin/kanidm.nix; then
   fail "identity-provider/Kanidm leaf must not write services.identity.oidc.* (identity-client owns the contract)"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/flake/termix.nix modules/services/admin/termix.nix \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/termix.nix modules/services/admin/termix.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "termix aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/flake/vaultwarden.nix modules/services/admin/vaultwarden.nix \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/vaultwarden.nix modules/services/admin/vaultwarden.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "vaultwarden aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/flake/gatus.nix modules/services/admin/gatus.nix \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/gatus.nix modules/services/admin/gatus.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "gatus aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/flake/beszel.nix modules/services/admin/beszel.nix \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/beszel.nix modules/services/admin/beszel.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "beszel aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/flake/homepage.nix modules/services/admin/homepage \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/homepage.nix modules/services/admin/homepage \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "homepage aspect/intrinsic leaf/data must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/flake/webhook.nix modules/services/admin/webhook.nix \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/webhook.nix modules/services/admin/webhook.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "webhook aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'repo\.web' modules/flake/webhook.nix modules/services/admin/webhook.nix \
+if grep -RnE --include='*.nix' 'repo\.web' modules/admin/webhook.nix modules/services/admin/webhook.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "webhook aspect/intrinsic leaf must consume no web policy (external/manual route only)"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/flake/cockpit.nix modules/services/admin/cockpit.nix modules/services/admin/cockpit/loopback-tls.nix \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/cockpit.nix modules/services/admin/cockpit.nix modules/services/admin/cockpit/loopback-tls.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "cockpit aspect/intrinsic leaves must not read the applications.admin namespace"
 fi
-if grep -nE 'applications\.admin\.(dataRoot|secretFiles\.host)' modules/hosts/la-admin-1/default.nix; then
+if grep -nE 'applications\.admin\.(dataRoot|secretFiles\.host)' modules/hosts/la-admin-1/_nixos.nix; then
   fail "LA host must not re-declare the migrated applications.admin host observables"
 fi
 
@@ -472,17 +464,17 @@ import sys
 
 d = sys.argv[1]
 
-p = d + "/modules/flake/registry.nix"
+p = d + "/modules/hosts/la-admin-1/default.nix"
 s = open(p).read()
-assert s.count("            aspects.termix\n") == 1, "termix selection anchor drifted"
+assert s.count("        aspects.termix\n") == 1, "termix selection anchor drifted"
 s = s.replace(
-    "            aspects.termix\n",
-    "            aspects.termix\n            aspects.vaultwarden\n",
+    "        aspects.termix\n",
+    "        aspects.termix\n        aspects.vaultwarden\n",
     1,
 )
 open(p, "w").write(s)
 
-p = d + "/modules/hosts/la-admin-1/default.nix"
+p = d + "/modules/hosts/la-admin-1/_nixos.nix"
 s = open(p).read()
 anchor = "    # (decouple-identity-admin-capabilities 3.1).\n"
 assert s.count(anchor) == 1, "vaultwarden host binding insertion anchor drifted"
@@ -548,12 +540,12 @@ import sys
 
 d = sys.argv[1]
 
-p = d + "/modules/flake/registry.nix"
+p = d + "/modules/hosts/la-admin-1/default.nix"
 s = open(p).read()
-assert s.count("            aspects.vaultwarden\n") == 1, "vaultwarden selection anchor drifted"
+assert s.count("        aspects.vaultwarden\n") == 1, "vaultwarden selection anchor drifted"
 s = s.replace(
-    "            aspects.vaultwarden\n",
-    "            aspects.vaultwarden\n            aspects.gatus\n",
+    "        aspects.vaultwarden\n",
+    "        aspects.vaultwarden\n        aspects.gatus\n",
     1,
 )
 open(p, "w").write(s)
@@ -623,12 +615,12 @@ import sys
 
 d = sys.argv[1]
 
-p = d + "/modules/flake/registry.nix"
+p = d + "/modules/hosts/la-admin-1/default.nix"
 s = open(p).read()
-assert s.count("            aspects.gatus\n") == 1, "gatus selection anchor drifted"
+assert s.count("        aspects.gatus\n") == 1, "gatus selection anchor drifted"
 s = s.replace(
-    "            aspects.gatus\n",
-    "            aspects.gatus\n            aspects.beszel\n",
+    "        aspects.gatus\n",
+    "        aspects.gatus\n        aspects.beszel\n",
     1,
 )
 open(p, "w").write(s)
@@ -693,17 +685,17 @@ import sys
 
 d = sys.argv[1]
 
-p = d + "/modules/flake/registry.nix"
+p = d + "/modules/hosts/la-admin-1/default.nix"
 s = open(p).read()
-assert s.count("            aspects.beszel\n") == 1, "beszel selection anchor drifted"
+assert s.count("        aspects.beszel\n") == 1, "beszel selection anchor drifted"
 s = s.replace(
-    "            aspects.beszel\n",
-    "            aspects.beszel\n            aspects.homepage\n",
+    "        aspects.beszel\n",
+    "        aspects.beszel\n        aspects.homepage\n",
     1,
 )
 open(p, "w").write(s)
 
-p = d + "/modules/hosts/la-admin-1/default.nix"
+p = d + "/modules/hosts/la-admin-1/_nixos.nix"
 s = open(p).read()
 anchor = "    # (decouple-identity-admin-capabilities 3.1).\n"
 assert s.count(anchor) == 1, "homepage host binding insertion anchor drifted"
@@ -838,12 +830,12 @@ import sys
 
 d = sys.argv[1]
 
-p = d + "/modules/flake/registry.nix"
+p = d + "/modules/hosts/la-admin-1/default.nix"
 s = open(p).read()
-assert s.count("            aspects.homepage\n") == 1, "homepage selection anchor drifted"
+assert s.count("        aspects.homepage\n") == 1, "homepage selection anchor drifted"
 s = s.replace(
-    "            aspects.homepage\n",
-    "            aspects.homepage\n            aspects.webhook\n",
+    "        aspects.homepage\n",
+    "        aspects.homepage\n        aspects.webhook\n",
     1,
 )
 open(p, "w").write(s)
@@ -885,7 +877,7 @@ PYEOF
 # 11. Cockpit subset (task 3.3): the provider-only mutation deselected the
 # admin-hub aspect (and with it the retired `applications.admin` namespace)
 # while `aspects.cockpit` stays selected; re-adding the host's LA
-# `./cockpit-auth.nix` variant restores only `loopbackTls.enable`. Cockpit
+# `./_cockpit-auth.nix` variant restores only `loopbackTls.enable`. Cockpit
 # must compose from the canonical web-policy route alone: the WebService
 # origins/UrlRoot from the cockpit-admin route, the explicit loopback socket
 # bind, and the loopback TLS material/ordering with the leaf's own named
@@ -897,11 +889,11 @@ import sys
 
 d = sys.argv[1]
 
-p = d + "/modules/hosts/la-admin-1/default.nix"
+p = d + "/modules/hosts/la-admin-1/_nixos.nix"
 s = open(p).read()
 anchor = "  imports = [\n"
 assert s.count(anchor) == 1, "host imports anchor drifted"
-s = s.replace(anchor, anchor + "    ./cockpit-auth.nix\n", 1)
+s = s.replace(anchor, anchor + "    ./_cockpit-auth.nix\n", 1)
 open(p, "w").write(s)
 PYEOF
 
@@ -971,7 +963,7 @@ PYEOF
 # mechanisms (section 5 ratchets the absence side).
 python3 - <<'PYEOF' || fail "host-local admin runtime fragment drifted"
 FRAG = "modules/hosts/la-admin-1/_admin-runtime.nix"
-HOST = "modules/hosts/la-admin-1/default.nix"
+HOST = "modules/hosts/la-admin-1/_nixos.nix"
 frag = open(FRAG).read()
 required_frag = [
     "sops.secrets = secretHelpers.mkSecretsFromMap ../../../secrets/applications/admin.yaml {",
@@ -1065,6 +1057,34 @@ for name in ("identity", "knownHosts"):
 if errs:
     print("; ".join(errs), file=sys.stderr)
     sys.exit(1)
+PYEOF
+
+# 13. oci-melb-1 / home-forge host-record pinning (Stage 8 HIC-1/HIC-2): the LA
+# pin in §5.2 covers la-admin-1 exactly-once across all selections; oci and
+# forge need the same duplicate-selection protection that the scaffold's 7b
+# exact-set assertions cannot give (they apply sort -u). Placement sets mirror
+# the 7b expectations: oci nine, forge three.
+python3 - <<'PYEOF' || fail "host-record selection pins drifted"
+pins = {
+    "modules/hosts/oci-melb-1/default.nix": [
+        "oci", "edge", "cockpit", "paperless", "postgres",
+        "ai-gateway", "karakeep", "niks3-cache", "phoenix",
+    ],
+    "modules/hosts/home-forge/default.nix": [
+        "dj", "music", "omniroute",
+    ],
+}
+shared = [
+    "provenance", "oci-images", "fleet-packages", "web-policy",
+    "base", "shell", "networking", "tailscale", "notify",
+    "state-backups", "cache-publisher", "internal-contracts",
+    "builder-access", "observability-agent",
+]
+for path, placement in pins.items():
+    body = open(path).read()
+    for a in placement + shared + (["identity-client"] if "oci-melb-1" in path else []):
+        if body.count(f"        aspects.{a}\n") != 1:
+            raise SystemExit(f"{path}: must select aspects.{a} exactly once")
 PYEOF
 
 echo "check-identity-contract-directionality: PASS"

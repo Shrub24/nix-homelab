@@ -6,6 +6,10 @@
 let
   cfg = config.services.admin.termix;
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
+  # Stage 8 task 3.2 (HIC-3): the tailnet suffix has one authority in
+  # policy/globals.nix, shared with the canonical host records and the web
+  # policy, so search-domain wiring cannot drift from host identity.
+  globals = import ../../../policy/globals.nix;
 in
 {
   options.services.admin.termix = {
@@ -162,7 +166,7 @@ in
           "0.0.0.0:8083:8080"
         ];
         extraOptions = [
-          "--dns-search=tail0fe19b.ts.net"
+          "--dns-search=${globals.tailnet.suffix}"
           "--dns=100.100.100.100"
         ];
         volumes = [

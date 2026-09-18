@@ -150,7 +150,13 @@ Canonical human-facing architecture and migration guidance lives under `docs/` (
 
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+Repository conventions are maintained in `CONVENTIONS.md`; the durable rules an agent needs most are summarized here.
+
+- **Flake reference form:** local evaluation and operator entrypoints use the Git-tree form `.#`. `path:` is reserved for the three cases where it is strictly better: evaluation of a copied tree with no Git repository (the contract tests), evaluation that must see freshly generated files that are not tracked yet (the nvfetcher refresh validation), and explicit path resolution that does not evaluate host configuration (`scripts/export-web-services-policy.sh`). See `## Project Policy` below for the index precondition that comes with `.#`.
+- **Namespaces:** `applications.<name>` for composition roots, `services.<name>` and `services.<domain>.<name>` for leaf services, `fleet.<name>` for fleet-wide options, `nixos.hosts.<id>` for canonical host records, `repo.web.*` for resolved web policy, and `repo.internal.*` for the two internal transport contracts.
+- **Naming:** kebab-case files and directories, camelCase flake outputs, dot-separated Nix option namespaces, kebab-case host IDs and secret file names.
+- **Ownership:** services and applications own their own `sops.secrets`, `sops.templates`, assertions, and runtime wiring; hosts provide host-scoped secret paths and enables, never internal secret wiring.
+- **Secret rule:** never decrypt or edit secrets manually; that work belongs to the operator.
 
 NEVER TRY TO DECRYPT OR EDIT SECRETS MANUALLY ALWAYS LEAVE IT TO THE USER
 
@@ -160,7 +166,15 @@ NEVER TRY TO DECRYPT OR EDIT SECRETS MANUALLY ALWAYS LEAVE IT TO THE USER
 
 ## Architecture
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
+Host-centric NixOS fleet infrastructure composed with flake-parts and `denful/import-tree` discovery over `modules/`.
+
+- **Hosts** are discovered contributors: `modules/hosts/<host>/default.nix` declares one typed `nixos.hosts.<id>` record (target system, Tailscale identity, explicit aspect selection, reimage facts). `modules/flake/host-registry.nix` validates those records and materializes `nixosConfigurations`; host-private composition and hardware facts stay underscore-prefixed beside the record (`_nixos.nix`, `_disko-*.nix`, `_cockpit-auth.nix`, `_admin-runtime.nix`).
+- **Aspects are the deployment surface:** a discovered concern contributor publishes `flake.modules.nixos.<aspect>` from its domain directory (`modules/identity/`, `modules/notifications/`, `modules/cache/`, `modules/music/`, `modules/admin/`, `modules/edge/`, `modules/oci/`, `modules/fleet/`), while `modules/flake/` keeps materialization and the fleet baseline. Selection is enablement: host records select aspects, and no host imports an implementation directly.
+- **One import boundary remains:** the import-tree filter excludes exactly `[ "services" ]`, the unconverted leaf backlog; every other root is discovered.
+- **Cross-host transports are narrow and typed:** `modules/fleet/internal-contracts.nix` declares the two contracts (shared PostgreSQL, private Niks3 write API) and consumers read `config.repo.internal.*`; identity and ntfy deliberately remain web-catalog contracts.
+- **Metadata references canonical host IDs:** deploy metadata (`lib/deploy/hosts.nix` with `modules/flake/deploy.nix`) and web policy (`policy/web-services.nix` with `modules/flake/web-policy.nix`) validate every host reference and fail closed on unknown names.
+
+The current model is D-056 in `docs/decisions.md`; the full layer and data-flow description is `ARCHITECTURE.md`, `STRUCTURE.md`, and `docs/architecture.md`.
 
 <!-- openspec:architecture-end -->
 
@@ -179,6 +193,35 @@ Do not make direct repo edits outside established workflows unless the user expl
 
 <!-- openspec:workflow-end -->
 <!-- openspec:profile-end -->
+
+## Project Policy
+
+Project-owned rules that must survive tool regeneration. They live here rather than in the OpenSpec-managed integration files (`.pi/`, `.github/prompts`, `.github/skills`, `.opencode/`), which `openspec update` rewrites wholesale:
+
+### Flake Reference Form
+
+- Local evaluation uses the Git-tree form `.#`: the `justfile` recipes, the workflow files, `scripts/resolve-host-config.sh`, and the documented cutover command all resolve this repository as `.#` or `.#<output>`.
+- That form copies tracked content only, so `environment.etc."nixos-source"` publishes the fleet configuration (~5.5 MB) instead of the whole working directory (440 MB, including `.git`, `.terraform` provider binaries, editor caches, and the plaintext `mTLS.key`, `secrets.auto.tfvars`, and `terraform.tfstate` files). It also populates `system.configurationRevision`, which is `null` for `path:`-referenced flakes.
+- `path:` remains correct in three places, and they are the only ones: (a) contract tests that evaluate a copied tree whose `make_copy` excludes `.git`/`.jj`, so `.#` cannot resolve there, or that evaluate the working tree while injecting untracked fixtures; (b) `.github/workflows/nvfetcher-refresh.yml`, which validates a tree whose regenerated sources may be untracked; (c) `scripts/export-web-services-policy.sh`, which resolves the tree with an explicit path because it exports policy data rather than evaluating host configuration.
+- Tracking is the single filtering authority. Do not re-add a Nix-side exclusion list (`lib.fileset`, `cleanSourceWith`, `filterSource`) to work around untracked files — track them instead.
+
+### Git Index Precondition
+
+`.#` reads the Git index. Colocated jj keeps it in sync (a file is staged when jj first tracks it), but an external index command destroys that guarantee — a single `git reset` removed 19 tracked entries during Stage 8, after which evaluation silently used a partial tree.
+
+- Do not run index-mutating Git commands in this repository (`git reset`, `git checkout`, `git stash`). Use jj operations; jj is the version-control interface.
+- If `tests/check-flake-source-tracking.sh` fails, run `git add -A` once and re-run the check.
+
+### Delegation and Apply Workflow
+
+OpenSpec implementation work is dispatched one task at a time:
+
+- The parent session owns the task loop and the expensive gates (`just checks all`, `nix flake check`, the scaffold contract); a dispatched child does not run them as its closeout.
+- One task per writer dispatch, through a retained writer lineage for the same working directory — "one writer per cwd" means one lineage, not one uninterrupted run.
+- Focused validation after each task, then a fresh bounded read-only review at each stable checkpoint; resolve accepted findings before mutating overlapping files.
+- Rotate a lineage once its context is large instead of resuming it, and hand the replacement the written report rather than the accumulated conversation.
+- Do not set hard tool budgets on mutation-capable children — a budget blocks read and search tools mid-task. Bound them with a narrow task and a time limit instead.
+- Report a failed child run as a failure with its run id and observed error, then verify the artifacts it left behind instead of assuming success or failure.
 
 ## Code Search
 

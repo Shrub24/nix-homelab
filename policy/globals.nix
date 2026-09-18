@@ -1,4 +1,14 @@
 {
+  # Stage 8 task 3.2 (HIC-3): the fleet Tailscale tailnet DNS suffix is written
+  # once, here. Canonical host records set
+  # `tailscale.tailnetSuffix = globals.tailnet.suffix` and derive their
+  # `tailscale.fqdn` from it; the web policy composes host-backed FQDNs as
+  # `"${hostId}.${globals.tailnet.suffix}"` in policy/web-services.nix, so a
+  # renamed tailnet or changed host set can only disagree loudly, never drift.
+  tailnet = {
+    suffix = "tail0fe19b.ts.net";
+  };
+
   aiGateway = {
     aliases = {
       text = "shrublab-text";

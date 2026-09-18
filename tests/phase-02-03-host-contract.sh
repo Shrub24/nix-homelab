@@ -26,7 +26,7 @@ if grep -R -n 'repo\.web\.hosts\.' modules/ modules/hosts/oci-melb-1/; then
   exit 1
 fi
 for service in 'repo.web.catalog."kanidm-admin"' 'repo.web.catalog.paperless' 'repo.web.catalog.karakeep'; do
-  if ! grep -q "$service" modules/hosts/oci-melb-1/default.nix; then
+  if ! grep -q "$service" modules/hosts/oci-melb-1/_nixos.nix; then
     echo "oci-melb-1: expected catalog read ${service} missing from host wiring" >&2
     exit 1
   fi

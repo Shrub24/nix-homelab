@@ -1,6 +1,6 @@
 # Reusable Windows VM layer: declarative libvirt/KVM domains attached to the
 # host-owned always-on bridge, loopback SPICE display, and virtiofs shares.
-# Consumers (e.g. modules/flake/_dj) define instances and wire
+# Consumers (e.g. modules/music/_dj) define instances and wire
 # locks/backup contracts; this module owns domain XML generation and
 # lifecycle units, and only consumes the fleet-networking bridge that guests
 # attach to — it never creates or owns physical networking.

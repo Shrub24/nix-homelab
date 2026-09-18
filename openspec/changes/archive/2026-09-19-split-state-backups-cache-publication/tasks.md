@@ -16,5 +16,5 @@
 
 ## 4. Validation
 
-- [x] 4.1 Update architecture/spec references and feature-oriented source ownership; verify no documentation describes cache publication as state backup.
-- [x] 4.2 Run `treefmt --fail-on-change`, `just checks all`, all host evaluations, and `openspec validate split-state-backups-cache-publication --strict`; obtain independent security/operations review and leave the change undeployed/unarchived.
+- [ ] 4.1 Update architecture/spec references and feature-oriented source ownership; verify no documentation describes cache publication as state backup.
+- [ ] 4.2 Run `treefmt --fail-on-change`, `just checks all`, all host evaluations, and `openspec validate split-state-backups-cache-publication --strict`; obtain independent security/operations review and leave the change undeployed/unarchived.

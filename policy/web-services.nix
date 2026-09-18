@@ -1,6 +1,15 @@
+# Stage 8 task 3.2 (HIC-3): host-backed origin FQDNs are composed from the
+# canonical host ID and the single fleet suffix (`policy/globals.nix`
+# `tailnet.suffix`), never hand-written. `127.0.0.1` loopback origins below
+# stay literal per the design risk note (externally managed names remain
+# explicit). Plain nix attribute set on purpose: three consumers read this
+# file as data (web-policy aspect, scripts/export-web-services-policy.sh,
+# tests/check-web-service-catalog.sh).
 let
-  oci = "oci-melb-1.tail0fe19b.ts.net";
-  homeForge = "home-forge.tail0fe19b.ts.net";
+  globals = import ./globals.nix;
+  fqdnOf = id: "${id}.${globals.tailnet.suffix}";
+  oci = fqdnOf "oci-melb-1";
+  homeForge = fqdnOf "home-forge";
 in
 {
   defaults = {
@@ -41,6 +50,7 @@ in
           subdomain = "music";
           origin = {
             scheme = "http";
+            # Host-backed internal origin: canonical host home-forge.
             host = homeForge;
             port = 4533;
           };

@@ -1,4 +1,4 @@
-# Termix deployment aspect (dendritic Stage 7, D-053). Published from this
+# Termix deployment aspect (dendritic Stage 7, D-053; self-contained placement aspect since D-054). Published from this
 # discovered contributor and selected only on `la-admin-1` (S7-2, explicit
 # `aspects.termix`). Selecting the aspect imports the Termix leaf and owns the
 # shared Termix composition: the identity-client OIDC endpoint wiring, the

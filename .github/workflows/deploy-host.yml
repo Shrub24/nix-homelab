@@ -45,7 +45,7 @@ jobs:
           # key matches that fingerprint exactly. Hosts without a declared
           # fingerprint never receive an insecure host-checking override; they
           # keep normal SSH verification (which fails safely in a fresh runner).
-          FINGERPRINT="$(nix eval --raw --no-write-lock-file --apply "t: let f = t.nodes.\"$DEPLOY_HOST\".hostKeyFingerprint or null; in if f == null then \"\" else f" path:.#deployHosts)"
+          FINGERPRINT="$(nix eval --raw --no-write-lock-file --apply "t: let f = t.nodes.\"$DEPLOY_HOST\".hostKeyFingerprint or null; in if f == null then \"\" else f" .#deployHosts)"
           if [[ -n "$FINGERPRINT" ]]; then
             KNOWN_HOSTS="${RUNNER_TEMP}/known_hosts_${DEPLOY_HOST}"
             scripts/ssh-known-hosts.sh emit "$DEPLOY_HOST" "$FINGERPRINT" "$KNOWN_HOSTS"
@@ -63,11 +63,11 @@ jobs:
             --print-build-logs \
             --eval-store auto \
             --store "$NIXBUILD_STORE" \
-            "path:.#deploy.nodes.\"$DEPLOY_HOST\".profiles.system.path"
+            ".#deploy.nodes.\"$DEPLOY_HOST\".profiles.system.path"
       - name: Resolve host deploy policy
         id: policy
         run: |
-          STRICT=$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' "path:.#deployHosts.nodes.\"$DEPLOY_HOST\".strictSubstituteOnly")
+          STRICT=$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' ".#deployHosts.nodes.\"$DEPLOY_HOST\".strictSubstituteOnly")
           echo "strict=$STRICT" >> "$GITHUB_OUTPUT"
       - name: Configure SSH for ${{ inputs.host }}
         run: |
@@ -93,7 +93,7 @@ jobs:
           if [[ "${{ steps.policy.outputs.strict }}" == "true" ]]; then
             NIX_ARGS=(-- --option max-jobs 0 --option builders "")
           fi
-          nix run path:.#deploy-rs -- \
+          nix run .#deploy-rs -- \
             "${ARGS[@]}" \
             ".#$DEPLOY_HOST" \
             "${NIX_ARGS[@]}"

@@ -93,12 +93,27 @@ in
         description = "Default access policy when no ACL entry matches.";
       };
 
-      access = lib.mkOption {
-        type = lib.types.listOf lib.types.str;
-        default = [ ];
-        example = [ "service:*:write-only" ];
+      publishers = lib.mkOption {
+        type = lib.types.attrsOf (
+          lib.types.enum [
+            "write-only"
+            "read-only"
+            "read-write"
+          ]
+        );
+        default = { };
+        example = {
+          "service" = "write-only";
+        };
         description = ''
-          Declarative ACL entries in <user>:<topic>:<permission> format.
+          Publish-enabled ntfy users, keyed by user name (canonical fleet host
+          IDs in this repository), mapped to their topic-wide ACL permission.
+          The module renders these into `auth-access` as
+          `<user>:*:<permission>` entries, so publisher authorization has one
+          owner instead of a hand-maintained ACL list per host. Membership is
+          fleet policy owned by the `push-server` aspect; the matching
+          `auth-users`/`auth-tokens` entries stay in
+          `auth.secretFiles.auth` (set `auth.users` to declare them).
         '';
       };
 
@@ -106,7 +121,7 @@ in
         type = lib.types.listOf lib.types.str;
         default = [ ];
         example = [
-          "oci-melb-1:<disposable bcrypt hash from ntfy user hash>:user"
+          "publisher-host:<disposable bcrypt hash from ntfy user hash>:user"
         ];
         description = ''
           Non-secret declaration of the ntfy auth-users entries the encrypted
@@ -220,7 +235,11 @@ in
             enable-signup: false
             auth-file: ${toString cfg.auth.file}
             auth-default-access: ${cfg.auth.defaultAccess}
-            auth-access: ${builtins.toJSON cfg.auth.access}
+            auth-access: ${
+              builtins.toJSON (
+                lib.mapAttrsToList (user: permission: "${user}:*:${permission}") cfg.auth.publishers
+              )
+            }
           ''
           + lib.optionalString (cfg.secretFiles.firebase != null) ''
             firebase-key-file: /run/secrets/ntfy/firebase-key.json

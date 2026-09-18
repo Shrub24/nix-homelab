@@ -10,7 +10,9 @@ all:
   @./tests/check-ssh-host-fingerprint.sh
   @./tests/check-host-age-anchor.sh
   @./tests/check-deploy-bootstrap-gate.sh
+  @./tests/check-flake-source-tracking.sh
   @./tests/check-dendritic-scaffold-contract.sh
+  @./tests/check-internal-contracts.sh
   @./tests/check-web-services-policy.sh
   @./tests/check-web-service-catalog.sh
   @./tests/phase-la-admin-contract.sh
@@ -39,6 +41,9 @@ test-deploy-bootstrap-gate:
 
 test-dendritic-scaffold-contract:
   @./tests/check-dendritic-scaffold-contract.sh
+
+test-internal-contracts:
+  @./tests/check-internal-contracts.sh
 
 test-web-policy host="la-admin-1":
   @./tests/check-web-services-policy.sh {{host}}

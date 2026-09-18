@@ -1,123 +1,64 @@
+# home-forge host contributor (Stage 8 HIC-1/HIC-2, task 2.2). This file is the
+# host entry point: it declares the canonical typed host record — target system,
+# Tailscale identity, deferred NixOS composition, and SSH/deploy facts. The
+# NixOS composition itself stays host-private in `_nixos.nix` (plus the
+# `_disko-two-disk.nix` layout), so a host assembly can never be selected as a
+# public aspect.
+#
+# This contributor is reached by `denful/import-tree` discovery like every
+# other module: stage 8 task 2.3 removed the `hosts` import-tree exclusion
+# together with the transitional loader, and `modules/flake/registry.nix` is
+# now only the `flake.bootstrap.nodes` projection over these records.
 {
-  lib,
   config,
+  inputs,
   ...
 }:
 let
-  hasHostSecrets = builtins.pathExists ../../../secrets/hosts/home-forge/system.yaml;
-
-  # Host-owned physical music root; the music aspect derives the storage
-  # library contract from it and the DJ application consumes that contract.
-  musicStorageRoot = "/srv/storage/media/music";
-  # Playlist-sync worker state (SQLite store + inbound M3U drop), outside the
-  # media library so state/input files never surface as music.
-  traktorStateDir = "/srv/data/traktor-m3u-sync";
+  aspects = config.flake.modules.nixos;
 in
 {
-  imports = [
-    # Every deployed product arrives via the placement aspects selected in the
-    # registry (D-053); this host keeps only machine facts, explicit variants,
-    # and its host-local disk layout.
-    ./disko-two-disk.nix
-  ];
+  nixos.hosts.home-forge = {
+    system = "x86_64-linux";
 
-  networking.hostName = "home-forge";
-
-  # Base aspect host facts (FND-2): systemd-boot loader and 50% /build tmpfs.
-  fleet.foundation = {
-    bootLoader = "systemd-boot";
-    buildTmpfsSize = "50%";
-  };
-
-  # Locally-managed physical host: plain LAN DHCP via native systemd-networkd
-  # (fleet networking aspect), no static addresses and no public ingress. The
-  # always-on br0 bridge over eno1 presents the pinned NIC MAC so the router
-  # reservation survives; DNS is pinned to public resolvers for a private
-  # network with no local split-horizon.
-  fleet.networking = {
-    uplink.interface = "eno1";
-    bridge = {
-      name = "br0";
-      macAddress = "84:a9:3e:6b:94:44";
+    tailscale = {
+      hostname = "home-forge";
+      # Stage 8 task 3.2 (HIC-3): single authority in policy/globals.nix
+      # `tailnet.suffix`; the web policy reads the same value.
+      tailnetSuffix = (import ../../../policy/globals.nix).tailnet.suffix;
     };
-    dns.servers = [
-      "1.1.1.1"
-      "8.8.8.8"
-    ];
-  };
 
-  # UEFI + systemd-boot rendered by the base aspect from the typed
-  # fleet.foundation.bootLoader fact (FND-2); EFI policy stays
-  # canTouchEfiVariables = false — do not touch NVRAM.
-  disko.devices.disk.main.device = "/dev/disk/by-id/nvme-SAMSUNG_MZVLB1T0HBLR-000H1_S4GRNX0RA26985";
-  # Oversized ESP: room for future boot entries plus a backup copy of the
-  # existing ESP contents.
-  disko-esp-size = "4G";
-  disko-second-disk = "/dev/disk/by-id/ata-ST1000DM010-2EP102_ZN19040F";
+    composition = {
+      extraModules = [
+        inputs.disko.nixosModules.disko
+        inputs.sops-nix.nixosModules.sops
+      ];
 
-  # Tailscale is enabled by the tailscale foundation aspect (FND-4). The leaf
-  # owns auth-key registration and MTU rendering: authentication only activates
-  # once host secrets exist (two-step sops bootstrap). The tag:homelab posture
-  # comes from the operator-provided auth key at the secret gate; the host does
-  # not advertise a per-host tag.
-  sops.defaultSopsFile = ../../../secrets/common.yaml;
+      aspects = [
+        aspects.provenance
+        aspects.oci-images
+        aspects.fleet-packages
+        aspects.web-policy
+        # Stage 7 placement aspects (D-053): one selection per deployed
+        # product/platform capability; no host imports its implementation.
+        aspects.dj
+        aspects.music
+        aspects.omniroute
+        # Foundation aspects (FND-1): selection is enablement.
+        aspects.base
+        aspects.shell
+        aspects.networking
+        aspects.tailscale
+        aspects.notify
+        # Operational aspects: selection is enablement.
+        aspects.state-backups
+        aspects.cache-publisher
+        aspects.internal-contracts
+        aspects.builder-access
+        aspects.observability-agent
+      ];
 
-  # Host-scoped recovery baseline (HFG-7): rescue operator + recurring reboot
-  # exercise. The physical/supplier console is the PRIMARY break-glass path;
-  # the rescue operator is defense-in-depth. Activates once host secrets exist.
-  services.hostRecovery = lib.mkIf hasHostSecrets {
-    enable = true;
-    secretFile = ../../../secrets/hosts/home-forge/system.yaml;
-    rescueUser.name = "rescue";
-    reboot.onCalendar = "weekly";
-  };
-  # Host-scoped R2/restic backup (HFG-6): core/high-level system state only
-  # (config, host identity, recovery material); workload-specific paths are
-  # added as workloads are introduced, not speculatively. Credentials resolve
-  # from the host system secret. The backups aspect owns enablement, the
-  # derived secret path, and the derived bucket (OPS-3); the host keeps only
-  # its real variants: the non-default staging root and the host-core backup
-  # contract.
-  services.state-backups = {
-    stagingRoot = "/srv/data/state-backups";
-    # Baseline-only host: no workload modules contribute backup contracts
-    # yet, so back up the persistent host identity directly. Workload paths
-    # are added as workloads are introduced.
-    services.host-core.paths = [ "/etc/ssh" ];
-  };
-
-  # nixos-facter facts replace a hand-written hardware-configuration.nix. The
-  # report was captured from the live ISO (operator gate 8.3); until then keep
-  # facter wired but inert so base-install eval converges without the file.
-  hardware.facter.reportPath = lib.mkIf (builtins.pathExists ./facter.json) ./facter.json;
-
-  services.notification-daemon = {
-    secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
-    secretFiles.hostSystem = ../../../secrets/hosts/home-forge/system.yaml;
-    ntfy.enable = true;
-  };
-
-  applications.dj = {
-    engine = {
-      enable = true;
-      traktorStateDir = traktorStateDir;
-      secretFiles.navidrome = ../../../secrets/applications/music.yaml;
+      fragments = [ ./_nixos.nix ];
     };
   };
-
-  # Music composition is provided by the `music` deployment aspect (selected
-  # in the registry); the host keeps only its real variants.
-  applications.music = {
-    dataRoot = "/srv/data";
-    storageRoot = musicStorageRoot;
-    secretFiles.host = ../../../secrets/applications/music.yaml;
-    navidrome.enable = true;
-    audiomuse.enable = true;
-    # AudioMuse DB lives in oci-melb-1's shared Postgres over Tailscale.
-    audiomuse.postgresHost = "oci-melb-1";
-  };
-
-  services.syncthing.openDefaultPorts = lib.mkForce true;
-
-  system.stateVersion = "25.11";
 }

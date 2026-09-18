@@ -1,12 +1,13 @@
-# Typed host registry (DS-2). nixos.configurations.<host> records own the
-# target system and the explicit composition; flake.nixosConfigurations is
-# materialized from them through inputs.nixpkgs.lib.nixosSystem with each
-# record's explicit system, so mixed-architecture evaluation never relies on
-# the evaluator's current system. There is no specialArgs bus: aspects close
-# over their dependencies lexically and host records import aspects
-# explicitly.
+# Flake-level bootstrap projection (Stage 8 dendritic-stage-8-host-identity-contracts
+# task 2.3). Canonical host records — and the generic materializer that turns
+# them into flake.nixosConfigurations — live in modules/flake/host-registry.nix;
+# each host declares its own record from its discovered contributor at
+# modules/hosts/<host>/default.nix. The transitional loader, the concrete
+# nixos.configurations table, and the hostRecord submodule are gone.
+#
+# What remains is the reimage projection: bootstrap-carrying hosts get their
+# hostName and flake reference derived from their record key (DS-5/DS-6).
 {
-  inputs,
   config,
   lib,
   ...
@@ -15,192 +16,16 @@ let
   inherit (lib)
     filterAttrs
     mapAttrs
-    mkOption
-    types
     ;
-
-  aspects = config.flake.modules.nixos;
-
-  hostRecord = types.submodule (
-    { config, ... }:
-    {
-      options = {
-        system = mkOption {
-          type = types.str;
-          description = "Target system, materialized explicitly for mixed-arch evaluation.";
-        };
-
-        module = mkOption {
-          type = types.deferredModule;
-          description = "Host composition: explicit aspect, input-module, and leaf imports.";
-        };
-
-        bootstrap = mkOption {
-          type = types.nullOr (types.attrsOf types.str);
-          default = null;
-          description = "Reimage-only metadata projected to flake.bootstrap.nodes.<host>.";
-        };
-
-        configuration = mkOption {
-          type = types.raw;
-          readOnly = true;
-          description = "Evaluated NixOS configuration materialized from this record.";
-          default = inputs.nixpkgs.lib.nixosSystem {
-            system = config.system;
-            modules = [ config.module ];
-          };
-        };
-      };
-    }
-  );
 in
 {
-  options.nixos.configurations = mkOption {
-    type = types.lazyAttrsOf hostRecord;
-    default = { };
-    description = "Typed per-host composition records materialized into nixosConfigurations.";
-  };
-
-  config = {
-    nixos.configurations = {
-      oci-melb-1 = {
-        system = "aarch64-linux";
-        module = {
-          imports = [
-            inputs.disko.nixosModules.disko
-            inputs.sops-nix.nixosModules.sops
-            inputs.niks3.nixosModules.niks3
-            aspects.provenance
-            aspects.oci-images
-            aspects.fleet-packages
-            aspects.web-policy
-            aspects.identity-client
-            # Stage 7 placement aspects (D-053): one selection per deployed
-            # product/platform capability; no host imports its implementation.
-            aspects.oci
-            aspects.edge
-            aspects.cockpit
-            aspects.paperless
-            aspects.postgres
-            aspects.ai-gateway
-            aspects.karakeep
-            aspects.niks3-cache
-            aspects.phoenix
-            # Foundation aspects (FND-1): selection is enablement.
-            aspects.base
-            aspects.shell
-            aspects.networking
-            aspects.tailscale
-            aspects.notify
-            # Operational aspects: selection is enablement. The backups aspect
-            # was split (split-state-backups-cache-publication OPSPLIT-1) into
-            # independent state-backups and cache-publisher aspects.
-            aspects.state-backups
-            aspects.cache-publisher
-            aspects.builder-access
-            aspects.observability-agent
-            ../hosts/oci-melb-1/default.nix
-          ];
-        };
-        # Reimage-only facts (DS-5/DS-6): hostName and flake are derived from
-        # the registry key in the bootstrap projection, never stored here.
-        bootstrap = {
-          bootstrapUser = "ubuntu";
-          bootstrapDisk = "/dev/sda";
-          mediaDisk = "/dev/sdb";
-          rootPartitionSize = "20G";
-          dataRoot = "/srv/data";
-        };
-      };
-
-      la-admin-1 = {
-        system = "x86_64-linux";
-        module = {
-          imports = [
-            inputs.sops-nix.nixosModules.sops
-            aspects.provenance
-            aspects.oci-images
-            aspects.fleet-packages
-            aspects.web-policy
-            aspects.identity-client
-            # Stage 7 placement aspects (D-053): one selection per deployed
-            # product/platform capability; no host imports its implementation.
-            aspects.edge
-            aspects.cockpit
-            aspects.push-server
-            aspects.identity-provider
-            aspects.vaultwarden
-            aspects.termix
-            aspects.gatus
-            aspects.beszel
-            aspects.homepage
-            aspects.webhook
-            # Foundation aspects (FND-1): selection is enablement.
-            aspects.base
-            aspects.shell
-            aspects.networking
-            aspects.tailscale
-            aspects.notify
-            # Operational aspects: selection is enablement. The backups aspect
-            # was split (split-state-backups-cache-publication OPSPLIT-1) into
-            # independent state-backups and cache-publisher aspects.
-            aspects.state-backups
-            aspects.cache-publisher
-            aspects.builder-access
-            aspects.observability-agent
-            ../hosts/la-admin-1/default.nix
-          ];
-        };
-      };
-
-      home-forge = {
-        # x86_64 physical host; the facter report exists and is wired through
-        # hardware.facter.reportPath in the host composition below. The target
-        # system is still pinned explicitly for mixed-arch materialization (DS-2).
-        system = "x86_64-linux";
-        module = {
-          imports = [
-            inputs.disko.nixosModules.disko
-            inputs.sops-nix.nixosModules.sops
-            aspects.provenance
-            aspects.oci-images
-            aspects.fleet-packages
-            aspects.web-policy
-            aspects.dj
-            aspects.music
-            # Stage 7 placement aspect (D-053): OmniRoute service and its
-            # notification-daemon monitor registration, gated on the
-            # conventional service secret.
-            aspects.omniroute
-            # Foundation aspects (FND-1): selection is enablement.
-            aspects.base
-            aspects.shell
-            aspects.networking
-            aspects.tailscale
-            aspects.notify
-            # Operational aspects: selection is enablement. The backups aspect
-            # was split (split-state-backups-cache-publication OPSPLIT-1) into
-            # independent state-backups and cache-publisher aspects.
-            aspects.state-backups
-            aspects.cache-publisher
-            aspects.builder-access
-            aspects.observability-agent
-            ../hosts/home-forge/default.nix
-          ];
-        };
-      };
-    };
-
-    flake.nixosConfigurations = mapAttrs (_: host: host.configuration) config.nixos.configurations;
-
-    # hostName and flake are derived from the registry key, not stored (DS-6).
-    flake.bootstrap.nodes = mapAttrs (
-      name: host:
-      host.bootstrap
-      // {
-        hostName = name;
-        flake = "path:.#${name}";
-      }
-    ) (filterAttrs (_: host: host.bootstrap != null) config.nixos.configurations);
-  };
+  # hostName and flake are derived from the record key, not stored (DS-6).
+  flake.bootstrap.nodes = mapAttrs (
+    name: host:
+    host.bootstrap
+    // {
+      hostName = name;
+      flake = ".#${name}";
+    }
+  ) (filterAttrs (_: host: host.bootstrap != null) config.nixos.hosts);
 }

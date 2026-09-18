@@ -84,15 +84,15 @@ test -f "$LIST_FILE" || fail "$LIST_FILE missing (Stage 1 boundary)"
 # contributors or were deleted. Stage 5 removed `shared` and `storage` (S5-6).
 # Stage 7 removed `applications` and `providers` after every implementation
 # leaf moved beside its discovered concern owner (S7-4/S7-5/S7-8). This exact
-# two-entry equality is the future-work guard: the boundary may not grow again,
-# and the two remaining entries are the explicit transition backlog.
+# single-entry equality is the future-work guard: the boundary may not grow
+# again, and `services` is the explicit transition backlog.
 actual="$(unconverted_roots "$ROOT")"
-if [ "$actual" != '["hosts","services"]' ]; then
-  fail "unconverted-dir list drifted from the Stage 7 two roots (hosts + services): $actual"
+if [ "$actual" != '["services"]' ]; then
+  fail "unconverted-dir list drifted from the final single root (services): $actual"
 fi
 # (Exact equality also proves no underscore path is enumerated here: import-tree
 # underscore semantics, not this list, owns host-private files.)
-for dir in hosts services; do
+for dir in services; do
   test -d "modules/$dir" || fail "excluded root modules/$dir must exist"
 done
 # Root evacuation (S5-6/S7-8): the four converted roots must be gone, not
@@ -116,8 +116,8 @@ test ! -e modules/hosts/oci-melb-1/bootstrap-config.nix || fail "OCI bootstrap m
 # DS-5/DS-6: the transitional _bootstrap-config.nix is deleted; metadata is
 # inlined into the typed host record and projected from the registry.
 test ! -e modules/hosts/oci-melb-1/_bootstrap-config.nix || fail "modules/hosts/oci-melb-1/_bootstrap-config.nix must be deleted (DS-5/DS-6)"
-test -f modules/hosts/oci-melb-1/disko-single-disk-split.nix || fail "modules/hosts/oci-melb-1/disko-single-disk-split.nix missing"
-test -f modules/hosts/home-forge/disko-two-disk.nix || fail "modules/hosts/home-forge/disko-two-disk.nix missing"
+test -f modules/hosts/oci-melb-1/_disko-single-disk-split.nix || fail "modules/hosts/oci-melb-1/_disko-single-disk-split.nix missing"
+test -f modules/hosts/home-forge/_disko-two-disk.nix || fail "modules/hosts/home-forge/_disko-two-disk.nix missing"
 # The successful flake evals below, with _bootstrap-config.nix absent and no
 # underscore entry in the boundary list, are the proof that import-tree skipped
 # the file by underscore semantics.
@@ -138,11 +138,11 @@ done
 
 # --- 3b. Standard materializer, not a direct eval-config shim (DS-2) ---------
 
-# The registry must materialize through inputs.nixpkgs.lib.nixosSystem (the
-# public flake integration wrapper), never a direct eval-config.nix import or
-# a hand-rolled source shim.
-grep -q 'inputs.nixpkgs.lib.nixosSystem' modules/flake/registry.nix ||
-  fail "registry must materialize via inputs.nixpkgs.lib.nixosSystem (DS-2)"
+# The host registry must materialize through inputs.nixpkgs.lib.nixosSystem
+# (the public flake integration wrapper), never a direct eval-config.nix import
+# or a hand-rolled source shim.
+grep -q 'inputs.nixpkgs.lib.nixosSystem' modules/flake/host-registry.nix ||
+  fail "host registry must materialize via inputs.nixpkgs.lib.nixosSystem (DS-2)"
 if grep -RnE --include='*.nix' 'eval-config\.nix' modules/flake lib; then
   fail "registry must not import nixpkgs eval-config.nix directly (DS-2)"
 fi
@@ -168,6 +168,144 @@ deploy_keys="$(ne --raw --apply 'n: builtins.toJSON (builtins.sort builtins.less
 [ "$(ne --raw 'path:.#deployHosts.edgeHost')" = "la-admin-1" ] || fail "edgeHost must remain la-admin-1"
 [ "$(ne --raw --apply 'l: builtins.toJSON l' 'path:.#deployHosts.deployOrder')" = '["la-admin-1","oci-melb-1"]' ] ||
   fail "deployOrder must remain [la-admin-1 oci-melb-1]"
+
+# Stage 8 task 3.1 (HIC-3): every deploy host reference resolves to a declared
+# canonical host ID, and an unknown reference fails closed at flake evaluation.
+deploy_canonical="$(ne --raw --apply 'c: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames c))' 'path:.#nixosConfigurations')" ||
+  fail "canonical host IDs must evaluate"
+deploy_refs="$(ne --raw --apply 'd: builtins.toJSON {
+  nodes = builtins.attrNames d.nodes;
+  edgeHost = d.edgeHost;
+  deployOrder = d.deployOrder;
+}' 'path:.#deployHosts')" || fail "deploy metadata must evaluate"
+python3 - "$deploy_canonical" "$deploy_refs" <<'PYEOF' || fail "deploy metadata must reference only declared canonical host IDs"
+import json, sys
+canonical = set(json.loads(sys.argv[1]))
+got = json.loads(sys.argv[2])
+references = set(got["nodes"]) | {got["edgeHost"]} | set(got["deployOrder"])
+unknown = sorted(references - canonical)
+if unknown:
+    raise SystemExit(f"unknown deploy host references resolved: {unknown!r}")
+PYEOF
+
+# Negative: unknown references at all three sites must fail with the named
+# error (node key, edgeHost, and deployOrder), never silently pass.
+D="$(make_copy)"
+python3 - "$D/lib/deploy/hosts.nix" <<'PYEOF'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+node_anchor = "    oci-melb-1 = {\n"
+assert s.count(node_anchor) == 1, "node anchor drifted"
+s = s.replace(node_anchor, "    ghost-node = {\n      hostName = \"ghost-node\";\n      sshUser = \"dev\";\n      system = \"x86_64-linux\";\n      remoteBuild = false;\n      strictSubstituteOnly = false;\n    };\n\n" + node_anchor, 1)
+edge_anchor = '  edgeHost = "la-admin-1";'
+assert s.count(edge_anchor) == 1, "edgeHost anchor drifted"
+s = s.replace(edge_anchor, '  edgeHost = "ghost-edge";', 1)
+order_anchor = '    "oci-melb-1"\n  ];'
+assert s.count(order_anchor) == 1, "deployOrder anchor drifted"
+s = s.replace(order_anchor, '    "oci-melb-1"\n    "ghost-order"\n  ];', 1)
+open(p, "w").write(s)
+PYEOF
+for probe in deployHosts.edgeHost deploy.nodes; do
+  set +e
+  deploy_bad="$(nix eval --no-write-lock-file --raw "path:${D}#${probe}" 2>&1)"
+  deploy_rc=$?
+  set -e
+  [ "$deploy_rc" -ne 0 ] || fail "3.1: unknown deploy host reference must fail closed (probe ${probe})"
+  for want in ghost-node ghost-edge ghost-order; do
+    case "$deploy_bad" in
+      *"deploy: unknown host reference '$want' is not a declared canonical host ID"*) ;;
+      *) fail "3.1: expected named unknown-reference error for '$want' (probe ${probe}), got: $(printf '%s' "$deploy_bad" | tail -3)" ;;
+    esac
+  done
+done
+
+# Negative: a node whose declared `system` disagrees with the canonical host
+# record must fail closed with the named drift error. HIC-3 keeps the deploy
+# metadata as the physical-facts authority (the value is detected, never
+# derived), and deploy-rs picks its activation package from this field, so a
+# silent disagreement would activate the wrong architecture.
+D="$(make_copy)"
+python3 - "$D/lib/deploy/hosts.nix" <<'PYEOF'
+import sys
+
+p = sys.argv[1]
+s = open(p).read()
+anchor = '      system = "aarch64-linux";'
+assert s.count(anchor) == 1, "node system anchor drifted"
+s = s.replace(anchor, '      system = "x86_64-linux";', 1)
+open(p, "w").write(s)
+PYEOF
+set +e
+system_bad="$(nix eval --no-write-lock-file --raw "path:${D}#deploy.nodes" 2>&1)"
+system_rc=$?
+set -e
+[ "$system_rc" -ne 0 ] || fail "3.1: a deploy node system disagreeing with the canonical record must fail closed"
+case "$system_bad" in
+  *"deploy: node 'oci-melb-1' declares system 'x86_64-linux' but canonical host record declares 'aarch64-linux'"*) ;;
+  *) fail "3.1: expected the named system-drift error, got: $(printf '%s' "$system_bad" | tail -3)" ;;
+esac
+
+# Stage 8 task 3.2 (HIC-3): host-backed web routing references canonical host
+# identities, enforced in modules/flake/web-policy.nix against the declared
+# nixos.hosts records, with policy/globals.nix as the single tailnet-suffix
+# authority. Two independent copies isolate the two guards: the hosts-table key
+# guard (outer) and the host-backed origin-FQDN guard (inner, reachable only
+# while every hosts key is already canonical).
+web_suffix="$(nix eval --impure --raw --no-write-lock-file --expr '(import ./policy/globals.nix).tailnet.suffix')" ||
+  fail "3.2: the single tailnet suffix authority must evaluate"
+[ -n "$web_suffix" ] || fail "3.2: the tailnet suffix authority must be non-empty"
+
+D="$(make_copy)"
+python3 - "$D/policy/web-services.nix" <<'PYEOF'
+import sys
+
+p = sys.argv[1]
+s = open(p).read()
+anchor = "  hosts = {\n    la-admin-1 = {"
+assert s.count(anchor) == 1, "hosts-table anchor drifted"
+s = s.replace(
+    anchor,
+    "  hosts = {\n"
+    "    ghost-host = {\n"
+    "      defaults = { };\n"
+    "      services = { };\n"
+    "    };\n"
+    "    la-admin-1 = {",
+    1,
+)
+open(p, "w").write(s)
+PYEOF
+set +e
+web_bad_key="$(ne --raw "path:${D}#nixosConfigurations.la-admin-1.config.repo.web.hosts.la-admin-1.primaryDomain" 2>&1)"
+web_bad_key_rc=$?
+set -e
+[ "$web_bad_key_rc" -ne 0 ] || fail "3.2: an unknown web-policy hosts key must fail closed"
+case "$web_bad_key" in
+  *"web-policy: unknown host reference 'ghost-host' is not a declared canonical host ID"*) ;;
+  *) fail "3.2: expected the named unknown-host-key error, got: $(printf '%s' "$web_bad_key" | tail -n 3)" ;;
+esac
+
+D="$(make_copy)"
+python3 - "$D/policy/web-services.nix" "$web_suffix" <<'PYEOF'
+import sys
+
+p, suffix = sys.argv[1], sys.argv[2]
+s = open(p).read()
+anchor = "            host = homeForge;\n            port = 4533;"
+assert s.count(anchor) == 1, "navidrome origin anchor drifted"
+s = s.replace(anchor, f'            host = "ghost-origin.{suffix}";\n            port = 4533;', 1)
+open(p, "w").write(s)
+PYEOF
+set +e
+web_bad_origin="$(ne --raw "path:${D}#nixosConfigurations.la-admin-1.config.repo.web.hosts.la-admin-1.primaryDomain" 2>&1)"
+web_bad_origin_rc=$?
+set -e
+[ "$web_bad_origin_rc" -ne 0 ] || fail "3.2: a host-backed origin FQDN with no canonical identity must fail closed"
+case "$web_bad_origin" in
+  *"web-policy: origin FQDN 'ghost-origin.${web_suffix}' does not match any declared canonical host identity"*) ;;
+  *) fail "3.2: expected the named origin-FQDN error, got: $(printf '%s' "$web_bad_origin" | tail -n 3)" ;;
+esac
 
 # --- 5. Bootstrap projection and resolver agreement (DS-6) -------------------
 
@@ -212,12 +350,38 @@ if grep -RnE --include='*.nix' 'specialArgs[[:space:]]*=' flake.nix modules lib 
 fi
 # No lower-level NixOS function may take self/inputs/ociImages parameters
 # (multi-line and single-line destructuring heads).
+# Host record contributors (modules/hosts/<host>/default.nix) are flake-parts
+# modules under Stage 8 HIC-1/HIC-2 and legitimately consume
+# inputs.<x>.nixosModules for their record's composition.extraModules, exactly
+# like modules/flake; host fragments (`_*.nix`) and service leaves stay
+# prohibited.
+# Only discovered first-party contributors may consume inputs/self: modules/flake/*
+# (materialization and data projections), a host record
+# (modules/hosts/<host>/default.nix), or a top-level domain contributor
+# (modules/<domain>/<file>.nix, stage 8 task 5.1). Service leaves,
+# underscore-private fragments, and nested files stay prohibited.
+allow_contributor_arg() {
+  awk -F: '
+    {
+      p = $1
+      n = split(p, parts, "/")
+      allow = 0
+      if (p ~ /^modules\/flake\//) allow = 1
+      else if (p ~ /^modules\/hosts\/[^\/]+\/default\.nix$/) allow = 1
+      else if (n == 3 && parts[1] == "modules" && parts[2] != "services" && substr(parts[3], 1, 1) != "_") allow = 1
+      if (!allow) {
+        print
+        found = 1
+      }
+    }
+    END { exit(found ? 0 : 1) }'
+}
 if grep -RnE --include='*.nix' '^[[:space:]]*(inputs|self|ociImages),[[:space:]]*$' modules lib policy |
-  grep -v '^modules/flake/'; then
+  allow_contributor_arg; then
   fail "lower-level module takes a prohibited self/inputs/ociImages argument"
 fi
 if grep -RnE --include='*.nix' '\{[^}]*\b(inputs|self|ociImages)\b[^}]*\}' modules lib policy |
-  grep -v '^modules/flake/'; then
+  allow_contributor_arg; then
   fail "lower-level module destructures a prohibited self/inputs/ociImages argument"
 fi
 # Image references must flow through the typed policy option only.
@@ -238,12 +402,14 @@ fi
 # render are exact evaluated values, not restatements of module source.
 
 # Files import-tree actually treats as first-party flake-parts contributors:
-# modules/ minus the two enumerated unconverted roots and minus underscore
-# private paths (import-tree underscore semantics, matching flake.nix filterNot).
+# modules/ minus the enumerated unconverted roots and minus underscore private
+# paths (import-tree underscore semantics, matching flake.nix filterNot).
+# Host contributors are discovered like any other module since stage 8 task 2.3
+# removed `hosts` from the boundary, so they are NOT excluded here.
 discovered_contributors() { # $1 repo root
   find "$1/modules" -type f -name '*.nix' \
     ! -path '*/_*' \
-    ! -path '*/hosts/*' ! -path '*/services/*' \
+    ! -path '*/services/*' \
     -print
 }
 publication_files() { # $1 repo root -> discovered files that define a publication
@@ -260,7 +426,21 @@ pub_names_of() { # $1 repo root -> sorted flake.modules.nixos.<name> definitions
     | sed -E 's/^[[:space:]]*//; s/[[:space:]]*=$//' | LC_ALL=C sort -u
 }
 registry_selections() { # $1 repo root -> "host aspect" pairs, in source order
+  # Stage 8 HIC-1/HIC-2: hosts declare their selections in
+  # modules/hosts/<host>/default.nix. modules/flake/registry.nix is still
+  # parsed: it currently holds no selection table, so that half is inert, but
+  # keeping it means a reintroduced table is at least parsed rather than
+  # silently ignored (the exact-set 7b assertions are the non-vacuous guards.
+  # Duplicate-selection protection lives in the identity test: LA across all
+  # selections (§5.2) and oci/home-forge placement pins in that test's §13).
   awk '
+    FNR == 1 { host = "" }
+    match($0, /^  nixos\.hosts\.[a-z0-9-]+ = \{$/) {
+      host = $0
+      sub(/^  nixos\.hosts\./, "", host)
+      sub(/ = \{$/, "", host)
+      next
+    }
     /^      [a-z0-9-]+ = \{/ { host = $1; next }
     host != "" {
       s = $0
@@ -269,20 +449,20 @@ registry_selections() { # $1 repo root -> "host aspect" pairs, in source order
         s = substr(s, RSTART + RLENGTH)
       }
     }
-  ' "$1/modules/flake/registry.nix"
+  ' "$1/modules/flake/registry.nix" "$1"/modules/hosts/*/default.nix
 }
 host_aspects() { # $1 repo root, $2 host -> sorted selected aspect names
   registry_selections "$1" | awk -v h="$2" '$1 == h { print $2 }' | LC_ALL=C sort -u
 }
 host_leaf_imports_of() { # $1 dir
-  grep -RnE --include='*.nix' 'modules/(services/(state-backups|beszel-agent-auth)|flake/(_backups/(niks3-upload-client|niks3-post-deploy)|_builder-access/nixbuild-ssh))\.nix' "$1/modules/hosts" || true
+  grep -RnE --include='*.nix' 'modules/(services/(state-backups|beszel-agent-auth)|(cache/_backups/(niks3-upload-client|niks3-post-deploy)|flake/_builder-access/nixbuild-ssh))\.nix' "$1/modules/hosts" || true
 }
 
-# 7a. Exactly thirty-four publications are discovered across the distributed
+# 7a. Exactly thirty-five publications are discovered across the distributed
 # contributors: the infrastructure support quartet, the twelve Stage 2-6
 # deployment aspects (base, shell, networking, tailscale, notify,
 # state-backups, cache-publisher, builder-access, observability-agent, dj,
-# music, identity-client), and the eighteen Stage 7 placement aspects (S7-2).
+# music, identity-client), and the eighteen Stage 7 placement aspects (S7-2), plus the Stage 8 internal transport contracts publication (task 4.1).
 # split-state-backups-cache-publication replaced the combined backups aspect
 # with independent state-backups and cache-publisher aspects.
 # decouple-identity-admin-capabilities
@@ -304,6 +484,7 @@ flake.modules.nixos.gatus \
 flake.modules.nixos.homepage \
 flake.modules.nixos.identity-client \
 flake.modules.nixos.identity-provider \
+flake.modules.nixos.internal-contracts \
 flake.modules.nixos.karakeep \
 flake.modules.nixos.music \
 flake.modules.nixos.networking \
@@ -327,7 +508,7 @@ flake.modules.nixos.web-policy \
 flake.modules.nixos.webhook)"
 pub_names="$(pub_names_of "$ROOT")"
 if [ "$pub_names" != "$expected_pub" ]; then
-  fail "discovered publications drifted from the support quartet + twelve deployment aspects + eighteen placement aspects: $pub_names"
+  fail "discovered publications drifted from the support quartet + twelve deployment aspects + eighteen placement aspects + internal-contracts: $pub_names"
 fi
 if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.cli|_aspects/cli|aspects\.cli' modules; then
 fail "the deleted cli aspect must not be resurrected"
@@ -337,9 +518,9 @@ fi
 # not smuggle a publication past discovery. Owner assertions stay where they
 # are semantically meaningful: typed base facts (7c) and the shell leaf + p10k
 # data (7g). No exact private-filename inventory is pinned.
-for priv in _aspects _backups _builder-access _dj _edge _oci; do
-  test -d "modules/flake/$priv" || fail "private implementation dir modules/flake/$priv missing"
-  if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "modules/flake/$priv"; then
+for priv in modules/flake/_aspects modules/flake/_builder-access modules/edge/_edge modules/oci/_oci modules/cache/_backups modules/music/_dj; do
+  test -d "$priv" || fail "private implementation dir $priv missing"
+  if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$priv"; then
     fail "underscore-private paths must not publish flake.modules.nixos aspects ($priv)"
   fi
 done
@@ -361,6 +542,7 @@ aspects.tailscale
 aspects.notify
 aspects.state-backups
 aspects.cache-publisher
+aspects.internal-contracts
 aspects.builder-access
 aspects.observability-agent"
 oci_placement="aspects.oci
@@ -394,8 +576,11 @@ forge_sel="$(printf '%s\n%s\naspects.dj\naspects.music\naspects.omniroute\n' "$s
   fail "registry: la-admin-1 must select the support quartet + eight deployment aspects + identity-client + its ten placement aspects: $(host_aspects "$ROOT" la-admin-1)"
 [ "$(host_aspects "$ROOT" home-forge)" = "$forge_sel" ] ||
   fail "registry: home-forge must select the support quartet + eight deployment aspects + dj + music + omniroute: $(host_aspects "$ROOT" home-forge)"
-if grep -RnE 'aspects\.|_aspects' modules/hosts; then
-fail "host assemblies must receive foundation aspects only via the registry"
+# Host records (modules/hosts/<host>/default.nix) are the aspect-selection
+# authority since Stage 8 HIC-1/HIC-2; the private NixOS fragments (`_*.nix`)
+# must still never import an aspect implementation.
+if grep -RnE --include='_*.nix' 'aspects\.|_aspects' modules/hosts; then
+fail "host fragments must receive aspects only via their host record"
 fi
 test ! -e modules/core || fail "modules/core must be deleted (FND-6)"
 test ! -e modules/profiles || fail "modules/profiles must be deleted (FND-6)"
@@ -584,10 +769,10 @@ fi
 # 7f. Notify composition (FND-5, apprise-notification-module spec): the notify
 # aspect composes the notification-daemon leaf, enables it, and resolves the
 # repo packages via withSystem; hosts keep only host-specific inputs.
-grep -q 'imports = \[ ../services/notification-daemon \]' modules/flake/notify.nix || fail "notify aspect must compose the notification-daemon leaf"
-grep -q 'enable = true;' modules/flake/notify.nix || fail "notify aspect must enable the daemon"
-grep -q 'package = packages.notification-daemon;' modules/flake/notify.nix || fail "notify aspect must pass the repo notification-daemon package"
-grep -q 'notifyPackage = packages.notify;' modules/flake/notify.nix || fail "notify aspect must pass the repo notify package"
+grep -q 'imports = \[ ../services/notification-daemon \]' modules/notifications/notify.nix || fail "notify aspect must compose the notification-daemon leaf"
+grep -q 'enable = true;' modules/notifications/notify.nix || fail "notify aspect must enable the daemon"
+grep -q 'package = packages.notification-daemon;' modules/notifications/notify.nix || fail "notify aspect must pass the repo notification-daemon package"
+grep -q 'notifyPackage = packages.notify;' modules/notifications/notify.nix || fail "notify aspect must pass the repo notify package"
 if grep -RnE 'notification-daemon\.enable|notification-daemon\]' modules/hosts; then
 fail "hosts must not re-enable or import the notification-daemon leaf"
 fi
@@ -603,28 +788,28 @@ fi
 # (OPS-9, check 1).
 for leaf in \
   modules/services/state-backups.nix \
-  modules/flake/_backups/niks3-upload-client.nix \
-  modules/flake/_backups/niks3-post-deploy.nix \
+  modules/cache/_backups/niks3-upload-client.nix \
+  modules/cache/_backups/niks3-post-deploy.nix \
   modules/flake/_builder-access/nixbuild-ssh.nix \
   modules/services/beszel-agent-auth.nix; do
   test -f "$leaf" || fail "operational leaf $leaf missing"
 done
-grep -q '../services/state-backups.nix' modules/flake/state-backups.nix || fail "state-backups aspect must import the state-backups leaf"
-if grep -qE '_backups|niks3' modules/flake/state-backups.nix; then
+grep -q '../services/state-backups.nix' modules/cache/state-backups.nix || fail "state-backups aspect must import the state-backups leaf"
+if grep -qE '_backups|niks3' modules/cache/state-backups.nix; then
   fail "state-backups aspect must own no Niks3 upload/publication surface"
 fi
-grep -q './_backups/niks3-upload-client.nix' modules/flake/cache-publisher.nix || fail "cache-publisher aspect must import the niks3-upload-client leaf"
-grep -q './_backups/niks3-post-deploy.nix' modules/flake/cache-publisher.nix || fail "cache-publisher aspect must import the niks3-post-deploy leaf"
+grep -q './_backups/niks3-upload-client.nix' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must import the niks3-upload-client leaf"
+grep -q './_backups/niks3-post-deploy.nix' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must import the niks3-post-deploy leaf"
 grep -q './_builder-access/nixbuild-ssh.nix' modules/flake/builder-access.nix || fail "builder-access aspect must import the nixbuild-ssh leaf"
 grep -q '../services/beszel-agent-auth.nix' modules/flake/observability-agent.nix || fail "observability-agent aspect must import the beszel-agent-auth leaf"
-grep -q 'inputs.niks3.nixosModules.niks3-auto-upload' modules/flake/cache-publisher.nix || fail "cache-publisher aspect must import the upstream niks3-auto-upload module"
+grep -q 'inputs.niks3.nixosModules.niks3-auto-upload' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must import the upstream niks3-auto-upload module"
 # Narrowed to the exact upstream module import (S5-7): the relocated
 # post-deploy leaf mentions the `services.niks3-auto-upload` option, which must
 # not false-positive as a second import site.
-if grep -RnE 'inputs\.niks3\.nixosModules\.niks3-auto-upload' modules/flake | grep -v '^modules/flake/cache-publisher.nix:'; then
+if grep -RnE 'inputs\.niks3\.nixosModules\.niks3-auto-upload' modules/flake | grep -v '^modules/cache/cache-publisher.nix:'; then
   fail "niks3-auto-upload must be imported only by the cache-publisher aspect (not the registry)"
 fi
-grep -qE 'inputs\.niks3\.nixosModules\.niks3[[:space:]]*$' modules/flake/registry.nix || fail "OCI must keep the niks3 server module import"
+grep -qE 'inputs\.niks3\.nixosModules\.niks3[[:space:]]*$' modules/hosts/oci-melb-1/default.nix modules/hosts/la-admin-1/default.nix modules/hosts/home-forge/default.nix modules/flake/registry.nix || fail "OCI must keep the niks3 server module import"
 [ -z "$(host_leaf_imports_of "$ROOT")" ] || fail "host assemblies must not import the five operational leaves directly"
 if grep -RnE 'services\.(state-backups|niks3-post-deploy|niks3-auto-upload|beszel-agent-auth)\.enable' modules/hosts; then
   fail "host assemblies must not repeat operational enablement"
@@ -635,10 +820,10 @@ fi
 if grep -RnE '^[^#]*fleet\.nixbuild-ssh' modules; then
   fail "the retired fleet.nixbuild-ssh option must be gone"
 fi
-grep -q 'filterPackage' modules/flake/_backups/niks3-post-deploy.nix || fail "post-deploy leaf must define the typed filterPackage option"
-grep -q 'type = lib.types.package' modules/flake/_backups/niks3-post-deploy.nix || fail "filterPackage must be a typed package option"
-grep -q 'filterPackage = packages.nix-path-filter' modules/flake/cache-publisher.nix || fail "cache-publisher aspect must inject nix-path-filter into post-deploy"
-if grep -nE '^[^#]*config\.repo\.packages' modules/flake/_backups/niks3-post-deploy.nix; then
+grep -q 'filterPackage' modules/cache/_backups/niks3-post-deploy.nix || fail "post-deploy leaf must define the typed filterPackage option"
+grep -q 'type = lib.types.package' modules/cache/_backups/niks3-post-deploy.nix || fail "filterPackage must be a typed package option"
+grep -q 'filterPackage = packages.nix-path-filter' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must inject nix-path-filter into post-deploy"
+if grep -nE '^[^#]*config\.repo\.packages' modules/cache/_backups/niks3-post-deploy.nix; then
   fail "post-deploy leaf must not read config.repo.packages (no hidden fleet-packages dependency)"
 fi
 grep -q 'inputs.nix-index-database.nixosModules.nix-index' modules/flake/shell.nix || fail "shell aspect must import the nix-index-database module"
@@ -650,12 +835,12 @@ grep -q 'builtins.readFile ./p10k.zsh' modules/flake/_aspects/shell.nix || fail 
 # same identity-client publication, with no private leaf, wrapper, or
 # cross-import; no host or application file imports either contributor
 # directly (discovery + registry selection is the only path).
-for idf in modules/flake/identity-oidc.nix modules/flake/kanidm-host-auth.nix; do
+for idf in modules/identity/identity-oidc.nix modules/identity/kanidm-host-auth.nix; do
   test -f "$idf" || fail "identity contributor $idf missing"
   grep -q 'flake.modules.nixos.identity-client' "$idf" || fail "$idf must publish identity-client"
 done
 test ! -e modules/flake/_identity-client || fail "no _identity-client private leaf directory may exist (S5-5)"
-if grep -RnE --include='*.nix' 'identity-oidc|kanidm-host-auth' modules/hosts modules/flake/*.nix | grep -vE '^modules/flake/(identity-oidc|kanidm-host-auth)\.nix'; then
+if grep -RnE --include='*.nix' 'identity-oidc|kanidm-host-auth' modules/hosts modules/flake/*.nix modules/identity/*.nix | grep -vE '^modules/identity/(identity-oidc|kanidm-host-auth)\.nix'; then
   fail "no host or concern file may import an identity contributor directly (S5-5)"
 fi
 
@@ -741,7 +926,7 @@ expect_eval_fail() { # $1 copy, $2 host, $3 expected message substring
 # the mutation removes exactly the enablement the notify aspect owns. The host
 # assembly no longer duplicates monitor.enable (MON-1/MON-3: one authority).
 D="$(make_copy)"
-sed -i '/monitor\.enable = true;/d' "$D/modules/flake/notify.nix"
+sed -i '/monitor\.enable = true;/d' "$D/modules/notifications/notify.nix"
 expect_eval_fail "$D" oci-melb-1 "services.notification-daemon.monitor.enable must be true"
 
 # 7i-2. A derived bucket outside the S3 rule fails with the named assertion
@@ -749,7 +934,7 @@ expect_eval_fail "$D" oci-melb-1 "services.notification-daemon.monitor.enable mu
 # level, so the tamper forces the trailing hyphen into the derived bucket. The
 # bucket expression lives in the state-backups contributor.
 D="$(make_copy)"
-python3 - "$D/modules/flake/state-backups.nix" <<'PY'
+python3 - "$D/modules/cache/state-backups.nix" <<'PY'
 import sys
 p = sys.argv[1]
 s = open(p).read()
@@ -863,9 +1048,13 @@ PY
 # that survives the backup split and inserts a relocated private leaf path so
 # host_leaf_imports_of is exercised.
 D="$(make_copy)"
-sed -i 's/flake.modules.nixos.state-backups =/flake.modules.nixos.state-backups-tampered =/' "$D/modules/flake/state-backups.nix"
-sed -i '/aspects.state-backups/d' "$D/modules/flake/registry.nix"
-sed -i '/\.\/cockpit-auth\.nix/a\  ../../../modules/flake/_backups/niks3-post-deploy.nix' "$D/modules/hosts/oci-melb-1/default.nix"
+sed -i 's/flake.modules.nixos.state-backups =/flake.modules.nixos.state-backups-tampered =/' "$D/modules/cache/state-backups.nix"
+# Stage 8 HIC-1/HIC-2: selections live in the host records, so the tamper
+# drops the required selection from every converted contributor.
+for h in oci-melb-1 la-admin-1 home-forge; do
+  sed -i '/aspects.state-backups/d' "$D/modules/hosts/$h/default.nix"
+done
+sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/cache/_backups/niks3-post-deploy.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
 [ "$(pub_names_of "$D")" != "$expected_pub" ] ||
 fail "7a publication check must detect an unpublished state-backups aspect"
 [ "$(host_aspects "$D" oci-melb-1)" != "$oci_sel" ] ||
@@ -879,14 +1068,21 @@ fail "7g host-import check must detect a re-imported leaf"
 # prove discovery-only placement does not activate and selection owns
 # enablement.
 dj_enabled() { # $1 repo root, $2 host -> "true"/"false" through aspect selection
-  local d="$1" host="$2" out rc
+  local d="$1" host="$2" out err rc
+  err="$(mktemp)"
   set +e
   out="$(nix eval --no-write-lock-file --raw --apply \
     'c: if ((c.applications.dj or { }).enable or false) then "true" else "false"' \
-    "path:${d}#nixosConfigurations.${host}.config" 2>&1)"
+    "path:${d}#nixosConfigurations.${host}.config" 2>"$err")"
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || fail "dj probe ${host}: config does not evaluate: $(printf '%s' "$out" | tail -2)"
+  if [ "$rc" -ne 0 ]; then
+    # stderr stays out of the probe value: store diagnostics are not the answer.
+    tail -2 "$err" || true
+    rm -f "$err"
+    fail "dj probe ${host}: config does not evaluate"
+  fi
+  rm -f "$err"
   printf '%s' "$out"
 }
 # Discovery alone is not placement: the dj publication exists for every host,
@@ -900,7 +1096,7 @@ dj_enabled() { # $1 repo root, $2 host -> "true"/"false" through aspect selectio
 # the selection in place but no longer satisfies forge's DJ contract. The test
 # names the failure (no eval assertion exists for a disabled aspect).
 D="$(make_copy)"
-sed -i '/applications\.dj\.enable = true;/d' "$D/modules/flake/dj.nix"
+sed -i '/applications\.dj\.enable = true;/d' "$D/modules/music/dj.nix"
 [ "$(dj_enabled "$D" home-forge)" = false ] ||
   fail "7k-1: forge must fail the DJ enablement contract when the selected dj aspect does not set applications.dj.enable"
 
@@ -938,21 +1134,21 @@ touch "$D/modules/storage/disko-root.nix"
   fail "7l-1: root-evacuation predicate must detect a surviving modules/storage"
 
 # 7l-2. A fake filter shrink must be rejected: dropping a still-present root's
-# boundary entry (services) leaves the exact two-root set wrong even though the
-# directory survives unconverted. This proves the current two-root equality is
+# boundary entry (services) leaves the exact single-root set wrong even though the
+# directory survives unconverted. This proves the current single-root equality is
 # load-bearing and order-independent, independent of the root-evacuation guard.
 D="$(make_copy)"
-sed -i 's/"services"//' "$D/modules/flake/_unconverted-nixos-dirs.nix"
+sed -i '/^  "services"$/d' "$D/modules/flake/_unconverted-nixos-dirs.nix"
 test -d "$D/modules/services" || fail "7l-2: prepared copy must still contain modules/services"
-[ "$(unconverted_roots "$D")" != '["hosts","services"]' ] ||
-  fail "7l-2: fake filter shrink must break the exact two-root set"
+[ "$(unconverted_roots "$D")" != '["services"]' ] ||
+  fail "7l-2: fake filter shrink must break the exact single-root set"
 
 # 7l-3. Private leaves must stay undiscoverable/non-publishing. A publication
 # smuggled into an underscore-private path is caught by the 7a private-owner scan
 # (same grep the working tree uses), and is invisible to discovery.
 D="$(make_copy)"
-printf '\n  flake.modules.nixos.evil-pub = { };\n' >>"$D/modules/flake/_backups/niks3-upload-client.nix"
-grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$D/modules/flake/_backups" >/dev/null ||
+printf '\n  flake.modules.nixos.evil-pub = { };\n' >>"$D/modules/cache/_backups/niks3-upload-client.nix"
+grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$D/modules/cache/_backups" >/dev/null ||
   fail "7l-3: private-owner scan must reject a publication under _backups"
 case "$(pub_names_of "$D")" in
   *evil-pub*) fail "7l-3: an underscore-private publication must not be discovered" ;;
@@ -960,15 +1156,15 @@ esac
 
 # 7l-4. Relocated private leaves and identity contributors must not be imported
 # directly by a host. Fresh imports inserted on the surviving
-# `./cockpit-auth.nix` import line are detected by host_leaf_imports_of (for
+# `./_cockpit-auth.nix` import line are detected by host_leaf_imports_of (for
 # the relocated leaf) and by the 7g-2 identity-import grep (for the
 # contributor) — both anchored on a line that survives this change, so the
 # checks are exercised non-vacuously.
 D="$(make_copy)"
-sed -i '/\.\/cockpit-auth\.nix/a\  ../../../modules/flake/_backups/niks3-post-deploy.nix' "$D/modules/hosts/oci-melb-1/default.nix"
+sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/cache/_backups/niks3-post-deploy.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
 [ -n "$(host_leaf_imports_of "$D")" ] ||
   fail "7l-4: host_leaf_imports_of must detect a directly re-imported relocated leaf"
-sed -i '/\.\/cockpit-auth\.nix/a\  ../../../modules/flake/identity-oidc.nix' "$D/modules/hosts/oci-melb-1/default.nix"
+sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/identity/identity-oidc.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
 grep -RnE --include='*.nix' 'identity-oidc|kanidm-host-auth' "$D/modules/hosts" >/dev/null ||
   fail "7l-4: identity-import grep must detect a directly imported identity contributor"
 
@@ -976,7 +1172,7 @@ grep -RnE --include='*.nix' 'identity-oidc|kanidm-host-auth' "$D/modules/hosts" 
 # the forge record is detected through the missing-services.identity observable,
 # not a publication diff.
 D="$(make_copy)"
-sed -i '/aspects\.dj/i\            aspects.identity-client' "$D/modules/flake/registry.nix"
+sed -i '/aspects\.dj/i\        aspects.identity-client' "$D"/modules/hosts/*/default.nix
 forge_identity_mut="$(ne --raw --apply 'c: builtins.toJSON (builtins.attrNames (c.services.identity or {}))' \
   "path:${D}#nixosConfigurations.home-forge.config")" ||
   fail "7l-5: forge identity mutation probe must evaluate"
@@ -987,7 +1183,7 @@ forge_identity_mut="$(ne --raw --apply 'c: builtins.toJSON (builtins.attrNames (
 # sibling kanidm contributor still publishes identity-client. Detection is the
 # missing services.identity.oidc option (eval failure), never a publication.
 D="$(make_copy)"
-rm "$D/modules/flake/identity-oidc.nix"
+rm "$D/modules/identity/identity-oidc.nix"
 [ "$(pub_names_of "$D" | grep -c 'identity-client')" -ge 1 ] ||
   fail "7l-6: sibling contributor must still publish identity-client after OIDC deletion"
 set +e
@@ -1005,7 +1201,7 @@ esac
 # behavior/eval while the sibling OIDC contributor still publishes
 # identity-client. Detection is the missing services.identity.hostAuth option.
 D="$(make_copy)"
-rm "$D/modules/flake/kanidm-host-auth.nix"
+rm "$D/modules/identity/kanidm-host-auth.nix"
 [ "$(pub_names_of "$D" | grep -c 'identity-client')" -ge 1 ] ||
   fail "7l-7: sibling contributor must still publish identity-client after host-auth deletion"
 set +e
@@ -1023,7 +1219,7 @@ esac
 # (openspec change dendritic-stage-6-music-composition tasks 5.1/5.2)
 #
 # The `music` deployment aspect is published from the discovered contributor
-# modules/flake/music.nix and selected only on home-forge; selecting it is its
+# modules/music/music.nix and selected only on home-forge; selecting it is its
 # top-level enablement. Its private implementation leaves under
 # modules/services/music/** publish no aspect and are imported only by that
 # concern owner. DJ consumes the read-only applications.music.contract through
@@ -1040,7 +1236,7 @@ music_leaf_publishers_of() { # $1 repo root
 music_leaf_import_sites_of() { # $1 repo root -> leaf imports outside the concern owner
   grep -REl --include='*.nix' \
     'services/music/(audiomuse|syncthing|navidrome|slskd|tagr|beets/default|ingest|storage)\.nix' \
-    "$1/modules" | grep -vE '/modules/flake/music\.nix$' || true
+    "$1/modules" | grep -vE '/modules/music/music\.nix$' || true
 }
 strip_host_block() { # $1 file, $2 "<option> = {" marker
   python3 - "$1" "$2" <<'PYEOF'
@@ -1066,12 +1262,12 @@ PYEOF
 }
 
 # 7m-1. Privacy by owner and the legacy-coordinator deletion precondition.
-test -f modules/flake/music.nix || fail "7m-1: discovered music contributor missing"
+test -f modules/music/music.nix || fail "7m-1: discovered music contributor missing"
 test ! -e modules/applications || fail "7m-1: the evacuated application root must be deleted"
-grep -q 'flake.modules.nixos.music' modules/flake/music.nix ||
-  fail "7m-1: modules/flake/music.nix must publish flake.modules.nixos.music"
+grep -q 'flake.modules.nixos.music' modules/music/music.nix ||
+  fail "7m-1: modules/music/music.nix must publish flake.modules.nixos.music"
 for leaf in audiomuse syncthing navidrome slskd tagr beets/default ingest storage; do
-  grep -q "services/music/${leaf}\.nix" modules/flake/music.nix ||
+  grep -q "services/music/${leaf}\.nix" modules/music/music.nix ||
     fail "7m-1: music owner must import the ${leaf} leaf"
 done
 [ -z "$(music_host_imports_of "$ROOT")" ] ||
@@ -1079,7 +1275,7 @@ done
 [ -z "$(music_leaf_publishers_of "$ROOT")" ] ||
   fail "7m-1: private music leaves must not publish flake.modules.nixos aspects: $(music_leaf_publishers_of "$ROOT")"
 [ -z "$(music_leaf_import_sites_of "$ROOT")" ] ||
-  fail "7m-1: only modules/flake/music.nix may import the private music leaves: $(music_leaf_import_sites_of "$ROOT")"
+  fail "7m-1: only modules/music/music.nix may import the private music leaves: $(music_leaf_import_sites_of "$ROOT")"
 
 # 7m-2. Focused observable probe. Every field is forced through the full
 # toplevel derivation (`drv`) so option-merge and assertion failures surface.
@@ -1218,14 +1414,14 @@ assert_probe_result() { # $1 host, $2 copy, $3 semantic check name
 # bindings cannot silently activate the stack (selection is the activation
 # edge and requires explicit host values).
 D="$(make_copy)"
-python3 - "$D/modules/flake/registry.nix" <<'PYEOF'
+python3 - "$D/modules/hosts/la-admin-1/default.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
 i = s.index("la-admin-1 = {")
 j = s.index("aspects.identity-client", i)
 k = s.index("\n", j)
-open(p, "w").write(s[: k + 1] + "            aspects.music\n" + s[k + 1 :])
+open(p, "w").write(s[: k + 1] + "        aspects.music\n" + s[k + 1 :])
 PYEOF
 expect_eval_fail "$D" la-admin-1 "applications.music.dataRoot"
 
@@ -1234,8 +1430,8 @@ expect_eval_fail "$D" la-admin-1 "applications.music.dataRoot"
 # units inert). The copy restores pre-contract explicit DJ values so the named
 # DJ assertion is not what this probe exercises.
 D="$(make_copy)"
-sed -i '/applications\.music\.enable = true;/d' "$D/modules/flake/music.nix"
-python3 - "$D/modules/hosts/home-forge/default.nix" <<'PYEOF'
+sed -i '/applications\.music\.enable = true;/d' "$D/modules/music/music.nix"
+python3 - "$D/modules/hosts/home-forge/_nixos.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
@@ -1258,7 +1454,7 @@ assert_probe_result home-forge "$D" disabled
 # owner-import predicate, and the host toplevel still evaluates (import alone
 # activates nothing).
 D="$(make_copy)"
-sed -i '/\.\/disko-two-disk\.nix/a\    ../../../modules/services/music/ingest.nix' "$D/modules/hosts/home-forge/default.nix"
+sed -i '/\.\/_disko-two-disk\.nix/a\    ../../../modules/services/music/ingest.nix' "$D/modules/hosts/home-forge/_nixos.nix"
 [ -n "$(music_host_imports_of "$D")" ] ||
   fail "7m-3c: host-import predicate must detect a direct modules/services/music import"
 nix eval --raw --no-write-lock-file "path:${D}#nixosConfigurations.home-forge.config.system.build.toplevel.drvPath" >/dev/null ||
@@ -1285,7 +1481,7 @@ nix eval --raw --no-write-lock-file "path:${D}#nixosConfigurations.oci-melb-1.co
 # 7m-3e. Deleting the music contributor is detected by publication discovery
 # and breaks the selected home-forge aspect.
 D="$(make_copy)"
-rm "$D/modules/flake/music.nix"
+rm "$D/modules/music/music.nix"
 [ "$(pub_names_of "$D")" != "$expected_pub" ] ||
   fail "7m-3e: publication discovery must detect the deleted music contributor"
 expect_eval_fail "$D" home-forge "attribute 'music' missing"
@@ -1293,14 +1489,14 @@ expect_eval_fail "$D" home-forge "attribute 'music' missing"
 # 7m-3f. DJ selected/enabled without music and without explicit values fails
 # with the exact named assertion; with both values explicit it succeeds.
 D="$(make_copy)"
-sed -i '/aspects\.music/d' "$D/modules/flake/registry.nix"
-strip_host_block "$D/modules/hosts/home-forge/default.nix" "applications.music = {"
+sed -i '/aspects\.music/d' "$D"/modules/hosts/*/default.nix
+strip_host_block "$D/modules/hosts/home-forge/_nixos.nix" "applications.music = {"
 expect_eval_fail "$D" home-forge "applications.dj.engine requires applications.music.contract"
 
 D="$(make_copy)"
-sed -i '/aspects\.music/d' "$D/modules/flake/registry.nix"
-strip_host_block "$D/modules/hosts/home-forge/default.nix" "applications.music = {"
-python3 - "$D/modules/hosts/home-forge/default.nix" <<'PYEOF'
+sed -i '/aspects\.music/d' "$D"/modules/hosts/*/default.nix
+strip_host_block "$D/modules/hosts/home-forge/_nixos.nix" "applications.music = {"
+python3 - "$D/modules/hosts/home-forge/_nixos.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
@@ -1321,8 +1517,8 @@ assert_probe_result home-forge "$D" explicit-dj
 
 # 7m-3g. Music selected without DJ succeeds and retains its observables.
 D="$(make_copy)"
-sed -i '/aspects\.dj/d' "$D/modules/flake/registry.nix"
-strip_host_block "$D/modules/hosts/home-forge/default.nix" "applications.dj = {"
+sed -i '/aspects\.dj/d' "$D"/modules/hosts/*/default.nix
+strip_host_block "$D/modules/hosts/home-forge/_nixos.nix" "applications.dj = {"
 assert_probe_result home-forge "$D" music-no-dj
 
 # --- 7n. Stage 7 placement aspects (S7-2..S7-9) ------------------------------
@@ -1339,31 +1535,44 @@ assert_probe_result home-forge "$D" music-no-dj
 # Placement contributors: the eleven historical Stage 7 aspects (S7-2) plus
 # the six capabilities extracted by decouple-identity-admin-capabilities
 # (termix, vaultwarden, gatus, beszel, homepage, webhook). Every placement
-# contributor must live at modules/flake/<name>.nix and publish its own
-# flake.modules.nixos.<name> aspect.
+# contributor publishes its own flake.modules.nixos.<name> aspect; settled
+# concerns live in their domain directory (stage 8 task 5.1), the rest still
+# sit in modules/flake/.
+placement_dir_of() {
+  case "$1" in
+    push-server) echo modules/notifications ;;
+    identity-provider) echo modules/identity ;;
+    niks3-cache) echo modules/cache ;;
+    edge) echo modules/edge ;;
+    oci) echo modules/oci ;;
+    cockpit | termix | vaultwarden | gatus | beszel | homepage | webhook) echo modules/admin ;;
+    *) echo modules/flake ;;
+  esac
+}
 placement_aspects="oci edge cockpit push-server identity-provider paperless postgres ai-gateway karakeep niks3-cache phoenix omniroute termix vaultwarden gatus beszel homepage webhook"
 for a in $placement_aspects; do
-  test -f "modules/flake/$a.nix" || fail "7n: placement contributor modules/flake/$a.nix missing"
-  grep -qE "^[[:space:]]*flake\.modules\.nixos\.${a}[[:space:]]*=" "modules/flake/$a.nix" ||
-    fail "7n: modules/flake/$a.nix must publish flake.modules.nixos.$a"
+  a_dir="$(placement_dir_of "$a")"
+  test -f "$a_dir/$a.nix" || fail "7n: placement contributor $a_dir/$a.nix missing"
+  grep -qE "^[[:space:]]*flake\.modules\.nixos\.${a}[[:space:]]*=" "$a_dir/$a.nix" ||
+    fail "7n: $a_dir/$a.nix must publish flake.modules.nixos.$a"
 done
 # Private implementations live beside their concern owner (S7-3/S7-4/S7-5) and
 # are reachable only through it.
-test -f modules/flake/_oci/default.nix || fail "7n: relocated OCI provider leaf missing"
-test -f modules/flake/_edge/edge-ingress.nix || fail "7n: relocated edge-ingress implementation missing"
-test -f modules/flake/_dj/default.nix || fail "7n: relocated DJ composition missing"
-test -f modules/flake/_dj/engine-dj.nix || fail "7n: relocated DJ engine implementation missing"
-grep -q '\./_oci/default\.nix' modules/flake/oci.nix || fail "7n: the oci aspect must import its private leaf"
-grep -q '\./_edge/edge-ingress\.nix' modules/flake/edge.nix || fail "7n: the edge aspect must import its private leaf"
-grep -q '\./_dj' modules/flake/dj.nix || fail "7n: the dj aspect must import its private leaf"
+test -f modules/oci/_oci/default.nix || fail "7n: relocated OCI provider leaf missing"
+test -f modules/edge/_edge/edge-ingress.nix || fail "7n: relocated edge-ingress implementation missing"
+test -f modules/music/_dj/default.nix || fail "7n: relocated DJ composition missing"
+test -f modules/music/_dj/engine-dj.nix || fail "7n: relocated DJ engine implementation missing"
+grep -q '\./_oci/default\.nix' modules/oci/oci.nix || fail "7n: the oci aspect must import its private leaf"
+grep -q '\./_edge/edge-ingress\.nix' modules/edge/edge.nix || fail "7n: the edge aspect must import its private leaf"
+grep -q '\./_dj' modules/music/dj.nix || fail "7n: the dj aspect must import its private leaf"
 # Ownership is asserted on import *expressions*, not on prose: current-state docs and
 # comments legitimately name these paths (e.g. the consumers note in
 # modules/services/virtualisation/windows-vm.nix), while a real import from another
 # concern must still be rejected. Mutation 7n-3f-2 proves the predicate still fires.
-private_leaf_stray="$(grep -REl --include='*.nix' -e '_oci/default\.nix' -e '_edge/edge-ingress\.nix' modules | grep -vE '^modules/flake/(oci|edge)\.nix$' || true)"
+private_leaf_stray="$(grep -REl --include='*.nix' -e '_oci/default\.nix' -e '_edge/edge-ingress\.nix' modules | grep -vE '^modules/(oci/oci|edge/edge)\.nix$' || true)"
 [ -z "$private_leaf_stray" ] ||
   fail "7n: only the owning concern may import a Stage 7 private leaf: $private_leaf_stray"
-dj_leaf_stray="$(grep -REl --include='*.nix' -e '\./_dj([^a-zA-Z0-9_-]|$)' -e '_dj/default\.nix' -e '_dj/engine-dj\.nix' modules | grep -vE '^modules/flake/(dj\.nix|_dj/)' || true)"
+dj_leaf_stray="$(grep -REl --include='*.nix' -e '\./_dj([^a-zA-Z0-9_-]|$)' -e '_dj/default\.nix' -e '_dj/engine-dj\.nix' modules | grep -vE '^modules/music/(dj\.nix|_dj/)' || true)"
 [ -z "$dj_leaf_stray" ] || fail "7n: only the dj concern may import the _dj private leaves: $dj_leaf_stray"
 # The evaluator-class roots are deleted, not renamed (S7-4/S7-5/S7-8).
 [ -z "$(surviving_evacuated_roots "$ROOT")" ] ||
@@ -1411,12 +1620,12 @@ host_workload_imports_of() { # $1 repo root
 [ -z "$(host_workload_imports_of "$ROOT")" ] ||
   fail "7n-1: host assemblies must not import application/provider/workload implementations: $(host_workload_imports_of "$ROOT")"
 for f in \
-  modules/hosts/oci-melb-1/disko-single-disk-split.nix \
+  modules/hosts/oci-melb-1/_disko-single-disk-split.nix \
   modules/hosts/oci-melb-1/facter.json \
-  modules/hosts/home-forge/disko-two-disk.nix; do
+  modules/hosts/home-forge/_disko-two-disk.nix; do
   test -e "$f" || fail "7n-1: host-local fragment $f must be retained"
 done
-grep -q '\./cockpit-auth\.nix' modules/hosts/la-admin-1/default.nix ||
+grep -q '\./_cockpit-auth\.nix' modules/hosts/la-admin-1/_nixos.nix ||
   fail "7n-1: the direct-import guard must permit host-private fragments"
 
 # 7n-2. Semantic placement matrix. Each field is read defensively so an
@@ -1496,14 +1705,14 @@ assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHa
 # 7n-3a. Missing placement: dropping a host's aspect selection disables exactly
 # that capability while the toplevel still evaluates.
 D="$(make_copy)"
-sed -i '/aspects\.phoenix/d' "$D/modules/flake/registry.nix"
+sed -i '/aspects\.phoenix/d' "$D"/modules/hosts/*/default.nix
 json="$(probe_placement "$D" oci-melb-1)" || fail "7n-3a: OCI must still evaluate without the phoenix aspect"
 assert_placement oci-melb-1 "$json" '{"phoenixEnable":false}'
 
 # 7n-3b. Extra placement: adding an unselected aspect to a host activates the
 # capability there, so accidental placement is observable.
 D="$(make_copy)"
-sed -i '/aspects\.phoenix/i\            aspects.omniroute' "$D/modules/flake/registry.nix"
+sed -i '/aspects\.phoenix/i\        aspects.omniroute' "$D"/modules/hosts/*/default.nix
 json="$(probe_placement "$D" oci-melb-1)" || fail "7n-3b: OCI must still evaluate with a wrongly selected aspect"
 assert_placement oci-melb-1 "$json" '{"omnirouteEnable":true}'
 
@@ -1517,7 +1726,7 @@ assert_placement oci-melb-1 "$json" '{"phoenixEnable":false}'
 # 7n-3d. A direct host import of a workload implementation is detected by the
 # guard, and the import alone still activates nothing (import != placement).
 D="$(make_copy)"
-sed -i '/^    \.\/cockpit-auth\.nix$/i\    ../../../modules/services/phoenix.nix' "$D/modules/hosts/la-admin-1/default.nix"
+sed -i '/^    \.\/_cockpit-auth\.nix$/i\    ../../../modules/services/phoenix.nix' "$D/modules/hosts/la-admin-1/_nixos.nix"
 [ -n "$(host_workload_imports_of "$D")" ] ||
   fail "7n-3d: the host-import guard must detect a directly imported workload leaf"
 json="$(probe_placement "$D" la-admin-1)" || fail "7n-3d: LA must still evaluate with a directly imported leaf"
@@ -1529,13 +1738,13 @@ assert_placement la-admin-1 "$json" '{"phoenixEnable":false}'
 # guard must reject them, and the mutated host must really activate the workload
 # (so the check is non-vacuous rather than passing because the bypass failed).
 D="$(make_copy)"
-python3 - "$D/modules/hosts/la-admin-1/default.nix" <<'PYEOF'
+python3 - "$D/modules/hosts/la-admin-1/_nixos.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
-assert s.count("    ./cockpit-auth.nix\n") == 1, "import anchor drifted"
+assert s.count("    ./_cockpit-auth.nix\n") == 1, "import anchor drifted"
 assert s.count("  services = {\n") == 1, "services anchor drifted"
-s = s.replace("    ./cockpit-auth.nix\n", "    ../../services/phoenix.nix\n    ./cockpit-auth.nix\n", 1)
+s = s.replace("    ./_cockpit-auth.nix\n", "    ../../services/phoenix.nix\n    ./_cockpit-auth.nix\n", 1)
 s = s.replace("  services = {\n", "  services = {\n    phoenix.enable = true;\n", 1)
 open(p, "w").write(s)
 PYEOF
@@ -1543,7 +1752,7 @@ PYEOF
   fail "7n-3d-2: the path-form-independent guard must reject ../../services/phoenix.nix + enablement"
 json="$(probe_placement "$D" la-admin-1)" || fail "7n-3d-2: LA must still evaluate with the bypass in place"
 assert_placement la-admin-1 "$json" '{"phoenixEnable":true}'
-sed -i 's#../../services/phoenix\.nix#./../../services/phoenix.nix#' "$D/modules/hosts/la-admin-1/default.nix"
+sed -i 's#../../services/phoenix\.nix#./../../services/phoenix.nix#' "$D/modules/hosts/la-admin-1/_nixos.nix"
 [ -n "$(host_workload_imports_of "$D")" ] ||
   fail "7n-3d-2: the host-import guard must reject ./../../services/phoenix.nix"
 
@@ -1568,14 +1777,14 @@ got = json.loads(sys.argv[1])
 if "podman-prune" in got["monitorUnits"]:
     raise SystemExit(f"discovery alone activated an aspect: {got['monitorUnits']!r}")
 PYEOF
-python3 - "$D/modules/flake/registry.nix" <<'PYEOF'
+python3 - "$D/modules/hosts/la-admin-1/default.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
 i = s.index("la-admin-1 = {")
-j = s.index("            aspects.identity-provider", i)
+j = s.index("        aspects.identity-provider", i)
 k = s.index("\n", j)
-open(p, "w").write(s[: k + 1] + "            aspects.tamper-aspect\n" + s[k + 1 :])
+open(p, "w").write(s[: k + 1] + "        aspects.tamper-aspect\n" + s[k + 1 :])
 PYEOF
 json="$(probe_placement "$D" la-admin-1)" || fail "7n-3e: LA must evaluate with the tamper aspect selected"
 python3 - "$json" <<'PYEOF' || fail "7n-3e: selecting the discovered aspect must activate it"
@@ -1595,8 +1804,8 @@ PYEOF
 # 7n-3f. A publication smuggled into an underscore-private leaf is rejected by
 # the private-owner scan and stays invisible to discovery.
 D="$(make_copy)"
-printf '\n  flake.modules.nixos.evil-edge = { };\n' >>"$D/modules/flake/_edge/edge-ingress.nix"
-grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$D/modules/flake/_edge" >/dev/null ||
+printf '\n  flake.modules.nixos.evil-edge = { };\n' >>"$D/modules/edge/_edge/edge-ingress.nix"
+grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$D/modules/edge/_edge" >/dev/null ||
   fail "7n-3f: the private-owner scan must reject a publication under _edge"
 case "$(pub_names_of "$D")" in
   *evil-edge*) fail "7n-3f: an underscore-private publication must not be discovered" ;;
@@ -1608,19 +1817,19 @@ esac
 D="$(make_copy)"
 printf '\n  imports = [\n    ./_dj\n    ./_oci/default.nix\n  ];\n' >>"$D/modules/flake/phoenix.nix"
 [ -n "$(grep -REl --include='*.nix' -e '\./_dj([^a-zA-Z0-9_-]|$)' -e '_dj/default\.nix' -e '_dj/engine-dj\.nix' "$D/modules" |
-  grep -vE "^$D/modules/flake/(dj\.nix|_dj/)" || true)" ] ||
+  grep -vE "^$D/modules/music/(dj\.nix|_dj/)" || true)" ] ||
   fail "7n-3f-2: the _dj ownership predicate must detect an import from another concern"
 [ -n "$(grep -REl --include='*.nix' -e '_oci/default\.nix' -e '_edge/edge-ingress\.nix' "$D/modules" |
-  grep -vE "^$D/modules/flake/(oci|edge)\.nix\$" || true)" ] ||
+  grep -vE "^$D/modules/(oci/oci|edge/edge)\.nix\$" || true)" ] ||
   fail "7n-3f-2: the _oci/_edge ownership predicate must detect an import from another concern"
 
 # 7n-3f-3. A prose reference to a private path outside an import list is allowed
 # (current-state docs and consumer comments legitimately name them), while the
 # import-form predicate above still rejects real imports.
 D="$(make_copy)"
-printf '\n# consumers (e.g. modules/flake/_dj) are documented here\n' >>"$D/modules/flake/phoenix.nix"
+printf '\n# consumers (e.g. modules/music/_dj) are documented here\n' >>"$D/modules/flake/phoenix.nix"
 [ -z "$(grep -REl --include='*.nix' -e '\./_dj([^a-zA-Z0-9_-]|$)' -e '_dj/default\.nix' -e '_dj/engine-dj\.nix' "$D/modules" |
-  grep -vE "^$D/modules/flake/(dj\.nix|_dj/)" || true)" ] ||
+  grep -vE "^$D/modules/music/(dj\.nix|_dj/)" || true)" ] ||
   fail "7n-3f-3: a prose mention of a private path must not be treated as an import"
 
 # 7n-3g. A reintroduced compatibility root is rejected even when the boundary
@@ -1630,20 +1839,20 @@ mkdir -p "$D/modules/applications"
 printf '{ ... }: { }\n' >"$D/modules/applications/wrapper.nix"
 [ "$(surviving_evacuated_roots "$D")" = "modules/applications" ] ||
   fail "7n-3g: the root-evacuation predicate must detect a reintroduced modules/applications"
-sed -i 's/"hosts"/"applications"\n  "hosts"/' "$D/modules/flake/_unconverted-nixos-dirs.nix"
-[ "$(unconverted_roots "$D")" != '["hosts","services"]' ] ||
-  fail "7n-3g: widening the boundary back to applications must break the exact two-root set"
+sed -i '/^  "services"$/i\  "applications"' "$D/modules/flake/_unconverted-nixos-dirs.nix"
+[ "$(unconverted_roots "$D")" != '["services"]' ] ||
+  fail "7n-3g: widening the boundary back to applications must break the exact single-root set"
 
 # 7n-3h. The transitional boundary may not grow and may not be thinned without
 # deleting the directory.
 D="$(make_copy)"
-sed -i 's/"services"/"services"\n  "core"/' "$D/modules/flake/_unconverted-nixos-dirs.nix"
-[ "$(unconverted_roots "$D")" != '["hosts","services"]' ] ||
-  fail "7n-3h: a widened hosts/services boundary must be rejected"
+sed -i '/^  "services"$/a\  "core"' "$D/modules/flake/_unconverted-nixos-dirs.nix"
+[ "$(unconverted_roots "$D")" != '["services"]' ] ||
+  fail "7n-3h: a widened services boundary must be rejected"
 D="$(make_copy)"
-sed -i 's/"services"//' "$D/modules/flake/_unconverted-nixos-dirs.nix"
+sed -i '/^  "services"$/d' "$D/modules/flake/_unconverted-nixos-dirs.nix"
 test -d "$D/modules/services" || fail "7n-3h: prepared copy must still contain modules/services"
-[ "$(unconverted_roots "$D")" != '["hosts","services"]' ] ||
+[ "$(unconverted_roots "$D")" != '["services"]' ] ||
   fail "7n-3h: an unbacked boundary shrink must be rejected"
 
 # --- 7o. Feature-owned monitor contract (MON-1..MON-4) ----------------------
@@ -1802,7 +2011,7 @@ PYEOF
 # 7o-3. Negative: a contribution naming a unit with no implementation fails
 # closed and names that unit.
 D="$(make_copy)"
-python3 - "$D/modules/hosts/oci-melb-1/default.nix" <<'PYEOF'
+python3 - "$D/modules/hosts/oci-melb-1/_nixos.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
@@ -1817,7 +2026,7 @@ expect_eval_fail "$D" oci-melb-1 "'phantom-unit' is contributed for monitoring b
 # silently materialising a fragment. OCI owns no Beets unit, so a Beets monitor
 # contribution there must fail closed (this is the deployed-baseline drift).
 D="$(make_copy)"
-python3 - "$D/modules/hosts/oci-melb-1/default.nix" <<'PYEOF'
+python3 - "$D/modules/hosts/oci-melb-1/_nixos.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
@@ -1840,16 +2049,192 @@ cat >"$D/modules/flake/tamper-monitor-aspect.nix" <<'EOF'
   };
 }
 EOF
-python3 - "$D/modules/flake/registry.nix" <<'PYEOF'
+python3 - "$D/modules/hosts/oci-melb-1/default.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
 i = s.index("oci-melb-1 = {")
-j = s.index("            aspects.oci", i)
+j = s.index("        aspects.oci", i)
 k = s.index("\n", j)
-open(p, "w").write(s[: k + 1] + "            aspects.tamper-monitor-aspect\n" + s[k + 1 :])
+open(p, "w").write(s[: k + 1] + "        aspects.tamper-monitor-aspect\n" + s[k + 1 :])
 PYEOF
 expect_eval_fail "$D" oci-melb-1 "'ghost-unit' is contributed for monitoring but has no systemd service implementation"
 
+
+# 8a. Canonical host registry schema and generic materializer
+# (dendritic-stage-8-host-identity-contracts task 2.1, design HIC-1/HIC-2).
+# modules/flake/host-registry.nix declares the flake-level option family
+# nixos.hosts; concrete records are declared by host contributors (task 2.2),
+# so these checks inject a synthetic registry through a throwaway flake-parts
+# flake that imports only that discovered contributor. Named 'host-registry:'
+# errors must fail closed, and a minimal valid record must materialize an
+# evaluable nixosConfiguration.
+host_registry_probe() { # $1 copy root, $2 nixos.hosts literal, $3 function over the registry flake
+  local d="$1" hosts="$2" fn="$3" t out rc
+  t="$(mktemp -d /tmp/scaffold-hostreg.XXXXXX)"
+  cat >"$t/flake.nix" <<EOF2
+{
+  inputs.repo.url = "path:$d";
+  inputs.flake-parts.follows = "repo/flake-parts";
+  inputs.nixpkgs.follows = "repo/nixpkgs";
+  outputs =
+    { self, repo, ... }@inputs:
+    let
+      registry = inputs.flake-parts.lib.mkFlake { inherit inputs; } {
+        systems = [ "x86_64-linux" ];
+        imports = [
+          "$d/modules/flake/host-registry.nix"
+          ({ lib, ... }: { nixos.hosts = $hosts; })
+          ({ config, ... }: {
+            flake.probe = {
+              hosts = config.nixos.hosts;
+              hostValidationErrors = config.nixos.hostValidationErrors;
+            };
+          })
+        ];
+      };
+    in
+    {
+      inherit (registry) nixosConfigurations;
+      hosts = registry.probe.hosts;
+      hostValidationErrors = registry.probe.hostValidationErrors;
+    };
+}
+EOF2
+  out="$(nix eval --raw --impure --no-write-lock-file --expr "builtins.getFlake (toString $t)" --apply "r: builtins.toJSON (($fn) r)" 2>"$t.err")"
+  rc=$?
+  cat "$t.err" >&2
+  rm -rf "$t" "$t.err"
+  if [ "$rc" -eq 0 ]; then
+    printf '%s' "$out"
+    return 0
+  fi
+  return "$rc"
+}
+
+# Invalid registry: two records claim one host ID, one ID breaks the kebab-case
+# shape, two records claim the fleet's existing Tailscale identity, and one
+# record omits the two required fields.
+HOSTREG_BAD=$(cat <<'NIX'
+{
+  synth-dup-a = {
+    system = "x86_64-linux";
+    hostId = "dup";
+    tailscale.hostname = "synth-dup-a";
+  };
+  synth-dup-b = {
+    system = "x86_64-linux";
+    hostId = "dup";
+    tailscale.hostname = "synth-dup-b";
+  };
+  synth-shape = {
+    system = "x86_64-linux";
+    hostId = "Bad_Host";
+    tailscale.hostname = "synth-shape";
+  };
+  synth-ts-a = {
+    system = "x86_64-linux";
+    tailscale.hostname = "la-admin-1";
+  };
+  synth-ts-b = {
+    system = "x86_64-linux";
+    tailscale.hostname = "la-admin-1";
+  };
+  synth-missing = { };
+}
+NIX
+)
+
+D="$(make_copy)"
+bad_errors="$(host_registry_probe "$D" "$HOSTREG_BAD" 'h: h.hostValidationErrors')" ||
+  fail "8a-1: an invalid registry must report named errors instead of throwing"
+for want in \
+  "host-registry: duplicate host ID 'dup' is declared by more than one host record" \
+  "host-registry: invalid host ID 'Bad_Host' must match ^[a-z0-9][a-z0-9-]*\$" \
+  "host-registry: host ID 'Bad_Host' does not match its registry key 'synth-shape'" \
+  "host-registry: duplicate Tailscale identity 'la-admin-1' is used by more than one host record" \
+  "host-registry: host 'synth-missing' is missing required system or tailscale.hostname"; do
+  case "$bad_errors" in
+    *"$want"*) ;;
+    *) fail "8a-1: expected named error missing: $want (got: $bad_errors)" ;;
+  esac
+done
+
+# 8a-2. Fail-closed materialization: an invalid registry must not silently
+# produce a partial nixosConfigurations set.
+errlog="$(mktemp /tmp/scaffold-hostreg-err.XXXXXX)"
+if host_registry_probe "$D" "$HOSTREG_BAD" 'h: h.nixosConfigurations.synth-dup-a.config.system.build.toplevel.drvPath' 2>"$errlog"; then
+  fail "8a-2: materialization must fail closed while the registry is invalid"
+fi
+grep -q "host-registry: refusing to materialize hosts" "$errlog" ||
+  fail "8a-2: materialization must fail with the named host-registry error (got: $(cat "$errlog"))"
+grep -q "duplicate host ID 'dup'" "$errlog" ||
+  fail "8a-2: the fail-closed error must name the offending host ID (got: $(cat "$errlog"))"
+rm -f "$errlog"
+
+# 8a-3. Minimal valid record: no validation errors, the Tailscale FQDN derives
+# from hostname + tailnetSuffix, and the record materializes to a drvPath.
+HOSTREG_VALID=$(cat <<'NIX'
+{
+  synth-valid = {
+    system = "x86_64-linux";
+    tailscale = {
+      hostname = "synth-valid";
+      tailnetSuffix = "tail0fe19b.ts.net";
+    };
+    composition.fragments = [
+      {
+        system.stateVersion = "25.11";
+        fileSystems."/" = {
+          device = "/dev/disk/by-label/nixos";
+          fsType = "ext4";
+        };
+        boot.loader.grub.enable = false;
+        boot.loader.systemd-boot.enable = true;
+      }
+    ];
+  };
+}
+NIX
+)
+
+D="$(make_copy)"
+valid_report="$(host_registry_probe "$D" "$HOSTREG_VALID" 'h: {
+  errors = h.hostValidationErrors;
+  fqdn = h.hosts.synth-valid.tailscale.fqdn;
+  drv = h.nixosConfigurations.synth-valid.config.system.build.toplevel.drvPath;
+}')" ||
+  fail "8a-3: a minimal valid record must materialize an evaluable nixosConfiguration"
+python3 - "$valid_report" <<'PY' || fail "8a-3: valid-record observables violated: $valid_report"
+import json, sys
+got = json.loads(sys.argv[1])
+errs = []
+if got.get("errors") != []:
+    errs.append(f"errors: {got.get('errors')!r}")
+if got.get("fqdn") != "synth-valid.tail0fe19b.ts.net":
+    errs.append(f"fqdn: {got.get('fqdn')!r}")
+drv = got.get("drv") or ""
+if not drv.endswith(".drv") or "nixos-system-synth-valid" not in drv:
+    errs.append(f"drv: {drv!r}")
+if errs:
+    raise SystemExit("; ".join(errs))
+PY
+
+# 8a-4. Availability after task 2.3: the transitional loader and the `hosts`
+# discovery exclusion are gone, so every record is declared by its discovered
+# contributor exactly once and the three canonical nixosConfigurations outputs
+# must still materialize.
+registry_keys_real="$(ne --raw --apply 'c: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames c))' 'path:.#nixosConfigurations')" ||
+  fail "8a-4: the real flake must still materialize nixosConfigurations"
+[ "$registry_keys_real" = '["home-forge","la-admin-1","oci-melb-1"]' ] ||
+  fail "8a-4: all three hosts must materialize from discovered contributor records (got: $registry_keys_real)"
+
+# 8a-5. Single-load structural guard: the record contributors must be reached
+# only through import-tree discovery (task 2.3 deleted the explicit loader), so
+# no .nix file may import a host default.nix. A re-added explicit import would
+# double-merge each record into two module instances (the 2.2 review's ordering
+# constraint), so this structural assertion is the duplicate-load detector.
+[ -z "$(grep -RnE --include='*.nix' '^[[:space:]]*[^#]*\.\.[a-z.-]*/hosts/[^"]*/default\.nix|^[[:space:]]*[^#]*modules/hosts/[^"]*/default\.nix' modules lib policy flake.nix 2>/dev/null || true)" ] ||
+  fail "8a-5: host contributors must load only through discovery (found explicit default.nix import)"
 
 echo "check-dendritic-scaffold-contract: PASS"

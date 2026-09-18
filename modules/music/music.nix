@@ -24,6 +24,13 @@
       cfg = config.applications.music;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
+      # Shared-PostgreSQL endpoint for AudioMuse, resolved through the internal
+      # transport contract (stage 8 task 4.2, HIC-4). Forced only where used
+      # (inside the audiomuse enable gate below), so a host that selects music
+      # without AudioMuse never reads it. The explicit per-host/leaf options
+      # still win, keeping local co-located deployments on their own endpoint.
+      internalPostgres = config.repo.internal.postgres;
+
       mediaPaths = rec {
         libraryDir = "${cfg.storageRoot}/library";
         playlistsDir = "${cfg.storageRoot}/playlists";
@@ -380,8 +387,10 @@
             timeZone = config.time.timeZone;
             secretFiles.host = cfg.secretFiles.host;
             secretFiles.db = lib.mkDefault cfg.secretFiles.host;
-            postgresHost = lib.mkIf (cfg.audiomuse.postgresHost != null) cfg.audiomuse.postgresHost;
-            postgresPort = lib.mkIf (cfg.audiomuse.postgresPort != null) cfg.audiomuse.postgresPort;
+            postgresHost =
+              if cfg.audiomuse.postgresHost != null then cfg.audiomuse.postgresHost else internalPostgres.host;
+            postgresPort =
+              if cfg.audiomuse.postgresPort != null then cfg.audiomuse.postgresPort else internalPostgres.port;
           };
 
           services.beets = {

@@ -1,7 +1,7 @@
 # Private music storage leaf (dendritic Stage 6, S6-7): owns the media
 # collaboration groups, every media root/layout tmpfiles + ACL rule, the
 # media permission-reconcile service, and the media-fixperms operator CLI.
-# Imported only by the music composition (modules/flake/music.nix); publishes
+# Imported only by the music composition (modules/music/music.nix); publishes
 # no aspect and is never host-imported. Paths, modes, owners, ACLs, unit name,
 # and execution context are unchanged.
 {

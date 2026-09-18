@@ -48,7 +48,7 @@ jobs:
       - name: Run standard checks
         run: nix develop --command just checks all
       - name: Validate flake wiring
-        run: nix flake check --no-build --no-write-lock-file --refresh path:.
+        run: nix flake check --no-build --no-write-lock-file --refresh .#
   build-hosts:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
@@ -77,7 +77,7 @@ jobs:
             --print-build-logs \
             --eval-store auto \
             --store "$NIXBUILD_STORE" \
-            path:.#deploy.nodes.${{ matrix.host }}.profiles.system.path
+            .#deploy.nodes.${{ matrix.host }}.profiles.system.path
       - name: Summarize validation
         run: |
           {
@@ -112,7 +112,7 @@ jobs:
             --print-build-logs \
             --eval-store auto \
             --store "$NIXBUILD_STORE" \
-            path:.#nixosConfigurations.home-forge.config.system.build.toplevel
+            .#nixosConfigurations.home-forge.config.system.build.toplevel
       - name: Summarize validation
         run: |
           {

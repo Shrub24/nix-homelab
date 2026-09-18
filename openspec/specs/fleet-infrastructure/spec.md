@@ -196,20 +196,24 @@ Fleet hosts SHALL provide typed bootloader choice and `/build` tmpfs size facts 
 - **AND** the evaluated filesystem behavior matches the previously forced configuration
 
 ### Requirement: Fleet hosts SHALL select operational aspects explicitly
-Fleet hosts SHALL declare their operational stack by selecting explicit NixOS operational aspects—backups, builder-access, and observability-agent—rather than repeating leaf imports and enablement in each host assembly. Selecting an operational deployment aspect SHALL be its enablement, while its intrinsic private implementations and required upstream modules MAY be composed by the owning source contributor.
+
+Fleet hosts SHALL declare their operational stack by selecting explicit NixOS operational aspects, including independent `state-backups`, `cache-publisher`, `builder-access`, and `observability-agent` capabilities. Selecting an operational aspect SHALL be its enablement, while intrinsic private implementations and required upstream modules MAY be composed only by that owning contributor.
 
 #### Scenario: Host declares its operational stack
-- **WHEN** a host assembly is declared
-- **THEN** it lists the operational deployment aspects it enables by name
-- **AND** it does not repeat the leaf imports for state backups, niks3 upload/post-deploy, nixbuild SSH trust, or Beszel agent auth
-- **AND** policy dependencies between independently placeable aspects remain explicit and testable
+
+- **WHEN** a host requires mutable-state recovery and Nix closure publication
+- **THEN** it explicitly selects both `state-backups` and `cache-publisher`
+- **AND** it also selects builder-access and observability-agent according to host policy
+- **AND** it does not select or reference the removed combined `backups` aspect
+- **AND** no operational aspect silently enables another independently meaningful capability
 
 #### Scenario: Operational conversion preserves evaluated behavior
-- **WHEN** operational aspect definitions move from a central source registry to feature-owned top-level contributors
-- **THEN** `nixosConfigurations.oci-melb-1`, `nixosConfigurations.la-admin-1`, and `nixosConfigurations.home-forge` retain the same operational selections and evaluated behavior
-- **AND** all three hosts continue to select backups, builder-access, and observability-agent, including builder access on home-forge
-- **AND** the registry continues not to import `inputs.niks3.nixosModules.niks3-auto-upload`, while OCI retains the niks3 server module import
-- **AND** no support module, secret contract, monitoring behavior, deploy output, generic composition bus, compatibility wrapper, or new `mkForce` workaround is introduced
+
+- **WHEN** the combined backups aspect is decomposed without an intended runtime change
+- **THEN** `nixosConfigurations.oci-melb-1`, `nixosConfigurations.la-admin-1`, and `nixosConfigurations.home-forge` retain their existing backup units, timers, repositories, upload client, publication trigger, secret paths, monitoring behavior, and bootstrap gates
+- **AND** all three hosts explicitly select both `state-backups` and `cache-publisher`, and continue to select `builder-access` and `observability-agent`, including builder access on `home-forge`
+- **AND** the registry continues not to import the upstream Niks3 auto-upload module, while OCI retains the Niks3 server module import
+- **AND** no support module, generic composition bus, compatibility wrapper, or new `mkForce` workaround is introduced
 
 ### Requirement: Deployment aspects and infrastructure support modules SHALL be classified separately
 The fleet composition model SHALL distinguish host-selected deployment capabilities from infrastructure support modules that provide typed repository data, package projections, or provenance to lower-level consumers.

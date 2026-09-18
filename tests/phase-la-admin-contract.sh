@@ -14,7 +14,7 @@ LA='path:.#nixosConfigurations.la-admin-1.config'
 # The host assembly must not import destructive install/provider/static-network
 # inputs; the source check is feasible here because these imports would be
 # written by hand and never enter LA host declarations.
-LA_ASSEMBLY="modules/hosts/la-admin-1/default.nix"
+LA_ASSEMBLY="modules/hosts/la-admin-1/_nixos.nix"
 if grep -Eq 'disko|nixos-anywhere|networking\.(interfaces|defaultGateway|useDHCP|nameservers)' "$LA_ASSEMBLY"; then
   echo "la-admin-1: host assembly must not import disko/provider/static-network configuration" >&2
   exit 1
@@ -30,6 +30,19 @@ TEMPLATE="secrets/.templates/services/ntfy.yaml"
 TEMPLATE_USERS=$(awk -F'"' '/^auth-users:/{u=1; next} /^auth-tokens:/{u=0} u && /^  - "(oci-melb-1|la-admin-1|home-forge):/{split($2, f, ":"); print f[1]}' "$TEMPLATE")
 if [ "$(printf '%s\n' "$TEMPLATE_USERS" | wc -l)" -ne 3 ]; then
   echo "la-admin-1: ntfy template must declare exactly three bare-hostname token users" >&2
+  exit 1
+fi
+
+# The publisher policy the push-server aspect declares and the publisher users
+# the encrypted auth file provisions must be the same set: a publisher added to
+# one side without the other is the drift this change exists to prevent. The
+# policy is read from the evaluated config (canonical host IDs) and the template
+# from plain-text source, so the check needs no decryption.
+POLICY_PUBLISHERS=$(nix eval --raw --no-write-lock-file --apply 'c: builtins.concatStringsSep "\n" (builtins.attrNames c.services.ntfy.auth.publishers)' "$LA")
+if [ "$(printf '%s\n' "$TEMPLATE_USERS" | LC_ALL=C sort)" != "$(printf '%s\n' "$POLICY_PUBLISHERS" | LC_ALL=C sort)" ]; then
+  echo "la-admin-1: ntfy publisher policy and template token users disagree" >&2
+  echo "  policy  : $(printf '%s ' "$POLICY_PUBLISHERS")" >&2
+  echo "  template: $(printf '%s ' "$TEMPLATE_USERS")" >&2
   exit 1
 fi
 

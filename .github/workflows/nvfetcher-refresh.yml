@@ -22,6 +22,9 @@ jobs:
       - name: Regenerate nvfetcher sources
         run: nix run nixpkgs#nvfetcher -- -o pkgs/_sources
       - name: Validate flake after regeneration
+        # path: is deliberate here: the regenerated sources may be untracked when
+        # this runs, and the Git-tree form (.#) would omit them. See AGENTS.md
+        # "Project Policy" for the reference-form rule.
         run: nix flake check --no-build --no-write-lock-file path:.
       - name: Check for generated-file changes
         id: diff

@@ -34,7 +34,7 @@ jobs:
         with:
           nixbuild_token: ${{ secrets.NIXBUILD_TOKEN }}
       - name: Validate flake wiring
-        run: nix flake check --no-build --no-write-lock-file --refresh path:.
+        run: nix flake check --no-build --no-write-lock-file --refresh .#
       - name: Summarize deployment validation
         run: |
           {

@@ -92,8 +92,11 @@ in
             aspects.networking
             aspects.tailscale
             aspects.notify
-            # Operational aspects (dendritic stage 3, OPS-1): selection is enablement.
-            aspects.backups
+            # Operational aspects: selection is enablement. The backups aspect
+            # was split (split-state-backups-cache-publication OPSPLIT-1) into
+            # independent state-backups and cache-publisher aspects.
+            aspects.state-backups
+            aspects.cache-publisher
             aspects.builder-access
             aspects.observability-agent
             ../hosts/oci-melb-1/default.nix
@@ -138,8 +141,11 @@ in
             aspects.networking
             aspects.tailscale
             aspects.notify
-            # Operational aspects (dendritic stage 3, OPS-1): selection is enablement.
-            aspects.backups
+            # Operational aspects: selection is enablement. The backups aspect
+            # was split (split-state-backups-cache-publication OPSPLIT-1) into
+            # independent state-backups and cache-publisher aspects.
+            aspects.state-backups
+            aspects.cache-publisher
             aspects.builder-access
             aspects.observability-agent
             ../hosts/la-admin-1/default.nix
@@ -172,8 +178,11 @@ in
             aspects.networking
             aspects.tailscale
             aspects.notify
-            # Operational aspects (dendritic stage 3, OPS-1): selection is enablement.
-            aspects.backups
+            # Operational aspects: selection is enablement. The backups aspect
+            # was split (split-state-backups-cache-publication OPSPLIT-1) into
+            # independent state-backups and cache-publisher aspects.
+            aspects.state-backups
+            aspects.cache-publisher
             aspects.builder-access
             aspects.observability-agent
             ../hosts/home-forge/default.nix

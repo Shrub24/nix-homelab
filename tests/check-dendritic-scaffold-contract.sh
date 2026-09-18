@@ -278,7 +278,7 @@ host_leaf_imports_of() { # $1 dir
   grep -RnE --include='*.nix' 'modules/(services/(state-backups|beszel-agent-auth)|flake/(_backups/(niks3-upload-client|niks3-post-deploy)|_builder-access/nixbuild-ssh))\.nix' "$1/modules/hosts" || true
 }
 
-# 7a. Exactly thirty-three publications are discovered across the distributed
+# 7a. Exactly thirty-four publications are discovered across the distributed
 # contributors: the infrastructure support quartet, the eleven Stage 2-6
 # deployment aspects (base, shell, networking, tailscale, notify, backups,
 # builder-access, observability-agent, dj, music, identity-client), and the
@@ -289,10 +289,10 @@ host_leaf_imports_of() { # $1 dir
 # file is pinned.
 expected_pub="$(printf '%s\n' \
 flake.modules.nixos.ai-gateway \
-flake.modules.nixos.backups \
 flake.modules.nixos.base \
 flake.modules.nixos.beszel \
 flake.modules.nixos.builder-access \
+flake.modules.nixos.cache-publisher \
 flake.modules.nixos.cockpit \
 flake.modules.nixos.dj \
 flake.modules.nixos.edge \
@@ -316,6 +316,7 @@ flake.modules.nixos.postgres \
 flake.modules.nixos.provenance \
 flake.modules.nixos.push-server \
 flake.modules.nixos.shell \
+flake.modules.nixos.state-backups \
 flake.modules.nixos.tailscale \
 flake.modules.nixos.termix \
 flake.modules.nixos.vaultwarden \
@@ -323,7 +324,7 @@ flake.modules.nixos.web-policy \
 flake.modules.nixos.webhook)"
 pub_names="$(pub_names_of "$ROOT")"
 if [ "$pub_names" != "$expected_pub" ]; then
-  fail "discovered publications drifted from the support quartet + eleven deployment aspects + eighteen Stage 7 placement aspects: $pub_names"
+  fail "discovered publications drifted from the support quartet + eleven deployment aspects + eighteen placement aspects + the split backup aspects: $pub_names"
 fi
 if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.cli|_aspects/cli|aspects\.cli' modules; then
 fail "the deleted cli aspect must not be resurrected"
@@ -355,7 +356,8 @@ aspects.shell
 aspects.networking
 aspects.tailscale
 aspects.notify
-aspects.backups
+aspects.state-backups
+aspects.cache-publisher
 aspects.builder-access
 aspects.observability-agent"
 oci_placement="aspects.oci
@@ -591,7 +593,7 @@ fi
 # exist (relocated beside their aspect owners under underscore-private paths,
 # S5-3) and are imported by exactly their owning aspect; host assemblies never
 # import, enable, or conventionally bind them; the upstream niks3-auto-upload
-# module is imported only by the backups aspect (never by the registry); the
+# module is imported only by the cache-publisher aspect (never by the registry); the
 # retired fleet.nixbuild-ssh option is gone; and the post-deploy leaf takes
 # its filter package from the typed option injected by the aspect (no hidden
 # fleet-packages dependency). The services import-tree exclusion is unchanged
@@ -604,17 +606,20 @@ for leaf in \
   modules/services/beszel-agent-auth.nix; do
   test -f "$leaf" || fail "operational leaf $leaf missing"
 done
-grep -q '../services/state-backups.nix' modules/flake/backups.nix || fail "backups aspect must import the state-backups leaf"
-grep -q './_backups/niks3-upload-client.nix' modules/flake/backups.nix || fail "backups aspect must import the niks3-upload-client leaf"
-grep -q './_backups/niks3-post-deploy.nix' modules/flake/backups.nix || fail "backups aspect must import the niks3-post-deploy leaf"
+grep -q '../services/state-backups.nix' modules/flake/state-backups.nix || fail "state-backups aspect must import the state-backups leaf"
+if grep -qE '_backups|niks3' modules/flake/state-backups.nix; then
+  fail "state-backups aspect must own no Niks3 upload/publication surface"
+fi
+grep -q './_backups/niks3-upload-client.nix' modules/flake/cache-publisher.nix || fail "cache-publisher aspect must import the niks3-upload-client leaf"
+grep -q './_backups/niks3-post-deploy.nix' modules/flake/cache-publisher.nix || fail "cache-publisher aspect must import the niks3-post-deploy leaf"
 grep -q './_builder-access/nixbuild-ssh.nix' modules/flake/builder-access.nix || fail "builder-access aspect must import the nixbuild-ssh leaf"
 grep -q '../services/beszel-agent-auth.nix' modules/flake/observability-agent.nix || fail "observability-agent aspect must import the beszel-agent-auth leaf"
-grep -q 'inputs.niks3.nixosModules.niks3-auto-upload' modules/flake/backups.nix || fail "backups aspect must import the upstream niks3-auto-upload module"
+grep -q 'inputs.niks3.nixosModules.niks3-auto-upload' modules/flake/cache-publisher.nix || fail "cache-publisher aspect must import the upstream niks3-auto-upload module"
 # Narrowed to the exact upstream module import (S5-7): the relocated
 # post-deploy leaf mentions the `services.niks3-auto-upload` option, which must
 # not false-positive as a second import site.
-if grep -RnE 'inputs\.niks3\.nixosModules\.niks3-auto-upload' modules/flake | grep -v '^modules/flake/backups.nix:'; then
-  fail "niks3-auto-upload must be imported only by the backups aspect (not the registry)"
+if grep -RnE 'inputs\.niks3\.nixosModules\.niks3-auto-upload' modules/flake | grep -v '^modules/flake/cache-publisher.nix:'; then
+  fail "niks3-auto-upload must be imported only by the cache-publisher aspect (not the registry)"
 fi
 grep -qE 'inputs\.niks3\.nixosModules\.niks3[[:space:]]*$' modules/flake/registry.nix || fail "OCI must keep the niks3 server module import"
 [ -z "$(host_leaf_imports_of "$ROOT")" ] || fail "host assemblies must not import the five operational leaves directly"
@@ -629,7 +634,7 @@ if grep -RnE '^[^#]*fleet\.nixbuild-ssh' modules; then
 fi
 grep -q 'filterPackage' modules/flake/_backups/niks3-post-deploy.nix || fail "post-deploy leaf must define the typed filterPackage option"
 grep -q 'type = lib.types.package' modules/flake/_backups/niks3-post-deploy.nix || fail "filterPackage must be a typed package option"
-grep -q 'filterPackage = packages.nix-path-filter' modules/flake/backups.nix || fail "backups aspect must inject nix-path-filter into post-deploy"
+grep -q 'filterPackage = packages.nix-path-filter' modules/flake/cache-publisher.nix || fail "cache-publisher aspect must inject nix-path-filter into post-deploy"
 if grep -nE '^[^#]*config\.repo\.packages' modules/flake/_backups/niks3-post-deploy.nix; then
   fail "post-deploy leaf must not read config.repo.packages (no hidden fleet-packages dependency)"
 fi
@@ -739,9 +744,9 @@ expect_eval_fail "$D" oci-melb-1 "services.notification-daemon.monitor.enable mu
 # 7i-2. A derived bucket outside the S3 rule fails with the named assertion
 # (OPS-11). nixpkgs itself rejects a trailing-hyphen hostName at the type
 # level, so the tamper forces the trailing hyphen into the derived bucket. The
-# bucket expression lives in the backups concern contributor (S4-2).
+# bucket expression lives in the state-backups contributor.
 D="$(make_copy)"
-python3 - "$D/modules/flake/backups.nix" <<'PY'
+python3 - "$D/modules/flake/state-backups.nix" <<'PY'
 import sys
 p = sys.argv[1]
 s = open(p).read()
@@ -772,18 +777,80 @@ if got != want:
     raise SystemExit(f"got {got!r} want {want!r}")
 PY
 
+# 7i-4. Backup-split subset isolation (split-state-backups-cache-publication
+# 3.3a): selecting one of the split aspects alone must introduce only its own
+# units. Each composition imports the copy's contributor module directly over
+# a minimal nixosSystem, so an unimported leaf's options are hard absences,
+# not defaults. The home-forge fixture hostname keeps the conventional host
+# secret present so the gated enables are true.
+subset_probe() { # $1 copy root, $2 aspect name -> eval report JSON
+  local d="$1" aspect="$2" t out rc
+  t="$(mktemp -d /tmp/scaffold-subset.XXXXXX)"
+  cat >"$t/flake.nix" <<EOF2
+{
+  inputs.repo.url = "path:$d";
+  outputs = { self, repo }: {
+    report = let
+      c = repo.inputs.nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          repo.inputs.sops-nix.nixosModules.sops
+          repo.modules.nixos.$aspect
+          { networking.hostName = "home-forge"; system.stateVersion = "25.11"; }
+        ];
+      };
+    in {
+      resticBackupsEmpty = c.services.restic.backups == { };
+      resticUnitAbsent = !(c.systemd.services ? "restic-backups-state");
+      clientEnable = c.services.niks3-auto-upload.enable or false;
+      clientOptionAbsent = !(c.services.niks3-auto-upload ? enable);
+      postOptionAbsent = !(c.services.niks3-post-deploy ? enable);
+      postActivationAbsent = (c.system.activationScripts.niks3-post-deploy or null) == null;
+    };
+  };
+}
+EOF2
+  out="$(nix eval --raw --impure --no-write-lock-file --expr "builtins.toJSON ((builtins.getFlake (toString $t)).report)")"
+  rm -rf "$t"
+  printf '%s' "$out"
+}
+
+json="$(subset_probe "$D" cache-publisher)" ||
+  fail "cache-publisher-only subset: composition must evaluate"
+python3 - "$json" <<'PY' || fail "cache-publisher-only subset: observables violated: $json"
+import json, sys
+got = json.loads(sys.argv[1])
+want = {"resticBackupsEmpty": True, "resticUnitAbsent": True,
+        "clientEnable": True, "postOptionAbsent": False, "clientOptionAbsent": False}
+errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in want.items() if got.get(k) != v]
+if errs:
+    raise SystemExit("; ".join(errs))
+PY
+
+json="$(subset_probe "$D" state-backups)" ||
+  fail "state-backups-only subset: composition must evaluate"
+python3 - "$json" <<'PY' || fail "state-backups-only subset: observables violated: $json"
+import json, sys
+got = json.loads(sys.argv[1])
+want = {"clientOptionAbsent": True, "postOptionAbsent": True,
+        "postActivationAbsent": True, "resticUnitAbsent": False}
+errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in want.items() if got.get(k) != v]
+if errs:
+    raise SystemExit("; ".join(errs))
+PY
+
 # 7j. Tamper-proof source checks: the 7a/7b/7g pipelines must detect a
-# Stage-2-shaped regression (aspect unpublished, selection dropped, leaf
-# re-imported by a host) on a throwaway copy. The publication tamper targets
-# one distributed contributor (backups.nix), not the deleted central file. The
-# re-import anchors on a host import line that survives Stage 7 and inserts a
-# relocated private leaf path so host_leaf_imports_of is exercised.
+# regression (aspect unpublished, selection dropped, leaf re-imported by a
+# host) on a throwaway copy. The publication tamper targets one distributed
+# contributor (state-backups.nix). The re-import anchors on a host import line
+# that survives the backup split and inserts a relocated private leaf path so
+# host_leaf_imports_of is exercised.
 D="$(make_copy)"
-sed -i 's/flake.modules.nixos.backups =/flake.modules.nixos.backups-tampered =/' "$D/modules/flake/backups.nix"
-sed -i '/aspects.backups/d' "$D/modules/flake/registry.nix"
+sed -i 's/flake.modules.nixos.state-backups =/flake.modules.nixos.state-backups-tampered =/' "$D/modules/flake/state-backups.nix"
+sed -i '/aspects.state-backups/d' "$D/modules/flake/registry.nix"
 sed -i '/\.\/cockpit-auth\.nix/a\  ../../../modules/flake/_backups/niks3-post-deploy.nix' "$D/modules/hosts/oci-melb-1/default.nix"
 [ "$(pub_names_of "$D")" != "$expected_pub" ] ||
-fail "7a publication check must detect an unpublished backups aspect"
+fail "7a publication check must detect an unpublished state-backups aspect"
 [ "$(host_aspects "$D" oci-melb-1)" != "$oci_sel" ] ||
 fail "7b selection check must detect a dropped aspect"
 [ -n "$(host_leaf_imports_of "$D")" ] ||

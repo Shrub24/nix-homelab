@@ -38,7 +38,7 @@ ne() { nix eval --no-write-lock-file "$@"; }
 # Check 1 and mutations 7l-1/7n-3 call this same predicate.
 surviving_evacuated_roots() { # $1 repo root
   local r
-  for r in shared storage applications providers; do
+  for r in shared storage applications providers services; do
     test ! -e "$1/modules/$r" || printf '%s\n' "modules/$r"
   done
 }
@@ -83,18 +83,18 @@ test -f "$LIST_FILE" || fail "$LIST_FILE missing (Stage 1 boundary)"
 # aspects) removed `core` and `profiles` after their contents became aspect
 # contributors or were deleted. Stage 5 removed `shared` and `storage` (S5-6).
 # Stage 7 removed `applications` and `providers` after every implementation
-# leaf moved beside its discovered concern owner (S7-4/S7-5/S7-8). This exact
-# single-entry equality is the future-work guard: the boundary may not grow
-# again, and `services` is the explicit transition backlog.
+# leaf moved beside its discovered concern owner (S7-4/S7-5/S7-8). Stage 8
+# removed `hosts` (HIC-2). The post-Stage-8 services-tree conversion removed
+# `services`: every leaf became a discovered aspect file, a sibling
+# contributor of its owner aspect, or an underscore-private helper, and the
+# PostgreSQL mechanism became the aspect pair
+# modules/database/postgres{,_consumer.nix}. This exact empty equality is the
+# future-work guard: the boundary may not grow again; re-add an entry only
+# when a genuinely transitional plain-module directory appears.
 actual="$(unconverted_roots "$ROOT")"
-if [ "$actual" != '["services"]' ]; then
-  fail "unconverted-dir list drifted from the final single root (services): $actual"
+if [ "$actual" != '[]' ]; then
+  fail "unconverted-dir list drifted from empty (transition complete): $actual"
 fi
-# (Exact equality also proves no underscore path is enumerated here: import-tree
-# underscore semantics, not this list, owns host-private files.)
-for dir in services; do
-  test -d "modules/$dir" || fail "excluded root modules/$dir must exist"
-done
 # Root evacuation (S5-6/S7-8): the four converted roots must be gone, not
 # merely unlisted, and no underscore-renamed replacement root may exist. A fake
 # shrink that drops an entry while the directory survives fails here.
@@ -1185,15 +1185,14 @@ touch "$D/modules/storage/disko-root.nix"
 [ "$(surviving_evacuated_roots "$D")" = "modules/storage" ] ||
   fail "7l-1: root-evacuation predicate must detect a surviving modules/storage"
 
-# 7l-2. A fake filter shrink must be rejected: dropping a still-present root's
-# boundary entry (services) leaves the exact single-root set wrong even though the
-# directory survives unconverted. This proves the current single-root equality is
-# load-bearing and order-independent, independent of the root-evacuation guard.
+# 7l-2. A fake filter widening must be rejected: adding a root entry for a
+# directory that does not exist (or re-adding services after its conversion)
+# breaks the exact empty set. This proves the empty-boundary equality is
+# load-bearing, independent of the root-evacuation guard.
 D="$(make_copy)"
-sed -i '/^  "services"$/d' "$D/modules/flake/_unconverted-nixos-dirs.nix"
-test -d "$D/modules/services" || fail "7l-2: prepared copy must still contain modules/services"
-[ "$(unconverted_roots "$D")" != '["services"]' ] ||
-  fail "7l-2: fake filter shrink must break the exact single-root set"
+sed -i 's/^\[ \]$/[ "core" ]/' "$D/modules/flake/_unconverted-nixos-dirs.nix"
+[ "$(unconverted_roots "$D")" != '[]' ] ||
+  fail "7l-2: a widened boundary must break the exact empty set"
 
 # 7l-3. Private leaves must stay undiscoverable/non-publishing. A publication
 # smuggled into an underscore-private path is caught by the 7a private-owner scan
@@ -1607,6 +1606,7 @@ placement_dir_of() {
     edge) echo modules/edge ;;
     oci) echo modules/oci ;;
     cockpit | termix | vaultwarden | gatus | beszel | homepage | webhook) echo modules/admin ;;
+    postgres) echo modules/database/postgres ;;
     *) echo modules/flake ;;
   esac
 }
@@ -1908,14 +1908,14 @@ sed -i '/^  "services"$/i\  "applications"' "$D/modules/flake/_unconverted-nixos
 # 7n-3h. The transitional boundary may not grow and may not be thinned without
 # deleting the directory.
 D="$(make_copy)"
-sed -i '/^  "services"$/a\  "core"' "$D/modules/flake/_unconverted-nixos-dirs.nix"
-[ "$(unconverted_roots "$D")" != '["services"]' ] ||
-  fail "7n-3h: a widened services boundary must be rejected"
+sed -i 's/^\[ \]$/[ "core" ]/' "$D/modules/flake/_unconverted-nixos-dirs.nix"
+[ "$(unconverted_roots "$D")" != '[]' ] ||
+  fail "7n-3h: a widened boundary must be rejected"
 D="$(make_copy)"
-sed -i '/^  "services"$/d' "$D/modules/flake/_unconverted-nixos-dirs.nix"
-test -d "$D/modules/services" || fail "7n-3h: prepared copy must still contain modules/services"
-[ "$(unconverted_roots "$D")" != '["services"]' ] ||
-  fail "7n-3h: an unbacked boundary shrink must be rejected"
+sed -i 's/^\[ \]$/[ "services" ]/' "$D/modules/flake/_unconverted-nixos-dirs.nix"
+test ! -d "$D/modules/services" || fail "7n-3h: services must stay evacuated"
+[ "$(unconverted_roots "$D")" != '[]' ] ||
+  fail "7n-3h: an unbacked boundary entry must be rejected"
 
 # --- 7o. Feature-owned monitor contract (MON-1..MON-4) ----------------------
 # (openspec change feature-owned-service-monitoring tasks 2.1-2.3, 3.1, 3.2.)

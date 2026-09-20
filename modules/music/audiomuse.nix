@@ -33,7 +33,7 @@
       # service imports the module that declares it: a definition of an undeclared
       # option is rejected even when its `mkIf` is false. Enablement stays with the
       # `postgres` aspect, so importing the declarations provisions nothing.
-      imports = [ ../services/postgres.nix ];
+      imports = [ ../database/postgres/_consumer.nix ];
 
       options.services.audiomuse = {
         enable = lib.mkEnableOption "AudioMuseAI similarity service";

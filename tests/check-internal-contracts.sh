@@ -159,7 +159,7 @@ note "authority: kanidm-admin + ntfy-admin still resolve from the web catalog"
 # requires, so the contract must fail with the named capability error rather
 # than serve a dead endpoint.
 D="$(make_copy)"
-python3 - "$D/modules/flake/postgres.nix" <<'PYEOF'
+python3 - "$D/modules/database/postgres/postgres.nix" <<'PYEOF'
 import sys
 
 p = sys.argv[1]

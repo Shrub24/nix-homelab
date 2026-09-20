@@ -44,7 +44,7 @@
       listenPort = homepageRoute.origin.port;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
-      homepageData = import ../services/admin/homepage/data.nix {
+      homepageData = import ./homepage/_data.nix {
         inherit config;
         policyServices = webServices;
       };

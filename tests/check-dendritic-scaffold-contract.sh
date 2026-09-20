@@ -503,7 +503,7 @@ host_aspects() { # $1 repo root, $2 host -> sorted selected aspect names
   registry_selections "$1" | awk -v h="$2" '$1 == h { print $2 }' | LC_ALL=C sort -u
 }
 host_leaf_imports_of() { # $1 dir
-  grep -RnE --include='*.nix' 'modules/(services/(state-backups|beszel-agent-auth)|(cache/_backups/(niks3-upload-client|niks3-post-deploy)|flake/_builder-access/nixbuild-ssh))\.nix' "$1/modules/hosts" || true
+  grep -RnE --include='*.nix' 'modules/((cache/state-backups|flake/observability-agent)|(cache/_backups/(niks3-upload-client|niks3-post-deploy)|flake/_builder-access/nixbuild-ssh))\.nix' "$1/modules/hosts" || true
 }
 
 # 7a. Exactly thirty-five publications are discovered across the distributed
@@ -806,11 +806,11 @@ done
 
 # 7e. Tailscale ownership (FND-4, secrets-management spec): the module leaf
 # owns auth-key registration and MTU rendering; hosts never repeat them.
-grep -q 'key = "tailscale/auth_key"' modules/services/tailscale.nix || fail "tailscale leaf must register key tailscale/auth_key"
-grep -q 'path = "/run/secrets/tailscale.auth_key"' modules/services/tailscale.nix || fail "tailscale leaf must render /run/secrets/tailscale.auth_key"
-grep -q 'mode = "0400"' modules/services/tailscale.nix || fail "tailscale auth-key secret must be mode 0400"
-grep -q 'authKeyFile = lib.mkIf hasHostSecrets "/run/secrets/tailscale.auth_key"' modules/services/tailscale.nix || fail "tailscale leaf must own authKeyFile"
-grep -q 'TS_DEBUG_MTU = toString cfg.debugMtu' modules/services/tailscale.nix || fail "tailscale leaf must render TS_DEBUG_MTU from debugMtu"
+grep -q 'key = "tailscale/auth_key"' modules/flake/tailscale.nix || fail "tailscale leaf must register key tailscale/auth_key"
+grep -q 'path = "/run/secrets/tailscale.auth_key"' modules/flake/tailscale.nix || fail "tailscale leaf must render /run/secrets/tailscale.auth_key"
+grep -q 'mode = "0400"' modules/flake/tailscale.nix || fail "tailscale auth-key secret must be mode 0400"
+grep -q 'authKeyFile = lib.mkIf hasHostSecrets "/run/secrets/tailscale.auth_key"' modules/flake/tailscale.nix || fail "tailscale leaf must own authKeyFile"
+grep -q 'TS_DEBUG_MTU = toString cfg.debugMtu' modules/flake/tailscale.nix || fail "tailscale leaf must render TS_DEBUG_MTU from debugMtu"
 if grep -RnE 'tailscale_auth_key|authKeyFile|TS_DEBUG_MTU|tailscale\.auth_key' modules/hosts; then
 fail "hosts must not repeat tailscale secret/MTU registration"
 fi
@@ -818,7 +818,7 @@ fi
 # 7f. Notify composition (FND-5, apprise-notification-module spec): the notify
 # aspect composes the notification-daemon leaf, enables it, and resolves the
 # repo packages via withSystem; hosts keep only host-specific inputs.
-grep -q 'imports = \[ ../services/notification-daemon \]' modules/notifications/notify.nix || fail "notify aspect must compose the notification-daemon leaf"
+grep -q 'options\.services\.notification-daemon' modules/notifications/notify.nix || fail "notify aspect must own the notification-daemon implementation body"
 grep -q 'enable = true;' modules/notifications/notify.nix || fail "notify aspect must enable the daemon"
 grep -q 'package = packages.notification-daemon;' modules/notifications/notify.nix || fail "notify aspect must pass the repo notification-daemon package"
 grep -q 'notifyPackage = packages.notify;' modules/notifications/notify.nix || fail "notify aspect must pass the repo notify package"
@@ -836,21 +836,24 @@ fi
 # fleet-packages dependency). The services import-tree exclusion is unchanged
 # (OPS-9, check 1).
 for leaf in \
-  modules/services/state-backups.nix \
+  modules/cache/state-backups.nix \
   modules/cache/_backups/niks3-upload-client.nix \
   modules/cache/_backups/niks3-post-deploy.nix \
   modules/flake/_builder-access/nixbuild-ssh.nix \
-  modules/services/beszel-agent-auth.nix; do
+  modules/flake/observability-agent.nix; do
   test -f "$leaf" || fail "operational leaf $leaf missing"
 done
-grep -q '../services/state-backups.nix' modules/cache/state-backups.nix || fail "state-backups aspect must import the state-backups leaf"
-if grep -qE '_backups|niks3' modules/cache/state-backups.nix; then
+grep -q 'options.services.state-backups' modules/cache/state-backups.nix || fail "state-backups aspect must own the state-backups implementation body"
+# Word-boundary on `_backups` keeps the check meaningful now that the
+# implementation body lives in this file: `state_backups_*` secret identifiers
+# are not the `_backups` publication leaves.
+if grep -qE '_backups\b|niks3' modules/cache/state-backups.nix; then
   fail "state-backups aspect must own no Niks3 upload/publication surface"
 fi
 grep -q './_backups/niks3-upload-client.nix' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must import the niks3-upload-client leaf"
 grep -q './_backups/niks3-post-deploy.nix' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must import the niks3-post-deploy leaf"
 grep -q './_builder-access/nixbuild-ssh.nix' modules/flake/builder-access.nix || fail "builder-access aspect must import the nixbuild-ssh leaf"
-grep -q '../services/beszel-agent-auth.nix' modules/flake/observability-agent.nix || fail "observability-agent aspect must import the beszel-agent-auth leaf"
+grep -q 'options\.services\.beszel-agent-auth' modules/flake/observability-agent.nix || fail "observability-agent aspect must own the beszel-agent-auth implementation body"
 grep -q 'inputs.niks3.nixosModules.niks3-auto-upload' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must import the upstream niks3-auto-upload module"
 # Narrowed to the exact upstream module import (S5-7): the relocated
 # post-deploy leaf mentions the `services.niks3-auto-upload` option, which must
@@ -1269,23 +1272,28 @@ esac
 #
 # The `music` deployment aspect is published from the discovered contributor
 # modules/music/music.nix and selected only on home-forge; selecting it is its
-# top-level enablement. Its private implementation leaves under
-# modules/services/music/** publish no aspect and are imported only by that
-# concern owner. DJ consumes the read-only applications.music.contract through
-# a named assertion. Privacy is asserted by owner (host-import grep +
-# publication exclusion + owner-import check), never by a hardcoded
-# operational predicate.
+# top-level enablement. Its implementation files under modules/music/*.nix are
+# discovered contributors that merge into that one aspect name (deferredModule),
+# are never imported from outside the concern, and publish no second aspect.
+# DJ consumes the read-only applications.music.contract through a named
+# assertion. Ownership is asserted by contributor (host-import grep + foreign
+# publication scan + outside-import check), never by a hardcoded operational
+# predicate.
 
 music_host_imports_of() { # $1 repo root
-  grep -RnE --include='*.nix' 'modules/services/music' "$1/modules/hosts" || true
+  grep -RnE --include='*.nix' 'modules/music' "$1/modules/hosts" || true
 }
-music_leaf_publishers_of() { # $1 repo root
-  grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$1/modules/services/music" || true
+music_leaf_publishers_of() { # $1 repo root -> publications other than the music/dj aspects themselves
+  # modules/music holds both concerns' contributors (music: the eight workload
+  # implementations; dj: the dj aspect and its Windows VM runtime sibling), so
+  # only those two aspect names are allowed to appear here.
+  grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$1/modules/music" \
+    | grep -vE 'flake\.modules\.nixos\.(music|dj)[[:space:]]*=' || true
 }
-music_leaf_import_sites_of() { # $1 repo root -> leaf imports outside the concern owner
+music_leaf_import_sites_of() { # $1 repo root -> music implementations imported from outside the concern
   grep -REl --include='*.nix' \
-    'services/music/(audiomuse|syncthing|navidrome|slskd|tagr|beets/default|ingest|storage)\.nix' \
-    "$1/modules" | grep -vE '/modules/music/music\.nix$' || true
+    'music/(audiomuse|syncthing|navidrome|slskd|tagr|beets|ingest|storage|windows-vm)\.nix' \
+    "$1/modules" | grep -vF "$1/modules/music/" || true
 }
 strip_host_block() { # $1 file, $2 "<option> = {" marker
   python3 - "$1" "$2" <<'PYEOF'
@@ -1315,16 +1323,18 @@ test -f modules/music/music.nix || fail "7m-1: discovered music contributor miss
 test ! -e modules/applications || fail "7m-1: the evacuated application root must be deleted"
 grep -q 'flake.modules.nixos.music' modules/music/music.nix ||
   fail "7m-1: modules/music/music.nix must publish flake.modules.nixos.music"
-for leaf in audiomuse syncthing navidrome slskd tagr beets/default ingest storage; do
-  grep -q "services/music/${leaf}\.nix" modules/music/music.nix ||
-    fail "7m-1: music owner must import the ${leaf} leaf"
+for leaf in audiomuse syncthing navidrome slskd tagr beets ingest storage; do
+  test -f "modules/music/${leaf}.nix" ||
+    fail "7m-1: music implementation modules/music/${leaf}.nix missing"
+  grep -q 'flake\.modules\.nixos\.music[[:space:]]*=' "modules/music/${leaf}.nix" ||
+    fail "7m-1: modules/music/${leaf}.nix must contribute to the music aspect"
 done
 [ -z "$(music_host_imports_of "$ROOT")" ] ||
-  fail "7m-1: host assemblies must not import modules/services/music directly: $(music_host_imports_of "$ROOT")"
+  fail "7m-1: host assemblies must not import modules/music implementations directly: $(music_host_imports_of "$ROOT")"
 [ -z "$(music_leaf_publishers_of "$ROOT")" ] ||
-  fail "7m-1: private music leaves must not publish flake.modules.nixos aspects: $(music_leaf_publishers_of "$ROOT")"
+  fail "7m-1: modules/music contributors must publish only the music and dj aspects: $(music_leaf_publishers_of "$ROOT")"
 [ -z "$(music_leaf_import_sites_of "$ROOT")" ] ||
-  fail "7m-1: only modules/music/music.nix may import the private music leaves: $(music_leaf_import_sites_of "$ROOT")"
+  fail "7m-1: music implementations must not be imported from outside modules/music: $(music_leaf_import_sites_of "$ROOT")"
 
 # 7m-2. Focused observable probe. Every field is forced through the full
 # toplevel derivation (`drv`) so option-merge and assertion failures surface.
@@ -1499,41 +1509,43 @@ open(p, "w").write(s.replace(old, new))
 PYEOF
 assert_probe_result home-forge "$D" disabled
 
-# 7m-3c. A host direct import of a private music leaf is detected by the
-# owner-import predicate, and the host toplevel still evaluates (import alone
-# activates nothing).
+# 7m-3c. A host direct import of a music implementation is detected by the
+# owner-import predicate, and the import cannot silently merge into a host
+# assembly: music implementations are flake-parts contributors, so importing one
+# as a NixOS module fails evaluation loudly instead of activating placement.
 D="$(make_copy)"
-sed -i '/\.\/_disko-two-disk\.nix/a\    ../../../modules/services/music/ingest.nix' "$D/modules/hosts/home-forge/_nixos.nix"
+sed -i '/\.\/_disko-two-disk\.nix/a\    ../../../modules/music/ingest.nix' "$D/modules/hosts/home-forge/_nixos.nix"
 [ -n "$(music_host_imports_of "$D")" ] ||
-  fail "7m-3c: host-import predicate must detect a direct modules/services/music import"
-nix eval --raw --no-write-lock-file "path:${D}#nixosConfigurations.home-forge.config.system.build.toplevel.drvPath" >/dev/null ||
-  fail "7m-3c: importing a private leaf must not break the host toplevel eval"
+  fail "7m-3c: host-import predicate must detect a direct modules/music import"
+expect_eval_fail "$D" home-forge "The option \`flake' does not exist"
 
-# 7m-3d. A publication smuggled into the private music subtree is rejected by
-# the publication-exclusion scan and stays invisible to discovery (the
-# services root remains filtered).
+# 7m-3d. A foreign publication smuggled into the music contributor set is
+# rejected by the publication scan and shows up as publication-inventory drift
+# (the exact-set equality in 7a is what catches a new publication, since music
+# contributors are discovered); selecting nothing keeps it inert.
 D="$(make_copy)"
-cat >"$D/modules/services/music/evil-pub.nix" <<'EOF'
+cat >"$D/modules/music/evil-pub.nix" <<'EOF'
 { ... }:
 {
   flake.modules.nixos.evil-music-pub = { };
 }
 EOF
 [ -n "$(music_leaf_publishers_of "$D")" ] ||
-  fail "7m-3d: private-leaf publication scan must reject a flake.modules.nixos publication"
-case "$(pub_names_of "$D")" in
-  *evil-music-pub*) fail "7m-3d: a private music leaf publication must not be discovered" ;;
-esac
+  fail "7m-3d: music publication scan must reject a foreign flake.modules.nixos publication"
+[ "$(pub_names_of "$D")" != "$expected_pub" ] ||
+  fail "7m-3d: a foreign music publication must show up as publication-inventory drift"
 nix eval --raw --no-write-lock-file "path:${D}#nixosConfigurations.oci-melb-1.config.system.build.toplevel.drvPath" >/dev/null ||
-  fail "7m-3d: unimported private leaf must not affect the host toplevel eval"
+  fail "7m-3d: an unselected publication must not affect the host toplevel eval"
 
-# 7m-3e. Deleting the music contributor is detected by publication discovery
-# and breaks the selected home-forge aspect.
+# 7m-3e. Deleting the music aspect entry is detected through the observable it
+# owns, not through publication loss: the eight sibling contributors still
+# publish flake.modules.nixos.music (deferredModule merge), while the option
+# namespace the host record writes into is gone.
 D="$(make_copy)"
 rm "$D/modules/music/music.nix"
-[ "$(pub_names_of "$D")" != "$expected_pub" ] ||
-  fail "7m-3e: publication discovery must detect the deleted music contributor"
-expect_eval_fail "$D" home-forge "attribute 'music' missing"
+[ "$(pub_names_of "$D")" = "$expected_pub" ] ||
+  fail "7m-3e: sibling music contributors must still publish the music aspect after the entry is deleted"
+expect_eval_fail "$D" home-forge "The option \`applications.music' does not exist"
 
 # 7m-3f. DJ selected/enabled without music and without explicit values fails
 # with the exact named assertion; with both values explicit it succeeds.
@@ -1616,7 +1628,7 @@ grep -q '\./_edge/edge-ingress\.nix' modules/edge/edge.nix || fail "7n: the edge
 grep -q '\./_dj' modules/music/dj.nix || fail "7n: the dj aspect must import its private leaf"
 # Ownership is asserted on import *expressions*, not on prose: current-state docs and
 # comments legitimately name these paths (e.g. the consumers note in
-# modules/services/virtualisation/windows-vm.nix), while a real import from another
+# modules/music/windows-vm.nix), while a real import from another
 # concern must still be rejected. Mutation 7n-3f-2 proves the predicate still fires.
 private_leaf_stray="$(grep -REl --include='*.nix' -e '_oci/default\.nix' -e '_edge/edge-ingress\.nix' modules | grep -vE '^modules/(oci/oci|edge/edge)\.nix$' || true)"
 [ -z "$private_leaf_stray" ] ||
@@ -1774,19 +1786,20 @@ json="$(probe_placement "$D" oci-melb-1)" || fail "7n-3c: OCI must still evaluat
 assert_placement oci-melb-1 "$json" '{"phoenixEnable":false}'
 
 # 7n-3d. A direct host import of a workload implementation is detected by the
-# guard, and the import alone still activates nothing (import != placement).
+# guard, and it cannot silently place the workload: discovered contributors are
+# flake-parts modules, so importing one into a host assembly fails evaluation
+# loudly instead of activating it (import != placement, enforced twice).
 D="$(make_copy)"
-sed -i '/^    \.\/_cockpit-auth\.nix$/i\    ../../../modules/services/phoenix.nix' "$D/modules/hosts/la-admin-1/_nixos.nix"
+sed -i '/^    \.\/_cockpit-auth\.nix$/i\    ../../../modules/flake/phoenix.nix' "$D/modules/hosts/la-admin-1/_nixos.nix"
 [ -n "$(host_workload_imports_of "$D")" ] ||
-  fail "7n-3d: the host-import guard must detect a directly imported workload leaf"
-json="$(probe_placement "$D" la-admin-1)" || fail "7n-3d: LA must still evaluate with a directly imported leaf"
-assert_placement la-admin-1 "$json" '{"phoenixEnable":false}'
+  fail "7n-3d: the host-import guard must detect a directly imported workload implementation"
+expect_eval_fail "$D" la-admin-1 "The option \`flake' does not exist"
 
 # 7n-3d-2. Path-form-independent guard: plain and `./..`-prefixed relative
 # workload imports plus host-side re-enablement contain no `modules/...` text and
-# no `aspects.` reference, yet re-establish placement outside the registry. The
-# guard must reject them, and the mutated host must really activate the workload
-# (so the check is non-vacuous rather than passing because the bypass failed).
+# no `aspects.` reference. The guard must reject both forms, and the bypass must
+# not evaluate at all (an aspect contributor is not a NixOS module), so the
+# mutation cannot pass vacuously by merely failing to activate.
 D="$(make_copy)"
 python3 - "$D/modules/hosts/la-admin-1/_nixos.nix" <<'PYEOF'
 import sys
@@ -1794,17 +1807,16 @@ p = sys.argv[1]
 s = open(p).read()
 assert s.count("    ./_cockpit-auth.nix\n") == 1, "import anchor drifted"
 assert s.count("  services = {\n") == 1, "services anchor drifted"
-s = s.replace("    ./_cockpit-auth.nix\n", "    ../../services/phoenix.nix\n    ./_cockpit-auth.nix\n", 1)
+s = s.replace("    ./_cockpit-auth.nix\n", "    ../../flake/phoenix.nix\n    ./_cockpit-auth.nix\n", 1)
 s = s.replace("  services = {\n", "  services = {\n    phoenix.enable = true;\n", 1)
 open(p, "w").write(s)
 PYEOF
 [ -n "$(host_workload_imports_of "$D")" ] ||
-  fail "7n-3d-2: the path-form-independent guard must reject ../../services/phoenix.nix + enablement"
-json="$(probe_placement "$D" la-admin-1)" || fail "7n-3d-2: LA must still evaluate with the bypass in place"
-assert_placement la-admin-1 "$json" '{"phoenixEnable":true}'
-sed -i 's#../../services/phoenix\.nix#./../../services/phoenix.nix#' "$D/modules/hosts/la-admin-1/_nixos.nix"
+  fail "7n-3d-2: the path-form-independent guard must reject ../../flake/phoenix.nix + enablement"
+expect_eval_fail "$D" la-admin-1 "The option \`flake' does not exist"
+sed -i 's#../../flake/phoenix\.nix#./../../flake/phoenix.nix#' "$D/modules/hosts/la-admin-1/_nixos.nix"
 [ -n "$(host_workload_imports_of "$D")" ] ||
-  fail "7n-3d-2: the host-import guard must reject ./../../services/phoenix.nix"
+  fail "7n-3d-2: the host-import guard must reject ./../../flake/phoenix.nix"
 
 # 7n-3e. Discovery alone is inert: a freshly published, unselected aspect does
 # not activate anything, and selecting it is the only activation edge.
@@ -1921,8 +1933,8 @@ fi
 if grep -RnE --include='*.nix' 'monitor\.services' tests; then
   fail "7o-1: checks must probe monitor.units, not the removed monitor.services list"
 fi
-grep -q 'monitor\.units' modules/services/notification-daemon/default.nix ||
-  fail "7o-1: the typed monitor.units contract must be declared in the daemon leaf"
+grep -q 'monitor\.units' modules/notifications/notify.nix ||
+  fail "7o-1: the typed monitor.units contract must be declared by the notify aspect"
 
 # 7o-2. Per-host observable monitoring contract. Every contributed unit must
 # have a real implementation, the contribution set must match the owning

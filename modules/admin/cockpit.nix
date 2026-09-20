@@ -47,11 +47,6 @@
       cockpitUrlRoot = if cfg.urlRoot != null then cfg.urlRoot else cockpitRoute.path;
     in
     {
-      imports = [
-        ../services/admin/cockpit/loopback-tls.nix
-        ../services/admin/cockpit/tailscale-serve.nix
-      ];
-
       options.services.admin.cockpit = {
         enable = lib.mkOption {
           type = lib.types.bool;

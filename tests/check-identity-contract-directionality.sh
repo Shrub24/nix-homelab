@@ -338,7 +338,7 @@ fi
 # dependency fails these greps.
 # Comment-only lines are excluded: the contract headers document the
 # forbidden namespace by name, and a name mention is not a read.
-if grep -RnE --include='*.nix' 'applications\.admin' modules/identity/identity-provider.nix modules/services/admin/kanidm.nix \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/identity/identity-provider.nix modules/identity/kanidm-runtime.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "identity-provider/Kanidm leaf must not read the applications.admin namespace"
 fi
@@ -356,7 +356,7 @@ fi
 # and no Quantum residue.
 test ! -e modules/flake/admin.nix \
   && test ! -e modules/flake/_admin-hub \
-  && test ! -e modules/services/admin-hub ||
+  && test ! -e modules/admin/admin-hub.nix ||
   fail "no admin convenience bundle may exist (D-054: no convenience bundle)"
 if grep -RnE --include='*.nix' 'aspects\.(admin-hub|admin)([^a-z0-9-]|$)' modules/flake modules/hosts \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
@@ -409,38 +409,38 @@ if ! grep -q 'oauth2Clients = {' modules/identity/identity-provider.nix \
   fail "provider-owned explicit oauth2 secret-source map / web-policy URL default missing"
 fi
 if grep -nE 'services\.identity\.oidc(\.[A-Za-z0-9_]+)?[[:space:]]*(=[^=]|=$)' \
-  modules/identity/identity-provider.nix modules/services/admin/kanidm.nix; then
+  modules/identity/identity-provider.nix modules/identity/kanidm-runtime.nix; then
   fail "identity-provider/Kanidm leaf must not write services.identity.oidc.* (identity-client owns the contract)"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/termix.nix modules/services/admin/termix.nix \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/termix.nix modules/admin/termix-runtime.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "termix aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/vaultwarden.nix modules/services/admin/vaultwarden.nix \
+if grep -RnHE --include='*.nix' 'applications\.admin' modules/admin/vaultwarden.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "vaultwarden aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/gatus.nix modules/services/admin/gatus.nix \
+if grep -RnHE --include='*.nix' 'applications\.admin' modules/admin/gatus.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "gatus aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/beszel.nix modules/services/admin/beszel.nix \
+if grep -RnHE --include='*.nix' 'applications\.admin' modules/admin/beszel.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "beszel aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/homepage.nix modules/services/admin/homepage \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/homepage.nix modules/admin/homepage/_data.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "homepage aspect/intrinsic leaf/data must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/webhook.nix modules/services/admin/webhook.nix \
+if grep -RnHE --include='*.nix' 'applications\.admin' modules/admin/webhook.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "webhook aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnE --include='*.nix' 'repo\.web' modules/admin/webhook.nix modules/services/admin/webhook.nix \
+if grep -RnHE --include='*.nix' 'repo\.web' modules/admin/webhook.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "webhook aspect/intrinsic leaf must consume no web policy (external/manual route only)"
 fi
-if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/cockpit.nix modules/services/admin/cockpit.nix modules/services/admin/cockpit/loopback-tls.nix \
+if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/cockpit.nix modules/admin/cockpit/loopback-tls.nix modules/admin/cockpit/tailscale-serve.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "cockpit aspect/intrinsic leaves must not read the applications.admin namespace"
 fi
@@ -897,7 +897,7 @@ s = s.replace(anchor, anchor + "    ./_cockpit-auth.nix\n", 1)
 open(p, "w").write(s)
 PYEOF
 
-[[ "$(grep -c 'message = "Cockpit loopback TLS material requires' modules/services/admin/cockpit/loopback-tls.nix)" -eq 3 ]] || fail "Cockpit loopback TLS assertion contract drifted"
+[[ "$(grep -c 'message = "Cockpit loopback TLS material requires' modules/admin/cockpit/loopback-tls.nix)" -eq 3 ]] || fail "Cockpit loopback TLS assertion contract drifted"
 
 json="$(nix eval --no-write-lock-file --raw --apply 'c:
 let

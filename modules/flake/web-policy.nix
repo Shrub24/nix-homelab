@@ -10,15 +10,11 @@ top@{ ... }:
       policyLib = import ../../lib/policy.nix { inherit lib; };
       webServicesPolicy = import ../../policy/web-services.nix;
 
-      # Stage 8 task 3.2 (HIC-3, "reference, do not merge"): every host-backed
-      # reference in the web data must name a declared canonical host ID. The
-      # tailnet suffix has one authority (`policy/globals.nix`
-      # `tailnet.suffix`, also read by the host records for their
-      # `tailscale.tailnetSuffix`), so every host-backed origin FQDN must equal
-      # the matching record's derived `tailscale.fqdn`. Externally managed names
-      # (public domains, 127.0.0.1 loopback) stay literal per the design risk
-      # note and are never classified as host-backed. Unknown references fail
-      # closed with a named error at flake evaluation.
+      # Every host-backed reference in the web data must name a declared
+      # canonical host ID, and every host-backed origin FQDN must equal the
+      # record's derived tailscale.fqdn. Externally managed names (public
+      # domains, 127.0.0.1 loopback) stay literal and are never classified as
+      # host-backed. Unknown references fail closed at flake evaluation.
       tailnetSuffix = (import ../../policy/globals.nix).tailnet.suffix;
       canonicalHosts = top.config.nixos.hosts;
       canonicalFqdns = lib.mapAttrsToList (_: host: host.tailscale.fqdn) canonicalHosts;

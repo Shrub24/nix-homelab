@@ -1,6 +1,5 @@
-# Discovered contributor: publishes the `slskd` aspect (flake.modules.nixos.music).
-# The music coordinator aspect composes it by flake-level import; this file
-# owns the feature body.
+# Slskd aspect contributor: composed by the music coordinator aspect
+# by flake-level import; this file owns the feature body.
 { ... }:
 {
   flake.modules.nixos.music =

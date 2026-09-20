@@ -1,16 +1,8 @@
-# Canonical fleet host registry (dendritic-stage-8-host-identity-contracts
-# HIC-1/HIC-2, task 2.1): one typed record per stable host ID, validated with
-# named errors and materialized generically into nixosConfigurations. This file
-# names no concrete host; task 2.2 makes each host contributor declare its own
-# record through discovery. Records stay deferred data so validation and
-# materialization run only after option merging — placement is never derived
-# from an evaluated NixOS config (design risk: recursive module evaluation
-# cycle).
-#
-# Stage 8 task 2.3: every record below is declared by its discovered contributor
-# at modules/hosts/<host>/default.nix. `hosts` left the import-tree exclusion and
-# the transitional loader is gone, so each contributor loads exactly once and
-# modules/flake/registry.nix keeps only the bootstrap projection.
+# Canonical fleet host registry: one typed record per stable host ID, each
+# declared by its discovered contributor (modules/hosts/<host>/default.nix) and
+# materialized generically into nixosConfigurations. Records stay deferred data,
+# so validation and materialization run only after option merging — placement is
+# never derived from an evaluated NixOS config, which would recurse.
 {
   inputs,
   config,
@@ -70,7 +62,7 @@ let
               tailnetSuffix = mkOption {
                 type = types.nullOr types.str;
                 default = null;
-                description = "Tailnet DNS suffix (for example tail0fe19b.ts.net); task 3.2 supplies the fleet value.";
+                description = "Tailnet DNS suffix (for example tail0fe19b.ts.net); the fleet value has one authority in policy/globals.nix.";
               };
 
               fqdn = mkOption {
@@ -107,7 +99,7 @@ let
               fragments = mkOption {
                 type = types.listOf (types.either types.path types.deferredModule);
                 default = [ ];
-                description = "Host-private NixOS fragments; task 2.2 moves these under explicit private paths.";
+                description = "Host-private NixOS fragments.";
               };
             };
           };
@@ -118,10 +110,6 @@ let
           default = null;
           description = "Reimage-only metadata; the registry projects it to flake.bootstrap.nodes.<host>.";
         };
-
-        # No deployment field here: HIC-3 keeps physical SSH/deploy facts in
-        # their own authority (lib/deploy/hosts.nix) and has it reference
-        # canonical host IDs instead of duplicating the facts in the record.
 
         configuration = mkOption {
           type = types.nullOr types.raw;

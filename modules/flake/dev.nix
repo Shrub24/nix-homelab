@@ -1,39 +1,36 @@
-# Operator development surface (perSystem): shell and formatter, carried over
-# from Stage 0 unchanged except for lexical package references.
+# Operator development surface (perSystem): shell and formatter.
 {
   perSystem =
     { pkgs, config, ... }:
     {
       devShells.default = pkgs.mkShell {
-        packages =
-          with pkgs;
-          [
-            just
-            git
-            jq
-            yq
-            opentofu
-            prettier
-            shfmt
-            taplo
-            treefmt
-            sops
-            age
-            nixos-anywhere
-            nix-output-monitor
-            nixfmt
-            ruff
-            statix
-            ssh-to-age
-            lefthook
-          ]
-          ++ [
-            config.packages.notification-daemon
-            config.packages.notify
-            config.packages.niks3
-            config.packages.nix-path-filter
-            pkgs.deploy-rs
-          ];
+        packages = [
+          pkgs.just
+          pkgs.git
+          pkgs.jq
+          pkgs.yq
+          pkgs.opentofu
+          pkgs.prettier
+          pkgs.shfmt
+          pkgs.taplo
+          pkgs.treefmt
+          pkgs.sops
+          pkgs.age
+          pkgs.nixos-anywhere
+          pkgs.nix-output-monitor
+          pkgs.nixfmt
+          pkgs.ruff
+          pkgs.statix
+          pkgs.ssh-to-age
+          pkgs.lefthook
+          pkgs.deploy-rs
+        ]
+        ++ [
+          config.packages.notification-daemon
+          config.packages.notify
+          config.packages.niks3
+          config.packages.nix-path-filter
+        ];
         shellHook = ''
           unset PYTHONPATH
           if [ -f /tmp/notification-daemon.json ]; then

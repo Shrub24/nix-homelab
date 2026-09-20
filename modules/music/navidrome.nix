@@ -1,6 +1,5 @@
-# Discovered contributor: publishes the `navidrome` aspect (flake.modules.nixos.music).
-# The music coordinator aspect composes it by flake-level import; this file
-# owns the feature body.
+# Navidrome aspect contributor: composed by the music coordinator aspect
+# by flake-level import; this file owns the feature body.
 { ... }:
 {
   flake.modules.nixos.music =
@@ -13,7 +12,6 @@
     let
       cfg = config.services.navidrome;
 
-      # ── Operator-managed (not repo-declared) ──────────────────────────────
       # AudioMuse plugin configuration after the binary is installed:
       #   - Navidrome Admin → Plugins → audiomuse.ai: enable, set API URL, key
       #   - AudioMuse first-run setup wizard (web UI on :8000)

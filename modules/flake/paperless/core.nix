@@ -49,7 +49,6 @@
         echo "New document: $DOCUMENT_TITLE" | ${repoPackages.notify}/bin/notify info "Paperless" "info" "services" || true
       '';
 
-      # Python seed script for OIDC sync groups
       groupSeedScript = pkgs.writeText "paperless-group-seed.py" ''
         import os, sys, json
 

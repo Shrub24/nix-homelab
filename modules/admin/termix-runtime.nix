@@ -1,8 +1,6 @@
-# Runtime sibling of the `termix` aspect: deferredModule values merge across
-# sibling files, so this file contributes to the same aspect name without an
-# imports list. Kept separate from the aspect entry because the two halves
-# cross-reference option values (OIDC client wiring reads the sops template the runtime defines); cross-module merging keeps that
-# fixpoint resolvable.
+# Runtime sibling of the `termix` aspect: the two halves cross-reference option
+# values (OIDC client wiring reads the sops template defined here), so they stay
+# separate files contributing to the same aspect name.
 { ... }:
 {
   flake.modules.nixos.termix =
@@ -14,9 +12,6 @@
     let
       cfg = config.services.admin.termix;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
-      # Stage 8 task 3.2 (HIC-3): the tailnet suffix has one authority in
-      # policy/globals.nix, shared with the canonical host records and the web
-      # policy, so search-domain wiring cannot drift from host identity.
       globals = import ../../policy/globals.nix;
     in
     {
@@ -24,13 +19,12 @@
         enable = lib.mkOption {
           type = lib.types.bool;
           default = true;
-          description = "Enable the Termix composition wiring.";
+          description = "Whether the Termix composition wiring is enabled.";
         };
 
         dataDir = lib.mkOption {
           type = lib.types.str;
           default = "/srv/data/termix";
-          description = "Data directory for Termix";
         };
 
         oidc = {
@@ -49,7 +43,7 @@
           issuerUrl = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
             default = null;
-            description = "OIDC issuer URL for Termix auth posture documentation/runtime metadata.";
+            description = "OIDC issuer URL for Termix.";
           };
 
           authorizationUrl = lib.mkOption {

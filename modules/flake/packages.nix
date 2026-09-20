@@ -1,5 +1,5 @@
-# Repository packages (perSystem). Stage 0 key set preserved exactly; the
-# host-* convenience packages track the deploy node activation paths as before.
+# Repository packages (perSystem). The host-* entries track the deploy node
+# activation paths.
 top@{ inputs, ... }:
 {
   perSystem =

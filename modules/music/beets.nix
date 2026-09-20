@@ -1,6 +1,5 @@
-# Discovered contributor: publishes the `beets` aspect (flake.modules.nixos.music).
-# The music coordinator aspect composes it by flake-level import; this file
-# owns the feature body.
+# Beets aspect contributor: composed by the music coordinator aspect by
+# flake-level import; this file owns the feature body.
 { ... }:
 {
   flake.modules.nixos.music =
@@ -48,10 +47,10 @@
         quarantine = ./beets/files/beets-quarantine-config.yaml;
       };
 
-      # Composition-facing read-only interface (dendritic Stage 6, S6-5): prefer the
-      # rendered SOPS template when present, otherwise fall back to the injected
-      # source configs. Never depends on cfg.runners, so the composition can build
-      # runner instances from it without a cycle.
+      # Composition-facing read-only interface: prefer the rendered SOPS template
+      # when present, otherwise fall back to the injected source configs. Never
+      # depends on cfg.runners, so the composition can build runner instances from
+      # it without a cycle.
       renderedConfigFiles = {
         standard =
           if lib.hasAttrByPath [ "sops" "templates" "beets-config.yaml" "path" ] config then
@@ -175,10 +174,10 @@
         ffmpegCheck = ffmpegCheck;
       };
 
-      # Operator CLIs (S6-5): the leaf owns the binaries generated from built-in
-      # runner kinds; the composition keeps selecting runner instances and the
-      # OnSuccess chain intent. beets-interactive consumes cfg.onSuccessUnits for
-      # its post-success tail, preserving the exact unit set/order.
+      # Operator CLIs: the leaf owns the binaries generated from built-in runner
+      # kinds; the composition keeps selecting runner instances and the OnSuccess
+      # chain intent. beets-interactive consumes cfg.onSuccessUnits for its
+      # post-success tail, preserving the exact unit set/order.
       beetsInteractiveBin = pkgs.writeShellApplication {
         name = "beets-interactive";
         runtimeInputs = [

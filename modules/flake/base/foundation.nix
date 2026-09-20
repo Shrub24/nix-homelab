@@ -1,7 +1,6 @@
-# Base foundation aspect contributor (FND-1). Owns base OS policy, users,
-# Nix/`nh` tuning, the outbound dev SSH identity convention, and the two typed
-# machine facts that replaced the legacy per-host boot and `/build` override
-# conflicts (design FND-2):
+# Base foundation aspect contributor. Owns base OS policy, users, Nix/`nh`
+# tuning, the outbound dev SSH identity convention, and two typed machine facts
+# hosts declare instead of fighting shared defaults with mkForce:
 #
 #   fleet.foundation.bootLoader = "grub" | "systemd-boot";  # required
 #   fleet.foundation.buildTmpfsSize = "8G" | "50%";          # required str
@@ -11,19 +10,6 @@
 # selected capability.
 {
   flake.modules.nixos.base =
-    # Base foundation aspect (private leaf; the public contributor is
-    # modules/flake/base.nix).
-    #
-    # Owns base OS policy, users, Nix/`nh` tuning, the outbound dev SSH identity
-    # convention, host recovery, and the two typed machine facts that replaced the
-    # legacy per-host boot and `/build` override conflicts (design FND-2):
-    #
-    #   fleet.foundation.bootLoader = "grub" | "systemd-boot";  # required
-    #   fleet.foundation.buildTmpfsSize = "8G" | "50%";          # required str
-    #
-    # The loader implementation and the `/build` tmpfs size are rendered from
-    # those facts, so hosts declare facts instead of fighting shared defaults with
-    # mkForce (design DS-4 / dendritic-stage-2 FND-2).
     {
       config,
       lib,
@@ -31,9 +17,9 @@
       ...
     }:
     let
-      # Conventional host-scoped SOPS scope. Every per-host secret path derives
-      # from networking.hostName (specs/secrets-management); an absent host system
-      # scope keeps the two-step sops bootstrap working.
+      # Conventional host-scoped SOPS scope: every per-host secret path derives
+      # from networking.hostName; an absent host system scope keeps the two-step
+      # sops bootstrap working.
       hostSystemSecret = ../../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
       hasHostSecrets = builtins.pathExists hostSystemSecret;
 
@@ -78,10 +64,8 @@
           };
         };
 
-        # Outbound dev SSH identity contract (FND-6): the option and its
-        # conditional template/secret rendering are preserved from the legacy
-        # base-server profile; the conventional host-scoped default is derived
-        # here instead of in each host record.
+        # Outbound dev SSH identity: the conventional host-scoped default is
+        # derived here instead of in each host record.
         fleet.hostIdentity.sshPrivateKeyFile = lib.mkOption {
           type = lib.types.nullOr lib.types.path;
           default = null;
@@ -90,9 +74,6 @@
       };
 
       config = {
-        # --- Base OS policy (was modules/core/base.nix) -------------------------
-        # Shared Nix defaults (core/base) plus the substituter/tuning policy that
-        # base-server previously contributed through a separate module merge.
         nix.settings = {
           experimental-features = [
             "nix-command"
@@ -151,7 +132,6 @@
           ];
         };
 
-        # --- Users (was modules/core/users.nix) ---------------------------------
         users = {
           mutableUsers = false;
 
@@ -199,7 +179,6 @@
           };
         };
 
-        # --- Shared host policy (was modules/profiles/base-server.nix) -----------
         networking.firewall.allowedTCPPorts = lib.mkDefault [ 22 ];
         networking.firewall.trustedInterfaces = lib.mkAfter [ "tailscale0" ];
 
@@ -213,12 +192,10 @@
           "net.core.netdev_max_backlog" = 16384;
         };
 
-        # Use mq-deadline scheduler for better I/O fairness on shared block devices
         services.udev.extraRules = ''
           ACTION=="add|change", KERNEL=="sd[a-z]|vd[a-z]", ATTR{queue/scheduler}="mq-deadline"
         '';
 
-        # --- Operator tooling (was modules/profiles/fleet-standard.nix) ----------
         programs.nh = {
           enable = true;
           clean = {
@@ -228,18 +205,14 @@
           };
         };
 
-        # MON-1/MON-3: this leaf owns the `nh-clean` unit through
-        # programs.nh.clean, so it also owns its monitoring participation.
+        # This leaf owns the `nh-clean` unit through programs.nh.clean, so it also
+        # owns its monitoring participation.
         services.notification-daemon.monitor.units."nh-clean" = {
           onFailure = true;
           onStart = true;
           onStop = true;
         };
 
-        # --- Outbound dev SSH identity (FND-6) -----------------------------------
-        # Conventional default: the host system scope, when it exists. The
-        # conditional option/template contract below is unchanged from the legacy
-        # base-server profile.
         fleet.hostIdentity.sshPrivateKeyFile = lib.mkIf hasHostSecrets hostSystemSecret;
 
         programs.ssh.extraConfig = lib.mkIf (hostIdentity.sshPrivateKeyFile != null) ''

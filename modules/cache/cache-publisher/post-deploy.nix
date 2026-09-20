@@ -1,7 +1,6 @@
-# Post-deploy publication contributor of the cache-publisher aspect
-# (OPSPLIT-1): runs the closure upload hook after a successful deploy and owns
-# the typed filterPackage option. It contributes to the same
-# `flake.modules.nixos.cache-publisher` publication as ../cache-publisher.nix.
+# Post-deploy publication contributor of the cache-publisher aspect: runs the
+# closure upload hook after a successful deploy and owns the typed
+# filterPackage option.
 {
   flake.modules.nixos.cache-publisher =
     {
@@ -13,9 +12,6 @@
       cfg = config.services.niks3-post-deploy;
       hook = config.services.niks3-auto-upload;
       hookPkg = hook.package;
-      # Required typed option injected by the backups aspect (OPS-3); the leaf no
-      # longer reads config.repo.packages, so the aspect has no hidden
-      # fleet-packages dependency.
       filterPkg = cfg.filterPackage;
     in
     {
@@ -39,12 +35,9 @@
       };
 
       config = lib.mkIf cfg.enable {
-        # OPS-6: classified upstream compatibility constraint. Upstream
-        # niks3-auto-upload sets nix.settings.post-build-hook whenever it is
-        # enabled; the fleet deliberately does not run the hook on every Nix
-        # build (post-deploy closure upload is activation-triggered against the
-        # same daemon/socket), so this mkForce "" suppresses the automatic hook.
-        # Do not remove or relocate; no other override exists.
+        # Upstream niks3-auto-upload sets this hook whenever it is enabled; the
+        # fleet uploads on activation instead of on every Nix build, so the
+        # automatic hook is suppressed. No other override exists.
         nix.settings.post-build-hook = lib.mkForce "";
 
         # Runs on every activation (switch and boot). At boot systemd is not up

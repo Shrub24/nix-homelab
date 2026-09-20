@@ -102,7 +102,7 @@ writeScriptBin "notify" ''
       if not ok:
           sys.exit(1)
 
-  # --- Legacy mode: positional args (backward compat) ---
+  # Legacy mode: positional args.
   if len(sys.argv) >= 2 and sys.argv[1] not in ("test", "-h", "--help"):
       tier = sys.argv[1]
       title = sys.argv[2] if len(sys.argv) > 2 else "Notification"
@@ -117,7 +117,7 @@ writeScriptBin "notify" ''
           sys.exit("notification daemon error: %d %s" % (status, errs))
       sys.exit(0)
 
-  # --- Subcommand mode ---
+  # Subcommand mode.
   parser = argparse.ArgumentParser(
       prog="notify",
       description="Send notifications via the notification daemon",

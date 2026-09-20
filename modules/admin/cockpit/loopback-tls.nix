@@ -14,12 +14,8 @@
       cfg = config.services.admin.cockpit;
       inherit (cfg) loopbackTls;
 
-      # Canonical web-policy consumption (decouple-identity-admin-capabilities
-      # 3.3): the TLS material derives from the canonical
-      # `repo.web.currentHost.services."cockpit-admin"` route. Absence stays a soft
-      # null here so a variant with loopback TLS disabled never forces the read;
-      # when the material is enabled the named assertions below own the contract
-      # failure.
+      # A soft null keeps hosts without the route evaluating; the named
+      # assertions below own the contract failure when the material is enabled.
       webServices = config.repo.web.currentHost.services or { };
       cockpitRoute = if webServices ? "cockpit-admin" then webServices."cockpit-admin" else null;
       inherit (loopbackTls) stateDir;

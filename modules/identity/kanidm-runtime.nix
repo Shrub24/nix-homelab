@@ -1,18 +1,15 @@
-# Kanidm server/provisioning leaf — owned by the `identity-provider` concern
-# (decouple-identity-admin-capabilities IDB-1/IDB-2). This module declares the
-# complete Kanidm runtime contract under `services.identity.kanidm`: provider
-# state paths, bootstrap/provisioning secret sources, and the explicit
+# Kanidm server/provisioning leaf, owned by the `identity-provider` aspect.
+# Declares the complete Kanidm runtime contract under `services.identity.kanidm`:
+# provider state paths, bootstrap/provisioning secret sources, and the explicit
 # per-client OIDC provisioning secret-source map keyed by canonical oauth2
-# client id. It never reads an admin workload namespace; the only endpoint
-# source is canonical web policy (`repo.web.currentHost.services`) and the
-# provider URL comes from the identity-client contract, which the provider
-# consumes but never writes.
-
-# Runtime sibling of the `identity-provider` aspect: deferredModule values merge across
-# sibling files, so this file contributes to the same aspect name without an
-# imports list. Kept separate from the aspect entry because the two halves
-# cross-reference option values (provider URL wiring reads the sops templates the runtime defines); cross-module merging keeps that
-# fixpoint resolvable.
+# client id. The only endpoint source is canonical web policy
+# (`repo.web.currentHost.services`); the provider URL comes from the
+# identity-client contract, which the provider consumes but never writes.
+#
+# Runtime sibling of the `identity-provider` aspect: the two halves
+# cross-reference option values (provider URL wiring reads the sops templates
+# defined here), so they stay separate files contributing to the same aspect
+# name.
 { ... }:
 {
   flake.modules.nixos.identity-provider =
@@ -235,9 +232,8 @@
           default = "/srv/data/kanidm";
           description = ''
             Persistent data directory for Kanidm state. The default is the
-            conventional path; a host that stores identity state elsewhere
-            declares its own value and must select the `identity-provider`
-            aspect, which is what declares this namespace.
+            conventional path; a host storing identity state elsewhere declares
+            its own value.
           '';
         };
 

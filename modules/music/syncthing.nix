@@ -1,6 +1,5 @@
-# Discovered contributor: publishes the `syncthing` aspect (flake.modules.nixos.music).
-# The music coordinator aspect composes it by flake-level import; this file
-# owns the feature body.
+# Syncthing aspect contributor: composed by the music coordinator aspect
+# by flake-level import; this file owns the feature body.
 { ... }:
 {
   flake.modules.nixos.music =

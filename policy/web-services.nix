@@ -1,10 +1,9 @@
-# Stage 8 task 3.2 (HIC-3): host-backed origin FQDNs are composed from the
-# canonical host ID and the single fleet suffix (`policy/globals.nix`
-# `tailnet.suffix`), never hand-written. `127.0.0.1` loopback origins below
-# stay literal per the design risk note (externally managed names remain
-# explicit). Plain nix attribute set on purpose: three consumers read this
-# file as data (web-policy aspect, scripts/export-web-services-policy.sh,
-# tests/check-web-service-catalog.sh).
+# Host-backed origin FQDNs are composed from the canonical host ID and the
+# single fleet suffix (`policy/globals.nix` `tailnet.suffix`), never
+# hand-written. `127.0.0.1` loopback origins below stay literal (externally
+# managed names remain explicit). Plain nix attribute set on purpose: three
+# consumers read this file as data (web-policy aspect,
+# scripts/export-web-services-policy.sh, tests/check-web-service-catalog.sh).
 let
   globals = import ./globals.nix;
   fqdnOf = id: "${id}.${globals.tailnet.suffix}";

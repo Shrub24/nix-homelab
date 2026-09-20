@@ -1,4 +1,4 @@
-# PostgreSQL consumer contract (modular-postgres-instances, D-058).
+# PostgreSQL consumer contract.
 #
 # Declaration-only fragment: the options a consumer feature writes
 # (`services.postgres.consumers.<name>`) and the host facts the provider

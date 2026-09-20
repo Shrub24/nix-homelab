@@ -1,7 +1,6 @@
-# Foundation aspect (FND-1): networking. Selecting an aspect is its
-# enablement; no aspect imports another aspect. The native systemd-networkd
-# contract is owned here: units are derived from the `fleet.networking` host
-# facts, and the legacy scripted/dhcpcd backend is disabled.
+# Networking foundation aspect: selecting it is its enablement. The native
+# systemd-networkd contract is owned here: units are derived from the
+# `fleet.networking` host facts, and the scripted/dhcpcd backend is disabled.
 { ... }:
 {
   flake.modules.nixos.networking =

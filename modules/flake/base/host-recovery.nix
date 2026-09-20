@@ -1,7 +1,6 @@
-# Host-recovery contributor of the base aspect (FND-6): break-glass policy is
-# part of the base foundation, not an independently selected capability. It
-# contributes to the same `flake.modules.nixos.base` publication as
-# ./foundation.nix.
+# Host-recovery contributor of the base aspect: break-glass policy is part of
+# the base foundation, not an independently selected capability. It contributes
+# to the same `flake.modules.nixos.base` publication as ./foundation.nix.
 {
   flake.modules.nixos.base =
     {

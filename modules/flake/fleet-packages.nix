@@ -1,8 +1,7 @@
-# Repository packages consumable by service modules, resolved for the
-# evaluated host's target system (replaces self.packages.${...} in leaf
-# modules). Explicit allowlist: host-* convenience packages embed deploy-node
-# profile paths that depend on nixosConfigurations, so projecting the full
-# perSystem attrset would open a recursion back into the module space.
+# Repository packages consumable by service modules, resolved for the evaluated
+# host's target system. Explicit allowlist: host-* convenience packages embed
+# deploy-node profile paths that depend on nixosConfigurations, so projecting
+# the full perSystem attrset would recurse back into the module space.
 { lib, withSystem, ... }:
 {
   flake.modules.nixos.fleet-packages =

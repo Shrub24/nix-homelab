@@ -1,16 +1,15 @@
-# Music deployment aspect (dendritic Stage 6, D-052). Published from this
-# discovered contributor; selected only on home-forge. Selecting the aspect is
-# its top-level enablement (applications.music.enable = true, S6-2), and the
-# aspect owns composition only: shared path derivation, feature choices,
-# service/backup wiring, secret-file passthrough, success-chain intent, the
-# dev/zsh operator surface, and the read-only music library/storage contract.
+# Music deployment aspect. Selecting the aspect is its top-level enablement
+# (applications.music.enable = true), and the aspect owns composition only:
+# shared path derivation, feature choices, service/backup wiring, secret-file
+# passthrough, success-chain intent, the dev/zsh operator surface, and the
+# read-only music library/storage contract.
 #
 # Concrete mechanisms are their own discovered aspects (audiomuse, syncthing,
 # navidrome, slskd, beets, tagr, music-ingest, music-storage), composed here by
 # flake-level imports of config.flake.modules.nixos.<name>. Music and DJ remain
 # separately selected aspects; DJ consumes applications.music.contract through
-# a read-only config edge with a named assertion (S6-3) and never imports or
-# enables music.
+# a read-only config edge with a named assertion and never imports or enables
+# music.
 { ... }:
 {
   flake.modules.nixos.music =
@@ -27,9 +26,8 @@
 
       # Shared-PostgreSQL endpoint for AudioMuse. A host that runs its own
       # cluster serves AudioMuse locally over the container bridge; otherwise the
-      # database lives elsewhere and the internal transport contract (stage 8
-      # task 4.2, HIC-4) resolves it. Forced only where used (inside the
-      # audiomuse enable gate below), so a host that selects music without
+      # internal transport contract resolves it. Forced only where used (inside
+      # the audiomuse enable gate below), so a host that selects music without
       # AudioMuse never reads either. The explicit leaf options still win.
       # `options` (not `config`) is what can be probed safely: reading an
       # undeclared option path raises NixOS' "did you mean" error, so the
@@ -288,13 +286,13 @@
           default = { };
         };
 
-        # Read-only music library/storage contract (S6-3). Declared as a typed
-        # submodule with no nullable/default sentinel: the composition assigns
-        # its value only inside the lib.mkIf cfg.enable body below, so it has
-        # no value when the selected aspect is disabled and does not exist at
-        # all on hosts that never select the music aspect (this module is not
-        # imported there). DJ reads it via `config.applications.music.contract
-        # or null`; the value is not overridable.
+        # Read-only music library/storage contract. Declared as a typed submodule
+        # with no nullable/default sentinel: the composition assigns its value
+        # only inside the lib.mkIf cfg.enable body below, so it has no value when
+        # the selected aspect is disabled and does not exist at all on hosts that
+        # never select the music aspect (this module is not imported there). DJ
+        # reads it via `config.applications.music.contract or null`; the value is
+        # not overridable.
         contract = lib.mkOption {
           type = lib.types.submodule {
             options = {
@@ -310,13 +308,11 @@
 
       config = lib.mkMerge [
         {
-          # Selecting the music deployment aspect is its top-level enablement (S6-2).
           applications.music.enable = true;
         }
 
         (lib.mkIf cfg.enable {
-          # Read-only music storage/library contract value (S6-3), assigned only
-          # while the application is enabled.
+          # Assigned only while the application is enabled.
           applications.music.contract = {
             storageRoot = cfg.storageRoot;
             libraryDir = mediaPaths.libraryDir;
@@ -333,7 +329,7 @@
           ];
 
           # Storage ownership (groups, media tmpfiles/ACLs, permission reconcile)
-          # lives in the private musicStorage leaf (S6-7); only explicit paths are
+          # lives in the music-storage contributor; only explicit paths are
           # injected here.
           services.musicStorage = {
             enable = true;
@@ -421,13 +417,11 @@
             paths = [ "${cfg.dataRoot}/beets" ];
           };
 
-          # MON-1/MON-3: the music capability owns the `beets-<runner>` units
-          # instantiated from beetsRunnerInstances above, so it also owns their
-          # monitoring participation; the OCI host no longer maintains a
-          # reverse index of remotely placed Beets units. Only the automated
-          # runners are monitored (the interactive quarantine review worker has
-          # no unattended lifecycle worth reporting). A renamed runner makes
-          # this contract fail closed instead of leaving a silent fragment.
+          # The music capability owns the `beets-<runner>` units instantiated
+          # above, so it also owns their monitoring participation. Only the
+          # automated runners are monitored (the interactive quarantine review
+          # worker has no unattended lifecycle worth reporting). A renamed runner
+          # makes this contract fail closed instead of leaving a silent fragment.
           services.notification-daemon.monitor.units =
             lib.genAttrs
               [
@@ -441,9 +435,9 @@
                 onStop = true;
               });
 
-          # Ingest mechanisms are owned by the private musicIngest leaf (S6-6);
-          # the composition injects only explicit paths and reads back the ready
-          # flag and slskd completion hook.
+          # Ingest mechanisms are owned by the music-ingest contributor; the
+          # composition injects only explicit paths and reads back the ready flag
+          # and slskd completion hook.
           services.musicIngest = {
             enable = true;
             inboxDir = mediaPaths.inboxDir;

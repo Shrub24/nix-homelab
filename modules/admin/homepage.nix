@@ -1,26 +1,7 @@
-# Homepage dashboard deployment aspect (dendritic Stage 7, D-053; self-contained placement aspect since D-054). Published
-# from this discovered contributor and selected only on `la-admin-1` (explicit
-# `aspects.homepage`). Selecting the aspect imports the Homepage leaf and owns
-# its enablement; the runtime composition — policy origin host/port, the
-# 8-secret map, the `homepage-auth.env` template, and the catalog-derived
-# dashboard data — stays in the leaf.
-#
-# Dependency direction (decouple-identity-admin-capabilities 3.2): the aspect
-# and its leaf consume only the canonical web policy
-# (`repo.web.currentHost.services`) and never read the
-# `applications.admin` option namespace. The host keeps only the
-# host-scoped secret source binding (`services.admin.homepage.secretFiles.host`).
-#
-# Named dependency failure (feature-topology/admin-module-structure): a
-# selection without the canonical `admin-homepage` web-policy route must fail
-# through the leaf's named throw identifying the missing contract, not a raw
-# missing-attribute error.
-
-# Homepage dashboard composition (decoupled from the `applications.admin`
-# namespace in decouple-identity-admin-capabilities 3.2): the policy origin,
-# public host, and the catalog-derived dashboard data come from the canonical
-# web policy (`repo.web.currentHost.services`).
-
+# Homepage dashboard deployment aspect: selection imports the leaf and owns its
+# enablement; the runtime composition (policy origin host/port, the secret map,
+# the auth template, and the catalog-derived dashboard data) stays in the leaf,
+# which reads only the canonical web policy.
 { ... }:
 {
   flake.modules.nixos.homepage =
@@ -28,10 +9,6 @@
     let
       cfg = config.services.admin.homepage;
 
-      # Named dependency failure (same pattern as gatus/beszel): a host consuming
-      # this leaf without the canonical web-policy route must fail through this
-      # throw, not a raw missing-attribute error. The safe `or { }` lookup keeps
-      # the guard independent of whether any sibling module declared `repo.web`.
       webServices = config.repo.web.currentHost.services or { };
       homepageRoute =
         if webServices ? "admin-homepage" then
@@ -50,11 +27,7 @@
       };
     in
     {
-      options.services.admin.homepage.enable = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = "Enable admin-owned Homepage Dashboard wiring.";
-      };
+      options.services.admin.homepage.enable = lib.mkEnableOption "the Homepage Dashboard wiring";
 
       options.services.admin.homepage.secretFiles.host =
         secretHelpers.mkSecretFileOption "homepage-host-secrets";
@@ -153,7 +126,6 @@
           };
         })
         ({
-          # Selecting this aspect is the capability's top-level enablement.
           services.admin.homepage.enable = true;
         })
       ];

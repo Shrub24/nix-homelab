@@ -1,10 +1,8 @@
-# Foundation aspect (FND-1): notifications. Selecting the aspect is its
-# enablement; no aspect imports another aspect. The notification-daemon
-# implementation body is folded in here (dendritic: one file per feature, no
-# hidden service leaf), and its option namespace stays
-# `services.notification-daemon` for capabilities that contribute monitor
-# entries. Repo packages are resolved via withSystem at flake level and passed
-# into the module by value.
+# Notifications foundation aspect: selecting it is its enablement. The
+# notification-daemon implementation lives in this file, and its option
+# namespace stays `services.notification-daemon` for capabilities that
+# contribute monitor entries. Repo packages are resolved via withSystem at
+# flake level and passed into the module by value.
 { withSystem, ... }:
 {
   flake.modules.nixos.notify =
@@ -25,7 +23,6 @@
       globals = import ../../policy/globals.nix;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
-      # Config JSON written to /etc/notification-daemon/config.json for the daemon to read.
       notifyConfig = {
         token_file = "/run/secrets/notification-daemon/telegram_bot_token";
         chat_id = cfg.telegram.chatId;
@@ -37,7 +34,7 @@
         };
       };
 
-      # MON-2 (fail-closed): a monitor contribution may only name a unit with a real
+      # Fail-closed: a monitor contribution may only name a unit with a real
       # service implementation. The predicate reads only implementation attributes
       # (serviceConfig.ExecStart or a non-empty script) and never the hooks this
       # module injects (OnFailure, ExecStartPost, ExecStopPost), so a monitor-created
@@ -49,7 +46,6 @@
         in
         svc != null && ((svc.serviceConfig.ExecStart or null) != null || (svc.script or "") != "");
 
-      # Python script invoked by systemd OnFailure/ExecStopPost for monitored services.
       monitorScript = pkgs.writeScriptBin "svc-monitor" ''
         #!${pkgs.python3}/bin/python3
         import json, subprocess, sys, urllib.request
@@ -143,9 +139,9 @@
         monitor = {
           enable = lib.mkEnableOption "systemd service notification monitors";
 
-          # MON-1/MON-3: participation is declared by the capability that owns each
-          # unit, per lifecycle event. An attribute set (not a list) keeps module
-          # merging additive and lets owners request only meaningful events.
+          # Participation is declared by the capability that owns each unit, per
+          # lifecycle event. An attribute set (not a list) keeps module merging
+          # additive and lets owners request only meaningful events.
           units = lib.mkOption {
             type = lib.types.attrsOf (
               lib.types.submodule {
@@ -174,7 +170,7 @@
             description = ''
               Systemd units to monitor, contributed by the capability that owns
               them. Only the declared lifecycle events are hooked, and every entry
-              must name a real service implementation (MON-2).
+              must name a real service implementation.
             '';
           };
         };
@@ -323,9 +319,8 @@
             enable = true;
             package = packages.notification-daemon;
             notifyPackage = packages.notify;
-            # OPS-4: notify owns monitor composition (canonical apprise contract).
-            # The state-backups leaf no longer defaults monitor.enable on; the
-            # backups aspect asserts this option instead of importing notify.
+            # Notify owns monitor composition (canonical apprise contract); the
+            # state-backups aspect asserts this option instead of importing notify.
             monitor.enable = true;
           };
         }

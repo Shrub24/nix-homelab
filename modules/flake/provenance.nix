@@ -1,4 +1,4 @@
-# Repository provenance; replaces the args.self handling in core/base.nix.
+# Repository provenance.
 #
 # The published copy is the tracked configuration set: every local reference to
 # this flake uses the Git-tree form (`.#`), which resolves tracked content only,

@@ -1,4 +1,4 @@
-# Typed OCI image policy at the NixOS module boundary (DS-4): services read
+# Typed OCI image policy at the NixOS module boundary: services read
 # config.repo.ociImages.<name> instead of an ociImages flake argument.
 { lib, ... }:
 let

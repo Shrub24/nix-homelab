@@ -1,5 +1,4 @@
-# flake-parts core wiring (DS-1): aspect namespace + the exact system set
-# Stage 0 exposed (devShells, packages, formatter, checks).
+# flake-parts core wiring: the aspect namespace and the system set.
 { inputs, ... }:
 {
   imports = [ inputs.flake-parts.flakeModules.modules ];

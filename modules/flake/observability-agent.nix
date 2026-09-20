@@ -1,6 +1,6 @@
-# Observability agent: Beszel agent authentication and enrollment (OPS-8).
-# The aspect derives the conventional host secret path and gates enrollment
-# on its existence; the Beszel hub remains an admin-service leaf.
+# Observability agent: Beszel agent authentication and enrollment. The aspect
+# derives the conventional host secret path and gates enrollment on its
+# existence; the Beszel hub remains an admin-service leaf.
 
 { ... }:
 {
@@ -71,7 +71,7 @@
             secretFiles.host = hostSystemSecret;
           };
 
-          # MON-1/MON-3: this aspect owns the `beszel-agent` unit through the auth
+          # This aspect owns the `beszel-agent` unit through the auth
           # leaf, so it also owns its monitoring participation. The unit only exists
           # once the conventional host secret exists, so the contribution is gated
           # on the same two-step bootstrap predicate (no phantom target).

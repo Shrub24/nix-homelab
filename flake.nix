@@ -25,11 +25,11 @@
     let
       inherit (inputs.nixpkgs) lib;
 
-      # Temporary boundary (design DS-1): directories under modules/ that still
-      # hold plain NixOS leaves not yet converted to aspect contributors. The
-      # enumerated list is inspectable in modules/flake/_unconverted-nixos-dirs.nix;
-      # entries are removed as conversion progresses. A leaked leaf fails
-      # evaluation loudly; there is no fallback blanket-import root.
+      # Temporary boundary: directories under modules/ that still hold plain
+      # NixOS leaves not yet converted to aspect contributors. The enumerated
+      # list is inspectable in modules/flake/_unconverted-nixos-dirs.nix; entries
+      # are removed as conversion progresses. A leaked leaf fails evaluation
+      # loudly; there is no fallback blanket-import root.
       unconvertedNixosDirs = import ./modules/flake/_unconverted-nixos-dirs.nix;
       discovery = inputs.import-tree.filterNot (
         relPath: lib.any (dir: lib.hasPrefix "/${dir}/" relPath) unconvertedNixosDirs

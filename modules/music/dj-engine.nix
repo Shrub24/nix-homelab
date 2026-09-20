@@ -1,4 +1,4 @@
-# DJ engine contributor (DS-4) of the dj aspect: Engine DJ library hosting on a
+# DJ engine contributor of the dj aspect: Engine DJ library hosting on a
 # Windows VM; guest setup is operator-driven (docs/runbooks/engine-dj-guest-setup.md).
 # It contributes to the same `flake.modules.nixos.dj` publication as
 # ./dj.nix and ./windows-vm.nix.
@@ -14,8 +14,8 @@
       cfg = config.applications.dj;
       inherit (cfg) engine;
 
-      # Read-only music library/storage contract (S6-3). Null when the music
-      # aspect is not selected or not enabled; never an import edge.
+      # Read-only music library/storage contract. Null when the music aspect is
+      # not selected or not enabled; never an import edge.
       musicContract = config.applications.music.contract or null;
 
       engineEnabled = cfg.enable && engine.enable;

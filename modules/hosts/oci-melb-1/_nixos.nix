@@ -1,7 +1,6 @@
-# Host-private NixOS composition for oci-melb-1 (Stage 8 HIC-2, task 2.2). The
-# canonical typed record lives in ./default.nix and imports this fragment as its
-# deferred composition; underscore-named siblings keep every host-private
-# fragment out of discovery.
+# Host-private NixOS composition for oci-melb-1: ./default.nix imports it as the
+# record's deferred composition, and the underscore prefix keeps it (and every
+# sibling fragment) out of discovery.
 {
   config,
   lib,
@@ -17,10 +16,6 @@ in
   imports = [
     (modulesPath + "/installer/scan/not-detected.nix")
     (modulesPath + "/profiles/qemu-guest.nix")
-    # Every deployed product, provider, and workload implementation arrives via
-    # the placement aspects selected in this host's canonical record (Stage 8
-    # HIC-1/HIC-2); this fragment keeps only machine facts, explicit variants,
-    # and host-local fragments.
     ./_disko-single-disk-split.nix
     ./_cockpit-auth.nix
   ];
@@ -59,13 +54,6 @@ in
 
   disko.devices.disk.main.device = "/dev/sda";
 
-  # Music is disabled on this host by construction: the applications.music
-  # module is not imported here, so no music service can wire up. The whole
-  # music application (Navidrome, AudioMuse, Syncthing, ingest) moved to
-  # home-forge as one wired composition. This host retains the shared
-  # Postgres (audiomuse DB + backup) and the copied /srv/media tree stays as
-  # rollback insurance until the cutover soaks.
-
   boot.loader.grub.configurationLimit = 10;
 
   systemd = {
@@ -96,8 +84,6 @@ in
     };
   };
 
-  # Edge placement comes from the selected `edge` aspect; this host keeps only
-  # its explicit origin role.
   applications."edge-ingress".role = "origin";
 
   services = {
@@ -168,8 +154,7 @@ in
       reboot.onCalendar = "weekly";
     };
 
-    # Real host variant only: the backups aspect owns enablement, the derived
-    # secret path, and the derived bucket (OPS-3).
+    # The backups aspect owns enablement, the secret path, and the bucket.
     state-backups.stagingRoot = "/srv/data/state-backups";
 
     niks3-cache = {
@@ -183,14 +168,10 @@ in
         dataDir = "/srv/data/postgres";
       };
 
-      # Consumers register themselves: paperless from its own module over the
-      # Unix socket (no credential), and niks3 from upstream
-      # `services.niks3.database`. AudioMuse moved to home-forge's own cluster,
-      # so this host provisions nothing for another host.
+      # Consumers register themselves from their own modules.
     };
 
-    # Cache server runs locally here; the conventional cache-upload default leaf
-    # points peers at this host.
+    # The cache server runs locally, so uploads go to the loopback endpoint.
     niks3-auto-upload.serverUrl = "http://127.0.0.1:5751";
 
     notification-daemon = {
@@ -201,10 +182,8 @@ in
         enable = true;
       };
 
-      # MON-1/MON-3: the host contributes monitoring only for units it really
-      # owns (`podman-storage-prune` is defined in this host assembly below).
-      # Remotely placed workloads contribute their own units from their owning
-      # capability, and the notify aspect owns monitor enablement (OPS-4).
+      # A host may contribute monitoring only for units it owns; the unit below
+      # is defined in this assembly.
       monitor.units."podman-storage-prune" = {
         onFailure = true;
         onStart = true;
@@ -217,23 +196,23 @@ in
   disko-data-size = "28G";
   disko-nix-size = "45G";
 
-  environment.systemPackages = with pkgs; [
-    git
-    curl
-    wget
+  environment.systemPackages = [
+    pkgs.git
+    pkgs.curl
+    pkgs.wget
   ];
 
   sops.defaultSopsFile = ../../../secrets/common.yaml;
 
   programs.nix-ld = {
     enable = true;
-    libraries = with pkgs; [
-      stdenv.cc.cc.lib
-      zlib
-      openssl
-      libuuid
-      xz
-      icu
+    libraries = [
+      pkgs.stdenv.cc.cc.lib
+      pkgs.zlib
+      pkgs.openssl
+      pkgs.libuuid
+      pkgs.xz
+      pkgs.icu
     ];
   };
 

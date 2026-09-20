@@ -1,17 +1,10 @@
-# Edge deployment aspect (dendritic Stage 7, D-053). Published from this
-# discovered contributor and selected by both the OCI private origin and the LA
-# edge host; the explicit role stays a host variant (S7-2). Selecting the
-# aspect supplies `applications."edge-ingress".enable`, so no host repeats the
-# top-level enable.
-#
-# The ingress application implementation is a sibling contributor of the same
-# publication (./edge-ingress-application.nix); this file keeps the edge-role
-# projection from canonical web policy (S7-7) because
-# it is pure projection of the selected capability: routes, primary domain,
-# ACME identity, and Authenticated Origin Pulls are derived from
-# `policy/web-services.nix` and the repo CA certificate. The read stays one-way
-# (web-policy is a support module, never imported) and is guarded so an origin
-# host renders no routes and a non-web host cannot force policy values.
+# Edge deployment aspect: selecting it supplies
+# `applications."edge-ingress".enable`, so no host repeats the top-level enable.
+# This file keeps the edge-role projection from canonical web policy — routes,
+# primary domain, ACME identity, and Authenticated Origin Pulls derive from
+# `policy/web-services.nix` and the repo CA certificate. The read is one-way and
+# guarded so an origin host renders no routes and a non-web host cannot force
+# policy values.
 { ... }:
 {
   flake.modules.nixos.edge =
@@ -49,12 +42,9 @@
       isEdge = cfg.role == "edge";
     in
     {
-      # Selecting this aspect is the capability's top-level enablement. The
-      # host sets `role` and keeps the application-scoped secret binding.
       applications."edge-ingress" = lib.mkMerge [
         { enable = true; }
 
-        # Edge-role projection only.
         (lib.mkIf isEdge {
           inherit primaryDomain;
           acmeEmail = "infra@${primaryDomain}";

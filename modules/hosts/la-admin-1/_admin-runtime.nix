@@ -1,9 +1,6 @@
 { pkgs, ... }:
 {
-  # Host-local admin runtime remainder (decouple-identity-admin-capabilities
-  # 3.3): the `/srv/data` operator ACL and its reconcile unit. The admin SSH
-  # identity registrations existed only for the retired Quantum workload and
-  # were removed with it (2026-09-21).
+  # The /srv/data operator ACL and its reconcile unit.
   systemd.tmpfiles.rules = [
     "d /srv/data 0755 root root - -"
     "z /srv/data 0755 root root - -"

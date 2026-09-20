@@ -1,16 +1,7 @@
-# Cockpit deployment aspect (dendritic Stage 7, D-053). Published from this
-# discovered contributor and selected on both `oci-melb-1` and `la-admin-1`
-# (S7-2). Selecting the aspect imports the Cockpit leaf — whose `enable`
-# default is true — and owns only wiring that is common to both hosts:
-# the dedicated service user and the common service-user secret registration.
-#
-# Host variants stay explicit: `publicHost`/`urlRoot` (OCI mkForce overrides)
-# and `loopbackTls.enable` (LA) remain host-local. The secret is registered
-# under the same two-step gate the OCI host used: the conventional
-# `secrets/hosts/<hostName>/system.yaml` must exist before the secret is
-# declared, which is identical in effect for both selected hosts (LA's
-# registration was unconditional and its file exists).
-
+# Cockpit deployment aspect: selection imports the leaf (whose `enable` default
+# is true) and owns the wiring common to every host — the dedicated service user
+# and the service-user secret registration. Host variants stay explicit:
+# `publicHost`/`urlRoot` and `loopbackTls.enable` are host-local.
 { ... }:
 {
   flake.modules.nixos.cockpit =
@@ -27,13 +18,6 @@
       cfg = config.services.admin.cockpit;
       svcUser = cfg.serviceUser;
 
-      # Canonical web-policy consumption (decouple-identity-admin-capabilities
-      # 3.3): the policy-shaped public host and URL root come from
-      # `repo.web.currentHost.services."cockpit-admin"`, never the retired
-      # `applications.admin.policyServices` namespace. A host that composes this
-      # leaf without the route fails through this named contract throw instead of a
-      # raw missing-attribute error. Explicit host variants stay authoritative and
-      # never force the route read.
       webServices = config.repo.web.currentHost.services or { };
       cockpitRoute =
         if webServices ? "cockpit-admin" then
@@ -50,8 +34,10 @@
       options.services.admin.cockpit = {
         enable = lib.mkOption {
           type = lib.types.bool;
+          # Default on: the aspect selection is the enablement and the leaf has
+          # no other activation path.
           default = true;
-          description = "Enable admin-owned Cockpit module wiring.";
+          description = "Enable the Cockpit module wiring.";
         };
 
         listenAddress = lib.mkOption {
@@ -73,11 +59,7 @@
         };
 
         serviceUser = {
-          enable = lib.mkOption {
-            type = lib.types.bool;
-            default = false;
-            description = "Enable a minimal dedicated Cockpit-only service account.";
-          };
+          enable = lib.mkEnableOption "the dedicated Cockpit-only service account";
 
           name = lib.mkOption {
             type = lib.types.str;

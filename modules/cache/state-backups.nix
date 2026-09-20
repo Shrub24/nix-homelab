@@ -1,10 +1,7 @@
-# Operational aspect (split-state-backups-cache-publication, OPSPLIT-1).
-# State backups: restic state recovery and its feature-owned failure
-# monitoring only. Selection is enablement; the aspect imports the restic
-# leaf itself and owns the conventional host secret gate (two-step sops
-# bootstrap, OPS-3). It deliberately imports no Niks3 upload/publication
-# leaves and no sibling public aspect; cache publication is owned by the
-# separate cache-publisher aspect.
+# State backups: restic state recovery and its failure monitoring only.
+# Selection is enablement; the aspect imports the restic leaf and owns the
+# conventional host secret gate (two-step sops bootstrap). Cache publication is
+# owned by the separate cache-publisher aspect.
 
 { ... }:
 {
@@ -19,7 +16,7 @@
       hostSystemSecret = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
       hasHostSecrets = builtins.pathExists hostSystemSecret;
       bucketName = "shrublab-backup-${config.networking.hostName}";
-      # S3 bucket rule (OPS-11): 3-63 chars, lowercase alnum/hyphens, alnum at both ends.
+      # S3 bucket naming rule: 3-63 chars, lowercase alnum/hyphens, alnum at both ends.
       bucketNameValid = builtins.match "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$" bucketName != null;
 
       globals = import ../../policy/globals.nix;
@@ -376,12 +373,9 @@
             "d /var/tmp/state-restore 0700 root root - -"
           ];
 
-          # Failure-only monitoring for the restic backup unit: wire
-          # OnFailure=svc-monitor@... directly, without the generic monitor's
-          # lifecycle ExecStartPost/ExecStopPost hooks (ExecStopPost would report
-          # success after a failed run). The notification-daemon monitor template
-          # must exist; the notify aspect owns monitor composition (OPS-4) and the
-          # backups aspect asserts it, so this leaf no longer defaults monitor.enable.
+          # Failure-only monitoring: OnFailure=svc-monitor@... is wired directly,
+          # without the generic monitor's lifecycle hooks (ExecStopPost would
+          # report success after a failed run).
           systemd.services."restic-backups-${cfg.backupName}".onFailure = lib.mkBefore [
             "svc-monitor@restic-backups-${cfg.backupName}.service"
           ];
@@ -389,16 +383,15 @@
           # The state-restore-stage helper package (option defined by this module).
           services.state-backups.restoreStagePackage = restoreStageScript;
 
-          environment.systemPackages = with pkgs; [
-            restic
-            sqlite
+          environment.systemPackages = [
+            pkgs.restic
+            pkgs.sqlite
             restoreStageScript
           ];
         })
         ({
           # The restic capability activates only when the conventional host
-          # secret exists (OPS-3). The derived bucket and secret path replace
-          # the host literals, which all equal the convention exactly.
+          # secret exists.
           services.state-backups = lib.mkIf hasHostSecrets {
             enable = true;
             secretFile = hostSystemSecret;
@@ -413,10 +406,9 @@
           ]
           ++ lib.optionals hasHostSecrets [
             {
-              # OPS-4: this aspect never imports notify; it asserts the actual
-              # monitor option so a host selecting state-backups without notify
-              # fails with a named message instead of silently missing its
-              # failure-monitoring template.
+              # Assert the actual monitor option rather than importing notify: a
+              # host selecting state-backups without notify fails with a named
+              # message instead of silently missing the monitor template.
               assertion = lib.attrByPath [ "services" "notification-daemon" "monitor" "enable" ] false config;
               message = "state-backups aspect: services.notification-daemon.monitor.enable must be true (select the notify aspect) so restic-backups-state failures route through svc-monitor.";
             }

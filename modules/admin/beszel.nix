@@ -1,23 +1,7 @@
-# Beszel hub deployment aspect (dendritic Stage 7, D-053; self-contained placement aspect since D-054). Published from this
-# discovered contributor and selected only on `la-admin-1` (explicit
-# `aspects.beszel`). Selecting the aspect imports the Beszel leaf and owns its
-# enablement; the runtime composition — policy public URL, origin host/port,
-# and the state-backups registration — stays in the leaf.
-#
-# Dependency direction (decouple-identity-admin-capabilities 3.2): the aspect
-# and its leaf consume only the canonical web policy
-# (`repo.web.currentHost.services`) and never read the
-# `applications.admin` option namespace.
-#
-# Named dependency failure (feature-topology/admin-module-structure): a
-# selection without the canonical `beszel-admin` web-policy route must fail
-# through the leaf's named throw identifying the missing contract, not a raw
-# missing-attribute error.
-
-# Beszel hub composition (decoupled from the `applications.admin` namespace in
-# decouple-identity-admin-capabilities 3.2): the policy public URL and origin
-# host/port come from the canonical web policy (`repo.web.currentHost.services`).
-
+# Beszel hub deployment aspect: selection imports the leaf and owns its
+# enablement; the runtime composition (policy public URL, origin host/port, and
+# the state-backups registration) stays in the leaf, which reads only the
+# canonical web policy.
 { ... }:
 {
   flake.modules.nixos.beszel =
@@ -25,10 +9,6 @@
     let
       cfg = config.services.admin.beszel;
 
-      # Named dependency failure (same pattern as gatus/vaultwarden/termix): a host
-      # consuming this leaf without the canonical web-policy route must fail
-      # through this throw, not a raw missing-attribute error. The safe `or { }`
-      # lookup keeps the guard independent of any sibling `repo.web` declaration.
       webServices = config.repo.web.currentHost.services or { };
       beszelRoute =
         if webServices ? "beszel-admin" then
@@ -43,11 +23,7 @@
       port = beszelRoute.origin.port;
     in
     {
-      options.services.admin.beszel.enable = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = "Enable admin-owned Beszel hub service wiring.";
-      };
+      options.services.admin.beszel.enable = lib.mkEnableOption "the Beszel hub service wiring";
       config = lib.mkMerge [
         (lib.mkIf cfg.enable {
           services.beszel.hub = {
@@ -68,7 +44,6 @@
           };
         })
         ({
-          # Selecting this aspect is the capability's top-level enablement.
           services.admin.beszel.enable = true;
         })
       ];

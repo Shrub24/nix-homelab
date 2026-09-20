@@ -1,4 +1,4 @@
-# Internal transport contracts (Stage 8 task 4.1, HIC-4). Two services are
+# Internal transport contracts. Two services are
 # consumed across host boundaries: the shared PostgreSQL substrate and the
 # private Niks3 write API. Cross-host consumers resolve them through this
 # typed contract instead of restating a provider host name, and a provider
@@ -15,8 +15,8 @@
 #     into the provider's own evaluation.
 #
 # Resolution derives from identity, never from literals: the FQDN is the
-# provider record's derived `tailscale.fqdn` (HIC-1), which itself derives from
-# the single tailnet suffix authority (`policy/globals.nix`, task 3.2).
+# provider record's derived `tailscale.fqdn`, which itself derives from the
+# single tailnet suffix authority in `policy/globals.nix`.
 #
 # Named fail-closed checks:
 #   1. unknown provider — the named host is not a declared canonical host ID;
@@ -270,12 +270,12 @@ in
         postgres = lib.mkOption {
           type = lib.types.attrsOf (lib.types.submodule { options = endpointOptions; });
           readOnly = true;
-          description = "Resolved shared-PostgreSQL transport contracts, keyed by instance (HIC-4).";
+          description = "Resolved shared-PostgreSQL transport contracts, keyed by instance.";
         };
         niks3Write = lib.mkOption {
           type = lib.types.submodule { options = endpointOptions; };
           readOnly = true;
-          description = "Resolved Niks3 write-API transport contract (HIC-4).";
+          description = "Resolved Niks3 write-API transport contract.";
         };
       };
 

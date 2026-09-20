@@ -15,10 +15,9 @@
       cfg = config.services.audiomuse;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
-      # One credential, one source (D-058): the role password lives in
-      # secretFiles.db (secrets/applications/music.yaml, key
-      # audiomuse/postgres_password). This service reads it to authenticate and the
-      # co-located cluster reads the same file and key to provision the role.
+      # One credential, one source: the role password lives in secretFiles.db.
+      # This service reads it to authenticate and the co-located cluster reads the
+      # same file and key to provision the role.
       dbSecretAvailable = cfg.secretFiles.db != null && builtins.pathExists cfg.secretFiles.db;
 
       # The cluster this host runs, when it runs one. The declaration is probed
@@ -126,10 +125,10 @@
       };
 
       config = lib.mkIf cfg.enable {
-        # Self-registration (D-058): the database, role, and credential this
-        # service needs, declared next to the service that uses them. The provider
-        # reads the same file and key to provision the role, so the password has one
-        # authoritative source instead of a hand-synced pair.
+        # Self-registration: the database, role, and credential this service needs,
+        # declared next to the service that uses them. The provider reads the same
+        # file and key to provision the role, so the password has one authoritative
+        # source instead of a hand-synced pair.
         services.postgres.consumers.audiomuse = lib.mkIf (localPostgres != null) {
           database = "audiomuse";
           auth = "scram";

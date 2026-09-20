@@ -500,13 +500,13 @@ open(p, "w").write(s)
 
 p = d + "/modules/hosts/la-admin-1/_nixos.nix"
 s = open(p).read()
-anchor = "    # (decouple-identity-admin-capabilities 3.1).\n"
+anchor = "    hostRecovery = {\n"
 assert s.count(anchor) == 1, "vaultwarden host binding insertion anchor drifted"
 s = s.replace(
     anchor,
-    anchor
-    + "    admin.vaultwarden.secretFiles.host = ../../../secrets/applications/admin.yaml;\n"
-    + '    admin.vaultwarden.smtpFrom = "vaultwarden@example.invalid";\n',
+    "    admin.vaultwarden.secretFiles.host = ../../../secrets/applications/admin.yaml;\n"
+    + '    admin.vaultwarden.smtpFrom = "[EMAIL_REDACTED]";\n'
+    + anchor,
     1,
 )
 open(p, "w").write(s)
@@ -721,7 +721,7 @@ open(p, "w").write(s)
 
 p = d + "/modules/hosts/la-admin-1/_nixos.nix"
 s = open(p).read()
-anchor = "    # (decouple-identity-admin-capabilities 3.1).\n"
+anchor = "    hostRecovery = {\n"
 assert s.count(anchor) == 1, "homepage host binding insertion anchor drifted"
 s = s.replace(
     anchor,

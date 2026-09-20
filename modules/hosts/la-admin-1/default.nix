@@ -1,14 +1,7 @@
-# la-admin-1 host contributor (Stage 8 HIC-1/HIC-2, task 2.2). This file is the
-# host entry point: it declares the canonical typed host record — target system,
-# Tailscale identity, deferred NixOS composition, and SSH/deploy facts. The
-# NixOS composition itself stays host-private in `_nixos.nix` (plus the
-# `_cockpit-auth.nix` / `_admin-runtime.nix` fragments), so a host assembly can
-# never be selected as a public aspect.
-#
-# This contributor is reached by `denful/import-tree` discovery like every
-# other module: stage 8 task 2.3 removed the `hosts` import-tree exclusion
-# together with the transitional loader, and `modules/flake/registry.nix` is
-# now only the `flake.bootstrap.nodes` projection over these records.
+# Host entry point: the canonical typed record (target system, Tailscale
+# identity, deferred NixOS composition, deploy facts). The NixOS composition
+# stays host-private in `_nixos.nix` and its `_admin-runtime.nix` sibling, so a
+# host assembly can never be selected as a public aspect.
 {
   config,
   inputs,
@@ -23,8 +16,6 @@ in
 
     tailscale = {
       hostname = "la-admin-1";
-      # Stage 8 task 3.2 (HIC-3): single authority in policy/globals.nix
-      # `tailnet.suffix`; the web policy reads the same value.
       tailnetSuffix = (import ../../../policy/globals.nix).tailnet.suffix;
     };
 
@@ -37,8 +28,7 @@ in
         aspects.fleet-packages
         aspects.web-policy
         aspects.identity-client
-        # Stage 7 placement aspects (D-053): one selection per deployed
-        # product/platform capability; no host imports its implementation.
+        # Selection is enablement; no host imports an implementation.
         aspects.edge
         aspects.push-server
         aspects.identity-provider
@@ -47,17 +37,11 @@ in
         aspects.beszel
         aspects.homepage
         aspects.webhook
-        # Cockpit and Termix are demoted for now: the aspects remain in the
-        # tree and can be re-selected unchanged, but neither is deployed while
-        # unused. Their `policy/web-services.nix` routes stay so a re-selection
-        # needs no policy edit.
-        # Foundation aspects (FND-1): selection is enablement.
         aspects.base
         aspects.shell
         aspects.networking
         aspects.tailscale
         aspects.notify
-        # Operational aspects: selection is enablement.
         aspects.state-backups
         aspects.cache-publisher
         aspects.internal-contracts

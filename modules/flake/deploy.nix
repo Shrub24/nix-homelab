@@ -1,15 +1,9 @@
-# deploy-rs wiring (DS-4, DS-6). lib/deploy/hosts.nix remains the physical
-# topology SSOT (edgeHost, deployOrder, ssh users, remote-build flags); node
-# profiles are built from the materialized configurations directly, replacing
-# the old self.nixosConfigurations dereference.
-#
-# Stage 8 task 3.1 (HIC-3, "reference, do not merge"): every host reference in
-# the deploy metadata — node keys, edgeHost, and deployOrder entries — must name
-# a declared canonical host ID (the keys of the discovered `nixos.hosts`
-# records), and every node's `system` must agree with that record. Both fail
-# closed with named errors, so a drifted deploy topology cannot silently produce
-# a deploy output. The topology keeps owning its own physical facts; they are
-# never merged into the host records.
+# deploy-rs wiring. lib/deploy/hosts.nix owns the physical topology (edgeHost,
+# deployOrder, ssh users, remote-build flags); every host reference it makes must
+# name a declared canonical host ID and every node's `system` must agree with
+# that record — both fail closed with named errors, so a drifted topology cannot
+# silently produce a deploy output. The topology keeps owning its own physical
+# facts; they are never merged into the host records.
 top@{ inputs, lib, ... }:
 let
   deployTopology = import ../../lib/deploy/hosts.nix;

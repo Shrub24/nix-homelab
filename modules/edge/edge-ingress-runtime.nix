@@ -1,5 +1,5 @@
-# Edge ingress runtime sibling of the `edge` aspect: deferredModule values
-# merge across sibling files, so the host selects one aspect name.
+# Edge ingress runtime sibling of the `edge` aspect: deferredModule values merge
+# across sibling files, so the host selects one aspect name.
 { ... }:
 {
   flake.modules.nixos.edge =

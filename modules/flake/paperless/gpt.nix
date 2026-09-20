@@ -18,11 +18,7 @@
     {
       options.services.paperless.paperless-gpt = {
         docling = {
-          enable = lib.mkOption {
-            type = lib.types.bool;
-            default = false;
-            description = "Enable docling-serve OCR service shared across paperless-gpt instances.";
-          };
+          enable = lib.mkEnableOption "the docling-serve OCR service shared across paperless-gpt instances";
           dataDir = lib.mkOption {
             type = lib.types.str;
             default = "/srv/data/docling";

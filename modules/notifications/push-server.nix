@@ -1,9 +1,7 @@
-# ntfy push-server deployment aspect (dendritic Stage 7, D-053). Published from
-# this discovered contributor and selected only on `la-admin-1` (S7-2); the
-# ntfy server leaf is the intrinsic implementation and selection supplies the
-# existing top-level enablement. Host-scoped variants (Firebase key, auth secret
-# file, and the loopback server URL consumed by the notification daemon) stay
-# host-set.
+# ntfy push-server deployment aspect: the ntfy server leaf is the intrinsic
+# implementation and selection supplies the top-level enablement. Host-scoped
+# variants (Firebase key, auth secret file, and the loopback server URL consumed
+# by the notification daemon) stay host-set.
 #
 # Publisher authorization is fleet policy, not an LA machine fact, so it lives
 # here and is validated against the canonical host records: every publisher must
@@ -13,7 +11,6 @@
 # `tests/phase-la-admin-contract.sh` pins policy membership against that
 # plaintext template so the two cannot drift.
 
-# The ntfy server leaf is folded into this aspect as the module value below.
 # The file-level let (publishers + unknownPublishers) stays at flake-parts
 # level because it is fleet policy validated against `top.config.nixos.hosts`;
 # the NixOS module cannot read flake-level values, so the aspect passes the
@@ -324,7 +321,6 @@ in
           ]
         ))
         {
-          # Selecting this aspect is the server's top-level enablement.
           services.ntfy.enable = true;
 
           # Publisher authorization is fleet policy validated against the canonical

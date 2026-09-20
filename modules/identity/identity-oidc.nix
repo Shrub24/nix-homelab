@@ -11,11 +11,10 @@
       identityPolicy = builtins.fromJSON (builtins.readFile ../../policy/identity.json);
       oauth2Policy = identityPolicy.systems.oauth2 or { };
       enabledOauth2Clients = lib.filterAttrs (_name: client: client.enable or true) oauth2Policy;
-      # Canonical provider URL authority (decouple-identity-admin-capabilities
-      # IDB-2): the Kanidm web-policy route is the single source of the
-      # provider URL. Both identity-client (via this default) and
-      # identity-provider (by direct consumption) read the same resolved
-      # route; neither capability writes the other's option namespace.
+      # The Kanidm web-policy route is the single source of the provider URL;
+      # identity-client (via this default) and identity-provider (directly) read
+      # the same resolved route, and neither capability writes the other's
+      # option namespace.
       webPolicyKanidmUrl = (
         lib.attrByPath [ "repo" "web" "currentHost" "services" "kanidm-admin" "publicUrl" ] null config
       );

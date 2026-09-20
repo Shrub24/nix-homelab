@@ -1,4 +1,4 @@
-# DJ aspect (DS-4): owns the traktor-m3u-sync input module/package, the
+# DJ aspect: owns the traktor-m3u-sync input module/package, the
 # applications.dj enablement contract, and the host-matched windows-dj-setup
 # payload. The engine host and the Windows VM workload are sibling
 # contributors of the same publication (./dj-engine.nix, ./windows-vm.nix).
@@ -21,7 +21,6 @@
         services.traktor-m3u-sync.package =
           inputs.traktor-m3u-sync.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
-        # Selecting the DJ deployment aspect is its top-level enablement (S4-4).
         applications.dj.enable = true;
 
         applications.dj.engine.setupPackage = withSystem pkgs.stdenv.hostPlatform.system (

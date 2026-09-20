@@ -1,12 +1,9 @@
-# Reusable Windows VM layer: declarative libvirt/KVM domains attached to the
-# host-owned always-on bridge, loopback SPICE display, and virtiofs shares.
-# Consumers (e.g. modules/music/_dj) define instances and wire
-# locks/backup contracts; this module owns domain XML generation and
-# lifecycle units, and only consumes the fleet-networking bridge that guests
-# attach to — it never creates or owns physical networking.
-
-# Windows VM runtime sibling of the `dj` aspect: deferredModule values merge
-# across sibling files, so the host selects one aspect name.
+# Windows VM runtime sibling of the `dj` aspect: declarative libvirt/KVM domains
+# attached to the host-owned always-on bridge, loopback SPICE display, and
+# virtiofs shares. Consumers define instances and wire locks/backup contracts;
+# this module owns domain XML generation and lifecycle units, and only consumes
+# the fleet-networking bridge that guests attach to — it never creates or owns
+# physical networking.
 { ... }:
 {
   flake.modules.nixos.dj =
@@ -48,8 +45,6 @@
         ${stopAndWaitWait}/bin/windows-vm-wait-shutoff "$dom" 30
       '';
 
-      # Internal short wait used after destroy; split out so the public script
-      # stays readable.
       stopAndWaitWait = pkgs.writeShellScriptBin "windows-vm-wait-shutoff" ''
         set -euo pipefail
         dom="$1"
@@ -78,7 +73,7 @@
 
       # Deterministic per-instance UUID: `virsh define` only updates an existing
       # domain when identity is stable; a fresh random UUID per render collides
-      # with the previously defined one ("domain 'x' already exists with uuid").
+      # with the existing one ("domain 'x' already exists with uuid").
       instanceUuid =
         name:
         let
@@ -399,7 +394,7 @@
             message = ''
               services.windows-vm requires a host-owned always-on bridge '${cfg.bridgeName}'
               when instances are enabled. The VM layer only consumes the bridge and never
-              creates or owns physical networking (fleet networking aspect, D-043). Declare
+              creates or owns physical networking. Declare
               it on the host via fleet.networking.bridge, e.g.
               fleet.networking.bridge = { name = "${cfg.bridgeName}"; macAddress = "<uplink-mac>"; };
             '';

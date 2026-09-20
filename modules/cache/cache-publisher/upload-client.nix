@@ -1,8 +1,6 @@
-# Cache-upload client contributor of the cache-publisher aspect (OPSPLIT-1):
-# the niks3-auto-upload client defaults and the niks3 API-token sops
-# registration, owning the conventional host-scoped secret path derived from
-# networking.hostName. It contributes to the same
-# `flake.modules.nixos.cache-publisher` publication as ../cache-publisher.nix.
+# Cache-upload client contributor of the cache-publisher aspect: the
+# niks3-auto-upload client defaults and the niks3 API-token sops registration,
+# owning the host-scoped secret path derived from networking.hostName.
 {
   flake.modules.nixos.cache-publisher =
     { config, lib, ... }:
@@ -10,13 +8,9 @@
       hostSystemSecret = ../../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
       hasHostSecrets = builtins.pathExists hostSystemSecret;
 
-      # Private write endpoint resolved through the internal transport contract
-      # (stage 8 task 4.2, HIC-4) instead of a provider literal. The `scheme`/
-      # `host`/`port` fields are used rather than `url`: `url` carries the derived
-      # FQDN, while this client has always addressed the provider by its short
-      # tailnet hostname, so composing from host+port keeps the rendered value
-      # byte-identical. Still mkDefault, so an explicit host override (oci-melb-1
-      # points at its loopback cache) continues to win.
+      # Composed from scheme/host/port rather than `url`, which carries the
+      # derived FQDN: this client addresses the provider by its short tailnet
+      # hostname, and the rendered value must stay byte-identical.
       niks3Write = config.repo.internal.niks3Write;
     in
     {

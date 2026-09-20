@@ -1,4 +1,4 @@
-# Shared PostgreSQL mechanism (modular-postgres-instances, D-058).
+# Shared PostgreSQL mechanism.
 #
 # Three layers, so adding a consumer or a cluster never means editing this file:
 #   * mechanism (here) — renders provisioning from an instance plus a consumer
@@ -113,17 +113,13 @@
     {
       imports = [ ./postgres/_consumer.nix ];
 
-      # Single unconditional definition: this is a projection of the host's own
-      # declaration, read by co-located consumers, and it exists even when the
-      # mechanism is disabled so those consumers can check for a local cluster.
       config = lib.mkMerge [
         {
-          # Selecting this aspect is the substrate's top-level enablement.
           services.postgres.enable = true;
 
-          # A projection of the host's own declaration, read by co-located consumers;
-          # defined unconditionally so those consumers can test for a local cluster
-          # even where the mechanism is disabled.
+          # Defined unconditionally: a projection of the host's own declaration,
+          # read by co-located consumers to test for a local cluster even where
+          # the mechanism is disabled.
           services.postgres.localEndpoint = if instance == null then null else { inherit (instance) port; };
         }
 
@@ -222,7 +218,6 @@
             "d ${instance.dataDir} 0700 postgres postgres - -"
           ];
 
-          # ── Backup coverage ────────────────────────────────────────────────────
           # Export-first contract: the native NixOS postgresqlBackup module runs
           # pg_dumpall as the postgres user into the state-backups staging root, so
           # restic captures a logical export instead of the raw live data directory.

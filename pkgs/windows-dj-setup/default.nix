@@ -40,8 +40,8 @@ stdenv.mkDerivation {
     EOF
   '';
 
-  meta = with lib; {
+  meta = {
     description = "Windows DJ setup media — WinFsp, Mesa fallback, and setup script for Engine DJ VM";
-    platforms = platforms.all;
+    platforms = lib.platforms.all;
   };
 }

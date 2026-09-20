@@ -1,7 +1,6 @@
-# Builder access: nixbuild.net SSH trust only (OPS-7). Substituter policy
-# stays in the base aspect; the retired fleet.nixbuild-ssh.enable option is
-# replaced by this aspect's selection. Selection is enablement, and the SSH
-# trust is nested in the publication, so there is no private leaf.
+# Builder access: nixbuild.net SSH trust only. Substituter policy stays in the
+# base aspect; selection is enablement, and the SSH trust is nested in the
+# publication, so there is no private leaf.
 { ... }:
 {
   flake.modules.nixos.builder-access = {

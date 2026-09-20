@@ -16,11 +16,7 @@
     {
 
       options.applications."edge-ingress" = {
-        enable = lib.mkOption {
-          type = lib.types.bool;
-          default = false;
-          description = "Enable host-level edge ingress composition.";
-        };
+        enable = lib.mkEnableOption "the host-level edge ingress composition";
 
         role = lib.mkOption {
           type = lib.types.enum [
@@ -57,11 +53,7 @@
         };
 
         authenticatedOriginPulls = {
-          enable = lib.mkOption {
-            type = lib.types.bool;
-            default = false;
-            description = "Enable Cloudflare Authenticated Origin Pulls (mTLS).";
-          };
+          enable = lib.mkEnableOption "Cloudflare Authenticated Origin Pulls (mTLS)";
 
           caCertFile = lib.mkOption {
             type = lib.types.nullOr lib.types.str;

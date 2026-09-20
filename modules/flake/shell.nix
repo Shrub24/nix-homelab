@@ -1,6 +1,5 @@
-# Foundation aspect (FND-1): shell tooling. Selecting an aspect is its
-# enablement; no aspect imports another aspect. The interactive implementation
-# and its p10k data asset (./shell/p10k.zsh) are owned here.
+# Shell foundation aspect: selecting it is its enablement. The interactive
+# implementation and its p10k data asset (./shell/p10k.zsh) are owned here.
 { inputs, ... }:
 {
   flake.modules.nixos.shell =
@@ -21,7 +20,7 @@
         enable = lib.mkOption {
           type = lib.types.bool;
           default = true;
-          description = "Enable wezterm-mux-server (system-level persistent mux server).";
+          description = "Whether to run wezterm-mux-server (system-level persistent mux server).";
         };
         user = lib.mkOption {
           type = lib.types.str;
@@ -32,26 +31,26 @@
 
       config = {
         environment = {
-          systemPackages = with pkgs; [
-            bat
-            btop
-            duf
-            eza
-            fd
-            fzf
-            jq
-            lsof
-            ncdu
-            yq-go
-            ripgrep
-            zoxide
-            zsh-autosuggestions
-            zsh-powerlevel10k
-            wezterm
-            isd
-            nix-du
-            yazi
-            fff
+          systemPackages = [
+            pkgs.bat
+            pkgs.btop
+            pkgs.duf
+            pkgs.eza
+            pkgs.fd
+            pkgs.fzf
+            pkgs.jq
+            pkgs.lsof
+            pkgs.ncdu
+            pkgs.yq-go
+            pkgs.ripgrep
+            pkgs.zoxide
+            pkgs.zsh-autosuggestions
+            pkgs.zsh-powerlevel10k
+            pkgs.wezterm
+            pkgs.isd
+            pkgs.nix-du
+            pkgs.yazi
+            pkgs.fff
           ];
 
           # nixpkgs ships default `ls`/`ll`/`l` aliases via mkDefault; clear the

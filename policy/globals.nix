@@ -1,6 +1,6 @@
 {
-  # Stage 8 task 3.2 (HIC-3): the fleet Tailscale tailnet DNS suffix is written
-  # once, here. Canonical host records set
+  # The fleet Tailscale tailnet DNS suffix is written once, here. Canonical
+  # host records set
   # `tailscale.tailnetSuffix = globals.tailnet.suffix` and derive their
   # `tailscale.fqdn` from it; the web policy composes host-backed FQDNs as
   # `"${hostId}.${globals.tailnet.suffix}"` in policy/web-services.nix, so a

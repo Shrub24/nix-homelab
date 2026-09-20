@@ -157,7 +157,7 @@ in
         };
 
         vaultwarden-admin = {
-          subdomain = "vaultwarden";
+          subdomain = "vault";
           exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
@@ -209,6 +209,22 @@ in
           upstreamHostHeader = "{upstream_hostport}";
           exposureMode = "tailscale-upstream";
           category = "admin";
+        };
+
+        search = {
+          subdomain = "search";
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 4444;
+          };
+          exposureMode = "tailscale-upstream";
+          category = "app";
+          access.requireCloudflareAccess = true;
+          cloudflare = {
+            proxied = true;
+            authenticatedOriginPulls = true;
+          };
         };
 
         slskd = {
@@ -290,17 +306,20 @@ in
           health.path = "/hooks/health";
         };
 
-        phoenix = {
-          subdomain = "phoenix";
+        langfuse = {
+          subdomain = "langfuse";
           origin = {
             scheme = "http";
             provider = "oci-melb-1";
-            port = 6006;
+            port = 3000;
           };
-          exposureMode = "tailscale-only";
-          declarePublic = false;
+          exposureMode = "tailscale-upstream";
           category = "admin";
-          health.path = "/";
+          access.requireCloudflareAccess = true;
+          cloudflare = {
+            proxied = true;
+            authenticatedOriginPulls = true;
+          };
         };
 
         bifrost = {

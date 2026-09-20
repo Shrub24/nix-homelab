@@ -45,7 +45,7 @@ in
         aspects.bifrost
         aspects.karakeep
         aspects.niks3-cache
-        aspects.phoenix
+        aspects.langfuse
         aspects.base
         aspects.shell
         aspects.networking

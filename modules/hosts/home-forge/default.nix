@@ -39,6 +39,11 @@ in
         aspects.music
         aspects.omniroute
         aspects.postgres
+        # Knowledge domain (search, agent memory, documentation index).
+        aspects.degoog
+        aspects.hindsight
+        aspects.docs-mcp
+        # Foundation aspects (FND-1): selection is enablement.
         aspects.base
         aspects.shell
         aspects.networking

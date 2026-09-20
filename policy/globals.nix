@@ -9,7 +9,7 @@
     suffix = "tail0fe19b.ts.net";
   };
 
-  aiGateway = {
+  bifrost = {
     aliases = {
       text = "shrublab-text";
       image = "shrublab-image";

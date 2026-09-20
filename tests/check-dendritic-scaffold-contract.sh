@@ -522,6 +522,10 @@ flake.modules.nixos.builder-access \
 flake.modules.nixos.cache-publisher \
 flake.modules.nixos.cockpit \
 flake.modules.nixos.dj \
+flake.modules.nixos.degoog \
+flake.modules.nixos.docs-mcp \
+flake.modules.nixos.hindsight \
+flake.modules.nixos.langfuse \
 flake.modules.nixos.ingress \
 flake.modules.nixos.fleet-packages \
 flake.modules.nixos.gatus \
@@ -599,7 +603,7 @@ aspects.postgres
 aspects.bifrost
 aspects.karakeep
 aspects.niks3-cache
-aspects.phoenix"
+aspects.langfuse"
 # The admin capabilities are placed by their own aspects on la-admin-1, each
 # selected exactly once (no convenience bundle). Cockpit and Termix are demoted
 # and stay unselected while unused, so their selections are absent here.
@@ -613,14 +617,17 @@ aspects.homepage
 aspects.webhook"
 oci_sel="$(printf '%s\n%s\n%s\naspects.kanidm-host-auth\n' "$support_quartet" "$foundation_operational" "$oci_placement" | LC_ALL=C sort)"
 la_sel="$(printf '%s\n%s\n%s\naspects.kanidm-host-auth\n' "$support_quartet" "$foundation_operational" "$la_placement" | LC_ALL=C sort)"
-forge_placement="aspects.postgres"
+forge_placement="aspects.postgres
+aspects.degoog
+aspects.hindsight
+aspects.docs-mcp"
 forge_sel="$(printf '%s\n%s\n%s\naspects.dj\naspects.music\naspects.omniroute\n' "$support_quartet" "$foundation_operational" "$forge_placement" | LC_ALL=C sort)"
 [ "$(host_aspects "$ROOT" oci-melb-1)" = "$oci_sel" ] ||
   fail "registry: oci-melb-1 must select the support quartet + eight deployment aspects + kanidm-host-auth + its nine placement aspects: $(host_aspects "$ROOT" oci-melb-1)"
 [ "$(host_aspects "$ROOT" la-admin-1)" = "$la_sel" ] ||
   fail "registry: la-admin-1 must select the support quartet + eight deployment aspects + kanidm-host-auth + its eight placement aspects: $(host_aspects "$ROOT" la-admin-1)"
 [ "$(host_aspects "$ROOT" home-forge)" = "$forge_sel" ] ||
-  fail "registry: home-forge must select the support quartet + eight deployment aspects + dj + music + omniroute + its postgres placement: $(host_aspects "$ROOT" home-forge)"
+  fail "registry: home-forge must select the support quartet + eight deployment aspects + dj + music + omniroute + its postgres and knowledge placements: $(host_aspects "$ROOT" home-forge)"
 # Host records (modules/hosts/<host>/default.nix) are the aspect-selection
 # authority since Stage 8 HIC-1/HIC-2; the private NixOS fragments (`_*.nix`)
 # must still never import an aspect implementation.
@@ -1806,6 +1813,7 @@ placement_file_of() {
     beszel) echo modules/observability/beszel.nix ;;
     gatus) echo modules/observability/gatus.nix ;;
     phoenix) echo modules/observability/phoenix.nix ;;
+    langfuse) echo modules/observability/langfuse.nix ;;
     bifrost) echo modules/ai/bifrost.nix ;;
     omniroute) echo modules/ai/omniroute.nix ;;
     postgres) echo modules/database/postgres.nix ;;
@@ -1974,7 +1982,7 @@ PLACEMENT_PROBE='c: {
   karakeepEnable = c.services.karakeep-pod.enable or false;
   niks3CacheAspect = (c.services.niks3-cache or { }) != { };
   niks3ServerEnable = c.services.niks3.enable or false;
-  phoenixEnable = c.services.phoenix.enable or false;
+  langfuseEnable = c.services.langfuse.enable or false;
   omnirouteEnable = c.services.omniroute.enable or false;
   omnirouteMonitor = builtins.hasAttr "podman-omniroute" (c.services.notify.events or { });
   monitorUnits = builtins.attrNames (c.services.notify.events or { });
@@ -2000,40 +2008,43 @@ PYEOF
 }
 
 placement_json="$(probe_placement "$ROOT" oci-melb-1)" || fail "7n-2: oci-melb-1 placement probe does not evaluate"
-assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["paperless"],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheAspect":true,"niks3ServerEnable":true,"phoenixEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["paperless"],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheAspect":true,"niks3ServerEnable":true,"langfuseEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" la-admin-1)" || fail "7n-2: la-admin-1 placement probe does not evaluate"
-assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" home-forge)" || fail "7n-2: home-forge placement probe does not evaluate"
 la_absence="$(ne --raw --apply 'c: builtins.toJSON { cockpit = !(c.services.admin ? cockpit); termix = !(c.services.admin ? termix); adminSsh = (builtins.filter (n: n == "admin_ssh_identity" || n == "admin_ssh_known_hosts") (builtins.attrNames c.sops.secrets)) == []; }' "path:.#nixosConfigurations.la-admin-1.config")" ||
   fail "7n-2: LA absence probe does not evaluate"
 [ "$la_absence" = '{"adminSsh":true,"cockpit":true,"termix":true}' ] ||
   fail "7n-2: demoted capabilities must leave no namespace or secret registration on la-admin-1: $la_absence"
-assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse"],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
+assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse"],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
 
 # 7n-3. Semantic throwaway mutations (tasks 6.2/6.3). Each fails for its
 # intended semantic reason rather than a generic parse error, and the working
 # tree is never modified.
 
 # 7n-3a. Missing placement: dropping a host's aspect selection disables exactly
-# that capability while the toplevel still evaluates.
+# that capability while the toplevel still evaluates. A clean deselection also
+# drops the host's now-orphaned secret binding (the option only exists while the
+# aspect is selected), so the mutation removes both.
 D="$(make_copy)"
-sed -i '/aspects\.phoenix/d' "$D"/modules/hosts/*/default.nix
-json="$(probe_placement "$D" oci-melb-1)" || fail "7n-3a: OCI must still evaluate without the phoenix aspect"
-assert_placement oci-melb-1 "$json" '{"phoenixEnable":false}'
+sed -i '/aspects\.langfuse/d' "$D"/modules/hosts/*/default.nix
+sed -i '/langfuse = {$/,/};/d' "$D/modules/hosts/oci-melb-1/_nixos.nix"
+json="$(probe_placement "$D" oci-melb-1)" || fail "7n-3a: OCI must still evaluate without the langfuse aspect"
+assert_placement oci-melb-1 "$json" '{"langfuseEnable":false}'
 
 # 7n-3b. Extra placement: adding an unselected aspect to a host activates the
 # capability there, so accidental placement is observable.
 D="$(make_copy)"
-sed -i '/aspects\.phoenix/i\        aspects.omniroute' "$D"/modules/hosts/*/default.nix
+sed -i '/aspects\.langfuse/i\        aspects.omniroute' "$D"/modules/hosts/*/default.nix
 json="$(probe_placement "$D" oci-melb-1)" || fail "7n-3b: OCI must still evaluate with a wrongly selected aspect"
 assert_placement oci-melb-1 "$json" '{"omnirouteEnable":true}'
 
 # 7n-3c. Selection no longer supplying top-level enablement is detected: the
 # selected aspect stays in the registry but the capability is inert.
 D="$(make_copy)"
-sed -i '/services\.phoenix\.enable = true;/d' "$D/modules/observability/phoenix.nix"
+sed -i '/services\.langfuse\.enable = true;/d' "$D/modules/observability/langfuse.nix"
 json="$(probe_placement "$D" oci-melb-1)" || fail "7n-3c: OCI must still evaluate with the enablement removed"
-assert_placement oci-melb-1 "$json" '{"phoenixEnable":false}'
+assert_placement oci-melb-1 "$json" '{"langfuseEnable":false}'
 
 # 7n-3d. A direct host import of a workload implementation is detected by the
 # guard, and it cannot silently place the workload: discovered contributors are

@@ -190,9 +190,9 @@ _: {
               OAUTH_CLIENT_SECRET=${config.sops.placeholder.karakeep_oidc_client_secret}
               OPENAI_BASE_URL=${config.services.bifrost.endpoint.containerBaseUrl}
               OPENAI_API_KEY=bifrost-local
-              INFERENCE_TEXT_MODEL=${globals.aiGateway.aliases.text}
-              INFERENCE_IMAGE_MODEL=${globals.aiGateway.aliases.image}
-              EMBEDDING_TEXT_MODEL=${globals.aiGateway.aliases.embedding}
+              INFERENCE_TEXT_MODEL=${globals.bifrost.aliases.text}
+              INFERENCE_IMAGE_MODEL=${globals.bifrost.aliases.image}
+              EMBEDDING_TEXT_MODEL=${globals.bifrost.aliases.embedding}
               ASSET_STORE_S3_ENDPOINT=${globals.s3.endpoint}
               ASSET_STORE_S3_REGION=${globals.s3.region}
               ASSET_STORE_S3_BUCKET=${cfg.storage.s3.bucket}

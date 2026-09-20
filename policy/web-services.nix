@@ -161,17 +161,6 @@ in
           access.requireCloudflareAccess = false;
         };
 
-        quantum-admin = {
-          subdomain = "quantum";
-          origin = {
-            scheme = "http";
-            host = "127.0.0.1";
-            port = 8088;
-          };
-          category = "admin";
-          access.oidc.enabled = true;
-        };
-
         ntfy-admin = {
           subdomain = "ntfy";
           origin = {

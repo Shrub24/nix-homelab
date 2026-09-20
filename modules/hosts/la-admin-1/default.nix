@@ -40,15 +40,17 @@ in
         # Stage 7 placement aspects (D-053): one selection per deployed
         # product/platform capability; no host imports its implementation.
         aspects.edge
-        aspects.cockpit
         aspects.push-server
         aspects.identity-provider
         aspects.vaultwarden
-        aspects.termix
         aspects.gatus
         aspects.beszel
         aspects.homepage
         aspects.webhook
+        # Cockpit and Termix are demoted for now: the aspects remain in the
+        # tree and can be re-selected unchanged, but neither is deployed while
+        # unused. Their `policy/web-services.nix` routes stay so a re-selection
+        # needs no policy edit.
         # Foundation aspects (FND-1): selection is enablement.
         aspects.base
         aspects.shell

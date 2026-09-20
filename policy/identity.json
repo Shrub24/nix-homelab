@@ -22,18 +22,6 @@
           "admins": ["openid", "profile", "email"]
         }
       },
-      "quantum": {
-        "enable": true,
-        "displayName": "Quantum",
-        "secretKeyPrefix": "quantum",
-        "routeKey": "quantum-admin",
-        "callbackPath": "/api/auth/oidc/callback",
-        "preferShortUsername": true,
-        "allowInsecureClientDisablePkce": true,
-        "scopeMaps": {
-          "admins": ["openid", "profile", "email"]
-        }
-      },
       "karakeep": {
         "enable": true,
         "displayName": "Karakeep",

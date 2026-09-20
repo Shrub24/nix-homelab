@@ -11,7 +11,6 @@
     # aspects selected in this host's canonical record (Stage 8 HIC-1/HIC-2);
     # this fragment keeps only machine facts, explicit variants, and host-local
     # fragments.
-    ./_cockpit-auth.nix
     # Host-local admin runtime remainder (decouple-identity-admin-capabilities 3.3).
     ./_admin-runtime.nix
   ];
@@ -44,10 +43,6 @@
   fleet.networking.uplink.interface = "ens18";
 
   services = {
-    # Termix placement comes from the selected `termix` aspect; the host keeps
-    # only its host-scoped OIDC client secret source.
-    admin.termix.secretFiles.oidc = ../../../secrets/hosts/la-admin-1/oidc.yaml;
-
     # Vaultwarden placement comes from the selected `vaultwarden` aspect; the
     # host keeps only its host-scoped secret source
     # (decouple-identity-admin-capabilities 3.1).

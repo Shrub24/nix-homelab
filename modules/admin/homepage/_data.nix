@@ -99,18 +99,6 @@ in
           };
         }
         {
-          Quantum = {
-            icon = "filebrowser";
-            description = "Data root browser";
-            href = serviceHref "quantum-admin";
-            widget = {
-              # File-manager machine-auth wiring is intentionally out of scope.
-              type = "filebrowser";
-              url = (requireRoute "quantum-admin").upstream;
-            };
-          };
-        }
-        {
           Navidrome = {
             icon = "navidrome";
             description = "Music streaming status";

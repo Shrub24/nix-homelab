@@ -51,7 +51,9 @@
 
         (lib.mkIf cfg.enable {
           services.identity.kanidm = {
-            dataDir = "/srv/data/kanidm";
+            # `dataDir` is a host fact: the deploying host declares it (see
+            # `modules/hosts/la-admin-1/_nixos.nix`) so a second identity host
+            # never needs an edit here.
             appUrl = providerPublicUrl;
             tlsChainFile = "/var/lib/acme/${kanidmRoute.primaryDomain}/fullchain.pem";
             tlsKeyFile = "/var/lib/acme/${kanidmRoute.primaryDomain}/key.pem";
@@ -67,7 +69,6 @@
               # extra keys fail the leaf's key assertions.
               oauth2Clients = {
                 beszel = ../../secrets/hosts/la-admin-1/oidc.yaml;
-                quantum = ../../secrets/hosts/la-admin-1/oidc.yaml;
                 termix = ../../secrets/hosts/la-admin-1/oidc.yaml;
                 karakeep = ../../secrets/hosts/oci-melb-1/oidc.yaml;
                 paperless = ../../secrets/hosts/oci-melb-1/oidc.yaml;

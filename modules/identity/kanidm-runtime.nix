@@ -233,7 +233,12 @@
         dataDir = lib.mkOption {
           type = lib.types.str;
           default = "/srv/data/kanidm";
-          description = "Persistent data directory for Kanidm state.";
+          description = ''
+            Persistent data directory for Kanidm state. The default is the
+            conventional path; a host that stores identity state elsewhere
+            declares its own value and must select the `identity-provider`
+            aspect, which is what declares this namespace.
+          '';
         };
 
         appUrl = lib.mkOption {

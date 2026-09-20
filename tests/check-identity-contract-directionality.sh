@@ -27,15 +27,11 @@ json="$(ne 'c: builtins.toJSON {
   urlAligned = c.services.identity.oidc.providerUrl == c.services.identity.kanidm.appUrl;
   adminKanidmAbsent = !(c.services.admin ? kanidm);
   oauth2ClientSecrets = builtins.sort builtins.lessThan (builtins.filter (n: builtins.match "kanidm_oauth2.*" n != null) (builtins.attrNames c.sops.secrets));
-  termixEnable = c.services.admin.termix.enable;
-  termixDataDir = c.services.admin.termix.dataDir;
-  termixOidcEnabled = c.services.admin.termix.oidc.enabled;
-  termixClientId = c.services.admin.termix.oidc.clientId;
-  termixIssuerUrl = c.services.admin.termix.oidc.issuerUrl;
-  termixEnvironmentFile = c.services.admin.termix.oidc.environmentFile != null;
-  termixSecretRegistered = c.sops.secrets ? termix_oidc_client_secret;
-  termixBackupPaths = c.services.state-backups.services.termix.paths;
-  termixAdminNamespaceAbsent = !(c.applications ? termix);
+  # Cockpit and Termix are demoted (2026-09-21): their aspects stay in the
+  # tree, but nothing on la-admin-1 selects them, so their namespaces must be
+  # absent from the real host configuration.
+  cockpitNamespaceAbsent = !(c.services.admin ? cockpit);
+  termixNamespaceAbsent = !(c.services.admin ? termix);
   gatusEnable = c.services.gatus.enable;
   gatusOriginAligned = c.services.gatus.settings.web.address == c.repo.web.currentHost.services."gatus-admin".origin.host && c.services.gatus.settings.web.port == c.repo.web.currentHost.services."gatus-admin".origin.port;
   beszelHubEnable = c.services.beszel.hub.enable or false;
@@ -57,18 +53,12 @@ expected = {
         "kanidm_oauth2_cloudflare-access_basic_secret",
         "kanidm_oauth2_karakeep_basic_secret",
         "kanidm_oauth2_paperless_basic_secret",
-        "kanidm_oauth2_quantum_basic_secret",
+        # The Termix client stays provisioned while its aspect is deselected:
+        # re-selecting the aspect must not require a policy or secret edit.
         "kanidm_oauth2_termix_basic_secret",
     ],
-    "termixEnable": True,
-    "termixDataDir": "/srv/data/termix",
-    "termixOidcEnabled": True,
-    "termixClientId": "termix",
-    "termixIssuerUrl": "https://id.shrublab.xyz/oauth2/openid/termix",
-    "termixEnvironmentFile": True,
-    "termixSecretRegistered": True,
-    "termixBackupPaths": ["/srv/data/termix"],
-    "termixAdminNamespaceAbsent": True,
+    "cockpitNamespaceAbsent": True,
+    "termixNamespaceAbsent": True,
     "gatusEnable": True,
     "gatusOriginAligned": True,
     "beszelHubEnable": True,
@@ -117,10 +107,10 @@ open(p, "w").write(s)
 
 p = d + "/modules/hosts/la-admin-1/_nixos.nix"
 s = open(p).read()
-# The applications.admin block, the ./quantum.nix import, and the quantum
-# force-disable were deleted from the host in task 3.3; only the host-local
-# variant fragment removal remains.
-s = s.replace("    ./_cockpit-auth.nix\n", "", 1)
+# The applications.admin block, the ./quantum.nix import, the quantum
+# force-disable, and the host-local cockpit variant fragment are all gone from
+# the host (task 3.3, then the 2026-09-21 demotion); only the workload secret
+# bindings below remain to strip.
 vaultwarden_secret = "    admin.vaultwarden.secretFiles.host = ../../../secrets/applications/admin.yaml;\n"
 assert s.count(vaultwarden_secret) == 1, "vaultwarden secret binding anchor drifted"
 s = s.replace(vaultwarden_secret, "", 1)
@@ -157,7 +147,9 @@ expected = {
     "homepageLeafAbsent": True,
     "webhookServiceEnable": False,
     "webhookLeafAbsent": True,
-    "oauth2SecretCount": 6,
+    # Five provider-owned client secrets: beszel, cloudflare-access,
+    # karakeep, paperless, termix (Quantum retired 2026-09-21).
+    "oauth2SecretCount": 5,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
 if errs:
@@ -165,13 +157,12 @@ if errs:
     sys.exit(1)
 PYEOF
 
-# 3. Client-only + Termix subset: the provider-only mutation already
-# deselected the admin-hub aspect and the host's admin bindings; additionally
-# deselect identity-provider so Termix, identity-client, and web-policy are
-# the only selected identity-side concerns. The client contract must still
-# resolve the canonical web-policy provider URL (never an accidental null),
-# must not materialise the provider's Kanidm namespace (IDB-2), and Termix
-# must evaluate from those public contracts alone
+# 3. Client-only subset: the provider-only mutation already deselected the
+# admin aspects and the host's admin bindings; additionally deselect
+# identity-provider so identity-client and web-policy are the only selected
+# identity-side concerns. The client contract must still resolve the canonical
+# web-policy provider URL (never an accidental null) and must not materialise
+# the provider's Kanidm namespace (IDB-2)
 # (decouple-identity-admin-capabilities 3.1). `system.build.toplevel` is
 # deliberately not forced: this synthetic subset is scoped to option-level
 # contract evaluation, and the full option merge still surfaces
@@ -196,13 +187,7 @@ json="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
   providerUrl = c.services.identity.oidc.providerUrl;
   webPolicyUrl = c.repo.web.currentHost.services."kanidm-admin".publicUrl;
   urlAligned = c.services.identity.oidc.providerUrl == c.repo.web.currentHost.services."kanidm-admin".publicUrl;
-  termixEnable = c.services.admin.termix.enable;
-  termixDataDir = c.services.admin.termix.dataDir;
-  termixOidcEnabled = c.services.admin.termix.oidc.enabled;
-  termixIssuerUrl = c.services.admin.termix.oidc.issuerUrl;
-  termixBackupPaths = c.services.state-backups.services.termix.paths;
-  termixTailscaleServe = c.systemd.services ? tailscale-serve-termix;
-  termixSecretSource = builtins.toString c.services.admin.termix.secretFiles.oidc;
+  adminNamespaceStillAbsent = !(c.services ? admin);
 }' "path:${D}#nixosConfigurations.la-admin-1.config")" || fail "client-only+Termix subset (LA without identity-provider/admin-hub) does not evaluate"
 python3 - "$json" <<'PYEOF' || fail "client-only subset observables violated"
 import json, sys
@@ -213,16 +198,9 @@ expected = {
     "providerUrl": "https://id.shrublab.xyz",
     "webPolicyUrl": "https://id.shrublab.xyz",
     "urlAligned": True,
-    "termixEnable": True,
-    "termixDataDir": "/srv/data/termix",
-    "termixOidcEnabled": True,
-    "termixIssuerUrl": "https://id.shrublab.xyz/oauth2/openid/termix",
-    "termixBackupPaths": ["/srv/data/termix"],
-    "termixTailscaleServe": True,
+    "adminNamespaceStillAbsent": True,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
-if not got["termixSecretSource"].endswith("secrets/hosts/la-admin-1/oidc.yaml"):
-    errs.append(f"termixSecretSource: got {got['termixSecretSource']!r} want suffix 'secrets/hosts/la-admin-1/oidc.yaml'")
 if errs:
     print("; ".join(errs), file=sys.stderr)
     sys.exit(1)
@@ -230,7 +208,10 @@ PYEOF
 
 # 4. Negative case: Termix selected without identity-client must fail
 # through the named identity-client contract throw, not a raw missing-option
-# namespace (feature-topology/admin-module-structure).
+# namespace (feature-topology/admin-module-structure). Termix is demoted on
+# the real host, so the copy re-selects the aspect and its host-scoped OIDC
+# secret source first: the guard is about the aspect's dependency contract,
+# not about where the capability happens to be deployed today.
 python3 - "$D" <<'PYEOF' > /dev/null || fail "no-identity-client mutation script failed"
 import sys
 
@@ -240,8 +221,20 @@ p = d + "/modules/hosts/la-admin-1/default.nix"
 la = open(p).read()
 assert la.count("        aspects.identity-client\n") == 1, "identity-client selection anchor drifted"
 la = la.replace("        aspects.identity-client\n", "", 1)
-s = la
-open(p, "w").write(s)
+anchor = "        aspects.push-server\n"
+assert la.count(anchor) == 1, "push-server selection anchor drifted"
+la = la.replace(anchor, "        aspects.termix\n" + anchor, 1)
+open(p, "w").write(la)
+
+p = d + "/modules/hosts/la-admin-1/_nixos.nix"
+host = open(p).read()
+# Anchor on the identity-client consumer block: the workload secret bindings
+# were already stripped by the provider-only mutation above.
+anchor = "    identity.hostAuth = {"
+assert host.count(anchor) == 1, "identity.hostAuth anchor drifted"
+termix_binding = "    admin.termix.secretFiles.oidc = ../../../secrets/hosts/la-admin-1/oidc.yaml;\n\n"
+host = host.replace(anchor, termix_binding + anchor, 1)
+open(p, "w").write(host)
 
 # The copied host also carries an unrelated identity-client consumer
 # assignment (`services.identity.hostAuth`). With the aspect deselected that
@@ -289,6 +282,24 @@ tar -C "$ROOT" \
 # 4b-1. Termix without the `termix-admin` route: `termixUpstream` is
 # `or null`-safe at the merge, so the named throw fires only when the
 # tailscale-serve ExecStart consumes it (Nix is lazy; force the consumer).
+# Termix is demoted on the real host, so this copy re-selects it first.
+python3 - "$D2" <<'PYEOF' > /dev/null || fail "termix re-selection for the route negative failed"
+import sys
+
+d = sys.argv[1]
+p = d + "/modules/hosts/la-admin-1/default.nix"
+la = open(p).read()
+anchor = "        aspects.push-server\n"
+assert la.count(anchor) == 1, "push-server selection anchor drifted"
+open(p, "w").write(la.replace(anchor, "        aspects.termix\n" + anchor, 1))
+
+p = d + "/modules/hosts/la-admin-1/_nixos.nix"
+host = open(p).read()
+anchor = "    identity.hostAuth = {"
+assert host.count(anchor) == 1, "identity.hostAuth anchor drifted"
+open(p, "w").write(host.replace(anchor, "    admin.termix.secretFiles.oidc = ../../../secrets/hosts/la-admin-1/oidc.yaml;\n\n" + anchor, 1))
+PYEOF
+
 python3 - "$D2/policy/web-services.nix" <<'PYEOF' > /dev/null || fail "termix route-removal mutation failed"
 import sys
 
@@ -368,6 +379,17 @@ if grep -RnE --include='*.nix' 'services\.admin\.quantum|(^|[^a-z0-9_-])quantum\
 fi
 test ! -e modules/hosts/la-admin-1/quantum.nix ||
   fail "modules/hosts/la-admin-1/quantum.nix must stay deleted (3.3); absence ratchet must not pass vacuously"
+# Full retirement (2026-09-21, TD-07): Quantum is gone from every surface, not
+# only the workload - identity client, web route, OCI image, secret-source map,
+# admin SSH registrations, and the data-root ACL exclusion with them.
+if grep -RniE 'quantum' policy modules --include='*.nix' --include='*.json' 2>/dev/null \
+  | grep -vE '^[^:]+:[0-9]+: *#'; then
+  fail "Quantum was retired; no policy, module, or secret-source reference may remain"
+fi
+if grep -RnE 'admin_ssh_identity|admin\.ssh\.identity|admin_ssh_known_hosts' modules/hosts modules/admin modules/identity 2>/dev/null \
+  | grep -vE '^[^:]+:[0-9]+: *#'; then
+  fail "the admin SSH secret registrations existed only for Quantum and must not return"
+fi
 python3 - <<'PYEOF' || fail "LA host imports / registry selections directionality drifted"
 import sys
 
@@ -381,22 +403,24 @@ for line in imports:
     entry = line.strip()
     if not entry or entry.startswith("#"):
         continue
-    if entry not in ("./_cockpit-auth.nix", "./_admin-runtime.nix"):
-        raise SystemExit(f"LA host imports must contain only cockpit-auth/_admin-runtime fragments, found: {entry!r}")
+    if entry != "./_admin-runtime.nix":
+        raise SystemExit(f"LA host imports must contain only the _admin-runtime fragment, found: {entry!r}")
 
-# 2. LA must select exactly the ten extracted/explicit placement aspects,
-# one selection line each, plus the support quartet and foundation/operational
-# aspects; no admin-hub selection may return.
+# 2. LA must select exactly the deployed placement aspects, one selection
+# line each, plus the support quartet and foundation/operational aspects; no
+# admin-hub selection may return, and the demoted capabilities stay
+# unselected until something re-selects them deliberately.
 la = open("modules/hosts/la-admin-1/default.nix").read()
 placement = [
-    "edge", "cockpit", "push-server", "identity-provider", "vaultwarden",
-    "termix", "gatus", "beszel", "homepage", "webhook",
+    "edge", "push-server", "identity-provider", "vaultwarden",
+    "gatus", "beszel", "homepage", "webhook",
 ]
 for a in placement:
     if la.count(f"        aspects.{a}\n") != 1:
         raise SystemExit(f"LA host record must select aspects.{a} exactly once")
-if "aspects.admin-hub" in la:
-    raise SystemExit("LA host record must not re-select the deleted admin-hub aspect")
+for a in ["admin-hub", "cockpit", "termix"]:
+    if f"        aspects.{a}\n" in la:
+        raise SystemExit(f"LA host record must not select the demoted/deleted aspects.{a}")
 for a in ["provenance", "oci-images", "fleet-packages", "web-policy", "identity-client",
           "base", "shell", "networking", "tailscale", "notify",
           "state-backups", "cache-publisher",
@@ -792,7 +816,8 @@ expected = {
     "sopsFilesAligned": True,
     "settingsTitle": "Shrublab Admin",
     "startUrlAligned": True,
-    "entryCount": 14,
+    # 13 entries: the Quantum bookmark was removed with the retired workload.
+    "entryCount": 13,
     "navidromeHrefAligned": True,
     "gatusHrefAligned": True,
     "cockpitOciHrefAligned": True,
@@ -874,27 +899,30 @@ if errs:
     sys.exit(1)
 PYEOF
 
-# 11. Cockpit subset (task 3.3): the provider-only mutation deselected the
-# admin-hub aspect (and with it the retired `applications.admin` namespace)
-# while `aspects.cockpit` stays selected; re-adding the host's LA
-# `./_cockpit-auth.nix` variant restores only `loopbackTls.enable`. Cockpit
-# must compose from the canonical web-policy route alone: the WebService
-# origins/UrlRoot from the cockpit-admin route, the explicit loopback socket
-# bind, and the loopback TLS material/ordering with the leaf's own named
-# assertions holding, all with applications.admin absent. Option-level
-# evaluation only (same scope as sections 3 and 6-10): no identity-provider
-# here, so system.build.toplevel is deliberately not forced.
+# 11. Cockpit subset: Cockpit is demoted on the real host, so this copy
+# re-selects the aspect and restores the LA-only loopback TLS variant inline.
+# Cockpit must compose from the canonical web-policy route alone: the
+# WebService origins/UrlRoot from the cockpit-admin route, the explicit
+# loopback socket bind, and the loopback TLS material/ordering with the leaf's
+# own named assertions holding.
 python3 - "$D" <<'PYEOF' > /dev/null || fail "cockpit subset mutation script failed"
 import sys
 
 d = sys.argv[1]
 
+p = d + "/modules/hosts/la-admin-1/default.nix"
+la = open(p).read()
+anchor = "        aspects.push-server\n"
+assert la.count(anchor) == 1, "push-server selection anchor drifted"
+open(p, "w").write(la.replace(anchor, "        aspects.cockpit\n" + anchor, 1))
+
 p = d + "/modules/hosts/la-admin-1/_nixos.nix"
 s = open(p).read()
-anchor = "  imports = [\n"
-assert s.count(anchor) == 1, "host imports anchor drifted"
-s = s.replace(anchor, anchor + "    ./_cockpit-auth.nix\n", 1)
-open(p, "w").write(s)
+anchor = "  services = {\n"
+assert s.count(anchor) == 1, "host services block anchor drifted"
+variant = "    admin.cockpit.loopbackTls.enable = true;\n"
+assert variant not in s, "cockpit loopback variant anchor drifted"
+open(p, "w").write(s.replace(anchor, anchor + variant, 1))
 PYEOF
 
 [[ "$(grep -c 'message = "Cockpit loopback TLS material requires' modules/admin/cockpit/loopback-tls.nix)" -eq 3 ]] || fail "Cockpit loopback TLS assertion contract drifted"
@@ -966,11 +994,6 @@ FRAG = "modules/hosts/la-admin-1/_admin-runtime.nix"
 HOST = "modules/hosts/la-admin-1/_nixos.nix"
 frag = open(FRAG).read()
 required_frag = [
-    "sops.secrets = secretHelpers.mkSecretsFromMap ../../../secrets/applications/admin.yaml {",
-    'key = "admin/ssh/identity";',
-    'path = "/run/secrets/admin.ssh.identity";',
-    'key = "admin/ssh/known_hosts";',
-    'path = "/run/secrets/admin.ssh.known_hosts";',
     '"d /srv/data 0755 root root - -"',
     '"z /srv/data 0755 root root - -"',
     '"a+ /srv/data - - - - user:dev:r-X"',
@@ -983,13 +1006,13 @@ required_frag = [
     "set -euo pipefail",
     'if [ -d "/srv/data" ]; then',
     '${pkgs.acl}/bin/setfacl -m u:dev:rX "/srv/data"',
-    'find "/srv/data" -xdev -type d ! -path "/srv/data/quantum/mnt" ! -path "/srv/data/quantum/mnt/*" -exec ${pkgs.acl}/bin/setfacl -m d:u:dev:rX {} +',
+    'find "/srv/data" -xdev -type d -exec ${pkgs.acl}/bin/setfacl -m d:u:dev:rX {} +',
 ]
 missing = [line for line in required_frag if line not in frag]
 if missing:
     raise SystemExit(f"{FRAG}: missing exact lines: {missing!r}")
-if frag.count('owner = "root";') != 2 or frag.count('group = "root";') != 2:
-    raise SystemExit(f"{FRAG}: expected exactly two root:root secret specs")
+if "sops.secrets" in frag or "admin/ssh/" in frag:
+    raise SystemExit(f"{FRAG}: the admin SSH registrations existed only for the retired Quantum workload and must not return")
 host = open(HOST).read()
 if host.count("    ./_admin-runtime.nix\n") != 1:
     raise SystemExit(f"{HOST}: must import ./_admin-runtime.nix exactly once")
@@ -999,19 +1022,10 @@ PYEOF
 
 json="$(ne 'c:
 let
-  secretSpec = s: {
-    key = s.key;
-    path = s.path;
-    owner = s.owner;
-    group = s.group;
-    mode = s.mode;
-    sopsFile = builtins.toString s.sopsFile;
-  };
   unit = c.systemd.services.admin-dev-data-access-reconcile;
 in
 builtins.toJSON {
-  identity = secretSpec c.sops.secrets.admin_ssh_identity;
-  knownHosts = secretSpec c.sops.secrets.admin_ssh_known_hosts;
+  sshSecretsAbsent = !(c.sops.secrets ? admin_ssh_identity) && !(c.sops.secrets ? admin_ssh_known_hosts);
   unitPresent = c.systemd.services ? admin-dev-data-access-reconcile;
   unitDescription = unit.description;
   unitWantedBy = builtins.elem "multi-user.target" unit.wantedBy;
@@ -1031,8 +1045,7 @@ import json, sys
 
 got = json.loads(sys.argv[1])
 expected = {
-    "identity": {"key": "admin/ssh/identity", "path": "/run/secrets/admin.ssh.identity", "owner": "root", "group": "root", "mode": "0400"},
-    "knownHosts": {"key": "admin/ssh/known_hosts", "path": "/run/secrets/admin.ssh.known_hosts", "owner": "root", "group": "root", "mode": "0400"},
+    "sshSecretsAbsent": True,
     "unitPresent": True,
     "unitDescription": "Reconcile dev read/traverse access on admin data root",
     "unitWantedBy": True,
@@ -1041,19 +1054,9 @@ expected = {
     "tmpfilesExact": True,
     "adminNamespaceAbsent": True,
 }
-errs = [
-    f"{k}: got {got.get(k)!r} want {v!r}"
-    for k, v in expected.items()
-    if k not in ("identity", "knownHosts") and got.get(k) != v
-]
+errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
 if not got["unitExecName"].endswith("-admin-dev-data-access-reconcile"):
     errs.append(f"unitExecName: got {got['unitExecName']!r} want suffix '-admin-dev-data-access-reconcile'")
-for name in ("identity", "knownHosts"):
-    for key, value in expected[name].items():
-        if got[name].get(key) != value:
-            errs.append(f"{name}.{key}: got {got[name].get(key)!r} want {value!r}")
-    if not got[name]["sopsFile"].endswith("secrets/applications/admin.yaml"):
-        errs.append(f"{name}.sopsFile: got {got[name]['sopsFile']!r} want suffix 'secrets/applications/admin.yaml'")
 if errs:
     print("; ".join(errs), file=sys.stderr)
     sys.exit(1)

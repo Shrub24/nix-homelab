@@ -605,14 +605,12 @@ aspects.ai-gateway
 aspects.karakeep
 aspects.niks3-cache
 aspects.phoenix"
-# The six admin capabilities extracted by decouple-identity-admin-capabilities
-# task 3.3 are placed by their own aspects on la-admin-1 (exactly once, and
-# admin-hub stays deleted).
+# The admin capabilities are placed by their own aspects on la-admin-1, each
+# selected exactly once (no convenience bundle). Cockpit and Termix are demoted
+# and stay unselected while unused, so their selections are absent here.
 la_placement="aspects.edge
-aspects.cockpit
 aspects.push-server
 aspects.identity-provider
-aspects.termix
 aspects.vaultwarden
 aspects.gatus
 aspects.beszel
@@ -625,7 +623,7 @@ forge_sel="$(printf '%s\n%s\n%s\naspects.dj\naspects.music\naspects.omniroute\n'
 [ "$(host_aspects "$ROOT" oci-melb-1)" = "$oci_sel" ] ||
   fail "registry: oci-melb-1 must select the support quartet + eight deployment aspects + identity-client + its nine placement aspects: $(host_aspects "$ROOT" oci-melb-1)"
 [ "$(host_aspects "$ROOT" la-admin-1)" = "$la_sel" ] ||
-  fail "registry: la-admin-1 must select the support quartet + eight deployment aspects + identity-client + its ten placement aspects: $(host_aspects "$ROOT" la-admin-1)"
+  fail "registry: la-admin-1 must select the support quartet + eight deployment aspects + identity-client + its eight placement aspects: $(host_aspects "$ROOT" la-admin-1)"
 [ "$(host_aspects "$ROOT" home-forge)" = "$forge_sel" ] ||
   fail "registry: home-forge must select the support quartet + eight deployment aspects + dj + music + omniroute + its postgres placement: $(host_aspects "$ROOT" home-forge)"
 # Host records (modules/hosts/<host>/default.nix) are the aspect-selection
@@ -787,7 +785,7 @@ probe_web_identity home-forge '{"providerUrl":null,"hostAuth":false,"kanidmUri":
 for host in oci-melb-1 la-admin-1; do
   clients="$(ne --raw --apply 'c: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames (c.services.identity.oidc.clients or {})))' "path:.#nixosConfigurations.${host}.config")" ||
     fail "${host}: identity clients do not evaluate"
-  [ "$clients" = '["beszel","cloudflare-access","karakeep","paperless","quantum","termix"]' ] ||
+  [ "$clients" = '["beszel","cloudflare-access","karakeep","paperless","termix"]' ] ||
     fail "${host}: identity clients drifted: $clients"
 done
 # Forge must not activate identity: services.identity is absent, not merely disabled.
@@ -1694,7 +1692,7 @@ for f in \
   modules/hosts/home-forge/_disko-two-disk.nix; do
   test -e "$f" || fail "7n-1: host-local fragment $f must be retained"
 done
-grep -q '\./_cockpit-auth\.nix' modules/hosts/la-admin-1/_nixos.nix ||
+grep -q '\./_admin-runtime\.nix' modules/hosts/la-admin-1/_nixos.nix ||
   fail "7n-1: the direct-import guard must permit host-private fragments"
 
 # 7n-2. Semantic placement matrix. Each field is read defensively so an
@@ -1764,8 +1762,12 @@ PYEOF
 placement_json="$(probe_placement "$ROOT" oci-melb-1)" || fail "7n-2: oci-melb-1 placement probe does not evaluate"
 assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["paperless"],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheEnable":true,"niks3ServerEnable":true,"phoenixEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" la-admin-1)" || fail "7n-2: la-admin-1 placement probe does not evaluate"
-assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":true,"adminSshSecrets":2,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" home-forge)" || fail "7n-2: home-forge placement probe does not evaluate"
+la_absence="$(ne --raw --apply 'c: builtins.toJSON { cockpit = !(c.services.admin ? cockpit); termix = !(c.services.admin ? termix); adminSsh = (builtins.filter (n: n == "admin_ssh_identity" || n == "admin_ssh_known_hosts") (builtins.attrNames c.sops.secrets)) == []; }' "path:.#nixosConfigurations.la-admin-1.config")" ||
+  fail "7n-2: LA absence probe does not evaluate"
+[ "$la_absence" = '{"adminSsh":true,"cockpit":true,"termix":true}' ] ||
+  fail "7n-2: demoted capabilities must leave no namespace or secret registration on la-admin-1: $la_absence"
 assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse"],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
 
 # 7n-3. Semantic throwaway mutations (tasks 6.2/6.3). Each fails for its
@@ -1798,7 +1800,7 @@ assert_placement oci-melb-1 "$json" '{"phoenixEnable":false}'
 # flake-parts modules, so importing one into a host assembly fails evaluation
 # loudly instead of activating it (import != placement, enforced twice).
 D="$(make_copy)"
-sed -i '/^    \.\/_cockpit-auth\.nix$/i\    ../../../modules/flake/phoenix.nix' "$D/modules/hosts/la-admin-1/_nixos.nix"
+sed -i '/^    \.\/_admin-runtime\.nix$/i\    ../../../modules/flake/phoenix.nix' "$D/modules/hosts/la-admin-1/_nixos.nix"
 [ -n "$(host_workload_imports_of "$D")" ] ||
   fail "7n-3d: the host-import guard must detect a directly imported workload implementation"
 expect_eval_fail "$D" la-admin-1 "The option \`flake' does not exist"
@@ -1813,9 +1815,9 @@ python3 - "$D/modules/hosts/la-admin-1/_nixos.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
-assert s.count("    ./_cockpit-auth.nix\n") == 1, "import anchor drifted"
+assert s.count("    ./_admin-runtime.nix\n") == 1, "import anchor drifted"
 assert s.count("  services = {\n") == 1, "services anchor drifted"
-s = s.replace("    ./_cockpit-auth.nix\n", "    ../../flake/phoenix.nix\n    ./_cockpit-auth.nix\n", 1)
+s = s.replace("    ./_admin-runtime.nix\n", "    ../../flake/phoenix.nix\n    ./_admin-runtime.nix\n", 1)
 s = s.replace("  services = {\n", "  services = {\n    phoenix.enable = true;\n", 1)
 open(p, "w").write(s)
 PYEOF
@@ -1830,21 +1832,23 @@ sed -i 's#../../flake/phoenix\.nix#./../../flake/phoenix.nix#' "$D/modules/hosts
 # not activate anything, and selecting it is the only activation edge.
 D="$(make_copy)"
 cat >"$D/modules/flake/tamper-aspect.nix" <<'EOF'
-{ ... }:
+{ lib, withSystem, ... }:
 {
-  flake.modules.nixos.tamper-aspect = {
-    # A REAL unit (`podman-prune` is implemented on every host) so the
-    # fail-closed monitor contract stays satisfied and only contribution
-    # visibility is under test (MON-1/MON-3).
-    services.notification-daemon.monitor.units."podman-prune".onFailure = true;
-  };
+  flake.modules.nixos.tamper-aspect =
+    { pkgs, ... }:
+    {
+    # The unit is defined here so the fail-closed monitor contract is
+    # satisfied and only contribution visibility is under test (MON-1/MON-3).
+    systemd.services.tamper-unit.serviceConfig.ExecStart = lib.getExe pkgs.coreutils;
+    services.notification-daemon.monitor.units."tamper-unit".onFailure = true;
+    };
 }
 EOF
 json="$(probe_placement "$D" la-admin-1)" || fail "7n-3e: LA must still evaluate with an unselected publication"
 python3 - "$json" <<'PYEOF' || fail "7n-3e: an unselected discovered aspect must not activate"
 import json, sys
 got = json.loads(sys.argv[1])
-if "podman-prune" in got["monitorUnits"]:
+if "tamper-unit" in got["monitorUnits"]:
     raise SystemExit(f"discovery alone activated an aspect: {got['monitorUnits']!r}")
 PYEOF
 python3 - "$D/modules/hosts/la-admin-1/default.nix" <<'PYEOF'
@@ -1860,14 +1864,14 @@ json="$(probe_placement "$D" la-admin-1)" || fail "7n-3e: LA must evaluate with 
 python3 - "$json" <<'PYEOF' || fail "7n-3e: selecting the discovered aspect must activate it"
 import json, sys
 got = json.loads(sys.argv[1])
-if "podman-prune" not in got["monitorUnits"]:
+if "tamper-unit" not in got["monitorUnits"]:
     raise SystemExit(f"selection did not activate the aspect: {got['monitorUnits']!r}")
 PYEOF
 json="$(probe_placement "$D" oci-melb-1)" || fail "7n-3e: OCI must still evaluate with the tamper contributor present"
 python3 - "$json" <<'PYEOF' || fail "7n-3e: a selection on one host must not activate another host"
 import json, sys
 got = json.loads(sys.argv[1])
-if "podman-prune" in got["monitorUnits"]:
+if "tamper-unit" in got["monitorUnits"]:
     raise SystemExit(f"unselected host activated the aspect: {got['monitorUnits']!r}")
 PYEOF
 

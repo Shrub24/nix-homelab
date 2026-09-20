@@ -8,7 +8,6 @@ let
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
 in
 {
-  imports = [ ../../services/edge-proxy-ingress.nix ];
 
   options.applications."edge-ingress" = {
     enable = lib.mkOption {

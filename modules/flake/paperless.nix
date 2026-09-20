@@ -8,7 +8,6 @@
 { ... }:
 {
   flake.modules.nixos.paperless = {
-    imports = [ ../services/paperless ];
 
     # Selecting this aspect is the application's top-level enablement.
     services.paperless.enable = true;

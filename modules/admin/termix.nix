@@ -69,7 +69,6 @@
           termixRoute.access.oidc.enabled or true;
     in
     {
-      imports = [ ../services/admin/termix.nix ];
 
       config = lib.mkMerge [
         # Selecting this aspect is the capability's top-level enablement.

@@ -5,9 +5,9 @@
 # service/backup wiring, secret-file passthrough, success-chain intent, the
 # dev/zsh operator surface, and the read-only music library/storage contract.
 #
-# Concrete mechanisms live in the private leaves under modules/services/music/
-# (beets, ingest, storage), which this aspect imports explicitly. Those leaves
-# publish no aspects and are never host-imported (S6-9). Music and DJ remain
+# Concrete mechanisms are their own discovered aspects (audiomuse, syncthing,
+# navidrome, slskd, beets, tagr, music-ingest, music-storage), composed here by
+# flake-level imports of config.flake.modules.nixos.<name>. Music and DJ remain
 # separately selected aspects; DJ consumes applications.music.contract through
 # a read-only config edge with a named assertion (S6-3) and never imports or
 # enables music.
@@ -142,16 +142,6 @@
 
     in
     {
-      imports = [
-        ../services/music/audiomuse.nix
-        ../services/music/syncthing.nix
-        ../services/music/navidrome.nix
-        ../services/music/slskd.nix
-        ../services/music/beets/default.nix
-        ../services/music/tagr.nix
-        ../services/music/ingest.nix
-        ../services/music/storage.nix
-      ];
 
       options.applications.music = {
         enable = lib.mkEnableOption "music application composition";
@@ -287,11 +277,11 @@
             options = {
               standard = lib.mkOption {
                 type = lib.types.path;
-                default = ../services/music/beets/files/beets-config.yaml;
+                default = ./beets/files/beets-config.yaml;
               };
               quarantine = lib.mkOption {
                 type = lib.types.path;
-                default = ../services/music/beets/files/beets-quarantine-config.yaml;
+                default = ./beets/files/beets-quarantine-config.yaml;
               };
             };
           };

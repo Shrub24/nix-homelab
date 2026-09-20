@@ -41,7 +41,6 @@
           kanidmRoute.publicUrl;
     in
     {
-      imports = [ ../services/admin/kanidm.nix ];
 
       config = lib.mkMerge [
         # Selecting this aspect is the Kanidm capability's top-level

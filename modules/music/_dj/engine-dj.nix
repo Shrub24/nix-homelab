@@ -130,7 +130,6 @@ let
 in
 {
   imports = [
-    ../../services/virtualisation/windows-vm.nix
   ];
 
   options.applications.dj = {

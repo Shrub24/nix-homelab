@@ -42,11 +42,15 @@ let
   declarations = {
     postgres = {
       provider = "oci-melb-1";
-      port = 5432;
       scheme = "postgresql";
+      instances = {
+        postgres = {
+          port = 5432;
+        };
+      };
       capabilityPath = [
         "services"
-        "postgres-shared"
+        "postgres"
         "enable"
       ];
       listen = {
@@ -84,18 +88,29 @@ let
 
   # Pure resolution: provider record data plus the suffix authority. Safe to
   # force from any host evaluation (no cross-host configuration is evaluated).
-  pureResolution = lib.mapAttrs (
-    _: decl:
+  endpointOf =
+    decl: port:
     let
       record = hosts.${decl.provider} or null;
       fqdn = if record == null then null else record.tailscale.fqdn;
     in
     {
-      inherit (decl) provider port scheme;
+      inherit (decl) provider scheme;
+      inherit port;
       host = if record == null then null else record.tailscale.hostname;
       inherit fqdn;
-      url = "${decl.scheme}://${fqdn}:${toString decl.port}";
-    }
+      url = "${decl.scheme}://${fqdn}:${toString port}";
+    };
+
+  # A declaration is either a single endpoint (carrying `port`) or a family of
+  # instances keyed by name (carrying `instances.<name>.port`); families resolve
+  # to `repo.internal.<contract>.<instance>`.
+  pureResolution = lib.mapAttrs (
+    _: decl:
+    if decl ? instances then
+      lib.mapAttrs (_: inst: endpointOf decl inst.port) decl.instances
+    else
+      endpointOf decl decl.port
   ) declarations;
 
   unknownProviderErrors = lib.filter (error: error != "") (
@@ -137,6 +152,21 @@ let
     let
       decl = declarations.${name};
       cfg = providerConfigOf name;
+      # `label` identifies the entry in the error text: the contract name for a
+      # single endpoint, `<contract>.<instance>` for a family member.
+      members =
+        if decl ? instances then
+          lib.mapAttrsToList (instance: inst: {
+            label = "${name}.${instance}";
+            port = inst.port;
+          }) decl.instances
+        else
+          [
+            {
+              label = name;
+              port = decl.port;
+            }
+          ];
     in
     if cfg == null then
       [ ]
@@ -144,14 +174,39 @@ let
       let
         enabled = lib.attrByPath decl.capabilityPath false cfg;
         actualPort = readListenPort decl cfg;
+        declaredInstances = lib.attrNames (lib.attrByPath [ "services" "postgres" "instances" ] { } cfg);
       in
       lib.optionals (!enabled) [
         "internal-contracts: provider host '${decl.provider}' does not enable '${lib.concatStringsSep "." decl.capabilityPath}' required by contract '${name}'; the provider host must select the aspect that enables it"
       ]
-      ++ lib.optionals (actualPort != null && actualPort != decl.port) [
-        "internal-contracts: provider host '${decl.provider}' listens on port ${toString actualPort} but contract '${name}' declares ${toString decl.port}"
-      ]
+      ++ lib.optionals (decl ? instances) (
+        lib.optional
+          (
+            lib.filter (instance: !(lib.elem instance declaredInstances)) (lib.attrNames decl.instances) != [ ]
+          )
+          "internal-contracts: contract '${name}' declares instance(s) ${
+            lib.concatStringsSep ", " (
+              map (i: "'${i}'") (
+                lib.filter (instance: !(lib.elem instance declaredInstances)) (lib.attrNames decl.instances)
+              )
+            )
+          } that provider host '${decl.provider}' does not run; the provider host must declare the instance in services.postgres.instances"
+      )
+      ++ lib.concatMap (
+        member:
+        lib.optionals (actualPort != null && actualPort != member.port) [
+          "internal-contracts: provider host '${decl.provider}' listens on port ${toString actualPort} but contract '${member.label}' declares ${toString member.port}"
+        ]
+      ) members
   ) declarationNames;
+
+  # Flattened view of the resolved endpoints (family members included), used by
+  # the suffix assertion and by consumers that need every endpoint at once.
+  resolvedEndpoints = lib.concatLists (
+    lib.mapAttrsToList (
+      _: value: if lib.isAttrs value && !(value ? fqdn) then lib.attrValues value else [ value ]
+    ) pureResolution
+  );
 
   # Fail closed twice: the pure resolution is usable by host evaluation and the
   # validated projection additionally proves provider capability and port.
@@ -213,9 +268,9 @@ in
     {
       options.repo.internal = {
         postgres = lib.mkOption {
-          type = lib.types.submodule { options = endpointOptions; };
+          type = lib.types.attrsOf (lib.types.submodule { options = endpointOptions; });
           readOnly = true;
-          description = "Resolved shared-PostgreSQL transport contract (HIC-4).";
+          description = "Resolved shared-PostgreSQL transport contracts, keyed by instance (HIC-4).";
         };
         niks3Write = lib.mkOption {
           type = lib.types.submodule { options = endpointOptions; };
@@ -236,7 +291,7 @@ in
         assertions = [
           {
             assertion = lib.all (contract: lib.hasSuffix ".${suffix}" contract.fqdn || contract.fqdn == null) (
-              lib.attrValues resolution
+              resolvedEndpoints
             );
             message = "internal-contracts: resolved provider FQDN must sit under the '${suffix}' tailnet suffix from policy/globals.nix";
           }

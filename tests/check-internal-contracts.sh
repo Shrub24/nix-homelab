@@ -29,7 +29,7 @@ make_copy() { # prints path to a fresh repo copy
     --exclude=.git --exclude=.jj --exclude=./opentofu --exclude=./opentofu/* \
     --exclude=.hp-forge-esp-backup --exclude=.qmd --exclude=.direnv \
     --exclude=.cortexkit --exclude=.tmp --exclude=.ruff_cache \
-    --exclude=.pi --exclude=.firecrawl \
+    --exclude=.pi --exclude=.firecrawl --exclude=.opencode \
     -cf - . | tar -C "$d" -xf -
   printf '%s' "$d"
 }
@@ -57,7 +57,25 @@ if sorted(got) != want:
         f"flake.internalContracts must expose exactly {want} (HIC-4), got {sorted(got)}; "
         "a third transport (for example identity or ntfy) must not gain an internal contract"
     )
-for name, endpoint in sorted(got.items()):
+
+# A family contract resolves one endpoint per instance: `postgres` is keyed by
+# instance name (modular-postgres-instances), while `niks3Write` is a single
+# endpoint. Flatten both shapes to (label, endpoint) before checking fields.
+flattened = {}
+for name, value in sorted(got.items()):
+    if "fqdn" in value:
+        flattened[name] = value
+        continue
+    if not value:
+        errs.append(
+            f"{name}: a contract family must resolve at least one instance endpoint; "
+            "an empty family would make every per-member assertion below vacuous"
+        )
+        continue
+    for instance, endpoint in sorted(value.items()):
+        flattened[f"{name}.{instance}"] = endpoint
+
+for name, endpoint in sorted(flattened.items()):
     for field in ("provider", "port", "scheme", "host", "fqdn", "url"):
         if field not in endpoint:
             errs.append(f"{name}: missing resolved field {field!r}")
@@ -79,7 +97,7 @@ for name, endpoint in sorted(got.items()):
 if errs:
     raise SystemExit("; ".join(errs))
 PYEOF
-note "surface: exactly postgres + niks3Write, each identity-derived (host/fqdn/url)"
+note "surface: exactly postgres + niks3Write, each identity-derived (host/fqdn/url); postgres resolves per instance"
 
 # --- 2. No second internal authority for identity or ntfy --------------------
 #
@@ -146,9 +164,9 @@ import sys
 
 p = sys.argv[1]
 s = open(p).read()
-anchor = "services.postgres-shared.enable = true;"
+anchor = "services.postgres.enable = true;"
 assert s.count(anchor) == 1, "postgres capability anchor drifted"
-s = s.replace(anchor, "services.postgres-shared.enable = false;", 1)
+s = s.replace(anchor, "services.postgres.enable = false;", 1)
 open(p, "w").write(s)
 PYEOF
 set +e
@@ -157,7 +175,7 @@ stale_rc=$?
 set -e
 [ "$stale_rc" -ne 0 ] || fail "4.3: a provider that stops enabling its capability must fail closed"
 case "$stale_out" in
-*"internal-contracts: provider host 'oci-melb-1' does not enable 'services.postgres-shared.enable' required by contract 'postgres'; the provider host must select the aspect that enables it"*) ;;
+*"internal-contracts: provider host 'oci-melb-1' does not enable 'services.postgres.enable' required by contract 'postgres'; the provider host must select the aspect that enables it"*) ;;
 *) fail "4.3: expected the named provider-capability error, got: $(printf '%s' "$stale_out" | tail -n 3)" ;;
 esac
 note "stale placement: $(printf '%s' "$stale_out" | grep -m1 -o 'internal-contracts: .*' | cut -c1-170)"

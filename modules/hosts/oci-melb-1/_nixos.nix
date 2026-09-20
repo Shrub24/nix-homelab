@@ -177,12 +177,16 @@ in
       secretFiles.host = ../../../secrets/services/niks3.yaml;
     };
 
-    postgres-shared = {
-      secretFile = ../../../secrets/services/postgres-shared.yaml;
-      niks3.enable = true;
-      paperless.enable = true;
-      audiomuse.enable = true;
-      litellm.enable = true;
+    postgres = {
+      instances.postgres = {
+        port = 5432;
+        dataDir = "/srv/data/postgres";
+      };
+
+      # Consumers register themselves: paperless from its own module over the
+      # Unix socket (no credential), and niks3 from upstream
+      # `services.niks3.database`. AudioMuse moved to home-forge's own cluster,
+      # so this host provisions nothing for another host.
     };
 
     # Cache server runs locally here; the conventional cache-upload default leaf

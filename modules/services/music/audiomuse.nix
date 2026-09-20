@@ -1,6 +1,7 @@
 {
   lib,
   config,
+  options,
   pkgs,
   ...
 }:
@@ -8,15 +9,26 @@ let
   cfg = config.services.audiomuse;
   secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
 
-  # D-045 two-file credential contract: the database-side role password lives
-  # in the OCI-only secrets/services/postgres-shared.yaml (key
-  # roles/audiomuse/password); this service reads the client-side password
-  # from secretFiles.db (secrets/applications/music.yaml, key
-  # audiomuse/postgres_password). The operator keeps the two values matching.
+  # One credential, one source (D-058): the role password lives in
+  # secretFiles.db (secrets/applications/music.yaml, key
+  # audiomuse/postgres_password). This service reads it to authenticate and the
+  # co-located cluster reads the same file and key to provision the role.
   dbSecretAvailable = cfg.secretFiles.db != null && builtins.pathExists cfg.secretFiles.db;
+
+  # The cluster this host runs, when it runs one. The declaration is probed
+  # through `options` before the value is read, because reading an undeclared
+  # option path raises NixOS' "did you mean" error rather than returning null.
+  hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
+  localPostgres = if hasLocalCluster then config.services.postgres.localEndpoint else null;
   navidromePort = 4533;
 in
 {
+  # The registration below extends `services.postgres`'s contract, so this
+  # service imports the module that declares it: a definition of an undeclared
+  # option is rejected even when its `mkIf` is false. Enablement stays with the
+  # `postgres` aspect, so importing the declarations provisions nothing.
+  imports = [ ../../services/postgres.nix ];
+
   options.services.audiomuse = {
     enable = lib.mkEnableOption "AudioMuseAI similarity service";
 
@@ -56,10 +68,20 @@ in
       description = "Dedicated Podman network for AudioMuseAI containers.";
     };
 
+    networkSubnet = lib.mkOption {
+      type = lib.types.str;
+      default = "10.89.42.0/24";
+      description = ''
+        Subnet for the dedicated Podman network. Pinned rather than left to
+        Podman's pool because the PostgreSQL registration allows exactly this
+        range to authenticate as the AudioMuse role.
+      '';
+    };
+
     dataBackupPaths = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
-      description = "Paths included in durable state backup scope. AudioMuse durable state is covered by shared-Postgres backup; Redis/temp are non-canonical.";
+      description = "Paths included in durable state backup scope. AudioMuse durable state lives in its PostgreSQL database, which the cluster that serves it exports for restic; Redis/temp are non-canonical.";
     };
 
     environmentFile = lib.mkOption {
@@ -98,6 +120,22 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Self-registration (D-058): the database, role, and credential this
+    # service needs, declared next to the service that uses them. The provider
+    # reads the same file and key to provision the role, so the password has one
+    # authoritative source instead of a hand-synced pair.
+    services.postgres.consumers.audiomuse = lib.mkIf (localPostgres != null) {
+      database = "audiomuse";
+      auth = "scram";
+      password = lib.mkIf dbSecretAvailable {
+        file = cfg.secretFiles.db;
+        key = cfg.secretKeys.postgresPassword;
+      };
+      # The container reaches the database over the Podman bridge, so the role
+      # accepts exactly that range rather than the whole tailnet.
+      allowedCIDRs = [ cfg.networkSubnet ];
+    };
+
     assertions = [
       (secretHelpers.mkRequiredSecretAssertion {
         enable = cfg.enable;
@@ -114,6 +152,10 @@ in
       {
         assertion = !cfg.enable || dbSecretAvailable;
         message = "services.audiomuse.enable is true but its encrypted secretFiles.db is missing.";
+      }
+      {
+        assertion = !cfg.enable || localPostgres != null || cfg.postgresHost != null;
+        message = "services.audiomuse.enable is true but no PostgreSQL endpoint is available: run a cluster on this host (select the postgres aspect) or set postgresHost explicitly for a database that lives elsewhere.";
       }
     ];
 
@@ -193,7 +235,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network exists ${cfg.networkName} || ${pkgs.podman}/bin/podman network create --interface-name=audiomuse0 ${cfg.networkName}'";
+        ExecStart = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network exists ${cfg.networkName} || ${pkgs.podman}/bin/podman network create --interface-name=audiomuse0 --subnet=${cfg.networkSubnet} ${cfg.networkName}'";
         ExecStop = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network rm -f ${cfg.networkName} || true'";
       };
     };

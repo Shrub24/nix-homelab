@@ -1,101 +1,61 @@
-# Postgres Shared — SOPS Secret File
+# Postgres — consumer credentials
 
-The `services.postgres-shared` module can manage database role passwords
-for external consumers (e.g. LiteLLM) from a single Postgres-owned
-SOPS-encrypted YAML file.
+A consumer's role credential belongs to the consumer. It is declared in the
+registration itself (`password = { file, key }`), and the same file and key are
+read twice on the same host: by the cluster to provision the role's password,
+and by the service to authenticate. One authoritative source, no hand-synced
+pair (D-058).
 
-## File path
+## Where credentials live
 
-```
-secrets/services/postgres-shared.yaml
-```
+| consumer | file | key | readers |
+| --- | --- | --- | --- |
+| `paperless` | — | — | `auth = "peer"` over the Unix socket; no credential exists |
+| `audiomuse` | `secrets/applications/music.yaml` | `audiomuse/postgres_password` | home-forge's cluster (provisioning) and the AudioMuse container (authentication) |
 
-This file is **owned by the postgres-shared module** — it is declared in
-`.sops.yaml` under `secrets/services/postgres-shared.yaml` with key groups
-for the admin (`owner_age`) and the Postgres host (`oci_melb_1_age`).
+`secrets/services/postgres-shared.yaml` is retired: it held the OCI-side
+AudioMuse role password and the LiteLLM password, and after the AudioMuse
+database moved to home-forge nothing reads it. Deleting the file and its
+`.sops.yaml` rule is an operator action.
 
-The `.sops.yaml` creation rule was added at the same time as the module
-options. You do not need to add a new rule.
-
-## Creating the encrypted file
-
-```bash
-# Create and edit the new SOPS file
-sops secrets/services/postgres-shared.yaml
-```
-
-## Required key structure
-
-The expected YAML keys follow a `roles/<name>/password` pattern:
-
-```yaml
-roles:
-  litellm:
-    password: <generated-password>
-```
-
-The default `passwordKey` for each consumer:
-
-| Consumer | Default key path             |
-| -------- | ---------------------------- |
-| litellm  | `roles/litellm/password`     |
-
-## Enabling a consumer on the host
-
-After the secret file exists with the required keys, enable the consumer
-in `modules/hosts/oci-melb-1/default.nix`:
+## Declaring a consumer
 
 ```nix
-services.postgres-shared = {
-  enable = true;
-  secretFile = ../../../secrets/services/postgres-shared.yaml;
-  litellm.enable = true;
-  # Existing consumers stay unchanged:
-  niks3.enable = true;
-  paperless.enable = true;
-  audiomuse.enable = true;
+services.postgres.consumers.<name> = {
+  database = "<database>";
+  # role defaults to the consumer name
+  auth = "scram";
+  password = {
+    file = ../../../secrets/applications/<name>.yaml;
+    key = "<path/within/file>";
+  };
+  allowedCIDRs = [ "<source range>" ];
+  extensions = ps: [ ps.pgvector ];
+  setupSQL = "CREATE EXTENSION IF NOT EXISTS vector;";
 };
 ```
 
-The module will:
-1. Create the `litellm` database and login role with DB ownership.
-2. Render the Postgres password from the SOPS secret and apply it via
-   `ALTER USER litellm PASSWORD ...` on PostgreSQL start/restart.
-3. Add `pg_hba.conf` SCRAM authentication rules for the allowed CIDRs
-   (default: Tailscale `100.64.0.0/10` and `fd7a:115c:a1e0::/48`).
+A `scram` consumer without a `password`, or one whose file does not exist, fails
+evaluation with a named error. `auth = "peer"` needs no credential at all and is
+the right choice for a host-local consumer that connects over the Unix socket.
 
-## Database URL for the consuming application
+## Cross-host consumers
 
-Once the consumer is enabled and Postgres has restarted, the consuming
-application (e.g. laptop LiteLLM) connects over Tailscale using the
-custom `DATABASE_URL` format:
+A consumer whose database lives on another host is registered by the **provider**
+host, because that is the only host that can create the role and apply its
+password. Registering it there means the provider host gains read access to the
+consumer's secret file — an explicit, reviewed widening of `.sops.yaml`
+readership, never an automatic consequence.
 
-```
-postgresql://litellm:<password>@oci-melb-1.tailnet-name.ts.net:5432/litellm
-```
+## Rotation
 
-Components:
-- **User**: `litellm`
-- **Password**: Retrieved from `roles/litellm/password` in
-  `secrets/services/postgres-shared.yaml` (do not check in plaintext).
-- **Host**: Tailscale hostname or MagicDNS name — `oci-melb-1` (or the
-  full `<hostname>.<tailnet-name>.ts.net` FQDN).
-- **Port**: `5432` — Postgres standard port, accessible only over
-  Tailscale (the podman interface firewall opens port 5432 but the
-  Tailscale ACL is the real access boundary).
-- **Database**: `litellm`
+Edit the value in the consumer's own file and re-encrypt that one file; the
+cluster applies it on the next `postgresql.service` start
+(`restartUnits = [ "postgresql.service" ]` is set on the derived secret). No
+second file needs to change.
 
-> **Important**: The LiteLLM service on the laptop must manage its own
-> secret injection. The password in the SOPS file is a Postgres-side
-> credential, not a LiteLLM runtime secret. The operator copies the
-> password into the laptop's own secrets environment (out of scope for
-> this repository).
+## Runtime paths
 
-## Validation
-
-After enabling the consumer:
-
-```bash
-# Check that Postgres applies the password correctly
-sudo journalctl -u postgresql --since "5 minutes ago" | grep -i "ALTER USER"
-```
+The cluster materialises each credential at
+`/run/secrets/postgres/<consumer>.password`, owned by `postgres` with mode
+`0400`, and never copies it elsewhere.

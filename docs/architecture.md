@@ -493,7 +493,7 @@ AudioMuse registers these SOPS-backed keys through `services.audiomuse.secretFil
 
 Add these keys to the music application secrets file (`secrets/applications/music.yaml`) using the standard SOPS workflow. Do not manually decrypt or edit encrypted secret payloads.
 
-Database-side ownership follows the database: OCI Postgres reads the `audiomuse` role password from the OCI-only `secrets/services/postgres-shared.yaml` at `roles/audiomuse/password`, while home-forge AudioMuse reads the client-side password from `secrets/applications/music.yaml` at `audiomuse/postgres_password` (same file as the keys above).
+Database-side ownership follows the database: home-forge runs the cluster that serves AudioMuse, so the role password lives in that host's own `secrets/applications/music.yaml` at `audiomuse/postgres_password` (same file as the keys above) and is read twice on that host — once by the cluster to provision the role, once by the AudioMuse container to authenticate (D-058). The former OCI-side copy in `secrets/services/postgres-shared.yaml` is retired.
 
 ### Backup scope
 

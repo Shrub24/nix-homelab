@@ -211,6 +211,7 @@ Project-owned rules that must survive tool regeneration. They live here rather t
 
 - Do not run index-mutating Git commands in this repository (`git reset`, `git checkout`, `git stash`). Use jj operations; jj is the version-control interface.
 - If `tests/check-flake-source-tracking.sh` fails, run `git add -A` once and re-run the check.
+- A newly created file must reach the index before `.#` can see it: the Git-tree copy contains only indexed files, so an unstaged new module evaluates as if it did not exist. Any `jj` command stages files jj has just started tracking (`jj status` is the cheapest), which is why the failure looks like a missing-file error rather than a dirty-tree warning.
 
 ### Delegation and Apply Workflow
 

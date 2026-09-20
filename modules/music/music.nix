@@ -17,6 +17,7 @@
     {
       lib,
       config,
+      options,
       pkgs,
       ...
     }:
@@ -24,12 +25,26 @@
       cfg = config.applications.music;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
-      # Shared-PostgreSQL endpoint for AudioMuse, resolved through the internal
-      # transport contract (stage 8 task 4.2, HIC-4). Forced only where used
-      # (inside the audiomuse enable gate below), so a host that selects music
-      # without AudioMuse never reads it. The explicit per-host/leaf options
-      # still win, keeping local co-located deployments on their own endpoint.
-      internalPostgres = config.repo.internal.postgres;
+      # Shared-PostgreSQL endpoint for AudioMuse. A host that runs its own
+      # cluster serves AudioMuse locally over the container bridge; otherwise the
+      # database lives elsewhere and the internal transport contract (stage 8
+      # task 4.2, HIC-4) resolves it. Forced only where used (inside the
+      # audiomuse enable gate below), so a host that selects music without
+      # AudioMuse never reads either. The explicit leaf options still win.
+      # `options` (not `config`) is what can be probed safely: reading an
+      # undeclared option path raises NixOS' "did you mean" error, so the
+      # declaration is checked before the value is read.
+      hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
+      localPostgres = if hasLocalCluster then config.services.postgres.localEndpoint else null;
+      internalPostgres = config.repo.internal.postgres.postgres;
+      audiomusePostgres =
+        if localPostgres != null then
+          {
+            host = "host.containers.internal";
+            inherit (localPostgres) port;
+          }
+        else
+          internalPostgres;
 
       mediaPaths = rec {
         libraryDir = "${cfg.storageRoot}/library";
@@ -388,9 +403,9 @@
             secretFiles.host = cfg.secretFiles.host;
             secretFiles.db = lib.mkDefault cfg.secretFiles.host;
             postgresHost =
-              if cfg.audiomuse.postgresHost != null then cfg.audiomuse.postgresHost else internalPostgres.host;
+              if cfg.audiomuse.postgresHost != null then cfg.audiomuse.postgresHost else audiomusePostgres.host;
             postgresPort =
-              if cfg.audiomuse.postgresPort != null then cfg.audiomuse.postgresPort else internalPostgres.port;
+              if cfg.audiomuse.postgresPort != null then cfg.audiomuse.postgresPort else audiomusePostgres.port;
           };
 
           services.beets = {

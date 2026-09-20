@@ -235,6 +235,10 @@ in
       };
     };
 
+    services.postgres.consumers.paperless = lib.mkIf cfg.enable {
+      database = "paperless";
+    };
+
     services.state-backups.services.paperless = {
       enable = true;
       mode = "live";

@@ -62,6 +62,15 @@ Local evaluation of this repository uses the Git-tree flake form `.#`. `path:` r
 - Tracking is the single filtering authority. Do not add a Nix-side exclusion list (`lib.fileset`, `cleanSourceWith`, `filterSource`) to compensate for untracked files; track them instead.
 - `.#` reads the Git index: do not run index-mutating Git commands (`git reset`, `git checkout`, `git stash`) in this colocated repository, and repair a reported divergence with `git add -A` (guarded by `tests/check-flake-source-tracking.sh`).
 
+### Shared Capability Registration
+
+A capability that serves more than one service exposes a typed registry and provisions from it; the capability module names no participant, and a participant's own module registers itself. Three instances exist: `services.state-backups.services.<name>`, `services.notification-daemon.monitor.units.<unit>`, and `services.postgres.consumers.<instance>.<name>`.
+
+- Register where provisioning happens: a same-host consumer registers from its own module; a cross-host consumer is registered by the host that provisions its role, because that is the only host that can create it.
+- Registrations are fail-closed: a phantom unit, a host declaring two clusters, a password consumer without a credential, or a credential file that does not exist fails evaluation with a named error.
+- A registration carries the consumer's own credential (`password = { file, key }`) and dependency contributions in the shared option's native shape (`extensions = ps: [ ps.pgvector ]`, a function of the instance's extension set). SQL that accompanies an extension belongs in `setupSQL`, which must be idempotent because it runs on every start.
+- A capability that instead holds a participant list (a host name, a publisher, a monitored-unit list) is debt to convert, not a pattern to copy.
+
 ### Application vs Service Ownership
 
 - **Application**: wraps multiple interacting services and shared feature behavior. Use only when real composition value exists (shared paths, assertions, secrets shared across services, multi-service tmpfiles/ACL logic, one operator-facing stack toggle).

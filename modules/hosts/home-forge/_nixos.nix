@@ -109,15 +109,24 @@ in
 
   # Music composition is provided by the `music` deployment aspect (selected
   # in the registry); the host keeps only its real variants.
+  # Home-forge runs its own PostgreSQL cluster (D-058): AudioMuse's database is
+  # co-located with its compute, so the container reaches it over the Podman
+  # bridge and no cross-host transport is involved. The password lives in the
+  # music secrets file, which both this cluster and the AudioMuse container read.
+  services.postgres.instances.forge = {
+    port = 5432;
+    dataDir = "/srv/data/postgres";
+  };
+
   applications.music = {
     dataRoot = "/srv/data";
     storageRoot = musicStorageRoot;
     secretFiles.host = ../../../secrets/applications/music.yaml;
     navidrome.enable = true;
     audiomuse.enable = true;
-    # AudioMuse's database endpoint is resolved from the internal transport
-    # contract (repo.internal.postgres) by the music aspect; the host no longer
-    # names the provider.
+    # AudioMuse's database endpoint resolves to this host's own cluster when one
+    # is declared (services.postgres.localEndpoint) and to the internal contract
+    # otherwise, so the host names no provider either way.
   };
 
   services.syncthing.openDefaultPorts = lib.mkForce true;

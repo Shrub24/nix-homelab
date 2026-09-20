@@ -68,7 +68,7 @@ make_copy() { # prints path to a fresh repo copy
     --exclude=.git --exclude=.jj --exclude=./opentofu --exclude=./opentofu/* \
     --exclude=.hp-forge-esp-backup --exclude=.qmd --exclude=.direnv \
     --exclude=.cortexkit --exclude=.tmp --exclude=.ruff_cache \
-    --exclude=.pi --exclude=.firecrawl \
+    --exclude=.pi --exclude=.firecrawl --exclude=.opencode \
     -cf - . | tar -C "$d" -xf -
   printf '%s' "$d"
 }
@@ -124,6 +124,54 @@ test -f modules/hosts/home-forge/_disko-two-disk.nix || fail "modules/hosts/home
 
 # --- 3. Typed registry materialized into nixosConfigurations (DS-2) ----------
 
+# PostgreSQL provisioning ordering (D-058). nixpkgs creates databases and roles
+# in `postgresql-setup.service`, which runs *after* `postgresql.service`; a
+# consumer's credential or setup SQL therefore cannot live in `postStart` — on a
+# fresh cluster the role does not exist yet and the unit fails (start-limit-hit,
+# deploy rollback). Provisioning is its own unit, ordered after setup.
+# Project only the fields under test: serialising a whole systemd unit forces
+# every option, including ones with no default (startLimitBurst).
+provision_probe='c: builtins.toJSON (
+  (if c.systemd.services ? postgresql-provision then {
+    hasUnit = true;
+    requires = c.systemd.services.postgresql-provision.requires;
+    after = c.systemd.services.postgresql-provision.after;
+    partOf = c.systemd.services.postgresql-provision.partOf;
+    user = c.systemd.services.postgresql-provision.serviceConfig.User;
+  } else { hasUnit = false; })
+  // { postStart = c.systemd.services.postgresql.postStart; }
+)'
+provision_forge="$(ne --raw --apply "$provision_probe" 'path:.#nixosConfigurations.home-forge.config')" ||
+  fail "postgres provisioning probe does not evaluate on home-forge"
+python3 - "$provision_forge" <<'PYEOF' || fail "postgres provisioning unit drifted (see message above)"
+import json, sys
+got = json.loads(sys.argv[1])
+errs = []
+if not got.get("hasUnit"):
+    errs.append("home-forge registers a credentialled consumer, so postgresql-provision must exist")
+else:
+    if got.get("requires") != ["postgresql-setup.service"]:
+        errs.append(f"provisioning must require postgresql-setup.service, got {got.get('requires')!r}")
+    for dep in ("postgresql.service", "postgresql-setup.service"):
+        if dep not in (got.get("after") or []):
+            errs.append(f"provisioning must run after {dep}")
+    if "postgresql.target" not in (got.get("partOf") or []):
+        errs.append("provisioning must be partOf postgresql.target so a target restart re-applies credentials")
+    if got.get("user") != "postgres":
+        errs.append("provisioning must run as the postgres superuser")
+if got["postStart"]:
+    errs.append("provisioning must not live in postgresql.postStart: it runs before postgresql-setup.service creates roles and databases")
+if errs:
+    print("; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+# A host whose consumers all authenticate over the Unix socket has nothing to
+# apply, so it must not grow an idle provisioning unit.
+provision_oci="$(ne --raw --apply 'c: builtins.toJSON (c.systemd.services ? postgresql-provision)' 'path:.#nixosConfigurations.oci-melb-1.config')" ||
+  fail "postgres provisioning probe does not evaluate on oci-melb-1"
+[ "$provision_oci" = "false" ] ||
+  fail "oci-melb-1 registers only peer consumers, so no provisioning unit is needed"
 registry_keys="$(ne --raw --apply 'c: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames c))' 'path:.#nixosConfigurations')"
 if [ "$registry_keys" != '["home-forge","la-admin-1","oci-melb-1"]' ]; then
   fail "nixosConfigurations keys drifted: $registry_keys"
@@ -569,13 +617,14 @@ aspects.homepage
 aspects.webhook"
 oci_sel="$(printf '%s\n%s\n%s\naspects.identity-client\n' "$support_quartet" "$foundation_operational" "$oci_placement" | LC_ALL=C sort)"
 la_sel="$(printf '%s\n%s\n%s\naspects.identity-client\n' "$support_quartet" "$foundation_operational" "$la_placement" | LC_ALL=C sort)"
-forge_sel="$(printf '%s\n%s\naspects.dj\naspects.music\naspects.omniroute\n' "$support_quartet" "$foundation_operational" | LC_ALL=C sort)"
+forge_placement="aspects.postgres"
+forge_sel="$(printf '%s\n%s\n%s\naspects.dj\naspects.music\naspects.omniroute\n' "$support_quartet" "$foundation_operational" "$forge_placement" | LC_ALL=C sort)"
 [ "$(host_aspects "$ROOT" oci-melb-1)" = "$oci_sel" ] ||
   fail "registry: oci-melb-1 must select the support quartet + eight deployment aspects + identity-client + its nine placement aspects: $(host_aspects "$ROOT" oci-melb-1)"
 [ "$(host_aspects "$ROOT" la-admin-1)" = "$la_sel" ] ||
   fail "registry: la-admin-1 must select the support quartet + eight deployment aspects + identity-client + its ten placement aspects: $(host_aspects "$ROOT" la-admin-1)"
 [ "$(host_aspects "$ROOT" home-forge)" = "$forge_sel" ] ||
-  fail "registry: home-forge must select the support quartet + eight deployment aspects + dj + music + omniroute: $(host_aspects "$ROOT" home-forge)"
+  fail "registry: home-forge must select the support quartet + eight deployment aspects + dj + music + omniroute + its postgres placement: $(host_aspects "$ROOT" home-forge)"
 # Host records (modules/hosts/<host>/default.nix) are the aspect-selection
 # authority since Stage 8 HIC-1/HIC-2; the private NixOS fragments (`_*.nix`)
 # must still never import an aspect implementation.
@@ -1660,8 +1709,9 @@ PLACEMENT_PROBE='c: {
   termixEnable = c.services.admin.termix.enable or false;
   adminSshSecrets = builtins.length (builtins.filter (n: n == "admin_ssh_identity" || n == "admin_ssh_known_hosts") (builtins.attrNames c.sops.secrets));
   paperlessEnable = c.services.paperless.enable or false;
-  postgresEnable = c.services.postgres-shared.enable or false;
-  postgresRoles = map (n: c.services.postgres-shared.${n}.enable or false) [ "niks3" "paperless" "audiomuse" "litellm" ];
+  postgresEnable = c.services.postgres.enable or false;
+  postgresInstances = builtins.attrNames (c.services.postgres.instances or { });
+  postgresConsumers = builtins.attrNames (c.services.postgres.consumers or { });
   bifrostEnable = c.services.bifrost-gateway.enable or false;
   karakeepEnable = c.services.karakeep-pod.enable or false;
   niks3CacheEnable = c.services.niks3-cache.enable or false;
@@ -1692,11 +1742,11 @@ PYEOF
 }
 
 placement_json="$(probe_placement "$ROOT" oci-melb-1)" || fail "7n-2: oci-melb-1 placement probe does not evaluate"
-assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresRoles":[true,true,true,true],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheEnable":true,"niks3ServerEnable":true,"phoenixEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["paperless"],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheEnable":true,"niks3ServerEnable":true,"phoenixEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" la-admin-1)" || fail "7n-2: la-admin-1 placement probe does not evaluate"
-assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":true,"adminSshSecrets":2,"paperlessEnable":false,"postgresEnable":false,"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":true,"adminSshSecrets":2,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" home-forge)" || fail "7n-2: home-forge placement probe does not evaluate"
-assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
+assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse"],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
 
 # 7n-3. Semantic throwaway mutations (tasks 6.2/6.3). Each fails for its
 # intended semantic reason rather than a generic parse error, and the working

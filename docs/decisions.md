@@ -1199,3 +1199,25 @@ References:
 
 - `openspec/changes/restrict-provenance-source-copy/` (PSC-1-PSC-4)
 - `modules/flake/provenance.nix`, `tests/check-flake-source-tracking.sh`, `AGENTS.md`
+
+## D-058: The PostgreSQL substrate is a mechanism, instances, and consumer registrations
+
+Status: Accepted
+
+Decision:
+
+- PostgreSQL support is split into three layers. The mechanism (`modules/services/postgres.nix`) renders provisioning from an instance declaration and a consumer registry and names no consumer and no instance; an instance is a placement aspect that imports the mechanism, with port and data directory declared by the host that runs the cluster; a consumer registers the database, role, credential, extensions, and setup SQL it needs from its own module
+- the shape follows the registrations already established in the fleet — `services.state-backups.services.<name>` and `services.notification-daemon.monitor.units.<unit>` — so a shared capability never holds a participant list
+- registrations are keyed by consumer name, not by instance: the native NixOS `services.postgresql` runtime is single-cluster, so a host runs at most one cluster (a named error rather than an assumption), `instances.<name>` names that cluster for the internal contract, and a consumer stays instance-free
+- a consumer's credential is part of its registration (`password = { file, key }`), which makes one file and one key authoritative for both the provider that provisions the role and the consumer that authenticates. There is no separate provider-side secret-file option, and the previously hand-synced pair for a cross-host consumer is gone
+- extensions are contributed in nixpkgs' own shape — `extensions = ps: [ ps.pgvector ]`, a function of the instance's extension set — and the mechanism composes them (`ps: lib.unique (lib.concatMap (c: c.extensions ps) consumers)`), so a package always matches the server version and no central SQL-name-to-package map is needed. `pgvector.nix` carries no SQL name (it lives in `vector.control`, which exists only after the build), so a map would be hand-written policy that goes stale
+- the SQL side is `setupSQL` (`types.lines`), run in the consumer's database as the superuser on every start and therefore required to be idempotent; a failure names the registration instead of aborting the cluster with an opaque error
+- endpoint resolution prefers the local cluster: `services.postgres.localEndpoint` lets a co-located consumer use the host's own instance, and only a consumer whose database lives elsewhere reads `repo.internal.postgres.<instance>`. Switching a database between hosts is a registration move plus, for a cross-host move, a contract read — never a change to the service's connection code
+- AudioMuse's database moved to `home-forge`, next to its compute, so same-host registration is the rule and cross-host registration (written on the provider host, which is the only host that can create the role and read the credential) is the documented exception
+- cross-host registration is the one case where a provider host gains read access to a consumer's secret file; that widening is explicit in the registration and is a `.sops.yaml` decision, not an automatic consequence
+- consumers that run outside this repository (for example a workstation) remain out of scope for this composition model: the consumer name is not a host ID and `allowedCIDRs` is the seam that will express them when a `nix-fleet` registration policy exists
+
+Supersedes/updates:
+
+- supersedes the `postgres-shared-access` requirements written around the LiteLLM consumer, which is retired
+- the runbook namespace moved from `services.postgres-shared` to `services.postgres`, and `docs/runbooks/postgres-consumer-migration.md` covers moving a database between clusters

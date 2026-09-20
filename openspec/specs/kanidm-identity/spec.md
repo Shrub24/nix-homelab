@@ -1,7 +1,7 @@
 # kanidm-identity Specification
 
 ## Purpose
-TBD - created by archiving change kanidm-identity-migration. Update Purpose after archive.
+Define Kanidm as this repository's canonical identity provider: declarative bootstrap and provisioning from repository state, identity-scoped secret handling, a supported version line behind an upgrade gate, and a fail-closed offline restore verification.
 
 ## Requirements
 

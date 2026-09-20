@@ -1,7 +1,7 @@
 # provider-owned-oidc-uris Specification
 
 ## Purpose
-TBD - created by archiving change provider-owned-oidc-uris. Update Purpose after archive.
+Define one owner for OIDC endpoint URIs: the identity-client contract derives them from the provider public URL, emits them read-only, and consumers reference those outputs instead of reconstructing URIs themselves.
 
 ## Requirements
 

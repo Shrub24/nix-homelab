@@ -1,7 +1,7 @@
 # nixpkgs-baseline-policy Specification
 
 ## Purpose
-TBD - created by archiving change migrate-nixpkgs-unstable-default. Update Purpose after archive.
+Fix the package baseline this repository evaluates against: one primary nixpkgs input tracking nixos-unstable, no pre-provisioned fallback inputs, and unchanged state-version semantics.
 ## Requirements
 ### Requirement: Default nixpkgs baseline is unstable
 Active fleet code SHALL use a single primary `nixpkgs` flake input pinned to `nixos-unstable` as the default package baseline.

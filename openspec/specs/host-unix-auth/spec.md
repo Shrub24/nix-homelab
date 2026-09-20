@@ -1,7 +1,7 @@
 # host-unix-auth Specification
 
 ## Purpose
-TBD - created by archiving change kanidm-identity-migration. Update Purpose after archive.
+Define host-level UNIX authentication against the fleet identity provider: native Kanidm client and unixd integration on hosts that opt in after OIDC parity, with SSH and PAM policy kept explicit and host-safe.
 ## Requirements
 ### Requirement: Fleet hosts SHALL support Kanidm client and unixd integration
 Fleet hosts SHALL support Kanidm client and unixd integration through native nixpkgs client/unix modules after OIDC parity is established.

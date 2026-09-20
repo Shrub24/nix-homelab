@@ -55,12 +55,12 @@ For this change scope, role permissions SHALL be explicit: `music-ingest` is the
 - **THEN** no Traktor-specific playlist model or automatic Traktor workflow is composed by the music application
 - **AND** the temporary M3U-to-iTunes worker remains independently host-composed pending its separately scoped replacement
 
-#### Scenario: AudioMuse compute composed on home-forge over remote OCI Postgres
-- **WHEN** `applications.music` composes AudioMuse after this change
+#### Scenario: AudioMuse compute composed on home-forge beside its local PostgreSQL
+- **WHEN** `applications.music` composes AudioMuse
 - **THEN** AudioMuse web, worker, and local Redis run on `home-forge`
-- **AND** AudioMuse's PostgreSQL database is remote in OCI's shared Postgres over Tailscale (tailnet-only + SCRAM), matching the existing accepted Arch-workstation pattern
-- **AND** the database-side role password is read by OCI Postgres from `secrets/services/postgres-shared.yaml` at `roles/audiomuse/password` (OCI-only file), while home-forge AudioMuse reads the client-side password from `secrets/applications/music.yaml` at `audiomuse/postgres_password` with the existing value preserved
-
+- **AND** AudioMuse's database is the host's own PostgreSQL cluster (`services.postgres.instances.forge`), reached over the pinned podman bridge network with SCRAM authentication and an `allowedCIDRs` rule matching that subnet
+- **AND** the credential is declared once in the consumer registration (`services.postgres.consumers.audiomuse.password` → `secrets/applications/music.yaml` key `audiomuse/postgres_password`), so the provider provisions the role from the same file the consumer authenticates with
+- **AND** the database is written to the host's backup export path, so the existing restic state-backup job covers it
 #### Scenario: Navidrome runs stock with cache-preserving plugin integration
 - **WHEN** `services.navidrome` is configured on `home-forge` with AudioMuseAI support
 - **THEN** no `services.navidrome.plugins = [ pkgs.navidromePlugins.audiomuseai ]` rebuild path is used

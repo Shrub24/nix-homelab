@@ -1,7 +1,7 @@
 # policy-service-catalog Specification
 
 ## Purpose
-TBD - created by archiving change migrate-admin-host-to-la. Update Purpose after archive.
+Define the resolved service catalog as the canonical way to address a service across hosts: one entry per stable service ID, so no consumer has to name a physical edge or identity host.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 # host-storage-recovery Specification
 
 ## Purpose
-TBD - created by archiving change reshape-oci-melb-1-storage. Update Purpose after archive.
+Require that a recovered or reshaped host storage layout becomes canonical declarative state, with one declarative owner per shared media directory and offline rebuild guidance alongside the recovered layout.
 ## Requirements
 ### Requirement: Recovered host storage reshapes SHALL be captured declaratively
 When a host storage layout is recovered or reshaped, the repository SHALL record the resulting mount and partition contract as canonical host state.

@@ -1,7 +1,7 @@
 # cache-push-workflow Specification
 
 ## Purpose
-TBD - created by archiving change niks3-cache. Update Purpose after archive.
+Define how built closures reach the sovereign binary cache: which host publishes, when publishing follows a successful activation, which credentials scope the push, and which composition owns closure publication.
 
 ## Requirements
 

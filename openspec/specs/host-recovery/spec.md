@@ -1,7 +1,7 @@
 # host-recovery Specification
 
 ## Purpose
-TBD - created by archiving change add-host-recovery-baseline. Update Purpose after archive.
+Define the recovery baseline a remote host declares so it stays reachable when normal access fails: a console rescue path independent of identity-backed login, host-scoped rescue credentials, routine proof that the path works, and a first-boot distinction between operator and recovery shells.
 
 ## Requirements
 

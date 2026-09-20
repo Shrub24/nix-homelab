@@ -1,7 +1,7 @@
 # sovereign-binary-cache Specification
 
 ## Purpose
-TBD - created by archiving change niks3-cache. Update Purpose after archive.
+Define the repository's own binary cache: where the niks3 server runs, how its objects are stored and read, the signing enforcement on the write path, and the retention and push credentials around it.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 # notification-policy-defaults Specification
 
 ## Purpose
-TBD - created by archiving change apprise-fleet-notifications. Update Purpose after archive.
+Define the notification defaults a host inherits: fleet-wide routing values, canonical publisher identities, and validation of both, held in repository policy and kept separate from the generic dispatch mechanics.
 
 ## Requirements
 

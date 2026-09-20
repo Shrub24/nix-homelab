@@ -1,7 +1,7 @@
 # beets-workflow-stages Specification
 
 ## Purpose
-TBD - created by archiving change refactor-beets-automated-workflow. Update Purpose after archive.
+Define the Beets processing stages this repository automates, covering inbox ingestion, quarantine manual review, approved promotion, and reconcile and convert maintenance, and fix where their concrete instantiation lives so the generic Beets framework carries no workflow-specific behavior.
 ## Requirements
 ### Requirement: Stage-specific Beets workflows MUST be explicitly defined
 The system SHALL define distinct Beets processing stages with explicit behavior contracts for inbox automation, quarantine manual review, approved promotion, and reconcile/convert maintenance.

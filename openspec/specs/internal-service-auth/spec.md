@@ -1,7 +1,7 @@
 # internal-service-auth Specification
 
 ## Purpose
-TBD - created by archiving change service-to-service-auth-wiring. Update Purpose after archive.
+Define how service-to-service authentication is inventoried and wired inside the fleet: the caller application owns its integration inventory and method choice, credentials stay host-scoped by default, and each integration uses the least privilege its call path allows.
 
 ## Requirements
 

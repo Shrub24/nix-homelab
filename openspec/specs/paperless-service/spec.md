@@ -1,7 +1,7 @@
 # paperless-service Specification
 
 ## Purpose
-TBD - created by archiving change paperless-ngx-fleet-integration. Update Purpose after archive.
+Define the Paperless deployment: a native NixOS service with OIDC as its primary authentication path, shared PostgreSQL backing, notification on document consumption, and its data and media state under the host backup surface.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 # paperless-ai-enhancement Specification
 
 ## Purpose
-TBD - created by archiving change paperless-ngx-fleet-integration. Update Purpose after archive.
+Define the AI enhancement layer around Paperless: several OCR instances selected by tag, an LLM path through the bifrost gateway, and docling-serve as a shared container instead of a per-instance service.
 ## Requirements
 ### Requirement: paperless-gpt SHALL support multi-instance deployment with tag-based OCR routing
 A single paperless-gpt instance enforces one fixed OCR provider (`OCR_PROVIDER`). To support both LLM-based and Docling-based OCR, paperless-gpt SHALL support multiple named instances, each with independent tags, ports, state directories, and OCR provider configuration. Instances are defined as an attrset under `services.paperless.paperless-gpt.instances` with the following per-instance configurable fields: `port`, `dataDir`, `manualTag`, `autoTag`, `autoOcrTag`, `pdfOcrCompleteTag`, `ocrProvider`, `llmModel`.

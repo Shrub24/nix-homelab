@@ -1,7 +1,7 @@
 # edge-proxy-ingress Specification
 
 ## Purpose
-TBD - created by archiving change phase1-caddy-edge-proxy. Update Purpose after archive.
+Define the edge ingress layer: how routed services are exposed under one primary domain with an explicit exposure mode, how certificates and DNS records are produced, and how each route stays owned by the service that declares it.
 
 ## Requirements
 

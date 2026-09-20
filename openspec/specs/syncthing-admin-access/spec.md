@@ -1,7 +1,7 @@
 # syncthing-admin-access Specification
 
 ## Purpose
-TBD - created by archiving change add-syncthing-subpath-webuis. Update Purpose after archive.
+Define browser access to each host's Syncthing administrative interface: host-specific subpaths under one shared admin hostname, with the proxy preserving the subpath and keeping the interface private-only.
 ## Requirements
 ### Requirement: Syncthing admin browser access SHALL support host-specific subpaths
 The repository SHALL support per-host Syncthing browser entrypoints under a shared admin hostname using explicit path-based route declarations.

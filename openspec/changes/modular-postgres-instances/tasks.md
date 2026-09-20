@@ -29,7 +29,7 @@ Review follow-up (should-fix 1, deferred rather than claimed): the delta's "one 
 ## 5. Documentation and validation
 
 - [x] 5.1 Record the registration pattern (mechanism leaf + instance aspect + consumer registration) in `ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md`, and D-058, including the explicit deferral of out-of-repo consumers to a future `nix-fleet` policy question.
-- [ ] 5.2 Run `treefmt --fail-on-change`, `just checks all`, `nix flake check --no-build .`, and all three host evaluations; confirm no `.sops.yaml` readership or ciphertext change beyond the MPI-5 proposal, and obtain an independent review of the credential consolidation and the equivalence evidence.
+- [x] 5.2 Run `treefmt --fail-on-change`, `just checks all`, `nix flake check --no-build .`, and all three host evaluations; confirm no `.sops.yaml` readership or ciphertext change beyond the MPI-5 proposal, and obtain an independent review of the credential consolidation and the equivalence evidence.
 
 ## 6. Contract refinements and the AudioMuse migration (operator-directed)
 

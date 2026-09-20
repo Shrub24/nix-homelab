@@ -199,7 +199,7 @@ not ship makes `pg_restore` fail on `CREATE EXTENSION`. Contrib extensions
 itself — the same package runs on both hosts, so they need nothing declared.
 Only third-party extensions (`vector`, `postgis`, …) require a registration
 change, and the query above is how you find out which kind you have. Declare it on the registration in
-`modules/services/music/audiomuse.nix` and redeploy home-forge first:
+`modules/music/audiomuse.nix` and redeploy home-forge first:
 
 ```nix
 extensions = ps: [ ps.pgvector ];          # server package, version-matched

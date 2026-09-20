@@ -234,7 +234,7 @@ Decision:
 
 - baseline shared policy lives in the `base` foundation aspect (`modules/flake/_aspects/base.nix`; formerly `modules/core/base.nix`)
 - common-baseline composition happens by explicit foundation-aspect selection in the typed host registry (concern-owned `modules/flake/*.nix` contributors + `modules/flake/registry.nix`; formerly the `modules/profiles/base-server.nix` wrapper)
-- service boundary for private access starts in `modules/services/tailscale.nix` (now the `tailscale` foundation aspect's service leaf)
+- service boundary for private access starts in `modules/services/tailscale.nix` (now the `tailscale` foundation aspect's service leaf) (file now `modules/flake/tailscale.nix`, post-Stage-8 services-tree conversion)
 
 Rationale:
 
@@ -264,7 +264,7 @@ Decision:
 
 - add `modules/applications/music.nix` to compose Syncthing, Navidrome, and slskd for `oci-melb-1`
 - add `modules/applications/admin/default.nix` to compose private admin access through Tailscale plus Termix
-- keep low-level implementation in `modules/services/*.nix` and avoid broad repository reorganization
+- keep low-level implementation in `modules/services/*.nix` and avoid broad repository reorganization (path now `modules/<domain>/<name>.nix`; the service root was converted post-Stage-8)
 
 Rationale:
 
@@ -277,7 +277,7 @@ Status: Accepted
 
 Decision:
 
-- implement Termix with a dedicated low-level module `modules/services/termix.nix` using Podman OCI containers (`termix` + `guacd`)
+- implement Termix with a dedicated low-level module `modules/services/termix.nix` using Podman OCI containers (`termix` + `guacd`) (file now `modules/admin/termix.nix`)
 - persist Termix state under `/srv/data/termix`
 - expose Termix only through declared edge route policy (Cloudflare Access-gated at public edge, private-origin transport preference)
 - Termix is hosted on `la-admin-1` (LA x86_64); `oci-melb-1` does not run Termix
@@ -298,7 +298,7 @@ Status: Accepted
 Decision:
 
 - Homepage authenticated widgets consume credentials via a dedicated host-scoped SOPS template environment file (`homepage-auth.env`)
-- credential ownership stays with Homepage caller wiring (`modules/services/admin/homepage/**`) instead of route policy metadata
+- credential ownership stays with Homepage caller wiring (`modules/services/admin/homepage/**`) instead of route policy metadata (path now `modules/admin/homepage/**`)
 - keep explicit auth exceptions minimal:
   - Caddy widget remains local no-auth (loopback admin API)
   - Gatus widget remains URL-only/read-only
@@ -536,7 +536,7 @@ Decision:
 
 - adopt a feature-oriented architecture where:
   - application modules (`modules/applications/<name>/default.nix`) are canonical composition roots for multi-service stacks
-  - leaf service modules (`modules/services/**/*.nix`) own their own enablement, secret contracts, and runtime wiring
+  - leaf service modules (`modules/services/**/*.nix`) own their own enablement, secret contracts, and runtime wiring (files now live beside their owning aspect, e.g. `modules/cache/niks3-cache.nix`)
   - host modules (`hosts/<host>/default.nix`) are thin assembly layers declaring identity, facts, feature enables, and narrow overrides
 - single services that do not participate in multi-service composition remain standalone leaf services (applications are not wrappers only for taxonomy)
 - every application entrypoint exposes a canonical `applications.<name>.enable` option; standalone services expose `services.<domain>.<name>.enable`
@@ -705,7 +705,7 @@ Decision:
 
 - AudioMuseAI is added as an explicit optional Navidrome similarity extension under `applications.music.audiomuse.enable`; it is not an implicit always-on dependency of the music stack
 - The repository owns declarative service topology, OCI container images, SOPS-backed bootstrap secrets, plugin binary placement (`audiomuseai.ndp` release v8), and Navidrome runtime flags; remaining AudioMuse setup wizard and Navidrome plugin UI configuration are documented as operator steps
-- Music service modules are regrouped under `modules/services/music/` as a file-layout-only move; existing option paths (`services.navidrome`, `services.beets`, `services.slskd`, etc.) remain unchanged
+- Music service modules are regrouped under `modules/services/music/` as a file-layout-only move; existing option paths (`services.navidrome`, `services.beets`, `services.slskd`, etc.) remain unchanged (path now `modules/music/`; the tree converted to discovered contributors post-Stage-8)
 - AudioMuse durable state scope is Postgres-only (`/srv/data/audiomuse/postgres`); Redis queue/cache and temp audio working files are excluded from canonical backup scope
 - AudioMuse follows the current internal-service-first exposure model; no new public ingress route is added unless existing edge policy explicitly composes one
 - Infrastructure deployed (containers running, plugin binary placed, flags active) is distinguished from E2E validated (Symfonium actual similar/radio behavior); the feature is not accepted as working until E2E validation passes
@@ -719,7 +719,7 @@ Rationale:
 
 Supersedes/updates:
 
-- updates the music service module layout under `modules/services/music/` without changing any public option namespace
+- updates the music service module layout under `modules/services/music/` without changing any public option namespace (path now `modules/music/`)
 - documents AudioMuse backup scope separately from other music stack services (Postgres-only vs. full state backup)
 
 References:
@@ -813,7 +813,7 @@ Status: Accepted
 
 Decision:
 
-- `modules/services/virtualisation/windows-vm.nix` provides a reusable layer: declarative instances (vcpu, memory, disk, autostart, SPICE port, TPM, install ISO), virtiofs shares keyed by mount tag, and per-instance systemd controller units over libvirt domains
+- `modules/services/virtualisation/windows-vm.nix` provides a reusable layer: declarative instances (vcpu, memory, disk, autostart, SPICE port, TPM, install ISO), virtiofs shares keyed by mount tag, and per-instance systemd controller units over libvirt domains (file now `modules/music/windows-vm.nix`)
 - guests attach to the host-owned always-on `br0` bridge over `eno1` (fleet networking aspect, D-043); the VM layer only consumes the bridge and never creates or owns physical networking — macvtap and VFIO passthrough are rejected because Remote Library discovery needs same-L2 broadcast and host↔guest reachability
 - SPICE binds to loopback only; operators tunnel over Tailscale via SSH
 - Engine DJ (`modules/applications/dj/`) is the first consumer: the Engine library (including the SQLite database) is the real `Engine Library` directory inside the host music root `/srv/storage/media/music`, exposed read-write through the single `M:` virtiofs share as `M:\Engine Library` (no separate share, mount tag, or guest junction)
@@ -962,13 +962,13 @@ Status: Accepted
 Decision:
 
 - three operational aspects are published through `flake.modules.nixos.{backups,builder-access,observability-agent}` (`modules/flake/aspects.nix`); selection is enablement — every host registry record imports all five foundation aspects plus all three operational aspects (eight aspects total) and no aspect imports another aspect
-- `backups` owns the host-egress capability: it imports `modules/services/state-backups.nix`, the upstream `inputs.niks3.nixosModules.niks3-auto-upload` module, `modules/shared/niks3-upload-client.nix`, and `modules/shared/niks3-post-deploy.nix`; it derives the conventional host secret path `secrets/hosts/${hostName}/system.yaml` and the `shrublab-backup-${hostName}` bucket, defaults `services.state-backups.secretFile` to the derived path, gates state-backups and post-deploy enablement on the file's existence (two-step sops bootstrap preserved on every host), and injects the required `services.niks3-post-deploy.filterPackage` per system via `withSystem` (no hidden `fleet-packages` dependency)
+- `backups` owns the host-egress capability: it imports `modules/services/state-backups.nix`, the upstream `inputs.niks3.nixosModules.niks3-auto-upload` module, `modules/shared/niks3-upload-client.nix`, and `modules/shared/niks3-post-deploy.nix`; it derives the conventional host secret path `secrets/hosts/${hostName}/system.yaml` and the `shrublab-backup-${hostName}` bucket, defaults `services.state-backups.secretFile` to the derived path, gates state-backups and post-deploy enablement on the file's existence (two-step sops bootstrap preserved on every host), and injects the required `services.niks3-post-deploy.filterPackage` per system via `withSystem` (no hidden `fleet-packages` dependency) (paths now `modules/cache/state-backups.nix` and `modules/cache/cache-publisher/{upload-client,post-deploy}.nix`)
 - `backups` asserts `services.notification-daemon.monitor.enable` via `lib.attrByPath` and never imports `notify`; `notify` owns monitor composition (canonical apprise contract) and the state-backups leaf no longer defaults `monitor.enable`
 - the existing `nix.settings.post-build-hook = lib.mkForce ""` is classified as currently necessary (OPS-6): upstream `niks3-auto-upload` sets the hook whenever enabled and has no separate hook-disable option, so the suppression is required while the activation-triggered post-deploy send reuses the upstream daemon/socket; no new `mkForce` is introduced
 - `builder-access` owns only nixbuild.net SSH trust (`programs.ssh.knownHosts.nixbuild` + `extraConfig`); substituter policy remains in the `base` aspect and the `fleet.nixbuild-ssh.enable` option is retired
-- `observability-agent` owns Beszel agent authentication and enrollment: it derives the conventional host secret path, sets `services.beszel-agent-auth.secretFiles.host` to it, and gates enrollment on the file's existence; the Beszel hub (`modules/services/admin/beszel.nix`) remains an admin-service leaf
+- `observability-agent` owns Beszel agent authentication and enrollment: it derives the conventional host secret path, sets `services.beszel-agent-auth.secretFiles.host` to it, and gates enrollment on the file's existence; the Beszel hub (`modules/services/admin/beszel.nix`) remains an admin-service leaf (hub file now `modules/admin/beszel.nix`; the agent-auth body is `modules/flake/observability-agent.nix`)
 - the five deferred leaves (`state-backups`, `niks3-upload-client`, `niks3-post-deploy`, `nixbuild-ssh`, `beszel-agent-auth`) are no longer imported directly by host records, and the registry no longer imports `inputs.niks3.nixosModules.niks3-auto-upload` (the `backups` aspect owns that import); OCI keeps the niks3 server module import (`inputs.niks3.nixosModules.niks3`) and its loopback cache endpoint
-- the OCI cache server (`modules/services/niks3.nix`) stays a leaf; `services/` and `shared/` remain temporarily excluded from import-tree discovery (`_unconverted-nixos-dirs.nix`) because both roots still contain unconverted leaves
+- the OCI cache server (`modules/services/niks3.nix`) stays a leaf; `services/` and `shared/` remain temporarily excluded from import-tree discovery (`_unconverted-nixos-dirs.nix`) because both roots still contain unconverted leaves (both exclusions are now removed — `shared` in Stage 5, `services` in the post-Stage-8 services-tree conversion — and the boundary file holds an empty list)
 - the transition analysis's "forge may never get builder access" note is superseded: all three hosts, including home-forge, select `builder-access`
 
 Rationale:
@@ -1056,10 +1056,10 @@ Decision:
 
 - the music application converts from the directly host-imported evaluator-class coordinator `modules/applications/music/default.nix` (deleted with its `files/` directory) into the discovered top-level contributor `modules/flake/music.nix`, which publishes `flake.modules.nixos.music`; selecting the aspect is its top-level enablement (`applications.music.enable = true`), and only `home-forge` selects `aspects.music` in `modules/flake/registry.nix`; `music` and `dj` remain separately selected aspects and neither imports or enables the other
 - the aspect keeps composition ownership only: the public `applications.music.*` options (`enable`, `dataRoot`, `storageRoot`, `syncthingDevices`, `syncthingFolders`, `audiomuse.*`, `navidrome.enable`, `secretFiles.host`, `slskdDomain`, `configFiles`) plus the read-only `contract`, `mediaPaths` derivation, secret-file passthrough with the required-secret assertion, service selection/wiring for Syncthing/Navidrome/AudioMuse/Beets/slskd/Tagr, runner-instance selection, backup policy contracts, `users.users.dev.extraGroups`, `programs.zsh.shellAliases.b`, and the success-chain intent (`services.beets.onSuccessUnits`, `services.beets.importReadyFlag`, `services.musicIngest.onSuccessUnit`)
-- concrete implementation ownership moves into private leaves under `modules/services/music/**`, imported only by `modules/flake/music.nix`, publishing no aspects, and never host-imported: the Beets owner (`modules/services/music/beets/default.nix`) owns the Beets SOPS secrets/templates, the read-only `services.beets.renderedConfigFiles.{standard,quarantine}` interface (option declaration and value outside the secret-file gate), the four operator CLIs (`beets-interactive`, `beets-dupes`, `beets-merge-splits`, `beets-prune-empty`), the moved config assets (`modules/services/music/beets/files/beets-{config,quarantine-config}.yaml`), and its own Beets-state tmpfiles; the new private ingest leaf (`modules/services/music/ingest.nix`, options `services.musicIngest`) owns `ffmpeg-preprocess` plus the dropbox path/poke/settle units, the slskd completion hook, and the scoped slskd-settle polkit rule (`modules/services/music/files/ffmpeg-preprocess.sh`); the new private storage leaf (`modules/services/music/storage.nix`, options `services.musicStorage`) owns the `music-ingest` (990) and `media` (987) GIDs, the media root/layout tmpfiles and ACL rules, `media-permission-reconcile`, and the `media-fixperms` CLI; `modules/services/music/beets/runners.nix` is unchanged
+- concrete implementation ownership moves into private leaves under `modules/services/music/**`, imported only by `modules/flake/music.nix`, publishing no aspects, and never host-imported: the Beets owner (`modules/services/music/beets/default.nix`) owns the Beets SOPS secrets/templates, the read-only `services.beets.renderedConfigFiles.{standard,quarantine}` interface (option declaration and value outside the secret-file gate), the four operator CLIs (`beets-interactive`, `beets-dupes`, `beets-merge-splits`, `beets-prune-empty`), the moved config assets (`modules/services/music/beets/files/beets-{config,quarantine-config}.yaml`), and its own Beets-state tmpfiles; the new private ingest leaf (`modules/services/music/ingest.nix`, options `services.musicIngest`) owns `ffmpeg-preprocess` plus the dropbox path/poke/settle units, the slskd completion hook, and the scoped slskd-settle polkit rule (`modules/services/music/files/ffmpeg-preprocess.sh`); the new private storage leaf (`modules/services/music/storage.nix`, options `services.musicStorage`) owns the `music-ingest` (990) and `media` (987) GIDs, the media root/layout tmpfiles and ACL rules, `media-permission-reconcile`, and the `media-fixperms` CLI; `modules/services/music/beets/runners.nix` is unchanged (paths now `modules/music/{beets,ingest,storage}.nix` with `modules/music/_beets/runners.nix`; every leaf is a discovered contributor since the post-Stage-8 conversion)
 - the composition exposes the read-only typed `applications.music.contract.{storageRoot,libraryDir,playlistsDir}`; `dj` consumes it with `config.applications.music.contract or null`, keeps `applications.dj.engine.{sharePath,musicStorageRoot}` typed `lib.types.str` with contract-derived `""`-safe defaults (never `nullOr`), and enforces one named assertion (`musicContract != null || (sharePath != "" && musicStorageRoot != "")`, active only when the engine is enabled), so DJ without music is permitted only with both explicit values and otherwise fails the named assertion; `home-forge` drops the duplicate DJ root/share literals and keeps only `enable`, `traktorStateDir`, and `secretFiles.navidrome`
 - behavior is frozen for the conversion: every public option namespace, path, unit name, timer, script, ACL, secret key/path/owner/mode, package name, backup path, and the playlist/Traktor worker logic/input is unchanged; worker adoption of `contract.libraryDir`/`contract.playlistsDir` inside the Engine export job paths is deferred
-- the four-root import-tree filter stays exactly `applications`, `hosts`, `providers`, `services` (`modules/flake/_unconverted-nixos-dirs.nix`), so the private music leaves remain reachable only through the discovered music owner. This does not make `services` permanent; the retirement criterion for the transitional `services` root is that when `modules/services/` is scheduled for conversion these leaves either move beside the music contributor under a concern-owned underscore path (`modules/flake/_music/**`) or become top-level contributors if they gain independent placement
+- the four-root import-tree filter stays exactly `applications`, `hosts`, `providers`, `services` (`modules/flake/_unconverted-nixos-dirs.nix`), so the private music leaves remain reachable only through the discovered music owner. This does not make `services` permanent; the retirement criterion for the transitional `services` root is that when `modules/services/` is scheduled for conversion these leaves either move beside the music contributor under a concern-owned underscore path (`modules/flake/_music/**`) or become top-level contributors if they gain independent placement (the filter is now empty; the retirement criterion was discharged by the post-Stage-8 services-tree conversion, and the music leaves became discovered contributors under `modules/music/` rather than an underscore path)
 - no secret bootstrap change: no `secrets/**`, `.sops.yaml`, key, ciphertext, or SOPS recipient edit is part of this conversion; the change is implementation-complete but not deployed and not archived
 
 Rationale:
@@ -1137,7 +1137,7 @@ Status: Accepted
 
 Decision:
 
-- the combined `backups` aspect is deleted with no compatibility bundle; restic mutable-state recovery and Niks3 closure publication are separate placement aspects: `state-backups` (owns `modules/services/state-backups.nix`, the derived `shrublab-backup-<host>` bucket convention, and the host secret gate for restic) and `cache-publisher` (owns the upstream `niks3-auto-upload` module import, the private upload-client and post-deploy leaves, the typed `withSystem` `nix-path-filter` injection, and the host secret gate for publication)
+- the combined `backups` aspect is deleted with no compatibility bundle; restic mutable-state recovery and Niks3 closure publication are separate placement aspects: `state-backups` (owns `modules/services/state-backups.nix`, the derived `shrublab-backup-<host>` bucket convention, and the host secret gate for restic) and `cache-publisher` (owns the upstream `niks3-auto-upload` module import, the private upload-client and post-deploy leaves, the typed `withSystem` `nix-path-filter` injection, and the host secret gate for publication) (paths now `modules/cache/state-backups.nix` and `modules/cache/cache-publisher/`, whose siblings `upload-client.nix` and `post-deploy.nix` replaced the private leaves)
 - both aspects derive their own `hasHostSecrets` gate from the conventional `secrets/hosts/<host>/system.yaml` path (two-step sops bootstrap preserved per capability) and assert the notify-owned `services.notification-daemon.monitor.enable` option without importing `notify` (D-049 monitoring convention)
 - all three hosts co-select `aspects.state-backups` and `aspects.cache-publisher` explicitly in the registry; neither aspect imports the other and no sibling public-aspect import exists
 - the private Niks3 leaves stay beside their owner under `modules/flake/_backups/` per D-051 — this change performs no source-folder relocation
@@ -1206,7 +1206,7 @@ Status: Accepted
 
 Decision:
 
-- PostgreSQL support is split into three layers. The mechanism (`modules/services/postgres.nix`) renders provisioning from an instance declaration and a consumer registry and names no consumer and no instance; an instance is a placement aspect that imports the mechanism, with port and data directory declared by the host that runs the cluster; a consumer registers the database, role, credential, extensions, and setup SQL it needs from its own module
+- PostgreSQL support is split into three layers. The mechanism (`modules/services/postgres.nix`) renders provisioning from an instance declaration and a consumer registry and names no consumer and no instance; an instance is a placement aspect that imports the mechanism, with port and data directory declared by the host that runs the cluster; a consumer registers the database, role, credential, extensions, and setup SQL it needs from its own module (the mechanism is now `modules/database/postgres.nix` with the declaration-only contract `modules/database/postgres/_consumer.nix`, published as the `postgres` aspect from that same file)
 - the shape follows the registrations already established in the fleet — `services.state-backups.services.<name>` and `services.notification-daemon.monitor.units.<unit>` — so a shared capability never holds a participant list
 - registrations are keyed by consumer name, not by instance: the native NixOS `services.postgresql` runtime is single-cluster, so a host runs at most one cluster (a named error rather than an assumption), `instances.<name>` names that cluster for the internal contract, and a consumer stays instance-free
 - a consumer's credential is part of its registration (`password = { file, key }`), which makes one file and one key authoritative for both the provider that provisions the role and the consumer that authenticates. There is no separate provider-side secret-file option, and the previously hand-synced pair for a cross-host consumer is gone

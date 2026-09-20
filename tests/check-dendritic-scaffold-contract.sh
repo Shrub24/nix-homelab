@@ -88,7 +88,7 @@ test -f "$LIST_FILE" || fail "$LIST_FILE missing (Stage 1 boundary)"
 # `services`: every leaf became a discovered aspect file, a sibling
 # contributor of its owner aspect, or an underscore-private helper, and the
 # PostgreSQL mechanism became the aspect pair
-# modules/database/postgres{,_consumer.nix}. This exact empty equality is the
+# modules/database/postgres.nix + postgres/_consumer.nix. This exact empty equality is the
 # future-work guard: the boundary may not grow again; re-add an entry only
 # when a genuinely transitional plain-module directory appears.
 actual="$(unconverted_roots "$ROOT")"
@@ -503,7 +503,7 @@ host_aspects() { # $1 repo root, $2 host -> sorted selected aspect names
   registry_selections "$1" | awk -v h="$2" '$1 == h { print $2 }' | LC_ALL=C sort -u
 }
 host_leaf_imports_of() { # $1 dir
-  grep -RnE --include='*.nix' 'modules/((cache/state-backups|flake/observability-agent)|(cache/_backups/(niks3-upload-client|niks3-post-deploy)|flake/_builder-access/nixbuild-ssh))\.nix' "$1/modules/hosts" || true
+  grep -RnE --include='*.nix' 'modules/((cache/state-backups|flake/observability-agent)|(cache/cache-publisher/(upload-client|post-deploy)|flake/builder-access))\.nix' "$1/modules/hosts" || true
 }
 
 # 7a. Exactly thirty-five publications are discovered across the distributed
@@ -561,12 +561,15 @@ fi
 if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.cli|_aspects/cli|aspects\.cli' modules; then
 fail "the deleted cli aspect must not be resurrected"
 fi
-# Underscore-private implementation leaves are not auto-discovered (import-tree
+# Underscore paths are the escape hatch for genuinely private helper/data
+# files, not the way features are defined: after the underscore-dir conversion
+# the only remaining underscore *directory* under modules/ is the beets runner
+# helper. Underscore-private Nix files are not auto-discovered (import-tree
 # underscore semantics, proven by the successful flake evals below) and must
 # not smuggle a publication past discovery. Owner assertions stay where they
-# are semantically meaningful: typed base facts (7c) and the shell leaf + p10k
-# data (7g). No exact private-filename inventory is pinned.
-for priv in modules/flake/_aspects modules/flake/_builder-access modules/edge/_edge modules/oci/_oci modules/cache/_backups modules/music/_dj; do
+# are semantically meaningful: typed base facts (7c) and the p10k data asset
+# (7g). No exact private-filename inventory is pinned.
+for priv in modules/music/_beets; do
   test -d "$priv" || fail "private implementation dir $priv missing"
   if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$priv"; then
     fail "underscore-private paths must not publish flake.modules.nixos aspects ($priv)"
@@ -667,11 +670,11 @@ done)"
 # 7c. Typed base facts: enum bootLoader ("grub" | "systemd-boot") and a
 # required string buildTmpfsSize, rendered by the base aspect without a
 # per-host mkForce override anywhere in the tree.
-grep -q 'type = lib.types.enum' modules/flake/_aspects/base.nix || fail "bootLoader fact must be a typed enum"
-grep -q '"grub"' modules/flake/_aspects/base.nix || fail "bootLoader enum must accept grub"
-grep -q '"systemd-boot"' modules/flake/_aspects/base.nix || fail "bootLoader enum must accept systemd-boot"
-grep -q 'buildTmpfsSize = lib.mkOption' modules/flake/_aspects/base.nix || fail "buildTmpfsSize fact option missing"
-grep -q 'type = lib.types.str;' modules/flake/_aspects/base.nix || fail "buildTmpfsSize fact must be a typed string"
+grep -q 'type = lib.types.enum' modules/flake/base/foundation.nix || fail "bootLoader fact must be a typed enum"
+grep -q '"grub"' modules/flake/base/foundation.nix || fail "bootLoader enum must accept grub"
+grep -q '"systemd-boot"' modules/flake/base/foundation.nix || fail "bootLoader enum must accept systemd-boot"
+grep -q 'buildTmpfsSize = lib.mkOption' modules/flake/base/foundation.nix || fail "buildTmpfsSize fact option missing"
+grep -q 'type = lib.types.str;' modules/flake/base/foundation.nix || fail "buildTmpfsSize fact must be a typed string"
 if grep -RnE --include='*.nix' 'mkForce' modules | grep -E 'boot\.loader|fileSystems|"/build"|fleet\.foundation|services\.tailscale|notification-daemon|tailscale_auth|debugMtu|authKeyFile'; then
 fail "foundation-owned options must not be overridden with mkForce"
 fi
@@ -837,22 +840,22 @@ fi
 # (OPS-9, check 1).
 for leaf in \
   modules/cache/state-backups.nix \
-  modules/cache/_backups/niks3-upload-client.nix \
-  modules/cache/_backups/niks3-post-deploy.nix \
-  modules/flake/_builder-access/nixbuild-ssh.nix \
+  modules/cache/cache-publisher/upload-client.nix \
+  modules/cache/cache-publisher/post-deploy.nix \
+  modules/flake/builder-access.nix \
   modules/flake/observability-agent.nix; do
   test -f "$leaf" || fail "operational leaf $leaf missing"
 done
 grep -q 'options.services.state-backups' modules/cache/state-backups.nix || fail "state-backups aspect must own the state-backups implementation body"
-# Word-boundary on `_backups` keeps the check meaningful now that the
+# Word-boundary on `_backups`/`niks3` keeps the check meaningful now that the
 # implementation body lives in this file: `state_backups_*` secret identifiers
-# are not the `_backups` publication leaves.
+# are not the cache-publisher publication contributors.
 if grep -qE '_backups\b|niks3' modules/cache/state-backups.nix; then
   fail "state-backups aspect must own no Niks3 upload/publication surface"
 fi
-grep -q './_backups/niks3-upload-client.nix' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must import the niks3-upload-client leaf"
-grep -q './_backups/niks3-post-deploy.nix' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must import the niks3-post-deploy leaf"
-grep -q './_builder-access/nixbuild-ssh.nix' modules/flake/builder-access.nix || fail "builder-access aspect must import the nixbuild-ssh leaf"
+grep -qE '^[[:space:]]*flake\.modules\.nixos\.cache-publisher[[:space:]]*=' modules/cache/cache-publisher/upload-client.nix || fail "the upload-client contributor must publish the cache-publisher aspect"
+grep -qE '^[[:space:]]*flake\.modules\.nixos\.cache-publisher[[:space:]]*=' modules/cache/cache-publisher/post-deploy.nix || fail "the post-deploy contributor must publish the cache-publisher aspect"
+grep -q 'programs.ssh.knownHosts.nixbuild' modules/flake/builder-access.nix || fail "builder-access aspect must own the nixbuild SSH trust"
 grep -q 'options\.services\.beszel-agent-auth' modules/flake/observability-agent.nix || fail "observability-agent aspect must own the beszel-agent-auth implementation body"
 grep -q 'inputs.niks3.nixosModules.niks3-auto-upload' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must import the upstream niks3-auto-upload module"
 # Narrowed to the exact upstream module import (S5-7): the relocated
@@ -872,15 +875,15 @@ fi
 if grep -RnE '^[^#]*fleet\.nixbuild-ssh' modules; then
   fail "the retired fleet.nixbuild-ssh option must be gone"
 fi
-grep -q 'filterPackage' modules/cache/_backups/niks3-post-deploy.nix || fail "post-deploy leaf must define the typed filterPackage option"
-grep -q 'type = lib.types.package' modules/cache/_backups/niks3-post-deploy.nix || fail "filterPackage must be a typed package option"
+grep -q 'filterPackage' modules/cache/cache-publisher/post-deploy.nix || fail "post-deploy contributor must define the typed filterPackage option"
+grep -q 'type = lib.types.package' modules/cache/cache-publisher/post-deploy.nix || fail "filterPackage must be a typed package option"
 grep -q 'filterPackage = packages.nix-path-filter' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must inject nix-path-filter into post-deploy"
-if grep -nE '^[^#]*config\.repo\.packages' modules/cache/_backups/niks3-post-deploy.nix; then
-  fail "post-deploy leaf must not read config.repo.packages (no hidden fleet-packages dependency)"
+if grep -nE '^[^#]*config\.repo\.packages' modules/cache/cache-publisher/post-deploy.nix; then
+  fail "post-deploy contributor must not read config.repo.packages (no hidden fleet-packages dependency)"
 fi
 grep -q 'inputs.nix-index-database.nixosModules.nix-index' modules/flake/shell.nix || fail "shell aspect must import the nix-index-database module"
-test -f modules/flake/_aspects/p10k.zsh || fail "p10k data must live with the private shell implementation"
-grep -q 'builtins.readFile ./p10k.zsh' modules/flake/_aspects/shell.nix || fail "shell aspect must render the p10k data file"
+test -f modules/flake/shell/p10k.zsh || fail "p10k data must live with the shell aspect that renders it"
+grep -q 'builtins.readFile ./shell/p10k.zsh' modules/flake/shell.nix || fail "shell aspect must render its p10k data file"
 
 # 7g-2. Identity is the multi-contributor single-aspect merge (S5-5): two
 # discovered top-level contributors each nest their body directly inside the
@@ -1097,8 +1100,8 @@ PY
 # regression (aspect unpublished, selection dropped, leaf re-imported by a
 # host) on a throwaway copy. The publication tamper targets one distributed
 # contributor (state-backups.nix). The re-import anchors on a host import line
-# that survives the backup split and inserts a relocated private leaf path so
-# host_leaf_imports_of is exercised.
+# that survives the backup split and inserts a relocated operational
+# contributor path so host_leaf_imports_of is exercised.
 D="$(make_copy)"
 sed -i 's/flake.modules.nixos.state-backups =/flake.modules.nixos.state-backups-tampered =/' "$D/modules/cache/state-backups.nix"
 # Stage 8 HIC-1/HIC-2: selections live in the host records, so the tamper
@@ -1106,7 +1109,7 @@ sed -i 's/flake.modules.nixos.state-backups =/flake.modules.nixos.state-backups-
 for h in oci-melb-1 la-admin-1 home-forge; do
   sed -i '/aspects.state-backups/d' "$D/modules/hosts/$h/default.nix"
 done
-sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/cache/_backups/niks3-post-deploy.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
+sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/cache/cache-publisher/post-deploy.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
 [ "$(pub_names_of "$D")" != "$expected_pub" ] ||
 fail "7a publication check must detect an unpublished state-backups aspect"
 [ "$(host_aspects "$D" oci-melb-1)" != "$oci_sel" ] ||
@@ -1152,21 +1155,24 @@ sed -i '/applications\.dj\.enable = true;/d' "$D/modules/music/dj.nix"
 [ "$(dj_enabled "$D" home-forge)" = false ] ||
   fail "7k-1: forge must fail the DJ enablement contract when the selected dj aspect does not set applications.dj.enable"
 
-# 7k-2. Removing one distributed required contributor is detected by the
+# 7k-2. Removing a publication's distributed contributor is detected by the
 # publication inventory (there is no central publication file to fall back on).
+# The target is an aspect whose publication is carried by a single distributed
+# contributor: an aspect with several contributors keeps publishing when one is
+# removed, which is the deferredModule merge doing its job.
 D="$(make_copy)"
-rm "$D/modules/flake/base.nix"
+rm "$D/modules/flake/networking.nix"
 [ "$(pub_names_of "$D")" != "$expected_pub" ] ||
   fail "7k-2: publication discovery must detect a deleted distributed contributor"
 
 # 7k-3. A new direct public-aspect import without intrinsic justification is
 # rejected by the 7b-2 scanner, and the same import with the marker is allowed.
 D="$(make_copy)"
-printf '\n  flake.modules.nixos.base = { imports = [ aspects.notify ]; };\n' >>"$D/modules/flake/base.nix"
-[ -n "$(unjustified_aspect_refs_of "$D/modules/flake/base.nix")" ] ||
+printf '\n  flake.modules.nixos.base = { imports = [ aspects.notify ]; };\n' >>"$D/modules/flake/base/foundation.nix"
+[ -n "$(unjustified_aspect_refs_of "$D/modules/flake/base/foundation.nix")" ] ||
   fail "7k-3: scanner must reject a direct public-aspect import without intrinsic justification"
-printf '  # intrinsic composition: base requires notify placement\n' >>"$D/modules/flake/base.nix"
-[ -z "$(unjustified_aspect_refs_of "$D/modules/flake/base.nix")" ] ||
+printf '  # intrinsic composition: base requires notify placement\n' >>"$D/modules/flake/base/foundation.nix"
+[ -z "$(unjustified_aspect_refs_of "$D/modules/flake/base/foundation.nix")" ] ||
   fail "7k-3: scanner must accept a direct public-aspect import with adjacent intrinsic justification"
 
 # 7l. Stage 5 semantic negative mutations (S5-6, S5-7). Each runs against a
@@ -1198,9 +1204,9 @@ sed -i 's/^\[ \]$/[ "core" ]/' "$D/modules/flake/_unconverted-nixos-dirs.nix"
 # smuggled into an underscore-private path is caught by the 7a private-owner scan
 # (same grep the working tree uses), and is invisible to discovery.
 D="$(make_copy)"
-printf '\n  flake.modules.nixos.evil-pub = { };\n' >>"$D/modules/cache/_backups/niks3-upload-client.nix"
-grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$D/modules/cache/_backups" >/dev/null ||
-  fail "7l-3: private-owner scan must reject a publication under _backups"
+printf '\n  flake.modules.nixos.evil-pub = { };\n' >>"$D/modules/music/_beets/runners.nix"
+grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$D/modules/music/_beets" >/dev/null ||
+  fail "7l-3: private-owner scan must reject a publication under the underscore helper dir"
 case "$(pub_names_of "$D")" in
   *evil-pub*) fail "7l-3: an underscore-private publication must not be discovered" ;;
 esac
@@ -1212,7 +1218,7 @@ esac
 # contributor) — both anchored on a line that survives this change, so the
 # checks are exercised non-vacuously.
 D="$(make_copy)"
-sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/cache/_backups/niks3-post-deploy.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
+sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/cache/cache-publisher/post-deploy.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
 [ -n "$(host_leaf_imports_of "$D")" ] ||
   fail "7l-4: host_leaf_imports_of must detect a directly re-imported relocated leaf"
 sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/identity/identity-oidc.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
@@ -1606,7 +1612,7 @@ placement_dir_of() {
     edge) echo modules/edge ;;
     oci) echo modules/oci ;;
     cockpit | termix | vaultwarden | gatus | beszel | homepage | webhook) echo modules/admin ;;
-    postgres) echo modules/database/postgres ;;
+    postgres) echo modules/database ;;
     *) echo modules/flake ;;
   esac
 }
@@ -1617,15 +1623,17 @@ for a in $placement_aspects; do
   grep -qE "^[[:space:]]*flake\.modules\.nixos\.${a}[[:space:]]*=" "$a_dir/$a.nix" ||
     fail "7n: $a_dir/$a.nix must publish flake.modules.nixos.$a"
 done
-# Private implementations live beside their concern owner (S7-3/S7-4/S7-5) and
-# are reachable only through it.
-test -f modules/oci/_oci/default.nix || fail "7n: relocated OCI provider leaf missing"
-test -f modules/edge/_edge/edge-ingress.nix || fail "7n: relocated edge-ingress implementation missing"
-test -f modules/music/_dj/default.nix || fail "7n: relocated DJ composition missing"
-test -f modules/music/_dj/engine-dj.nix || fail "7n: relocated DJ engine implementation missing"
-grep -q '\./_oci/default\.nix' modules/oci/oci.nix || fail "7n: the oci aspect must import its private leaf"
-grep -q '\./_edge/edge-ingress\.nix' modules/edge/edge.nix || fail "7n: the edge aspect must import its private leaf"
-grep -q '\./_dj' modules/music/dj.nix || fail "7n: the dj aspect must import its private leaf"
+# Implementations live beside their concern owner as sibling contributors of
+# the same publication (S7-3/S7-4/S7-5): the host selects the aspect name, and
+# the deferredModule merge composes the contributors, so no private leaf and no
+# cross-file import remains.
+grep -q 'boot.kernelParams = \[ "console=ttyAMA0,115200n8" \]' modules/oci/oci.nix || fail "7n: the OCI provider defaults must be nested in the oci publication"
+grep -qE '^[[:space:]]*flake\.modules\.nixos\.edge[[:space:]]*=' modules/edge/edge-ingress-application.nix || fail "7n: edge-ingress application contributor missing"
+grep -qE '^[[:space:]]*flake\.modules\.nixos\.dj[[:space:]]*=' modules/music/dj-engine.nix || fail "7n: DJ engine contributor missing"
+grep -qE '^[[:space:]]*flake\.modules\.nixos\.dj[[:space:]]*=' modules/music/windows-vm.nix || fail "7n: DJ Windows VM contributor missing"
+if grep -RnE --include='*.nix' '(_oci|_edge|_dj|_aspects|_backups|_builder-access)/' modules; then
+  fail "7n: the converted underscore module-body directories must stay gone"
+fi
 # Ownership is asserted on import *expressions*, not on prose: current-state docs and
 # comments legitimately name these paths (e.g. the consumers note in
 # modules/music/windows-vm.nix), while a real import from another
@@ -1863,36 +1871,40 @@ if "podman-prune" in got["monitorUnits"]:
     raise SystemExit(f"unselected host activated the aspect: {got['monitorUnits']!r}")
 PYEOF
 
-# 7n-3f. A publication smuggled into an underscore-private leaf is rejected by
-# the private-owner scan and stays invisible to discovery.
+# 7n-3f. A publication smuggled into an underscore-private data file is rejected
+# by the private-owner scan and stays invisible to discovery.
 D="$(make_copy)"
-printf '\n  flake.modules.nixos.evil-edge = { };\n' >>"$D/modules/edge/_edge/edge-ingress.nix"
-grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$D/modules/edge/_edge" >/dev/null ||
-  fail "7n-3f: the private-owner scan must reject a publication under _edge"
+printf '\n  flake.modules.nixos.evil-edge = { };\n' >>"$D/modules/admin/homepage/_data.nix"
+grep -RnE --include='*.nix' 'flake\.modules\.nixos\.[a-z0-9-]+[[:space:]]*=' "$D/modules/admin/homepage/_data.nix" >/dev/null ||
+  fail "7n-3f: the private-owner scan must reject a publication under an underscore-private path"
 case "$(pub_names_of "$D")" in
   *evil-edge*) fail "7n-3f: an underscore-private publication must not be discovered" ;;
 esac
 
-# 7n-3f-2. Both import-form ownership predicates still fire on a real import of a
-# private leaf from another concern, so narrowing them away from prose (which must
-# be allowed to name these paths) did not make them vacuous.
+# 7n-3f-2. The converted sibling contributors are reached by discovery only: an
+# import-form reference to one from outside its own concern is rejected. The
+# predicate is anchored on import expressions, not on prose (7n-3f-3), and the
+# mutation below proves it still fires.
+sibling_contributor_imports() { # $1 repo root
+  grep -REl --include='*.nix' \
+    -e '\./(dj-engine|windows-vm|edge-ingress-application|edge-ingress-runtime|upload-client|post-deploy|foundation|host-recovery)\.nix' \
+    "$1/modules" 2>/dev/null |
+    grep -vE "^$1/modules/(music|edge|cache/cache-publisher|flake/base)/" || true
+}
+[ -z "$(sibling_contributor_imports "$ROOT")" ] ||
+  fail "7n-3f-2: sibling contributors must be reached by discovery only"
 D="$(make_copy)"
-printf '\n  imports = [\n    ./_dj\n    ./_oci/default.nix\n  ];\n' >>"$D/modules/flake/phoenix.nix"
-[ -n "$(grep -REl --include='*.nix' -e '\./_dj([^a-zA-Z0-9_-]|$)' -e '_dj/default\.nix' -e '_dj/engine-dj\.nix' "$D/modules" |
-  grep -vE "^$D/modules/music/(dj\.nix|_dj/)" || true)" ] ||
-  fail "7n-3f-2: the _dj ownership predicate must detect an import from another concern"
-[ -n "$(grep -REl --include='*.nix' -e '_oci/default\.nix' -e '_edge/edge-ingress\.nix' "$D/modules" |
-  grep -vE "^$D/modules/(oci/oci|edge/edge)\.nix\$" || true)" ] ||
-  fail "7n-3f-2: the _oci/_edge ownership predicate must detect an import from another concern"
+printf '\n  imports = [ ./dj-engine.nix ];\n' >>"$D/modules/flake/phoenix.nix"
+[ -n "$(sibling_contributor_imports "$D")" ] ||
+  fail "7n-3f-2: the sibling-contributor predicate must detect an import from another concern"
 
-# 7n-3f-3. A prose reference to a private path outside an import list is allowed
-# (current-state docs and consumer comments legitimately name them), while the
-# import-form predicate above still rejects real imports.
+# 7n-3f-3. A prose reference to a contributor path outside an import list is
+# allowed (current-state docs and consumer comments legitimately name them),
+# while the import-form predicate above still rejects real imports.
 D="$(make_copy)"
-printf '\n# consumers (e.g. modules/music/_dj) are documented here\n' >>"$D/modules/flake/phoenix.nix"
-[ -z "$(grep -REl --include='*.nix' -e '\./_dj([^a-zA-Z0-9_-]|$)' -e '_dj/default\.nix' -e '_dj/engine-dj\.nix' "$D/modules" |
-  grep -vE "^$D/modules/music/(dj\.nix|_dj/)" || true)" ] ||
-  fail "7n-3f-3: a prose mention of a private path must not be treated as an import"
+printf '\n# the dj engine contributor lives at modules/music/dj-engine.nix\n' >>"$D/modules/flake/phoenix.nix"
+[ -z "$(sibling_contributor_imports "$D")" ] ||
+  fail "7n-3f-3: a prose mention of a contributor path must not be treated as an import"
 
 # 7n-3g. A reintroduced compatibility root is rejected even when the boundary
 # list is widened to hide it.

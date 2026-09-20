@@ -111,7 +111,7 @@
         ) consumers;
     in
     {
-      imports = [ ./_consumer.nix ];
+      imports = [ ./postgres/_consumer.nix ];
 
       # Single unconditional definition: this is a projection of the host's own
       # declaration, read by co-located consumers, and it exists even when the

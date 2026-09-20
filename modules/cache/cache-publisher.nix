@@ -1,8 +1,9 @@
 # Operational aspect (split-state-backups-cache-publication, OPSPLIT-1).
 # Cache publication: the Niks3 closure-upload capability only. Selection is
-# enablement; the aspect imports the upstream niks3-auto-upload module
-# itself, the private upload-client/post-deploy leaves, and injects the
-# nix-path-filter package per system via withSystem, so it has no hidden
+# enablement; the aspect imports the upstream niks3-auto-upload module itself,
+# injects the nix-path-filter package per system via withSystem, and owns the
+# enablement that its sibling contributors (./cache-publisher/upload-client.nix
+# and ./cache-publisher/post-deploy.nix) render, so it has no hidden
 # fleet-packages dependency. It owns no restic state recovery; mutable
 # state backups are owned by the separate state-backups aspect.
 { inputs, withSystem, ... }:
@@ -25,11 +26,7 @@
       );
     in
     {
-      imports = [
-        inputs.niks3.nixosModules.niks3-auto-upload
-        ./_backups/niks3-upload-client.nix
-        ./_backups/niks3-post-deploy.nix
-      ];
+      imports = [ inputs.niks3.nixosModules.niks3-auto-upload ];
 
       # Closure publication activates only when the conventional host secret
       # exists (OPS-3); the client leaf gates itself on the same path.

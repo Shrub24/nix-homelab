@@ -4,7 +4,9 @@
 # aspect supplies `applications."edge-ingress".enable`, so no host repeats the
 # top-level enable.
 #
-# The edge-role projection from canonical web policy (S7-7) lives here because
+# The ingress application implementation is a sibling contributor of the same
+# publication (./edge-ingress-application.nix); this file keeps the edge-role
+# projection from canonical web policy (S7-7) because
 # it is pure projection of the selected capability: routes, primary domain,
 # ACME identity, and Authenticated Origin Pulls are derived from
 # `policy/web-services.nix` and the repo CA certificate. The read stays one-way
@@ -47,8 +49,6 @@
       isEdge = cfg.role == "edge";
     in
     {
-      imports = [ ./_edge/edge-ingress.nix ];
-
       # Selecting this aspect is the capability's top-level enablement. The
       # host sets `role` and keeps the application-scoped secret binding.
       applications."edge-ingress" = lib.mkMerge [

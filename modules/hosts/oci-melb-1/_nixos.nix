@@ -71,8 +71,8 @@ in
         docling.enable = false;
         instances.llm = {
           enable = true;
-          environment.LLM_MODEL = globals.aiGateway.aliases.text;
-          environment.VISION_LLM_MODEL = globals.aiGateway.aliases.image;
+          environment.LLM_MODEL = globals.bifrost.aliases.text;
+          environment.VISION_LLM_MODEL = globals.bifrost.aliases.image;
         };
         instances.docling.enable = false;
       };
@@ -96,7 +96,7 @@ in
 
     bifrost = {
       dataDir = "/srv/data/bifrost";
-      configFile = globals.aiGateway.configFile;
+      configFile = globals.bifrost.configFile;
       secretFiles.host = ../../../secrets/services/bifrost.yaml;
     };
 
@@ -110,6 +110,10 @@ in
       storage.s3.enable = true;
       secretFiles.host = ../../../secrets/services/karakeep-pod.yaml;
       secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
+    };
+
+    langfuse = {
+      secretFiles.host = ../../../secrets/services/langfuse.yaml;
     };
 
     tailscale.debugMtu = 1200;

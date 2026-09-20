@@ -550,7 +550,7 @@ import json, sys
 got = json.loads(sys.argv[1])
 expected = {
     "vaultEnable": True,
-    "vaultDomain": "https://vaultwarden.shrublab.xyz",
+    "vaultDomain": "https://vault.shrublab.xyz",
     "vaultDataFolder": "/srv/data/vaultwarden",
     "vaultDataDir": "/srv/data/vaultwarden",
     "vaultRocketAddress": "0.0.0.0",
@@ -1122,7 +1122,7 @@ python3 - <<'PYEOF' || fail "host-record selection pins drifted"
 pins = {
     "modules/hosts/oci-melb-1/default.nix": [
         "oci", "ingress", "cockpit", "paperless", "postgres",
-        "bifrost", "karakeep", "niks3-cache", "phoenix",
+        "bifrost", "karakeep", "niks3-cache", "langfuse",
     ],
     "modules/hosts/home-forge/default.nix": [
         "dj", "music", "omniroute",

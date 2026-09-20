@@ -28,4 +28,12 @@
   phoenix = "docker.io/arizephoenix/phoenix:latest@sha256:7eee4177732e6cba269f83071b869c5e37a86b47ba2ba8c6bef246273bee501d";
 
   omniroute = "ghcr.io/shrub24/omniroute:edge@sha256:a7c2cc4bb3852f2c67fdd5e7f2fb1b80042ee2d84b295648eaa67cb0ef8e53a9";
+
+  langfuse = "docker.langfuse.com/langfuse/langfuse:4.43.0@sha256:d6165b4ef72027c128c6132a4d87a4643945f6ba01f9cb5d6e4af7e5e3bf5316";
+
+  langfuseWorker = "docker.langfuse.com/langfuse/langfuse-worker:4.43.0@sha256:59be62f49978b656b27656cba7314097c6e9ca8d63ed6ef6f66394f6aaeede1b";
+
+  docsMcpServer = "ghcr.io/arabold/docs-mcp-server:3.1.0@sha256:5bf22439746680e064db7cd1979fc192f9733f312ab9ce1c98ea0e7aa453a1f7";
+
+  hindsight = "ghcr.io/vectorize-io/hindsight:0.10.0@sha256:3edcb6165cefdeaa6721dd0fce43cfd13b7a9c346ce0d2c5f4b4bf7bc3c8ac0b";
 }

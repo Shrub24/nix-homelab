@@ -14,7 +14,7 @@
 
 - [x] 3.1 `modules/identity/kanidm-host-auth.nix` publishes `flake.modules.nixos.kanidm-host-auth` and imports the projection fragment; options, defaults, `services.kanidm.*` wiring, and both assertions are unchanged.
 - [x] 3.2 Swap the selection in the host records: `la-admin-1` and `oci-melb-1` select `aspects.kanidm-host-auth`; both keep their existing `services.identity.hostAuth` bindings untouched.
-- [ ] 3.3 Prove no `identity-client` reference survives outside history: no occurrence in `modules/`, `tests/`, `policy/`, `lib/`, `scripts/`, `justfile`, or live documentation (archived changes and `docs/decisions.md` history are exempt and annotated separately).
+- [x] 3.3 Prove no `identity-client` reference survives outside history: no occurrence in `modules/`, `tests/`, `policy/`, `lib/`, `scripts/`, `justfile`, or live documentation (archived changes and `docs/decisions.md` history are exempt and annotated separately).
 
 ## 4. Consumers own their OIDC wiring
 
@@ -40,9 +40,9 @@
 
 ## 7. Documentation and decision record
 
-- [ ] 7.1 Record the decision (D-059): the boundary rule — deployment capabilities are aspects, shared contracts are intrinsic fragments or fleet policy, and secret readership stays an explicit per-deployment binding — plus this change's specifics (projection intrinsic, aspect rename, release-family helper, `mkOidcEndpoints` made real, dead mirror removed).
-- [ ] 7.2 Update live documentation: `ARCHITECTURE.md`, `STRUCTURE.md`, `docs/architecture.md`, `CONVENTIONS.md` (the boundary rule and the `_`-helper form), and the `AGENTS.md` architecture block if it names the retired aspect. Annotate `docs/decisions.md` history only.
-- [ ] 7.3 Ledger: record the per-client identity credential-file layout as a future, operator-owned item (relocation ergonomics; not coupled to this change), and note that the retired `identity-client` bundle is superseded rather than deprecated.
+- [x] 7.1 Record the decision (D-059): the boundary rule — deployment capabilities are aspects, shared contracts are intrinsic fragments or fleet policy, and secret readership stays an explicit per-deployment binding — plus this change's specifics (projection intrinsic, aspect rename, release-family helper, `mkOidcEndpoints` made real, dead mirror removed).
+- [x] 7.2 Update live documentation: `ARCHITECTURE.md`, `STRUCTURE.md`, `docs/architecture.md`, `CONVENTIONS.md` (the boundary rule and the `_`-helper form), and the `AGENTS.md` architecture block if it names the retired aspect. Annotate `docs/decisions.md` history only.
+- [x] 7.3 Ledger: record the per-client identity credential-file layout as a future, operator-owned item (relocation ergonomics; not coupled to this change), and note that the retired `identity-client` bundle is superseded rather than deprecated.
 
 ## 8. Validation
 

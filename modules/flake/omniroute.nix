@@ -28,6 +28,7 @@
       environmentFile = config.sops.templates."omniroute.environment".path;
     in
     {
+      imports = [ ../backups/_consumer.nix ];
       options.services.omniroute = {
         enable = lib.mkEnableOption "OmniRoute LLM router";
 

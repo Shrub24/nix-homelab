@@ -134,6 +134,7 @@
     in
     {
       imports = [
+        ../backups/_consumer.nix
       ];
 
       options.applications.dj = {

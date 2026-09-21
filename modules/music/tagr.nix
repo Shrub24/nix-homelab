@@ -16,6 +16,7 @@
       mediaGid = toString config.users.groups.media.gid;
     in
     {
+      imports = [ ../backups/_consumer.nix ];
       options.services.tagr = {
         enable = lib.mkEnableOption "Tagr manual metadata editor";
 

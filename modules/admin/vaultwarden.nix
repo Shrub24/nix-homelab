@@ -28,6 +28,7 @@
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
     in
     {
+      imports = [ ../backups/_consumer.nix ];
       options.services.admin.vaultwarden = {
         enable = lib.mkOption {
           type = lib.types.bool;
@@ -169,6 +170,8 @@
           systemd.tmpfiles.rules = [
             "d ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
             "z ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
+          ]
+          ++ lib.optionals config.services.state-backups.enable [
             # SQLite export parent: the export prepare command runs in the restic
             # backup unit as root, so the staging dir is root-owned 0700.
             "d ${builtins.dirOf vaultwardenExportFile} 0700 root root - -"
@@ -179,7 +182,7 @@
             serviceConfig.ReadWritePaths = [ cfg.dataDir ];
           };
 
-          services.state-backups.services.vaultwarden = {
+          services.state-backups.services.vaultwarden = lib.mkIf config.services.state-backups.enable {
             enable = true;
             mode = "export";
             paths = [ cfg.dataDir ];

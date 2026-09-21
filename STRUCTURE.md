@@ -94,9 +94,15 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **`modules/cache/`:**
 
-- Purpose: Cache/publication and mutable-state recovery domain
-- Contains: `cache-publisher.nix` (Niks3 closure publication: the upload client and post-deploy leaves published as siblings in `cache-publisher/`, the typed `nix-path-filter` injection, the host secret gate), `state-backups.nix` (restic mutable-state recovery, derived bucket, host secret gate), `niks3-cache.nix` (the OCI cache server capability, whose body carries the former cache-server leaf inline)
-- Key files: `modules/cache/cache-publisher.nix`, `modules/cache/state-backups.nix`, `modules/cache/cache-publisher/post-deploy.nix`
+- Purpose: Cache domain — closure publication and the cache server
+- Contains: `cache-publisher.nix` (Niks3 closure publication: the upload client and post-deploy leaves published as siblings in `cache-publisher/`, the typed `nix-path-filter` injection, the host secret gate), `niks3-cache.nix` (the OCI cache server capability, whose body carries the former cache-server leaf inline)
+- Key files: `modules/cache/cache-publisher.nix`, `modules/cache/cache-publisher/post-deploy.nix`, `modules/cache/niks3-cache.nix`
+
+**`modules/backups/`:**
+
+- Purpose: Mutable-state recovery domain — one capture mechanism with a shared declaration surface
+- Contains: `state-backups.nix` (the restic mechanism: capture job rendering, derived bucket, host secret gate, restore-staging helper) and `_consumer.nix` (declaration-only: the `services.state-backups.services.<name>` registry plus the capture settings a producer reads, imported by the mechanism and by every registering feature so registration does not require the aspect)
+- Key files: `modules/backups/state-backups.nix`, `modules/backups/_consumer.nix`
 
 **`modules/music/`:**
 
@@ -212,7 +218,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **Deploy Metadata:** `lib/deploy/hosts.nix`: Hostname, SSH user, system architecture, remote-build flag per host; `edgeHost` and `deployOrder` are the only physical deployment facts (serial order `la-admin-1` → `oci-melb-1`). Every referenced name must be a declared canonical host ID — `modules/flake/deploy.nix` fails closed with `deploy: unknown host reference …` otherwise
 
-**Core Logic:** `modules/`: domain aspect contributors with their sibling contributors (`modules/identity/`, `modules/notifications/`, `modules/cache/`, `modules/music/`, `modules/admin/`, `modules/edge/`, `modules/oci/`, `modules/database/`), fleet contracts (`modules/fleet/`), canonical host contributors (`modules/hosts/`), and flake materialization plus the fleet baseline (`modules/flake/`)
+**Core Logic:** `modules/`: domain aspect contributors with their sibling contributors (`modules/identity/`, `modules/notifications/`, `modules/cache/`, `modules/backups/`, `modules/music/`, `modules/admin/`, `modules/edge/`, `modules/oci/`, `modules/database/`), fleet contracts (`modules/fleet/`), canonical host contributors (`modules/hosts/`), and flake materialization plus the fleet baseline (`modules/flake/`)
 
 **Internal Contracts:** `modules/fleet/internal-contracts.nix`: the two typed cross-host transport contracts (shared PostgreSQL, private Niks3 write API) with provider ID, port, and resolved private endpoints; validated by `flake.internalContracts` and exercised by `tests/check-internal-contracts.sh`
 
@@ -266,7 +272,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **New service:** `modules/<domain>/<name>.nix` — leaf module with `enable` flag, `secretFiles.*` contracts, and `sops.secrets` ownership, publishing its own `flake.modules.nixos.<name>` aspect or joining an existing one. Use `lib/secrets.nix` helpers.
 
-**New foundation/operational aspect:** add a concern-owned contributor under `modules/flake/` (e.g. `base/foundation.nix`) or a domain directory (`modules/cache/state-backups.nix`) that publishes a `flake.modules.nixos.<name>` record and imports the contributor beside it (Stages 7 and the admin decoupling added the `oci`/`edge`/`cockpit`/`push-server`/`identity-provider`/`termix`/`vaultwarden`/`homepage`/`gatus`/`beszel`/`webhook`/`paperless`/`postgres`/`ai-gateway`/`karakeep`/`niks3-cache`/`phoenix`/`omniroute` placement aspects this way). Several contributors may define the same aspect name when a capability is composed from independent source files (the `identity-client` pattern); each contributor nests its own body inline with no wrapper or cross-contributor import. Host registry records select the aspect explicitly; selection is enablement. Aspect relationships follow the three composition modes (intrinsic composition, policy co-selection, optional integration); direct public-aspect imports require intrinsic-composition justification. No transitional root remains: every contributor is discovered, so no private implementation leaf is reachable only through a transition path.
+**New foundation/operational aspect:** add a concern-owned contributor under `modules/flake/` (e.g. `base/foundation.nix`) or a domain directory (`modules/backups/state-backups.nix`) that publishes a `flake.modules.nixos.<name>` record and imports the contributor beside it (Stages 7 and the admin decoupling added the `oci`/`edge`/`cockpit`/`push-server`/`identity-provider`/`termix`/`vaultwarden`/`homepage`/`gatus`/`beszel`/`webhook`/`paperless`/`postgres`/`ai-gateway`/`karakeep`/`niks3-cache`/`phoenix`/`omniroute` placement aspects this way). Several contributors may define the same aspect name when a capability is composed from independent source files (the `identity-client` pattern); each contributor nests its own body inline with no wrapper or cross-contributor import. Host registry records select the aspect explicitly; selection is enablement. Aspect relationships follow the three composition modes (intrinsic composition, policy co-selection, optional integration); direct public-aspect imports require intrinsic-composition justification. No transitional root remains: every contributor is discovered, so no private implementation leaf is reachable only through a transition path.
 
 **New provider:** add a discovered `modules/<provider>/<provider>.nix` aspect publishing `flake.modules.nixos.<provider>` with its private implementation under `modules/<provider>/_<provider>/` (the `oci` domain is the existing example), then select it in that provider's host record. Do not recreate `modules/providers/`.
 

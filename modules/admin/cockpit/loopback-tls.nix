@@ -25,6 +25,7 @@
       key = "${stateDir}/cockpit.key";
     in
     {
+      imports = [ ../../backups/_consumer.nix ];
       config = lib.mkIf (cfg.enable && loopbackTls.enable) {
         services.state-backups.services.cockpit-loopback-tls = {
           enable = true;

@@ -31,6 +31,7 @@
       environmentFile = config.sops.templates."bifrost.environment".path;
     in
     {
+      imports = [ ../backups/_consumer.nix ];
       options.services.bifrost-gateway = {
         enable = lib.mkEnableOption "Bifrost AI gateway";
 

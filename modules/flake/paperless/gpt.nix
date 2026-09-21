@@ -16,6 +16,7 @@
       hasDocling = cfg.docling.enable;
     in
     {
+      imports = [ ../../backups/_consumer.nix ];
       options.services.paperless.paperless-gpt = {
         docling = {
           enable = lib.mkEnableOption "the docling-serve OCR service shared across paperless-gpt instances";

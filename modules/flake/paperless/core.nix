@@ -64,6 +64,7 @@
       '';
     in
     {
+      imports = [ ../../backups/_consumer.nix ];
       options.services.paperless = {
         dataRoot = lib.mkOption {
           type = lib.types.str;

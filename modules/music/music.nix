@@ -140,6 +140,7 @@
 
     in
     {
+      imports = [ ../backups/_consumer.nix ];
 
       options.applications.music = {
         enable = lib.mkEnableOption "music application composition";

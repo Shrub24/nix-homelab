@@ -503,7 +503,7 @@ host_aspects() { # $1 repo root, $2 host -> sorted selected aspect names
   registry_selections "$1" | awk -v h="$2" '$1 == h { print $2 }' | LC_ALL=C sort -u
 }
 host_leaf_imports_of() { # $1 dir
-  grep -RnE --include='*.nix' 'modules/((cache/state-backups|flake/observability-agent)|(cache/cache-publisher/(upload-client|post-deploy)|flake/builder-access))\.nix' "$1/modules/hosts" || true
+  grep -RnE --include='*.nix' 'modules/((backups/state-backups|flake/observability-agent)|(cache/cache-publisher/(upload-client|post-deploy)|flake/builder-access))\.nix' "$1/modules/hosts" || true
 }
 
 # 7a. Exactly thirty-five publications are discovered across the distributed
@@ -837,18 +837,21 @@ fi
 # fleet-packages dependency). The services import-tree exclusion is unchanged
 # (OPS-9, check 1).
 for leaf in \
-  modules/cache/state-backups.nix \
+  modules/backups/state-backups.nix \
+  modules/backups/_consumer.nix \
   modules/cache/cache-publisher/upload-client.nix \
   modules/cache/cache-publisher/post-deploy.nix \
   modules/flake/builder-access.nix \
   modules/flake/observability-agent.nix; do
   test -f "$leaf" || fail "operational leaf $leaf missing"
 done
-grep -q 'options.services.state-backups' modules/cache/state-backups.nix || fail "state-backups aspect must own the state-backups implementation body"
+grep -q 'options.services.state-backups' modules/backups/_consumer.nix || fail "the declaration surface must live in modules/backups/_consumer.nix so registration does not require the aspect"
+grep -q 'services.restic.backups' modules/backups/state-backups.nix || fail "the state-backups mechanism must own the capture renderer"
+grep -q 'imports = \[ ./_consumer.nix \]' modules/backups/state-backups.nix || fail "the state-backups mechanism must import its declaration surface"
 # Word-boundary on `_backups`/`niks3` keeps the check meaningful now that the
 # implementation body lives in this file: `state_backups_*` secret identifiers
 # are not the cache-publisher publication contributors.
-if grep -qE '_backups\b|niks3' modules/cache/state-backups.nix; then
+if grep -qE '_backups\b|niks3' modules/backups/state-backups.nix; then
   fail "state-backups aspect must own no Niks3 upload/publication surface"
 fi
 grep -qE '^[[:space:]]*flake\.modules\.nixos\.cache-publisher[[:space:]]*=' modules/cache/cache-publisher/upload-client.nix || fail "the upload-client contributor must publish the cache-publisher aspect"
@@ -987,7 +990,7 @@ expect_eval_fail "$D" oci-melb-1 "services.notification-daemon.monitor.enable mu
 # level, so the tamper forces the trailing hyphen into the derived bucket. The
 # bucket expression lives in the state-backups contributor.
 D="$(make_copy)"
-python3 - "$D/modules/cache/state-backups.nix" <<'PY'
+python3 - "$D/modules/backups/state-backups.nix" <<'PY'
 import sys
 p = sys.argv[1]
 s = open(p).read()
@@ -1094,6 +1097,60 @@ if errs:
     raise SystemExit("; ".join(errs))
 PY
 
+# 7i-5. Declaration-surface independence: a feature that registers into
+# `services.state-backups.services` must evaluate on a host that does not
+# select the state-backups aspect. Only the declaration fragment is imported,
+# so the registry exists without the mechanism (and the aspect's capture
+# renderer stays absent).
+fragment_probe() { # $1 copy root -> eval report JSON
+  local d="$1" t out
+  t="$(mktemp -d /tmp/scaffold-fragment.XXXXXX)"
+  cat >"$t/flake.nix" <<EOF2
+{
+  inputs.repo.url = "path:$d";
+  outputs = { self, repo }: {
+    report = let
+      sys = repo.inputs.nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          (import "$d/modules/backups/_consumer.nix")
+          {
+            services.state-backups.services.probe = {
+              mode = "live";
+              paths = [ "/tmp/probe" ];
+            };
+            networking.hostName = "probe-host";
+            system.stateVersion = "25.11";
+          }
+        ];
+      };
+      c = sys.config;
+    in {
+      registered = (c.services.state-backups.services or { }) ? probe;
+      mode = c.services.state-backups.services.probe.mode or "";
+      captureEnable = c.services.state-backups.enable or false;
+      resticAbsent = !((c.services.restic.backups or { }) != { });
+    };
+  };
+}
+EOF2
+  out="$(nix eval --raw --impure --no-write-lock-file --expr "builtins.toJSON ((builtins.getFlake (toString $t)).report)")"
+  rm -rf "$t"
+  printf '%s' "$out"
+}
+
+D="$(make_copy)"
+json="$(fragment_probe "$D")" ||
+  fail "7i-5: the declaration surface must evaluate without the state-backups aspect"
+python3 - "$json" <<'PY' || fail "7i-5: declaration-surface observables violated: $json"
+import json, sys
+got = json.loads(sys.argv[1])
+want = {"registered": True, "mode": "live", "captureEnable": False, "resticAbsent": True}
+errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in want.items() if got.get(k) != v]
+if errs:
+    raise SystemExit("; ".join(errs))
+PY
+
 # 7j. Tamper-proof source checks: the 7a/7b/7g pipelines must detect a
 # regression (aspect unpublished, selection dropped, leaf re-imported by a
 # host) on a throwaway copy. The publication tamper targets one distributed
@@ -1101,7 +1158,7 @@ PY
 # that survives the backup split and inserts a relocated operational
 # contributor path so host_leaf_imports_of is exercised.
 D="$(make_copy)"
-sed -i 's/flake.modules.nixos.state-backups =/flake.modules.nixos.state-backups-tampered =/' "$D/modules/cache/state-backups.nix"
+sed -i 's/flake.modules.nixos.state-backups =/flake.modules.nixos.state-backups-tampered =/' "$D/modules/backups/state-backups.nix"
 # Stage 8 HIC-1/HIC-2: selections live in the host records, so the tamper
 # drops the required selection from every converted contributor.
 for h in oci-melb-1 la-admin-1 home-forge; do

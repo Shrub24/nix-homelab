@@ -224,6 +224,7 @@
       '';
     in
     {
+      imports = [ ../backups/_consumer.nix ];
       options.services.identity.kanidm = {
         enable = lib.mkEnableOption "Kanidm identity-provider runtime and provisioning";
 

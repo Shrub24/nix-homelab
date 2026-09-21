@@ -111,7 +111,10 @@
         ) consumers;
     in
     {
-      imports = [ ./postgres/_consumer.nix ];
+      imports = [
+        ./postgres/_consumer.nix
+        ../backups/_consumer.nix
+      ];
 
       config = lib.mkMerge [
         {
@@ -226,7 +229,7 @@
           # independent postgresqlBackup timer is disabled (startAt = [ ]): the
           # export runs only as a restic prerequisite. *.in-progress* dumps are
           # excluded; all.prev.sql.gz is retained as the previous-good fallback.
-          services.postgresqlBackup = lib.mkIf (consumers != [ ]) {
+          services.postgresqlBackup = lib.mkIf (consumers != [ ] && config.services.state-backups.enable) {
             enable = true;
             backupAll = true;
             location = "${config.services.state-backups.stagingRoot}/postgres";
@@ -235,7 +238,7 @@
           };
 
           systemd.services."restic-backups-${config.services.state-backups.backupName}" =
-            lib.mkIf (consumers != [ ])
+            lib.mkIf (consumers != [ ] && config.services.state-backups.enable)
               {
                 requires = [ "postgresqlBackup.service" ];
                 after = [ "postgresqlBackup.service" ];

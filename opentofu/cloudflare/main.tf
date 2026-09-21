@@ -39,6 +39,30 @@ locals {
   navidrome_service = try(local.web_service_routes.navidrome, null)
   navidrome_host    = local.navidrome_service != null ? local.navidrome_service.publicHost : null
 
+  cache_host_expression = "(http.host eq \"cache.shrublab.xyz\")"
+
+  # Paths where niks3 serves a content-addressed object (`nar/`, `*.narinfo`,
+  # `*.ls`, `realisations/`): a given object never changes after upload, so the
+  # edge can hold it indefinitely. Everything else on the host keeps a short TTL.
+  cache_immutable_object_conditions = [
+    "starts_with(http.request.uri.path, \"/nar/\")",
+    "starts_with(http.request.uri.path, \"/realisations/\")",
+    "ends_with(http.request.uri.path, \".narinfo\")",
+    "ends_with(http.request.uri.path, \".ls\")",
+  ]
+
+  cache_immutable_expression = format(
+    "(%s and (%s))",
+    local.cache_host_expression,
+    join(" or ", local.cache_immutable_object_conditions)
+  )
+
+  cache_remaining_expression = format(
+    "(%s and not (%s))",
+    local.cache_host_expression,
+    join(" or ", local.cache_immutable_object_conditions)
+  )
+
   cache_bypass_rules = (var.navidrome_cache_bypass_enabled && local.navidrome_host != null) ? [
     {
       ref         = "navidrome_bypass_cache"
@@ -271,20 +295,49 @@ resource "cloudflare_ruleset" "service_cache_bypass" {
 
   rules = concat(
     local.cache_bypass_rules,
-    [{
-      ref         = "cache_narinfo_nar"
-      description = "Enable edge caching for Nix binary cache subdomain"
-      expression  = "(http.host eq \"cache.shrublab.xyz\")"
-      action      = "set_cache_settings"
-      enabled     = true
-      action_parameters = {
-        cache = true
-        edge_ttl = {
-          mode    = "override_origin"
-          default = 3600
+    [
+      {
+        ref         = "cache_immutable_nix_objects"
+        description = "Hold content-addressed Nix cache objects for a year and never store negative lookups"
+        expression  = local.cache_immutable_expression
+        action      = "set_cache_settings"
+        enabled     = true
+        action_parameters = {
+          cache = true
+          # The zone default caps the client-visible TTL at 4 h; pin immutable
+          # objects to a year so clients stop re-asking for content that cannot change.
+          browser_ttl = {
+            mode    = "override_origin"
+            default = 31536000
+          }
+          edge_ttl = {
+            mode    = "override_origin"
+            default = 31536000
+            status_code_ttl = [
+              { status_code_range = { to = 299 }, value = 31536000 },
+              # 3xx (including 304 revalidations) stays on the one-year default
+              # above: a short 304 TTL would turn every revalidation into a
+              # fresh origin round trip.
+              { status_code_range = { from = 400 }, value = -1 },
+            ]
+          }
         }
-      }
-    }]
+      },
+      {
+        ref         = "cache_nix_cache_metadata"
+        description = "Cache the remaining Nix binary cache host paths (nix-cache-info, build logs, redirects) briefly"
+        expression  = local.cache_remaining_expression
+        action      = "set_cache_settings"
+        enabled     = true
+        action_parameters = {
+          cache = true
+          edge_ttl = {
+            mode    = "override_origin"
+            default = 3600
+          }
+        }
+      },
+    ]
   )
 
   count = 1

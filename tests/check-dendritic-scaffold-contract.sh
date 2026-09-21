@@ -838,16 +838,16 @@ fi
 # (OPS-9, check 1).
 for leaf in \
   modules/backups/state-backups.nix \
-  modules/backups/_consumer.nix \
+  modules/backups/state-backups/_consumer.nix \
   modules/cache/cache-publisher/upload-client.nix \
   modules/cache/cache-publisher/post-deploy.nix \
   modules/flake/builder-access.nix \
   modules/flake/observability-agent.nix; do
   test -f "$leaf" || fail "operational leaf $leaf missing"
 done
-grep -q 'options.services.state-backups' modules/backups/_consumer.nix || fail "the declaration surface must live in modules/backups/_consumer.nix so registration does not require the aspect"
+grep -q 'options.services.state-backups' modules/backups/state-backups/_consumer.nix || fail "the declaration surface must live in modules/backups/state-backups/_consumer.nix so registration does not require the aspect"
 grep -q 'services.restic.backups' modules/backups/state-backups.nix || fail "the state-backups mechanism must own the capture renderer"
-grep -q 'imports = \[ ./_consumer.nix \]' modules/backups/state-backups.nix || fail "the state-backups mechanism must import its declaration surface"
+grep -q 'imports = \[ ./state-backups/_consumer.nix \]' modules/backups/state-backups.nix || fail "the state-backups mechanism must import its declaration surface"
 # Word-boundary on `_backups`/`niks3` keeps the check meaningful now that the
 # implementation body lives in this file: `state_backups_*` secret identifiers
 # are not the cache-publisher publication contributors.
@@ -1113,7 +1113,7 @@ fragment_probe() { # $1 copy root -> eval report JSON
       sys = repo.inputs.nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = [
-          (import "$d/modules/backups/_consumer.nix")
+          (import "$d/modules/backups/state-backups/_consumer.nix")
           {
             services.state-backups.services.probe = {
               mode = "live";

@@ -101,8 +101,8 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 **`modules/backups/`:**
 
 - Purpose: Mutable-state recovery domain — one capture mechanism with a shared declaration surface
-- Contains: `state-backups.nix` (the restic mechanism: capture job rendering, derived bucket, host secret gate, restore-staging helper) and `_consumer.nix` (declaration-only: the `services.state-backups.services.<name>` registry plus the capture settings a producer reads, imported by the mechanism and by every registering feature so registration does not require the aspect)
-- Key files: `modules/backups/state-backups.nix`, `modules/backups/_consumer.nix`
+- Contains: `state-backups.nix` (the restic mechanism: capture job rendering, derived bucket, host secret gate, restore-staging helper) and `state-backups/_consumer.nix` (declaration-only: the `services.state-backups.services.<name>` registry plus the capture settings a producer reads, imported by the mechanism and by every registering feature so registration does not require the aspect)
+- Key files: `modules/backups/state-backups.nix`, `modules/backups/state-backups/_consumer.nix`
 
 **`modules/music/`:**
 

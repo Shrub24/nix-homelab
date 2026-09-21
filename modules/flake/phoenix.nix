@@ -18,7 +18,7 @@
       hostHttp = "http://127.0.0.1:${toString cfg.port}";
     in
     {
-      imports = [ ../backups/_consumer.nix ];
+      imports = [ ../backups/state-backups/_consumer.nix ];
       options.services.phoenix = {
         enable = lib.mkEnableOption "Arize Phoenix LLM observability collector";
 

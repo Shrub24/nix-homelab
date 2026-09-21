@@ -144,7 +144,7 @@
       '';
     in
     {
-      imports = [ ./_consumer.nix ];
+      imports = [ ./state-backups/_consumer.nix ];
       config = lib.mkMerge [
         (lib.mkIf cfg.enable {
           assertions = [

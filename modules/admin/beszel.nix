@@ -23,7 +23,7 @@
       port = beszelRoute.origin.port;
     in
     {
-      imports = [ ../backups/_consumer.nix ];
+      imports = [ ../backups/state-backups/_consumer.nix ];
       options.services.admin.beszel.enable = lib.mkEnableOption "the Beszel hub service wiring";
       config = lib.mkMerge [
         (lib.mkIf cfg.enable {

@@ -40,7 +40,7 @@
           termixRoute.access.oidc.enabled or true;
     in
     {
-      imports = [ ../backups/_consumer.nix ];
+      imports = [ ../backups/state-backups/_consumer.nix ];
 
       config = lib.mkMerge [
         { services.admin.termix.enable = true; }

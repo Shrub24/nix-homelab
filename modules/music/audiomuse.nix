@@ -34,7 +34,7 @@
       # `postgres` aspect, so importing the declarations provisions nothing.
       imports = [
         ../database/postgres/_consumer.nix
-        ../backups/_consumer.nix
+        ../backups/state-backups/_consumer.nix
       ];
 
       options.services.audiomuse = {

@@ -10,8 +10,8 @@
 # does not run backups still evaluates its features.
 { lib, ... }:
 let
-  globals = import ../../policy/globals.nix;
-  secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+  globals = import ../../../policy/globals.nix;
+  secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
 in
 {
   options.services.state-backups = {

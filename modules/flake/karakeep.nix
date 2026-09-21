@@ -18,7 +18,7 @@
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
     in
     {
-      imports = [ ../backups/_consumer.nix ];
+      imports = [ ../backups/state-backups/_consumer.nix ];
       options.services.karakeep-pod = {
         enable = lib.mkEnableOption "Karakeep bookmark and read-later service";
 

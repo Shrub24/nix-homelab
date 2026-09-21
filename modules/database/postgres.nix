@@ -113,7 +113,7 @@
     {
       imports = [
         ./postgres/_consumer.nix
-        ../backups/_consumer.nix
+        ../backups/state-backups/_consumer.nix
       ];
 
       config = lib.mkMerge [

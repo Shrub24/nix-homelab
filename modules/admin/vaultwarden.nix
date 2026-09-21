@@ -28,7 +28,7 @@
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
     in
     {
-      imports = [ ../backups/_consumer.nix ];
+      imports = [ ../backups/state-backups/_consumer.nix ];
       options.services.admin.vaultwarden = {
         enable = lib.mkOption {
           type = lib.types.bool;

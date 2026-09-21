@@ -1775,15 +1775,58 @@ grep -qE '^[[:space:]]*flake\.modules\.nixos\.dj[[:space:]]*=' modules/music/win
 if grep -RnE --include='*.nix' '(_oci|_edge|_dj|_aspects|_backups|_builder-access)/' modules; then
   fail "7n: the converted underscore module-body directories must stay gone"
 fi
-# Ownership is asserted on import *expressions*, not on prose: current-state docs and
-# comments legitimately name these paths (e.g. the consumers note in
-# modules/music/windows-vm.nix), while a real import from another
-# concern must still be rejected. Mutation 7n-3f-2 proves the predicate still fires.
-private_leaf_stray="$(grep -REl --include='*.nix' -e '_oci/default\.nix' -e '_edge/edge-ingress\.nix' modules | grep -vE '^modules/(oci/oci|edge/edge)\.nix$' || true)"
-[ -z "$private_leaf_stray" ] ||
-  fail "7n: only the owning concern may import a Stage 7 private leaf: $private_leaf_stray"
-dj_leaf_stray="$(grep -REl --include='*.nix' -e '\./_dj([^a-zA-Z0-9_-]|$)' -e '_dj/default\.nix' -e '_dj/engine-dj\.nix' modules | grep -vE '^modules/music/(dj\.nix|_dj/)' || true)"
-[ -z "$dj_leaf_stray" ] || fail "7n: only the dj concern may import the _dj private leaves: $dj_leaf_stray"
+# Underscore-private ownership is asserted by resolving import paths against the
+# tree (TD-18), not by matching retired filenames: a private leaf under modules/ is
+# reachable only from inside its owning concern (the domain, or `hosts/<host>` for
+# host fragments), except the declared intrinsic contracts consumers import by
+# design (D-059). Mutations 7n-3f-2 prove the predicate fires.
+private_leaf_strays() { # $1 repo root
+  python3 - "$1" <<'PYEOF'
+import os
+import sys
+
+mods = os.path.join(sys.argv[1], "modules")
+INTRINSIC = {
+    "database/postgres/_consumer.nix",
+    "backups/state-backups/_consumer.nix",
+    "identity/_oidc.nix",
+    "flake/_unconverted-nixos-dirs.nix",
+}
+
+
+def owner_of(rel):
+    parts = rel.split("/")
+    return "/".join(parts[:2]) if parts[0] == "hosts" else parts[0]
+
+
+strays = set()
+for dirpath, dirnames, filenames in os.walk(mods):
+    for name in filenames:
+        if not name.endswith(".nix"):
+            continue
+        importer = os.path.relpath(os.path.join(dirpath, name), mods)
+        with open(os.path.join(dirpath, name), encoding="utf-8", errors="replace") as handle:
+            source = handle.read()
+        tokens = source
+        for punctuation in ('"', "'", "(", ")", "[", "]", ";", ",", "{"):
+            tokens = tokens.replace(punctuation, " ")
+        for token in tokens.split():
+            if not token.endswith(".nix") or not token.startswith("."):
+                continue
+            rel = os.path.relpath(os.path.normpath(os.path.join(dirpath, token)), mods)
+            if rel.startswith("..") or rel in INTRINSIC:
+                continue
+            if not any(part.startswith("_") for part in rel.split("/")):
+                continue
+            if importer.startswith(owner_of(rel) + "/"):
+                continue
+            strays.add("modules/%s -> modules/%s" % (importer, rel))
+
+print("\n".join(sorted(strays)))
+PYEOF
+}
+[ -z "$(private_leaf_strays "$ROOT")" ] ||
+  fail "7n: an underscore-private leaf is reachable only from its owning concern unless it is a declared intrinsic contract: $(private_leaf_strays "$ROOT")"
 # The evaluator-class roots are deleted, not renamed (S7-4/S7-5/S7-8).
 [ -z "$(surviving_evacuated_roots "$ROOT")" ] ||
   fail "7n: converted application/provider roots must be deleted: $(surviving_evacuated_roots "$ROOT")"
@@ -2044,6 +2087,14 @@ D="$(make_copy)"
 printf '\n  imports = [ ./dj-engine.nix ];\n' >>"$D/modules/flake/phoenix.nix"
 [ -n "$(sibling_contributor_imports "$D")" ] ||
   fail "7n-3f-2: the sibling-contributor predicate must detect an import from another concern"
+D="$(make_copy)"
+printf '\n  imports = [ ../music/_beets/runners.nix ];\n' >>"$D/modules/flake/phoenix.nix"
+[ -n "$(private_leaf_strays "$D")" ] ||
+  fail "7n-3f-2: the underscore-private predicate must detect a cross-concern leaf import"
+D="$(make_copy)"
+printf '\n  imports = [ ../admin/homepage/_data.nix ];\n' >>"$D/modules/flake/phoenix.nix"
+[ -n "$(private_leaf_strays "$D")" ] ||
+  fail "7n-3f-2: the underscore-private predicate must detect a cross-concern helper import"
 
 # 7n-3f-3. A prose reference to a contributor path outside an import list is
 # allowed (current-state docs and consumer comments legitimately name them),

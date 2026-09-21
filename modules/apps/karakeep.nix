@@ -188,7 +188,7 @@ _: {
               MEILI_MASTER_KEY=${config.sops.placeholder.karakeep_meilisearch_master_key}
               OAUTH_CLIENT_ID=${cfg.oidc.clientId}
               OAUTH_CLIENT_SECRET=${config.sops.placeholder.karakeep_oidc_client_secret}
-              OPENAI_BASE_URL=${config.services.bifrost-gateway.endpoint.containerBaseUrl}
+              OPENAI_BASE_URL=${config.services.bifrost.endpoint.containerBaseUrl}
               OPENAI_API_KEY=bifrost-local
               INFERENCE_TEXT_MODEL=${globals.aiGateway.aliases.text}
               INFERENCE_IMAGE_MODEL=${globals.aiGateway.aliases.image}

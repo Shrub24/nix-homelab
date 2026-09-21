@@ -25,19 +25,6 @@
     forcePathStyle = true;
   };
 
-  applications = {
-    # Music has no global physical paths: storage roots are host-required
-    # bindings (see applications.music.dataRoot/.storageRoot) so a host cannot
-    # silently inherit a fleet-wide layout.
-    admin = {
-      dataRoot = "/srv/data";
-    };
-    edge-ingress = {
-      enable = false;
-      role = "none";
-    };
-  };
-
   notifications = {
     telegram = {
       chatId = "-1003913476155";

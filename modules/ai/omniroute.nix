@@ -1,6 +1,6 @@
 # OmniRoute deployment aspect. One file: it preserves the host's two-step
-# secret bootstrap — the service and its notification-daemon monitor
-# registration activate only once `secrets/services/omniroute.yaml` exists.
+# secret bootstrap — the service and its notification registration activate only
+# once `secrets/services/omniroute.yaml` exists.
 
 _: {
   flake.modules.nixos.omniroute =
@@ -221,8 +221,9 @@ _: {
                   ];
                   # Crash-loop budget: slow the systemd-driven restart to 15s and cap it at
                   # 5 failures/hour so a persistent crash fails the unit (and alerts via
-                  # svc-monitor) instead of looping silently for hours. The default
-                  # 3-in-10s limit never trips because crash intervals exceed the window.
+                  # the notify aspect's OnFailure handler) instead of looping silently for
+                  # hours. The default 3-in-10s limit never trips because crash intervals
+                  # exceed the window.
                   StartLimitIntervalSec = 3600;
                   StartLimitBurst = 5;
                 };
@@ -249,14 +250,14 @@ _: {
             secretFiles.host = secretFile;
           };
 
-          # Monitor participation is owned by this aspect, not by a host reverse
-          # index. It only exists once the service can start; the
-          # notification-daemon option namespace is owned by the co-selected
-          # `notify` foundation aspect.
-          services.notification-daemon.monitor.units."podman-omniroute" = lib.mkIf hasSecret {
-            onFailure = true;
-            onStart = true;
-            onStop = true;
+          # Notification participation is owned by this aspect, not by a host
+          # reverse index. The registration contract is declared by the
+          # co-selected `notify` foundation aspect. The container is long-running,
+          # so a clean stop is an operator-visible event and is reported as
+          # success alongside the failure registration.
+          services.notify.events."podman-omniroute" = lib.mkIf hasSecret {
+            failure = { };
+            success = { };
           };
         }
       ];

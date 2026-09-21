@@ -1,19 +1,28 @@
 # Host-backed origin FQDNs are composed from the canonical host ID and the
 # single fleet suffix (`policy/globals.nix` `tailnet.suffix`), never
-# hand-written. `127.0.0.1` loopback origins below stay literal (externally
-# managed names remain explicit). Plain nix attribute set on purpose: three
-# consumers read this file as data (web-policy aspect,
-# scripts/export-web-services-policy.sh, tests/check-web-service-catalog.sh).
+# hand-written. Every origin is absolute: the edge runs on a different host
+# from the services, so a loopback origin would proxy to the edge itself.
+# Plain nix attribute set on purpose: three consumers read this file as data
+# (web-policy aspect, scripts/export-web-services-policy.sh,
+# tests/check-web-service-catalog.sh).
+#
+# Every route declares its `exposureMode`, the one axis describing how the
+# service is exposed: `tailscale-upstream` (published; the edge dials the
+# origin's tailnet-bound socket), `tailscale-serve` (published; the origin
+# socket stays loopback-bound and the providing host renders the front the edge
+# dials), or `tailscale-only` (not published; machine-to-machine endpoint only),
+# with `direct` reserved for an edge-local loopback upstream. No default applies
+# — an unlabelled route fails evaluation.
 let
   globals = import ./globals.nix;
   fqdnOf = id: "${id}.${globals.tailnet.suffix}";
   oci = fqdnOf "oci-melb-1";
   homeForge = fqdnOf "home-forge";
+  la = fqdnOf "la-admin-1";
 in
 {
   defaults = {
     primaryDomain = "shrublab.xyz";
-    exposureMode = "direct";
     category = "app";
     path = "/";
     declarePublic = true;
@@ -41,7 +50,7 @@ in
   };
 
   hosts = {
-    la-admin-1 = {
+    oci-melb-1 = {
       defaults = { };
 
       services = {
@@ -65,9 +74,10 @@ in
 
         termix-admin = {
           subdomain = "termix";
+          exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = "127.0.0.1";
+            host = la;
             port = 8083;
           };
           category = "admin";
@@ -77,12 +87,14 @@ in
 
         kanidm-admin = {
           subdomain = "id";
+          # The provider socket is loopback-bound and TLS-only, so the providing
+          # host renders the front the edge dials.
+          exposureMode = "tailscale-serve";
           origin = {
             scheme = "https";
-            host = "127.0.0.1";
+            host = la;
             port = 8443;
           };
-          upstreamTlsServerName = "id.shrublab.xyz";
           category = "admin";
           access.requireCloudflareAccess = false;
           cloudflare = {
@@ -93,9 +105,10 @@ in
 
         admin-homepage = {
           subdomain = "admin";
+          exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = "127.0.0.1";
+            host = la;
             port = 8082;
           };
           category = "admin";
@@ -103,11 +116,12 @@ in
 
         cockpit-admin = {
           subdomain = "cockpit";
+          exposureMode = "tailscale-upstream";
           path = "/la-admin-1";
           forceTrailingSlash = true;
           origin = {
             scheme = "https";
-            host = "127.0.0.1";
+            host = la;
             port = 9090;
           };
           upstreamTlsCaCertFile = "/etc/cockpit/loopback-ca.crt";
@@ -130,9 +144,10 @@ in
 
         beszel-admin = {
           subdomain = "beszel";
+          exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = "127.0.0.1";
+            host = la;
             port = 8090;
           };
           category = "admin";
@@ -141,9 +156,10 @@ in
 
         gatus-admin = {
           subdomain = "gatus";
+          exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = "127.0.0.1";
+            host = la;
             port = 8087;
           };
           category = "admin";
@@ -151,9 +167,10 @@ in
 
         vaultwarden-admin = {
           subdomain = "vaultwarden";
+          exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = "127.0.0.1";
+            host = la;
             port = 8222;
           };
           category = "admin";
@@ -162,9 +179,10 @@ in
 
         ntfy-admin = {
           subdomain = "ntfy";
+          exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = "127.0.0.1";
+            host = la;
             port = 2586;
           };
           category = "admin";
@@ -273,7 +291,7 @@ in
           subdomain = "webhook";
           origin = {
             scheme = "http";
-            host = "127.0.0.1";
+            host = la;
             port = 9000;
           };
           exposureMode = "tailscale-only";
@@ -305,6 +323,24 @@ in
           declarePublic = false;
           category = "admin";
           health.path = "/v1/models";
+        };
+
+        # Private machine-to-machine service with no ingress route at all. It is
+        # listed here because this host key owns the fleet's service topology;
+        # the catalog projects it as a tailscale-only endpoint, and both the
+        # provider (listen address) and the publisher (serverUrl) read that one
+        # declaration, so the port cannot drift.
+        niks3-write = {
+          subdomain = null;
+          origin = {
+            scheme = "http";
+            host = oci;
+            port = 5751;
+          };
+          exposureMode = "tailscale-only";
+          declarePublic = false;
+          category = "infra";
+          health.path = "/";
         };
       };
     };

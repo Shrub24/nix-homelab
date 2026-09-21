@@ -67,7 +67,7 @@ in
   # without the file.
   hardware.facter.reportPath = lib.mkIf (builtins.pathExists ./facter.json) ./facter.json;
 
-  services.notification-daemon = {
+  services.notify = {
     secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
     secretFiles.hostSystem = ../../../secrets/hosts/home-forge/system.yaml;
     ntfy.enable = true;

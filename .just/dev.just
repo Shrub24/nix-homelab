@@ -1,9 +1,6 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set no-cd
 
-setup:
-  @sops -d secrets/services/notification-daemon.yaml > /tmp/notification-daemon.json
-
 # Local nix-fleet override.
 #
 # nix-fleet owns the pins this repository shares (nixpkgs, flake-parts,

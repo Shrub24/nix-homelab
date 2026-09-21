@@ -20,10 +20,8 @@
         host = lib.mkIf hasHostSecrets hostSystemSecret;
       };
 
-      services.notification-daemon.monitor.units."beszel-agent" = lib.mkIf hasHostSecrets {
-        onFailure = true;
-        onStart = true;
-        onStop = true;
+      services.notify.events."beszel-agent" = lib.mkIf hasHostSecrets {
+        failure = { };
       };
     };
 }

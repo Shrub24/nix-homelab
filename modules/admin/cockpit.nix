@@ -17,10 +17,10 @@ _: {
       cfg = config.services.admin.cockpit;
       svcUser = cfg.serviceUser;
 
-      webServices = config.repo.web.currentHost.services or { };
+      webServices = config.repo.web.catalog or { };
       cockpitRoute =
         webServices."cockpit-admin"
-          or (throw "cockpit: required canonical web-policy route 'repo.web.currentHost.services.\"cockpit-admin\"' is missing for host '${
+          or (throw "cockpit: required canonical web-policy route 'repo.web.catalog.\"cockpit-admin\"' is missing for host '${
             config.networking.hostName or "?"
           }'");
 

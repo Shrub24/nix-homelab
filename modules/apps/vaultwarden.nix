@@ -13,14 +13,14 @@ _: {
       cfg = config.services.admin.vaultwarden;
       vaultRoute =
         let
-          route = config.repo.web.currentHost.services or { };
+          route = config.repo.web.catalog or { };
         in
         route."vaultwarden-admin"
-          or (throw "vaultwarden: required canonical web-policy route 'repo.web.currentHost.services.\"vaultwarden-admin\"' is missing for host '${
+          or (throw "vaultwarden: required canonical web-policy route 'repo.web.catalog.\"vaultwarden-admin\"' is missing for host '${
             config.networking.hostName or "?"
           }'");
-      vaultHost = vaultRoute.origin.host;
-      vaultPort = vaultRoute.origin.port;
+      vaultHost = "0.0.0.0";
+      vaultPort = vaultRoute.upstreamPort;
       vaultwardenExportFile = "${config.services.state-backups.stagingRoot}/vaultwarden/db.sqlite3";
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
     in

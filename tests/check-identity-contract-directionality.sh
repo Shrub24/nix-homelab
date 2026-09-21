@@ -33,7 +33,7 @@ json="$(ne 'c: builtins.toJSON {
   cockpitNamespaceAbsent = !(c.services.admin ? cockpit);
   termixNamespaceAbsent = !(c.services.admin ? termix);
   gatusEnable = c.services.gatus.enable;
-  gatusOriginAligned = c.services.gatus.settings.web.address == c.repo.web.currentHost.services."gatus-admin".origin.host && c.services.gatus.settings.web.port == c.repo.web.currentHost.services."gatus-admin".origin.port;
+  gatusListenAligned = c.services.gatus.settings.web.address == "0.0.0.0" && c.services.gatus.settings.web.port == c.repo.web.catalog."gatus-admin".upstreamPort;
   beszelHubEnable = c.services.beszel.hub.enable or false;
   beszelBackupAbsent = !(c.services.state-backups.services ? beszel);
   webhookServiceEnable = c.services.webhook.enable;
@@ -60,7 +60,7 @@ expected = {
     "cockpitNamespaceAbsent": True,
     "termixNamespaceAbsent": True,
     "gatusEnable": True,
-    "gatusOriginAligned": True,
+    "gatusListenAligned": True,
     "beszelHubEnable": True,
     "beszelBackupAbsent": False,
     "webhookServiceEnable": True,
@@ -129,7 +129,9 @@ PYEOF
 json="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
   drv = c.system.build.toplevel.drvPath != "";
   kanidmEnable = c.services.identity.kanidm.enable;
-  adminNamespaceAbsent = !(c.applications ? admin);
+  # `applications` itself is absent when no application stack is selected:
+  # absence of the whole namespace satisfies "no admin application".
+  adminNamespaceAbsent = !((c.applications or { }) ? admin);
   adminKanidm = c.services.admin.kanidm.enable or null;
   homepageLeafAbsent = !(c.services ? admin) || !(c.services.admin ? homepage);
   webhookServiceEnable = c.services.webhook.enable;
@@ -183,10 +185,12 @@ PYEOF
 
 json="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
   kanidmNamespaceAbsent = !(c.services.identity ? kanidm);
-  adminNamespaceAbsent = !(c.applications ? admin);
+  # `applications` itself is absent when no application stack is selected:
+  # absence of the whole namespace satisfies "no admin application".
+  adminNamespaceAbsent = !((c.applications or { }) ? admin);
   providerUrl = c.services.identity.oidc.providerUrl;
-  webPolicyUrl = c.repo.web.currentHost.services."kanidm-admin".publicUrl;
-  urlAligned = c.services.identity.oidc.providerUrl == c.repo.web.currentHost.services."kanidm-admin".publicUrl;
+  webPolicyUrl = c.repo.web.catalog."kanidm-admin".publicUrl;
+  urlAligned = c.services.identity.oidc.providerUrl == c.repo.web.catalog."kanidm-admin".publicUrl;
   adminNamespaceStillAbsent = !(c.services ? admin);
 }' "path:${D}#nixosConfigurations.la-admin-1.config")" || fail "client-only+Termix subset (LA without identity-provider/admin-hub) does not evaluate"
 python3 - "$json" <<'PYEOF' || fail "client-only subset observables violated"
@@ -281,9 +285,10 @@ tar -C "$ROOT" \
   --exclude=.ruff_cache \
   -cf - . | tar -C "$D2" -xf -
 
-# 4b-1. Termix without the `termix-admin` route: `termixUpstream` is
-# `or null`-safe at the merge, so the named throw fires only when the
-# tailscale-serve ExecStart consumes it (Nix is lazy; force the consumer).
+# 4b-1. Termix without the `termix-admin` route must still evaluate: the
+# serve target is a module-local declaration (`127.0.0.1:8083`), so dropping
+# the route degrades the OIDC gate instead of breaking the service. This pins
+# the direction — a service's runtime config never comes from the policy.
 # Termix is demoted on the real host, so this copy re-selects it first.
 python3 - "$D2" <<'PYEOF' > /dev/null || fail "termix re-selection for the route negative failed"
 import sys
@@ -315,13 +320,22 @@ s = s[:i] + s[j:]
 open(p, "w").write(s)
 PYEOF
 
-stderr="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
+json="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
   enable = c.services.admin.termix.enable;
   forcedExecStart = c.systemd.services.tailscale-serve-termix.serviceConfig.ExecStart;
-}' "path:${D2}#nixosConfigurations.la-admin-1.config" 2>&1 >/dev/null || true)"
-if ! printf '%s' "$stderr" | grep -q 'termix: required canonical web-policy route .*termix-admin.* is missing'; then
-  fail "Termix without the termix-admin route must fail with the named web-policy contract message when the serve ExecStart is forced; stderr was: $stderr"
-fi
+  oidcEnabled = c.services.admin.termix.oidc.enabled;
+}' "path:${D2}#nixosConfigurations.la-admin-1.config")" ||
+  fail "Termix must still evaluate when the termix-admin route is absent (runtime config is module-local)"
+printf '%s' "$json" | python3 -c '
+import json, sys
+got = json.load(sys.stdin)
+if not got["enable"]:
+    raise SystemExit("termix re-selection did not enable the service")
+if "127.0.0.1:8083" not in got["forcedExecStart"]:
+    raise SystemExit("serve target is not module-local: " + repr(got["forcedExecStart"]))
+if got["oidcEnabled"] is not True:
+    raise SystemExit("a missing route must degrade the OIDC gate to enabled, not break evaluation")
+' || fail "Termix route-independence contract violated"
 
 # 4b-2. Homepage without the `admin-homepage` route: `homepageRoute` is
 # `or { }`-safe at the merge, so the named throw fires only when a route
@@ -414,7 +428,7 @@ for line in imports:
 # unselected until something re-selects them deliberately.
 la = open("modules/hosts/la-admin-1/default.nix").read()
 placement = [
-    "edge", "push-server", "identity-provider", "vaultwarden",
+    "ingress", "push-server", "identity-provider", "vaultwarden",
     "gatus", "beszel", "homepage", "webhook",
 ]
 for a in placement:
@@ -442,15 +456,15 @@ if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/termix.nix mo
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "termix aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnHE --include='*.nix' 'applications\.admin' modules/admin/vaultwarden.nix \
+if grep -RnHE --include='*.nix' 'applications\.admin' modules/apps/vaultwarden.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "vaultwarden aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnHE --include='*.nix' 'applications\.admin' modules/admin/gatus.nix \
+if grep -RnHE --include='*.nix' 'applications\.admin' modules/observability/gatus.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "gatus aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
-if grep -RnHE --include='*.nix' 'applications\.admin' modules/admin/beszel.nix \
+if grep -RnHE --include='*.nix' 'applications\.admin' modules/observability/beszel.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
   fail "beszel aspect/intrinsic leaf must not read the applications.admin namespace"
 fi
@@ -526,7 +540,9 @@ json="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
   vaultTokenSecretRegistered = c.sops.secrets ? vaultwarden_admin_token;
   vaultBackupPaths = c.services.state-backups.services.vaultwarden.paths;
   vaultBackupMode = c.services.state-backups.services.vaultwarden.mode;
-  adminNamespaceAbsent = !(c.applications ? admin);
+  # `applications` itself is absent when no application stack is selected:
+  # absence of the whole namespace satisfies "no admin application".
+  adminNamespaceAbsent = !((c.applications or { }) ? admin);
 }' "path:${D}#nixosConfigurations.la-admin-1.config")" || fail "Vaultwarden subset (LA without admin-hub, with aspects.vaultwarden) does not evaluate"
 python3 - "$json" <<'PYEOF' || fail "Vaultwarden subset observables violated"
 import json, sys
@@ -537,7 +553,7 @@ expected = {
     "vaultDomain": "https://vaultwarden.shrublab.xyz",
     "vaultDataFolder": "/srv/data/vaultwarden",
     "vaultDataDir": "/srv/data/vaultwarden",
-    "vaultRocketAddress": "127.0.0.1",
+    "vaultRocketAddress": "0.0.0.0",
     "vaultRocketPort": 8222,
     "vaultTemplateRegistered": True,
     "vaultTemplatePathNonEmpty": True,
@@ -577,25 +593,29 @@ s = s.replace(
 open(p, "w").write(s)
 PYEOF
 
-json="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
+json="$(nix eval --no-write-lock-file --raw --apply 'c:
+let
+  probedNames = builtins.sort builtins.lessThan (builtins.map (e: e.name) c.services.gatus.settings.endpoints);
+  publishedNames = builtins.sort builtins.lessThan (
+    builtins.filter (n: c.repo.web.catalog.${n}.publicUrl != null) (builtins.attrNames c.repo.web.catalog)
+  );
+in builtins.toJSON {
   gatusEnable = c.services.gatus.enable;
   webAddress = c.services.gatus.settings.web.address;
   webPort = c.services.gatus.settings.web.port;
   openFirewall = c.services.gatus.openFirewall;
-  serviceOriginAligned = c.services.gatus.settings.web.address == c.repo.web.currentHost.services."gatus-admin".origin.host && c.services.gatus.settings.web.port == c.repo.web.currentHost.services."gatus-admin".origin.port;
-  endpointSweepMatchesCatalog = c.services.gatus.settings.endpoints == builtins.map (n: {
-    name = n;
-    url = c.repo.web.currentHost.services.${n}.healthUrl;
-    interval = "1m";
-    conditions = [ "[STATUS] == ${toString c.repo.web.currentHost.services.${n}.health.expectedStatus}" ];
-  }) (builtins.attrNames c.repo.web.currentHost.services);
+  serviceListenAligned = c.services.gatus.settings.web.address == "0.0.0.0" && c.services.gatus.settings.web.port == c.repo.web.catalog."gatus-admin".upstreamPort;
+  endpointSweepMatchesCatalog = c.services.gatus.settings.endpoints != [ ] && probedNames == publishedNames;
+  endpointUrlsMatchPublicUrls = builtins.all (e: e.url == c.repo.web.catalog.${e.name}.publicUrl) c.services.gatus.settings.endpoints;
   endpointCount = builtins.length c.services.gatus.settings.endpoints;
   alertUrl = c.services.gatus.settings.alerting.custom.url;
   alertMethod = c.services.gatus.settings.alerting.custom.method;
   alertContentType = c.services.gatus.settings.alerting.custom.headers."Content-Type";
   alertTiers = c.services.gatus.settings.alerting.custom.placeholders.ALERT_TRIGGERED_OR_RESOLVED;
   alertBody = c.services.gatus.settings.alerting.custom.body;
-  adminNamespaceAbsent = !(c.applications ? admin);
+  # `applications` itself is absent when no application stack is selected:
+  # absence of the whole namespace satisfies "no admin application".
+  adminNamespaceAbsent = !((c.applications or { }) ? admin);
 }' "path:${D}#nixosConfigurations.la-admin-1.config")" || fail "Gatus subset (LA without admin-hub/applications.admin, with aspects.gatus) does not evaluate"
 python3 - "$json" <<'PYEOF' || fail "Gatus subset observables violated"
 import json, sys
@@ -604,8 +624,9 @@ got = json.loads(sys.argv[1])
 expected = {
     "gatusEnable": True,
     "openFirewall": False,
-    "serviceOriginAligned": True,
+    "serviceListenAligned": True,
     "endpointSweepMatchesCatalog": True,
+    "endpointUrlsMatchPublicUrls": True,
     "alertUrl": "http://127.0.0.1:5555/notify",
     "alertMethod": "POST",
     "alertContentType": "application/json",
@@ -658,15 +679,17 @@ json="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
   hubAddress = c.services.beszel.hub.host;
   hubPort = c.services.beszel.hub.port;
   appUrl = c.services.beszel.hub.environment.APP_URL;
-  webPolicyUrl = c.repo.web.currentHost.services."beszel-admin".publicUrl;
-  urlAligned = c.services.beszel.hub.environment.APP_URL == c.repo.web.currentHost.services."beszel-admin".publicUrl;
-  originAligned = c.services.beszel.hub.host == c.repo.web.currentHost.services."beszel-admin".origin.host && c.services.beszel.hub.port == c.repo.web.currentHost.services."beszel-admin".origin.port;
+  webPolicyUrl = c.repo.web.catalog."beszel-admin".publicUrl;
+  urlAligned = c.services.beszel.hub.environment.APP_URL == c.repo.web.catalog."beszel-admin".publicUrl;
+  listenAligned = c.services.beszel.hub.host == "0.0.0.0" && c.services.beszel.hub.port == c.repo.web.catalog."beszel-admin".upstreamPort;
   passwordAuthEnabled = c.services.beszel.hub.environment.DISABLE_PASSWORD_AUTH == "false";
   userCreationEnabled = c.services.beszel.hub.environment.USER_CREATION == "true";
   backupMode = c.services.state-backups.services.beszel.mode;
   backupPaths = c.services.state-backups.services.beszel.paths;
   backupPathDerivesFromDataDir = c.services.state-backups.services.beszel.paths == [ "/var/lib/private/${baseNameOf c.services.beszel.hub.dataDir}" ];
-  adminNamespaceAbsent = !(c.applications ? admin);
+  # `applications` itself is absent when no application stack is selected:
+  # absence of the whole namespace satisfies "no admin application".
+  adminNamespaceAbsent = !((c.applications or { }) ? admin);
 }' "path:${D}#nixosConfigurations.la-admin-1.config")" || fail "Beszel subset (LA without admin-hub/applications.admin, with aspects.beszel) does not evaluate"
 python3 - "$json" <<'PYEOF' || fail "Beszel subset observables violated"
 import json, sys
@@ -675,12 +698,12 @@ got = json.loads(sys.argv[1])
 expected = {
     "beszelEnable": True,
     "hubEnable": True,
-    "hubAddress": "127.0.0.1",
+    "hubAddress": "0.0.0.0",
     "hubPort": 8090,
     "appUrl": "https://beszel.shrublab.xyz",
     "webPolicyUrl": "https://beszel.shrublab.xyz",
     "urlAligned": True,
-    "originAligned": True,
+    "listenAligned": True,
     "passwordAuthEnabled": True,
     "userCreationEnabled": True,
     "backupMode": "live",
@@ -736,7 +759,7 @@ PYEOF
 
 json="$(nix eval --no-write-lock-file --raw --apply 'c:
 let
-  route = c.repo.web.currentHost.services."admin-homepage";
+  route = c.repo.web.catalog."admin-homepage";
   names = builtins.sort builtins.lessThan (builtins.filter (n: builtins.match "homepage_.*" n != null) (builtins.attrNames c.sops.secrets));
   allEntries = builtins.concatLists (builtins.map (g: builtins.concatLists (builtins.attrValues g)) c.services.homepage-dashboard.services);
   entry = name: (builtins.head (builtins.filter (e: e ? ${name}) allEntries)).${name};
@@ -748,8 +771,8 @@ builtins.toJSON {
   dashboardEnable = c.services.homepage-dashboard.enable;
   openFirewall = c.services.homepage-dashboard.openFirewall;
   listenPort = c.services.homepage-dashboard.listenPort;
-  portAligned = c.services.homepage-dashboard.listenPort == route.origin.port;
-  allowedHostsAligned = c.services.homepage-dashboard.allowedHosts == "localhost:${toString route.origin.port},127.0.0.1:${toString route.origin.port},${route.publicHost}";
+  portAligned = c.services.homepage-dashboard.listenPort == route.upstreamPort;
+  allowedHostsAligned = c.services.homepage-dashboard.allowedHosts == "localhost:${toString route.upstreamPort},127.0.0.1:${toString route.upstreamPort},${route.publicHost}";
   templateRegistered = c.sops.templates ? "homepage-auth.env";
   templatePathNonEmpty = c.sops.templates."homepage-auth.env".path != "";
   templateOwner = c.sops.templates."homepage-auth.env".owner;
@@ -767,10 +790,18 @@ builtins.toJSON {
   settingsTitle = c.services.homepage-dashboard.settings.title;
   startUrlAligned = c.services.homepage-dashboard.settings.startUrl == "${route.publicUrl}#overview";
   entryCount = builtins.length allEntries;
-  navidromeHrefAligned = (entry "Navidrome").href == c.repo.web.currentHost.services."navidrome".publicUrl;
-  gatusHrefAligned = (entry "Gatus").href == c.repo.web.currentHost.services."gatus-admin".publicUrl;
-  cockpitOciHrefAligned = (entry "Cockpit (OCI)").href == c.repo.web.currentHost.services."cockpit-oci-melb-1".publicUrl;
-  navidromeWidgetUrlAligned = (entry "Navidrome").widget.url == c.repo.web.currentHost.services."navidrome".upstream;
+  navidromeHrefAligned = (entry "Navidrome").href == c.repo.web.catalog."navidrome".publicUrl;
+  gatusHrefAligned = (entry "Gatus").href == c.repo.web.catalog."gatus-admin".publicUrl;
+  cockpitOciHrefAligned = (entry "Cockpit (OCI)").href == c.repo.web.catalog."cockpit-oci-melb-1".publicUrl;
+  # The widget dials the origin the module declares, not the policy: the
+  # pattern pins that construction (short host + tailnet suffix + port)
+  # without hardcoding the suffix, and asserts it is not the public URL.
+  navidromeWidgetUrlAligned =
+    let
+      url = (entry "Navidrome").widget.url;
+    in
+    builtins.match "http://home-forge\\..*:4533" url != null
+    && url != c.repo.web.catalog."navidrome".publicUrl;
   caddyWidgetUrl = (entry "Caddy").widget.url;
   tailscaleDeviceVar = (entry "Tailscale").widget.deviceid;
   slskdKeyVar = (entry "Slskd").widget.key;
@@ -778,7 +809,9 @@ builtins.toJSON {
   bookmarkCount = builtins.length linkGroup;
   bookmarkAdminHrefAligned = adminBookmark.href == route.publicUrl;
   widgetsCpu = (builtins.head c.services.homepage-dashboard.widgets).resources.cpu;
-  adminNamespaceAbsent = !(c.applications ? admin);
+  # `applications` itself is absent when no application stack is selected:
+  # absence of the whole namespace satisfies "no admin application".
+  adminNamespaceAbsent = !((c.applications or { }) ? admin);
 }' "path:${D}#nixosConfigurations.la-admin-1.config")" || fail "Homepage subset (LA without admin-hub/applications.admin, with aspects.homepage) does not evaluate"
 python3 - "$json" <<'PYEOF' || fail "Homepage subset observables violated"
 import json, sys
@@ -876,8 +909,10 @@ json="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
   hookNames = builtins.attrNames c.services.webhook.hooks;
   hookExec = c.services.webhook.hooks.health."execute-command";
   hookResponse = c.services.webhook.hooks.health."response-message";
-  webhookAdminRoutePresent = c.repo.web.currentHost.services ? "webhook-admin";
-  adminNamespaceAbsent = !(c.applications ? admin);
+  webhookAdminRoutePresent = c.repo.web.catalog ? "webhook-admin";
+  # `applications` itself is absent when no application stack is selected:
+  # absence of the whole namespace satisfies "no admin application".
+  adminNamespaceAbsent = !((c.applications or { }) ? admin);
 }' "path:${D}#nixosConfigurations.la-admin-1.config")" || fail "Webhook subset (LA without admin-hub/applications.admin, with aspects.webhook) does not evaluate"
 python3 - "$json" <<'PYEOF' || fail "Webhook subset observables violated"
 import json, re, sys
@@ -931,7 +966,7 @@ PYEOF
 
 json="$(nix eval --no-write-lock-file --raw --apply 'c:
 let
-  route = c.repo.web.currentHost.services."cockpit-admin";
+  route = c.repo.web.catalog."cockpit-admin";
 in
 builtins.toJSON {
   leafEnable = c.services.admin.cockpit.enable;
@@ -951,8 +986,10 @@ builtins.toJSON {
   loopbackBackupPaths = c.services.state-backups.services.cockpit-loopback-tls.paths;
   loopbackMaterialUnit = c.systemd.services ? cockpit-loopback-tls-material;
   loopbackOrdering = builtins.elem "cockpit-loopback-tls-material.service" c.systemd.services.cockpit.requires && builtins.elem "cockpit-loopback-tls-material.service" c.systemd.services.cockpit.after;
-  routeScheme = route.origin.scheme;
-  adminNamespaceAbsent = !(c.applications ? admin);
+  routeScheme = route.upstreamScheme;
+  # `applications` itself is absent when no application stack is selected:
+  # absence of the whole namespace satisfies "no admin application".
+  adminNamespaceAbsent = !((c.applications or { }) ? admin);
 }' "path:${D}#nixosConfigurations.la-admin-1.config")" || fail "Cockpit subset (LA without admin-hub/applications.admin, with aspects.cockpit) does not evaluate"
 python3 - "$json" <<'PYEOF' || fail "Cockpit subset observables violated"
 import json, sys
@@ -1040,7 +1077,9 @@ builtins.toJSON {
     "a+ /srv/data - - - - user:dev:r-X"
     "a+ /srv/data - - - - default:user:dev:r-X"
   ];
-  adminNamespaceAbsent = !(c.applications ? admin);
+  # `applications` itself is absent when no application stack is selected:
+  # absence of the whole namespace satisfies "no admin application".
+  adminNamespaceAbsent = !((c.applications or { }) ? admin);
 }')"
 python3 - "$json" <<'PYEOF' || fail "LA host-local admin runtime observables violated"
 import json, sys
@@ -1072,8 +1111,8 @@ PYEOF
 python3 - <<'PYEOF' || fail "host-record selection pins drifted"
 pins = {
     "modules/hosts/oci-melb-1/default.nix": [
-        "oci", "edge", "cockpit", "paperless", "postgres",
-        "ai-gateway", "karakeep", "niks3-cache", "phoenix",
+        "oci", "ingress", "cockpit", "paperless", "postgres",
+        "bifrost", "karakeep", "niks3-cache", "phoenix",
     ],
     "modules/hosts/home-forge/default.nix": [
         "dj", "music", "omniroute",
@@ -1082,7 +1121,7 @@ pins = {
 shared = [
     "provenance", "oci-images", "fleet-packages", "web-policy",
     "base", "shell", "networking", "tailscale", "notify",
-    "state-backups", "cache-publisher", "internal-contracts",
+    "state-backups", "cache-publisher",
     "builder-access", "observability-agent",
 ]
 for path, placement in pins.items():

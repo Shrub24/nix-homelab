@@ -3,7 +3,7 @@
 # provider state paths, bootstrap/provisioning secret sources, and the explicit
 # per-client OIDC provisioning secret-source map keyed by canonical oauth2
 # client id. The only endpoint source is canonical web policy
-# (`repo.web.currentHost.services`); the provider URL comes from the intrinsic
+# (`repo.web.catalog`); the provider URL comes from the intrinsic
 # OIDC contract (`./_oidc.nix`), which the provider consumes but never writes.
 #
 # Runtime sibling of the `identity-provider` aspect: the two halves
@@ -31,7 +31,7 @@ _: {
       # Provider endpoint data comes from canonical web policy, not from any admin
       # namespace. Route-key clients resolve their callback origin through the same
       # resolved host services map that admin workloads consume.
-      policyServices = config.repo.web.currentHost.services or { };
+      policyServices = config.repo.web.catalog or { };
 
       # Explicit provider-owned credential-source map keyed by canonical oauth2
       # client id. Keys are validated against the enabled canonical client set
@@ -72,6 +72,13 @@ _: {
       hasOauth2Clients = oauth2Clients != { };
       originHostMatch = builtins.match "https://([^/]+).*" cfg.appUrl;
       originHost = if originHostMatch == null then null else builtins.head originHostMatch;
+
+      # The provider owns TLS material only while the certificate paths keep
+      # their defaults; a host that binds a fleet CA supplies both paths and
+      # owns the material itself, so no pair is generated for it.
+      usesGeneratedPair =
+        cfg.tlsChainFile == "${cfg.tlsStateDir}/fullchain.pem"
+        && cfg.tlsKeyFile == "${cfg.tlsStateDir}/key.pem";
 
       oauth2SecretSpecs = lib.mapAttrs' (
         name: client:
@@ -258,14 +265,34 @@ _: {
           description = "Local bind address for the Kanidm server.";
         };
 
+        tlsStateDir = lib.mkOption {
+          type = lib.types.str;
+          default = "${config.services.identity.kanidm.dataDir}/tls";
+          defaultText = lib.literalExpression ''"''${config.services.identity.kanidm.dataDir}/tls"'';
+          description = ''
+            Directory holding the provider-owned TLS pair. The pair is
+            self-signed and generated on first start: nothing validates it,
+            because its only consumer is the host-local loopback hop behind the
+            host's private front.
+          '';
+        };
+
         tlsChainFile = lib.mkOption {
           type = lib.types.str;
-          description = "Absolute path to the TLS certificate chain used by the Kanidm server.";
+          default = "${config.services.identity.kanidm.tlsStateDir}/fullchain.pem";
+          defaultText = lib.literalExpression ''"''${config.services.identity.kanidm.tlsStateDir}/fullchain.pem"'';
+          description = ''
+            Absolute path to the TLS certificate chain served by the Kanidm
+            server. Override this and `tlsKeyFile` together to serve externally
+            managed material, such as a fleet CA.
+          '';
         };
 
         tlsKeyFile = lib.mkOption {
           type = lib.types.str;
-          description = "Absolute path to the TLS private key used by the Kanidm server.";
+          default = "${config.services.identity.kanidm.tlsStateDir}/key.pem";
+          defaultText = lib.literalExpression ''"''${config.services.identity.kanidm.tlsStateDir}/key.pem"'';
+          description = "Absolute path to the TLS private key served by the Kanidm server.";
         };
 
         tlsReaderGroups = lib.mkOption {
@@ -424,7 +451,38 @@ _: {
           services = {
             kanidm = {
               serviceConfig.SupplementaryGroups = cfg.tlsReaderGroups;
-              after = [ "caddy.service" ];
+            };
+
+            "kanidm-local-tls" = lib.mkIf usesGeneratedPair {
+              description = "Generate the provider-owned TLS pair for the Kanidm server";
+              wantedBy = [ "multi-user.target" ];
+              requiredBy = [ "kanidm.service" ];
+              before = [ "kanidm.service" ];
+              serviceConfig = {
+                Type = "oneshot";
+                RemainAfterExit = true;
+                ExecStart = pkgs.writeShellScript "kanidm-local-tls" ''
+                  set -euo pipefail
+                  umask 077
+
+                  install -d -m 0750 -o kanidm -g kanidm "${cfg.tlsStateDir}"
+
+                  # Generate once and keep: the pair carries no identity anyone
+                  # depends on, so there is nothing to rotate against.
+                  if [ -s "${cfg.tlsChainFile}" ] && [ -s "${cfg.tlsKeyFile}" ]; then
+                    exit 0
+                  fi
+
+                  ${pkgs.openssl}/bin/openssl req -x509 -nodes -newkey rsa:4096 -sha256 -days 3650 \
+                    -subj "/CN=${originHost}" \
+                    -addext "subjectAltName=DNS:${originHost},DNS:localhost,IP:127.0.0.1" \
+                    -keyout "${cfg.tlsKeyFile}" \
+                    -out "${cfg.tlsChainFile}"
+
+                  chown kanidm:kanidm "${cfg.tlsChainFile}" "${cfg.tlsKeyFile}"
+                  chmod 0640 "${cfg.tlsChainFile}" "${cfg.tlsKeyFile}"
+                '';
+              };
             };
 
             # Operator-invoked restore helper: no wantedBy, so it never starts at boot.
@@ -440,6 +498,7 @@ _: {
           tmpfiles.rules = [
             "d ${cfg.dataDir} 0750 kanidm kanidm - -"
             "z ${cfg.dataDir} 0750 kanidm kanidm - -"
+            (lib.mkIf usesGeneratedPair "d ${cfg.tlsStateDir} 0750 kanidm kanidm - -")
             "d ${cfg.backup.exportDir} 0750 kanidm kanidm - -"
             "z ${cfg.backup.exportDir} 0750 kanidm kanidm - -"
           ];

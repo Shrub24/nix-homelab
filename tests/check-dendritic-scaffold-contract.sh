@@ -185,7 +185,7 @@ done
 for system in x86_64-linux aarch64-linux; do
   pkgs="$(ne --raw --apply 'p: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames p))' "path:.#packages.${system}")" ||
     fail "packages.${system} does not evaluate"
-  if [ "$pkgs" != '["deploy-rs","host-la-admin-1","host-oci-melb-1","niks3","notification-daemon","notify","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
+  if [ "$pkgs" != '["deploy-rs","host-la-admin-1","host-oci-melb-1","niks3","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
     fail "packages.${system} keys drifted (host-home-forge must stay absent): $pkgs"
   fi
 done
@@ -193,7 +193,12 @@ done
 # Deploy node keys match the registry; physical edge/order metadata unchanged.
 deploy_keys="$(ne --raw --apply 'n: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames n))' 'path:.#deploy.nodes')"
 [ "$deploy_keys" = "$registry_keys" ] || fail "deploy node keys $deploy_keys != registry keys $registry_keys"
-[ "$(ne --raw 'path:.#deployHosts.edgeHost')" = "la-admin-1" ] || fail "edgeHost must remain la-admin-1"
+# The edge-host fact and the policy's host key name the same thing (the ingress
+# host), so they must agree: exactly one policy host key, equal to edgeHost.
+edge_host="$(ne --raw 'path:.#deployHosts.edgeHost')"
+policy_hosts="$(ne --raw --apply 'h: builtins.toJSON (builtins.attrNames h)' 'path:.#nixosConfigurations.oci-melb-1.config.repo.web.hosts')"
+[ "$policy_hosts" = "[\"$edge_host\"]" ] ||
+  fail "edgeHost $edge_host must be the single policy host key, got $policy_hosts"
 [ "$(ne --raw --apply 'l: builtins.toJSON l' 'path:.#deployHosts.deployOrder')" = '["la-admin-1","oci-melb-1"]' ] ||
   fail "deployOrder must remain [la-admin-1 oci-melb-1]"
 
@@ -226,7 +231,7 @@ s = open(p).read()
 node_anchor = "    oci-melb-1 = {\n"
 assert s.count(node_anchor) == 1, "node anchor drifted"
 s = s.replace(node_anchor, "    ghost-node = {\n      hostName = \"ghost-node\";\n      sshUser = \"dev\";\n      system = \"x86_64-linux\";\n      remoteBuild = false;\n      strictSubstituteOnly = false;\n    };\n\n" + node_anchor, 1)
-edge_anchor = '  edgeHost = "la-admin-1";'
+edge_anchor = '  edgeHost = "oci-melb-1";'
 assert s.count(edge_anchor) == 1, "edgeHost anchor drifted"
 s = s.replace(edge_anchor, '  edgeHost = "ghost-edge";', 1)
 order_anchor = '    "oci-melb-1"\n  ];'
@@ -275,7 +280,7 @@ case "$system_bad" in
 esac
 
 # Stage 8 task 3.2 (HIC-3): host-backed web routing references canonical host
-# identities, enforced in modules/flake/web-policy.nix against the declared
+# identities, enforced in modules/web/web-policy.nix against the declared
 # nixos.hosts records, with policy/globals.nix as the single tailnet-suffix
 # authority. Two independent copies isolate the two guards: the hosts-table key
 # guard (outer) and the host-backed origin-FQDN guard (inner, reachable only
@@ -290,7 +295,7 @@ import sys
 
 p = sys.argv[1]
 s = open(p).read()
-anchor = "  hosts = {\n    la-admin-1 = {"
+anchor = "  hosts = {\n    oci-melb-1 = {"
 assert s.count(anchor) == 1, "hosts-table anchor drifted"
 s = s.replace(
     anchor,
@@ -299,13 +304,13 @@ s = s.replace(
     "      defaults = { };\n"
     "      services = { };\n"
     "    };\n"
-    "    la-admin-1 = {",
+    "    oci-melb-1 = {",
     1,
 )
 open(p, "w").write(s)
 PYEOF
 set +e
-web_bad_key="$(ne --raw "path:${D}#nixosConfigurations.la-admin-1.config.repo.web.hosts.la-admin-1.primaryDomain" 2>&1)"
+web_bad_key="$(ne --raw "path:${D}#nixosConfigurations.oci-melb-1.config.repo.web.hosts.oci-melb-1.primaryDomain" 2>&1)"
 web_bad_key_rc=$?
 set -e
 [ "$web_bad_key_rc" -ne 0 ] || fail "3.2: an unknown web-policy hosts key must fail closed"
@@ -326,7 +331,7 @@ s = s.replace(anchor, f'            host = "ghost-origin.{suffix}";\n           
 open(p, "w").write(s)
 PYEOF
 set +e
-web_bad_origin="$(ne --raw "path:${D}#nixosConfigurations.la-admin-1.config.repo.web.hosts.la-admin-1.primaryDomain" 2>&1)"
+web_bad_origin="$(ne --raw "path:${D}#nixosConfigurations.oci-melb-1.config.repo.web.hosts.oci-melb-1.primaryDomain" 2>&1)"
 web_bad_origin_rc=$?
 set -e
 [ "$web_bad_origin_rc" -ne 0 ] || fail "3.2: a host-backed origin FQDN with no canonical identity must fail closed"
@@ -413,7 +418,7 @@ if grep -RnE --include='*.nix' '\{[^}]*\b(inputs|self|ociImages)\b[^}]*\}' modul
   fail "lower-level module destructures a prohibited self/inputs/ociImages argument"
 fi
 # Image references must flow through the typed policy option only.
-if grep -RnE --include='*.nix' 'ociImages' modules lib | grep -v '^modules/flake/' | grep -vE 'repo\.ociImages'; then
+if grep -RnE --include='*.nix' 'ociImages' modules lib | grep -v '^modules/flake/' | grep -v '^modules/containers/oci-images\.nix' | grep -vE 'repo\.ociImages'; then
 fail "ociImages may only be read as config.repo.ociImages"
 fi
 
@@ -455,7 +460,7 @@ pub_names_of() { # $1 repo root -> sorted flake.modules.nixos.<name> definitions
 }
 registry_selections() { # $1 repo root -> "host aspect" pairs, in source order
   # Stage 8 HIC-1/HIC-2: hosts declare their selections in
-  # modules/hosts/<host>/default.nix. modules/flake/registry.nix is still
+  # modules/hosts/<host>/default.nix. modules/flake/bootstrap.nix is still
   # parsed: it currently holds no selection table, so that half is inert, but
   # keeping it means a reintroduced table is at least parsed rather than
   # silently ignored (the exact-set 7b assertions are the non-vacuous guards.
@@ -477,7 +482,7 @@ registry_selections() { # $1 repo root -> "host aspect" pairs, in source order
         s = substr(s, RSTART + RLENGTH)
       }
     }
-  ' "$1/modules/flake/registry.nix" "$1"/modules/hosts/*/default.nix
+  ' "$1/modules/flake/bootstrap.nix" "$1"/modules/hosts/*/default.nix
 }
 host_aspects() { # $1 repo root, $2 host -> sorted selected aspect names
   registry_selections "$1" | awk -v h="$2" '$1 == h { print $2 }' | LC_ALL=C sort -u
@@ -503,19 +508,18 @@ host_leaf_imports_of() { # $1 dir
 # deleted. Registry references are not definition sites. No central publication
 # file is pinned.
 expected_pub="$(printf '%s\n' \
-flake.modules.nixos.ai-gateway \
+flake.modules.nixos.bifrost \
 flake.modules.nixos.base \
 flake.modules.nixos.beszel \
 flake.modules.nixos.builder-access \
 flake.modules.nixos.cache-publisher \
 flake.modules.nixos.cockpit \
 flake.modules.nixos.dj \
-flake.modules.nixos.edge \
+flake.modules.nixos.ingress \
 flake.modules.nixos.fleet-packages \
 flake.modules.nixos.gatus \
 flake.modules.nixos.homepage \
 flake.modules.nixos.identity-provider \
-flake.modules.nixos.internal-contracts \
 flake.modules.nixos.kanidm-host-auth \
 flake.modules.nixos.karakeep \
 flake.modules.nixos.music \
@@ -539,8 +543,9 @@ flake.modules.nixos.vaultwarden \
 flake.modules.nixos.web-policy \
 flake.modules.nixos.webhook)"
 pub_names="$(pub_names_of "$ROOT")"
-if [ "$pub_names" != "$expected_pub" ]; then
-  fail "discovered publications drifted from the support quartet + twelve deployment aspects + eighteen placement aspects + internal-contracts: $pub_names"
+expected_sorted="$(printf '%s\n' $expected_pub | LC_ALL=C sort)"
+if [ "$pub_names" != "$expected_sorted" ]; then
+  fail "discovered publications drifted from the declared inventory: $pub_names"
 fi
 if grep -RnE --include='*.nix' 'flake\.modules\.nixos\.cli|_aspects/cli|aspects\.cli' modules; then
 fail "the deleted cli aspect must not be resurrected"
@@ -577,22 +582,21 @@ aspects.tailscale
 aspects.notify
 aspects.state-backups
 aspects.cache-publisher
-aspects.internal-contracts
 aspects.builder-access
 aspects.observability-agent"
 oci_placement="aspects.oci
-aspects.edge
+aspects.ingress
 aspects.cockpit
 aspects.paperless
 aspects.postgres
-aspects.ai-gateway
+aspects.bifrost
 aspects.karakeep
 aspects.niks3-cache
 aspects.phoenix"
 # The admin capabilities are placed by their own aspects on la-admin-1, each
 # selected exactly once (no convenience bundle). Cockpit and Termix are demoted
 # and stay unselected while unused, so their selections are absent here.
-la_placement="aspects.edge
+la_placement="aspects.ingress
 aspects.push-server
 aspects.identity-provider
 aspects.vaultwarden
@@ -657,14 +661,15 @@ grep -q '"grub"' modules/flake/base/foundation.nix || fail "bootLoader enum must
 grep -q '"systemd-boot"' modules/flake/base/foundation.nix || fail "bootLoader enum must accept systemd-boot"
 grep -q 'buildTmpfsSize = lib.mkOption' modules/flake/base/foundation.nix || fail "buildTmpfsSize fact option missing"
 grep -q 'type = lib.types.str;' modules/flake/base/foundation.nix || fail "buildTmpfsSize fact must be a typed string"
-if grep -RnE --include='*.nix' 'mkForce' modules | grep -E 'boot\.loader|fileSystems|"/build"|fleet\.foundation|services\.tailscale|notification-daemon|tailscale_auth|debugMtu|authKeyFile'; then
+if grep -RnE --include='*.nix' 'mkForce' modules | grep -E 'boot\.loader|fileSystems|"/build"|fleet\.foundation|services\.tailscale|services\.notify|tailscale_auth|debugMtu|authKeyFile'; then
 fail "foundation-owned options must not be overridden with mkForce"
 fi
 
 # 7d. Per-host observable contract: typed facts, boot/`/build` rendering,
 # the five aspect markers (selection is enablement), Tailscale MTU/auth-key
-# ownership, notify composition with the repo packages, and DJ selection
-# enablement (S4-4: forge true; OCI/LA discovered-but-unselected false).
+# ownership, the notify composition with the shared nix-fleet mechanism and its
+# packages, and DJ selection enablement (S4-4: forge true; OCI/LA
+# discovered-but-unselected false).
 probe() { # $1 host, $2 expected JSON (python dict literal)
   local host="$1" json
   json="$(ne --json --apply 'c: {
@@ -681,9 +686,8 @@ networkd = c.systemd.network.enable or false;
 ts = c.services.tailscale.enable or false;
 tsMtu = ((c.systemd.services.tailscaled or {}).environment or {}).TS_DEBUG_MTU or null;
 tsAuthKeyFile = c.services.tailscale.authKeyFile or null;
-daemon = c.services.notification-daemon.enable or false;
-daemonPkg = (c.services.notification-daemon.package or {}).name or "";
-notifyPkg = (c.services.notification-daemon.notifyPackage or {}).name or "";
+daemonUnit = (c.systemd.services or { }) ? "notify";
+daemonPkg = (c.services.notify.package or {}).name or "";
 dj = c.applications.dj.enable or false;
 }' "path:.#nixosConfigurations.${host}.config")" ||
 fail "${host}: foundation probe does not evaluate"
@@ -702,19 +706,17 @@ if not any(o == "size=" + got["buildTmpfsSize"] for o in got["buildOpts"]):
     errs.append(f"buildOpts: no size={got['buildTmpfsSize']} in {got['buildOpts']!r}")
 if not any(o == "mode=0755" for o in got["buildOpts"]):
     errs.append(f"buildOpts: missing mode=0755 in {got['buildOpts']!r}")
-if not got["daemonPkg"].startswith("notification-daemon-"):
-    errs.append(f"daemonPkg: {got['daemonPkg']!r} not the repo notification-daemon package")
-if got["notifyPkg"] != "notify":
-    errs.append(f"notifyPkg: {got['notifyPkg']!r} not the repo notify package")
+if not got["daemonPkg"].startswith("notify-"):
+    errs.append(f"daemonPkg: {got['daemonPkg']!r} not the shared notify package (daemon + CLI + handler)")
 if errs:
     print(f"{host}: " + "; ".join(errs), file=sys.stderr)
     sys.exit(1)
 PYEOF
 }
 
-probe oci-melb-1 '{"bootLoader":"grub","buildTmpfsSize":"8G","systemdBoot":false,"grub":true,"efiRemovable":true,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemon":true,"dj":false}'
-probe la-admin-1 '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemon":true,"dj":false}'
-probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":null,"tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemon":true,"dj":true}'
+probe oci-melb-1 '{"bootLoader":"grub","buildTmpfsSize":"8G","systemdBoot":false,"grub":true,"efiRemovable":true,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"dj":false}'
+probe la-admin-1 '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"dj":false}'
+probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":null,"tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"dj":true}'
 
 # 7d-2. Stage 5 web/identity observables (S5-4, S5-5, S5-8). web-policy is an
 # all-host infrastructure-support selection: config.repo.web resolves on every
@@ -727,11 +729,26 @@ probe_web_identity() { # $1 host, $2 expected JSON (python dict literal)
   json="$(ne --json --apply 'c: {
     webHosts = builtins.attrNames (c.repo.web.hosts or {});
     webCatalog = builtins.attrNames (c.repo.web.catalog or {});
-    ntfyUrl = c.services.notification-daemon.ntfy.serverUrl or "";
+    ntfyUrl = c.services.notify.ntfy.serverUrl or "";
     ntfyDefault = c.repo.web.catalog."ntfy-admin".publicUrl or "";
     providerUrl = (c.services.identity.oidc.providerUrl or null);
     hostAuth = (c.services.identity.hostAuth.enable or false);
     kanidmUri = if (c.services.kanidm.client.enable or false) then (c.services.kanidm.client.settings.uri or null) else null;
+    fronts = builtins.sort builtins.lessThan (builtins.filter (n: builtins.match "tailscale-serve-.*" n != null) (builtins.attrNames c.systemd.services));
+    kanidmExposureMode = c.repo.web.originServices."kanidm-admin".exposureMode or null;
+    catalogExposureModes = builtins.sort builtins.lessThan (
+      builtins.attrNames (
+        builtins.listToAttrs (
+          builtins.map (s: { name = s.exposureMode; value = null; }) (builtins.attrValues c.repo.web.catalog)
+        )
+      )
+    );
+    kanidmUpstream = c.repo.web.currentHost.services."kanidm-admin".upstream or null;
+    kanidmSni = c.repo.web.currentHost.services."kanidm-admin".upstreamTlsServerName or null;
+    kanidmFrontLoopback = builtins.match ".*--https=8443 https\\+insecure://127\\.0\\.0\\.1:8443" (c.systemd.services."tailscale-serve-kanidm-admin".serviceConfig.ExecStart or "") != null;
+    kanidmTlsChain = c.services.identity.kanidm.tlsChainFile or null;
+    kanidmTlsGroups = c.services.identity.kanidm.tlsReaderGroups or [];
+    kanidmAfterCaddy = builtins.elem "caddy.service" (c.systemd.services.kanidm.after or []);
   }' "path:.#nixosConfigurations.${host}.config")" ||
   fail "${host}: web/identity probe does not evaluate"
   python3 - "$host" "$2" "$json" <<'PYEOF' || fail "${host}: observable web/identity contract violated"
@@ -761,10 +778,12 @@ if errs:
 PYEOF
 }
 
-# OCI/forge derive ntfy from policy; LA overrides to loopback.
-probe_web_identity oci-melb-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz"}'
-probe_web_identity la-admin-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","ntfyUrl":"http://127.0.0.1:2586","ntfyOverride":true}'
-probe_web_identity home-forge '{"providerUrl":null,"hostAuth":false,"kanidmUri":null}'
+# OCI/forge derive ntfy from policy; LA overrides to loopback. The private
+# origin transport is provider-side: the provider renders the front the edge
+# dials, the edge only dials the canonical private name.
+probe_web_identity oci-melb-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","fronts":["tailscale-serve-cockpit"],"kanidmExposureMode":null,"catalogExposureModes":["tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":"https://la-admin-1.tail0fe19b.ts.net:8443","kanidmSni":null,"kanidmFrontLoopback":false,"kanidmTlsChain":null,"kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
+probe_web_identity la-admin-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","ntfyUrl":"http://127.0.0.1:2586","ntfyOverride":true,"fronts":["tailscale-serve-kanidm-admin"],"kanidmExposureMode":"tailscale-serve","catalogExposureModes":["tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":null,"kanidmSni":null,"kanidmFrontLoopback":true,"kanidmTlsChain":"/srv/data/kanidm/tls/fullchain.pem","kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
+probe_web_identity home-forge '{"providerUrl":null,"hostAuth":false,"kanidmUri":null,"fronts":[],"kanidmExposureMode":null,"catalogExposureModes":["tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":null,"kanidmSni":null,"kanidmFrontLoopback":false,"kanidmTlsChain":null,"kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
 # Identity clients are the policy-derived oauth2 set on OCI/LA; forge has none.
 for host in oci-melb-1 la-admin-1; do
   clients="$(ne --raw --apply 'c: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames (c.services.identity.oidc.clients or {})))' "path:.#nixosConfigurations.${host}.config")" ||
@@ -799,15 +818,25 @@ if grep -RnE 'tailscale_auth_key|authKeyFile|TS_DEBUG_MTU|tailscale\.auth_key' m
 fail "hosts must not repeat tailscale secret/MTU registration"
 fi
 
-# 7f. Notify composition (FND-5, apprise-notification-module spec): the notify
-# aspect composes the notification-daemon leaf, enables it, and resolves the
-# repo packages via withSystem; hosts keep only host-specific inputs.
-grep -q 'options\.services\.notification-daemon' modules/notifications/notify.nix || fail "notify aspect must own the notification-daemon implementation body"
-grep -q 'enable = true;' modules/notifications/notify.nix || fail "notify aspect must enable the daemon"
-grep -q 'package = packages.notification-daemon;' modules/notifications/notify.nix || fail "notify aspect must pass the repo notification-daemon package"
-grep -q 'notifyPackage = packages.notify;' modules/notifications/notify.nix || fail "notify aspect must pass the repo notify package"
-if grep -RnE 'notification-daemon\.enable|notification-daemon\]' modules/hosts; then
-fail "hosts must not re-enable or import the notification-daemon leaf"
+# 7f. Notify composition: the notify aspect consumes nix-fleet's shared notify
+# aspect — the daemon, the CLI, the unit-notify systemd event handler and the
+# services.notify.events registration contract all live there — and binds only
+# the fleet's conventions; hosts keep only host-specific inputs.
+grep -q 'inputs\.nix-fleet\.modules\.nixos\.notify' modules/notifications/notify.nix \
+  || fail "notify aspect must consume the shared nix-fleet notify aspect"
+grep -q 'globals\.notifications\.telegram' modules/notifications/notify.nix \
+  || fail "notify contributor must derive the telegram policy from policy/globals.nix"
+grep -q 'ntfy-admin' modules/notifications/notify.nix \
+  || fail "notify contributor must derive the ntfy server URL from the web catalog"
+if grep -RnE 'options\.services\.notify|svc-monitor' modules/notifications/notify.nix; then
+  fail "the notify contributor must not re-declare the shared option surface or the retired svc-monitor"
+fi
+test ! -d pkgs/notification-daemon || fail "the notification daemon implementation belongs to nix-fleet, not pkgs/"
+test ! -d pkgs/notify || fail "the notify CLI implementation belongs to nix-fleet, not pkgs/"
+# The retired option namespace must not reappear in a host assembly (the
+# secret *file* keeps its historical name until the operator re-encrypts it).
+if grep -RnE 'services\.notification-daemon|notification-daemon\.(enable|monitor|telegram|ntfy|secretFiles)' modules/hosts; then
+  fail "hosts must not reference the retired notification-daemon namespace"
 fi
 
 # 7g. Stage 3 composition ownership (OPS-1..OPS-9): the five deferred leaves
@@ -870,7 +899,7 @@ fi
 grep -q 'flake.modules.nixos.kanidm-host-auth' modules/identity/kanidm-host-auth.nix ||
   fail "kanidm-host-auth.nix must publish kanidm-host-auth"
 for reader in modules/identity/kanidm-runtime.nix modules/identity/kanidm-host-auth.nix \
-  modules/flake/paperless/core.nix modules/flake/karakeep.nix; do
+  modules/apps/paperless/core.nix modules/apps/karakeep.nix; do
   grep -q '_oidc\.nix' "$reader" || fail "$reader must import the intrinsic OIDC contract"
 done
 if grep -RnE --include='*.nix' 'identity/(_oidc|kanidm-host-auth)\.nix|identity-oidc' modules/hosts; then
@@ -899,7 +928,10 @@ probe_ops() { # $1 host, $2 expected JSON (python dict literal)
     beszelHost = (c.services.beszel-agent.secretFiles.host or "");
     beszelKeySops = (baseNameOf (c.sops.secrets.beszel_agent_key.sopsFile or ""));
     beszelTokenSops = (baseNameOf (c.sops.secrets.beszel_agent_token.sopsFile or ""));
-    monitor = c.services.notification-daemon.monitor.enable or false;
+    monitor = builtins.mapAttrs (_: ev: {
+      failure = ev.failure != null;
+      success = ev.success != null;
+    }) (c.services.notify.events or { });
     onFailure = (c.systemd.services."restic-backups-state".onFailure or []);
     nixbuildHosts = (c.programs.ssh.knownHosts.nixbuild.hostNames or []);
     nixbuildExtra = c.programs.ssh.extraConfig or "";
@@ -920,8 +952,8 @@ if not got["secretFile"].endswith(f"/secrets/hosts/{host}/system.yaml"):
     errs.append(f"secretFile: {got['secretFile']!r} not the conventional host secret path")
 if not got["beszelHost"].endswith(f"/secrets/hosts/{host}/system.yaml"):
     errs.append(f"beszelHost: {got['beszelHost']!r} not the conventional host secret path")
-if "svc-monitor@restic-backups-state.service" not in got["onFailure"]:
-    errs.append(f"onFailure: missing svc-monitor wiring in {got['onFailure']!r}")
+if not any(c.endswith("restic-backups-state.service") for c in got["onFailure"]):
+    errs.append(f"onFailure: missing the notify aspect handler for restic-backups-state ({got['onFailure']!r})")
 if "eu.nixbuild.net" not in got["nixbuildHosts"]:
     errs.append(f"nixbuildHosts: {got['nixbuildHosts']!r} missing eu.nixbuild.net")
 if "eu.nixbuild.net" not in got["nixbuildExtra"]:
@@ -932,9 +964,9 @@ if errs:
 PYEOF
 }
 
-probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":true,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
-probe_ops la-admin-1 '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":true,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
-probe_ops home-forge '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":true,"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}'
+probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":{"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-prune":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
+probe_ops la-admin-1 "$(printf '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":{"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}' "$web_suffix")"
+probe_ops home-forge "$(printf '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":{"beets-duplicates":{"failure":true,"success":false},"beets-inbox":{"failure":true,"success":false},"beets-reconcile":{"failure":true,"success":false},"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-omniroute":{"failure":true,"success":true},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}' "$web_suffix")"
 
 # 7i. Negative mutation checks (OPS-4, OPS-11, OPS-3/OPS-8 bootstrap gates).
 # Each runs against a throwaway copy so the working tree is never modified.
@@ -953,16 +985,32 @@ expect_eval_fail() { # $1 copy, $2 host, $3 expected message substring
   esac
 }
 
-# 7i-1. Backups without monitor enablement fails with the named monitor
-# assertion (OPS-4). The notify leaf stays selected because every monitoring
-# contributor (base, observability-agent, music, omniroute, and the OCI host
-# assembly) now defines services.notification-daemon.monitor.units, so the
-# monitor contract namespace is a hard prerequisite of those contributions;
-# the mutation removes exactly the enablement the notify aspect owns. The host
-# assembly no longer duplicates monitor.enable (MON-1/MON-3: one authority).
+expect_eval_fail_any() { # $1 copy, $2 host, $3... expected message substrings (any match)
+  local d="$1" host="$2" wanted out rc
+  shift 2
+  set +e
+  out="$(nix eval --no-write-lock-file --raw "path:${d}#nixosConfigurations.${host}.config.system.build.toplevel.drvPath" 2>&1)"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "mutation ${host}: expected eval failure, got success"
+  for wanted in "$@"; do
+    case "$out" in
+      *"$wanted"*) return 0 ;;
+    esac
+  done
+  fail "mutation ${host}: expected a message containing one of '$*', got: $(printf '%s' "$out" | tail -3)"
+}
+
+# 7i-1. Backups without the notify aspect fails closed (OPS-4). The whole
+# notification mechanism — the daemon's option surface and the
+# services.notify.events registration contract — is declared by the shared
+# nix-fleet notify aspect the notify foundation aspect consumes,
+# so dropping that selection cannot silently lose restic failure notifications:
+# the composition fails on the missing contract. Both surfaces are accepted as
+# the reported one because module traversal order is not a contract.
 D="$(make_copy)"
-sed -i '/monitor\.enable = true;/d' "$D/modules/notifications/notify.nix"
-expect_eval_fail "$D" oci-melb-1 "services.notification-daemon.monitor.enable must be true"
+sed -i '/aspects\.notify/d' "$D/modules/hosts/oci-melb-1/default.nix"
+expect_eval_fail_any "$D" oci-melb-1 "services.notify"
 
 # 7i-2. A derived bucket outside the S3 rule fails with the named assertion
 # (OPS-11). nixpkgs itself rejects a trailing-hyphen hostName at the type
@@ -1003,11 +1051,11 @@ PY
 # 3.3a): selecting one of the split aspects alone must introduce only its own
 # units. Each leg takes a FRESH make_copy (7i-3's copy legitimately tests the
 # absent-secret gate and must not be reused). The composition imports the
-# copy's contributor module plus the notify/monitor provider module over a
-# minimal nixosSystem, so an unimported leaf's options are hard absences, and
-# the state-backups contributor's monitor-enable assertion is satisfied by the
-# imported notify leaf. The home-forge fixture hostname keeps the conventional
-# host secret present so the gated enables are true.
+# copy's contributor module plus the notify provider module over a minimal
+# nixosSystem, so an unimported leaf's options are hard absences, and the
+# state-backups contributor's registration contract is declared by the imported
+# notify leaf. The home-forge fixture hostname keeps the conventional host
+# secret present so the gated enables are true.
 subset_probe() { # $1 copy root, $2 aspect name -> eval report JSON
   local d="$1" aspect="$2" t out rc
   t="$(mktemp -d /tmp/scaffold-subset.XXXXXX)"
@@ -1021,10 +1069,10 @@ subset_probe() { # $1 copy root, $2 aspect name -> eval report JSON
         modules = [
           repo.inputs.sops-nix.nixosModules.sops
           repo.modules.nixos.notify
-          # The publication aspect resolves its write endpoint from the fleet's
-          # internal transport contract, so the contract is part of its
+          # The publication aspect resolves its write endpoint from the
+          # cross-host service catalog, so the catalog is part of its
           # composition — as it is on every host that selects the aspect.
-          repo.modules.nixos.internal-contracts
+          repo.modules.nixos.web-policy
           repo.modules.nixos.$aspect
           { networking.hostName = "home-forge"; system.stateVersion = "25.11"; }
         ];
@@ -1140,7 +1188,7 @@ for h in oci-melb-1 la-admin-1 home-forge; do
   sed -i '/aspects.state-backups/d' "$D/modules/hosts/$h/default.nix"
 done
 sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/backups/state-backups.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
-[ "$(pub_names_of "$D")" != "$expected_pub" ] ||
+[ "$(pub_names_of "$D")" != "$expected_sorted" ] ||
 fail "7a publication check must detect an unpublished state-backups aspect"
 [ "$(host_aspects "$D" oci-melb-1)" != "$oci_sel" ] ||
 fail "7b selection check must detect a dropped aspect"
@@ -1192,7 +1240,7 @@ sed -i '/applications\.dj\.enable = true;/d' "$D/modules/music/dj.nix"
 # removed, which is the deferredModule merge doing its job.
 D="$(make_copy)"
 rm "$D/modules/flake/networking.nix"
-[ "$(pub_names_of "$D")" != "$expected_pub" ] ||
+[ "$(pub_names_of "$D")" != "$expected_sorted" ] ||
   fail "7k-2: publication discovery must detect a deleted distributed contributor"
 
 # 7k-3. A new direct public-aspect import without intrinsic justification is
@@ -1632,7 +1680,7 @@ cat >"$D/modules/music/evil-pub.nix" <<'EOF'
 EOF
 [ -n "$(music_leaf_publishers_of "$D")" ] ||
   fail "7m-3d: music publication scan must reject a foreign flake.modules.nixos publication"
-[ "$(pub_names_of "$D")" != "$expected_pub" ] ||
+[ "$(pub_names_of "$D")" != "$expected_sorted" ] ||
   fail "7m-3d: a foreign music publication must show up as publication-inventory drift"
 nix eval --raw --no-write-lock-file "path:${D}#nixosConfigurations.oci-melb-1.config.system.build.toplevel.drvPath" >/dev/null ||
   fail "7m-3d: an unselected publication must not affect the host toplevel eval"
@@ -1643,7 +1691,7 @@ nix eval --raw --no-write-lock-file "path:${D}#nixosConfigurations.oci-melb-1.co
 # namespace the host record writes into is gone.
 D="$(make_copy)"
 rm "$D/modules/music/music.nix"
-[ "$(pub_names_of "$D")" = "$expected_pub" ] ||
+[ "$(pub_names_of "$D")" = "$expected_sorted" ] ||
   fail "7m-3e: sibling music contributors must still publish the music aspect after the entry is deleted"
 expect_eval_fail "$D" home-forge "The option \`applications.music' does not exist"
 
@@ -1699,23 +1747,34 @@ assert_probe_result home-forge "$D" music-no-dj
 # contributor publishes its own flake.modules.nixos.<name> aspect; settled
 # concerns live in their domain directory (stage 8 task 5.1), the rest still
 # sit in modules/flake/.
-placement_dir_of() {
+placement_file_of() {
   case "$1" in
-    push-server) echo modules/notifications ;;
-    identity-provider) echo modules/identity ;;
-    niks3-cache) echo modules/cache ;;
-    edge) echo modules/edge ;;
-    oci) echo modules/oci ;;
-    cockpit | termix | vaultwarden | gatus | beszel | homepage | webhook) echo modules/admin ;;
-    postgres) echo modules/database ;;
-    *) echo modules/flake ;;
+    ingress) echo modules/web/ingress.nix ;;
+    push-server) echo modules/notifications/push-server.nix ;;
+    identity-provider) echo modules/identity/identity-provider.nix ;;
+    niks3-cache) echo modules/cache/niks3-cache.nix ;;
+    oci) echo modules/oci/oci.nix ;;
+    cockpit) echo modules/admin/cockpit.nix ;;
+    termix) echo modules/admin/termix.nix ;;
+    homepage) echo modules/admin/homepage.nix ;;
+    webhook) echo modules/admin/webhook.nix ;;
+    vaultwarden) echo modules/apps/vaultwarden.nix ;;
+    karakeep) echo modules/apps/karakeep.nix ;;
+    paperless) echo modules/apps/paperless/core.nix ;;
+    beszel) echo modules/observability/beszel.nix ;;
+    gatus) echo modules/observability/gatus.nix ;;
+    phoenix) echo modules/observability/phoenix.nix ;;
+    bifrost) echo modules/ai/bifrost.nix ;;
+    omniroute) echo modules/ai/omniroute.nix ;;
+    postgres) echo modules/database/postgres.nix ;;
   esac
 }
-placement_aspects="oci edge cockpit push-server identity-provider paperless postgres ai-gateway karakeep niks3-cache phoenix omniroute termix vaultwarden gatus beszel homepage webhook"
+placement_aspects="oci ingress cockpit push-server identity-provider paperless postgres bifrost karakeep niks3-cache phoenix omniroute termix vaultwarden gatus beszel homepage webhook"
 for a in $placement_aspects; do
-  a_dir="$(placement_dir_of "$a")"
-  test -f "$a_dir/$a.nix" || fail "7n: placement contributor $a_dir/$a.nix missing"
-  grep -qE "^[[:space:]]*flake\.modules\.nixos\.${a}[[:space:]]*=" "$a_dir/$a.nix" ||
+  a_file="$(placement_file_of "$a")"
+  [ -n "$a_file" ] || fail "7n: placement aspect $a has no owning contributor recorded"
+  test -f "$a_file" || fail "7n: placement contributor $a_file missing"
+  grep -qE "^[[:space:]]*flake\.modules\.nixos\.${a}[[:space:]]*=" "$a_file" ||
     fail "7n: $a_dir/$a.nix must publish flake.modules.nixos.$a"
 done
 # Implementations live beside their concern owner as sibling contributors of
@@ -1723,7 +1782,7 @@ done
 # the deferredModule merge composes the contributors, so no private leaf and no
 # cross-file import remains.
 grep -q 'boot.kernelParams = \[ "console=ttyAMA0,115200n8" \]' modules/oci/oci.nix || fail "7n: the OCI provider defaults must be nested in the oci publication"
-grep -qE '^[[:space:]]*flake\.modules\.nixos\.edge[[:space:]]*=' modules/edge/edge-ingress-application.nix || fail "7n: edge-ingress application contributor missing"
+grep -qE '^[[:space:]]*flake\.modules\.nixos\.ingress[[:space:]]*=' modules/web/ingress-runtime.nix || fail "7n: ingress runtime contributor missing"
 grep -qE '^[[:space:]]*flake\.modules\.nixos\.dj[[:space:]]*=' modules/music/dj-engine.nix || fail "7n: DJ engine contributor missing"
 grep -qE '^[[:space:]]*flake\.modules\.nixos\.dj[[:space:]]*=' modules/music/windows-vm.nix || fail "7n: DJ Windows VM contributor missing"
 if grep -RnE --include='*.nix' '(_oci|_edge|_dj|_aspects|_backups|_builder-access)/' modules; then
@@ -1845,16 +1904,16 @@ PLACEMENT_PROBE='c: {
   # contains a pre-existing duplicate that Stage 7 must not pin as a contract.
   grubHasSda = builtins.elem "/dev/sda" (c.boot.loader.grub.devices or [ ]);
   serialGetty = c.systemd.services ? "serial-getty@ttyAMA0";
-  edgeEnable = (c.applications."edge-ingress" or { }).enable or false;
-  edgeRole = (c.applications."edge-ingress" or { }).role or "";
+  edgeEnable = (c.services.ingress or { }).enable or false;
+  edgeRole = (c.services.ingress or { }).role or "";
   # Semantic route assertions rather than a brittle exact count: the edge
   # contract is that the host policy routes are projected, plus representative
   # catalog keys, so a future route addition cannot fail this check.
-  edgeHasRoutes = (builtins.attrNames ((c.applications."edge-ingress" or { }).routes or { })) != [ ];
+  edgeHasRoutes = (builtins.attrNames ((c.services.ingress or { }).routes or { })) != [ ];
   edgeRouteSample = builtins.sort builtins.lessThan (
     builtins.filter
       (k: builtins.elem k [ "navidrome" "termix-admin" "kanidm-admin" "admin-homepage" "webhook-admin" ])
-      (builtins.attrNames ((c.applications."edge-ingress" or { }).routes or { }))
+      (builtins.attrNames ((c.services.ingress or { }).routes or { }))
   );
   caddyEnable = c.services.caddy.enable or false;
   cockpitEnable = c.services.admin.cockpit.enable or false;
@@ -1869,14 +1928,14 @@ PLACEMENT_PROBE='c: {
   postgresEnable = c.services.postgres.enable or false;
   postgresInstances = builtins.attrNames (c.services.postgres.instances or { });
   postgresConsumers = builtins.attrNames (c.services.postgres.consumers or { });
-  bifrostEnable = c.services.bifrost-gateway.enable or false;
+  bifrostEnable = c.services.bifrost.enable or false;
   karakeepEnable = c.services.karakeep-pod.enable or false;
   niks3CacheAspect = (c.services.niks3-cache or { }) != { };
   niks3ServerEnable = c.services.niks3.enable or false;
   phoenixEnable = c.services.phoenix.enable or false;
   omnirouteEnable = c.services.omniroute.enable or false;
-  omnirouteMonitor = builtins.hasAttr "podman-omniroute" (c.services.notification-daemon.monitor.units or { });
-  monitorUnits = builtins.attrNames (c.services.notification-daemon.monitor.units or { });
+  omnirouteMonitor = builtins.hasAttr "podman-omniroute" (c.services.notify.events or { });
+  monitorUnits = builtins.attrNames (c.services.notify.events or { });
 }'
 
 probe_placement() { # $1 repo root, $2 host -> JSON
@@ -1899,9 +1958,9 @@ PYEOF
 }
 
 placement_json="$(probe_placement "$ROOT" oci-melb-1)" || fail "7n-2: oci-melb-1 placement probe does not evaluate"
-assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["paperless"],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheAspect":true,"niks3ServerEnable":true,"phoenixEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["paperless"],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheAspect":true,"niks3ServerEnable":true,"phoenixEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" la-admin-1)" || fail "7n-2: la-admin-1 placement probe does not evaluate"
-assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" home-forge)" || fail "7n-2: home-forge placement probe does not evaluate"
 la_absence="$(ne --raw --apply 'c: builtins.toJSON { cockpit = !(c.services.admin ? cockpit); termix = !(c.services.admin ? termix); adminSsh = (builtins.filter (n: n == "admin_ssh_identity" || n == "admin_ssh_known_hosts") (builtins.attrNames c.sops.secrets)) == []; }' "path:.#nixosConfigurations.la-admin-1.config")" ||
   fail "7n-2: LA absence probe does not evaluate"
@@ -1930,7 +1989,7 @@ assert_placement oci-melb-1 "$json" '{"omnirouteEnable":true}'
 # 7n-3c. Selection no longer supplying top-level enablement is detected: the
 # selected aspect stays in the registry but the capability is inert.
 D="$(make_copy)"
-sed -i '/services\.phoenix\.enable = true;/d' "$D/modules/flake/phoenix.nix"
+sed -i '/services\.phoenix\.enable = true;/d' "$D/modules/observability/phoenix.nix"
 json="$(probe_placement "$D" oci-melb-1)" || fail "7n-3c: OCI must still evaluate with the enablement removed"
 assert_placement oci-melb-1 "$json" '{"phoenixEnable":false}'
 
@@ -1939,7 +1998,7 @@ assert_placement oci-melb-1 "$json" '{"phoenixEnable":false}'
 # flake-parts modules, so importing one into a host assembly fails evaluation
 # loudly instead of activating it (import != placement, enforced twice).
 D="$(make_copy)"
-sed -i '/^    \.\/_admin-runtime\.nix$/i\    ../../../modules/flake/phoenix.nix' "$D/modules/hosts/la-admin-1/_nixos.nix"
+sed -i '/^    \.\/_admin-runtime\.nix$/i\    ../../../modules/observability/phoenix.nix' "$D/modules/hosts/la-admin-1/_nixos.nix"
 [ -n "$(host_workload_imports_of "$D")" ] ||
   fail "7n-3d: the host-import guard must detect a directly imported workload implementation"
 expect_eval_fail "$D" la-admin-1 "The option \`flake' does not exist"
@@ -1956,16 +2015,16 @@ p = sys.argv[1]
 s = open(p).read()
 assert s.count("    ./_admin-runtime.nix\n") == 1, "import anchor drifted"
 assert s.count("  services = {\n") == 1, "services anchor drifted"
-s = s.replace("    ./_admin-runtime.nix\n", "    ../../flake/phoenix.nix\n    ./_admin-runtime.nix\n", 1)
+s = s.replace("    ./_admin-runtime.nix\n", "    ../../observability/phoenix.nix\n    ./_admin-runtime.nix\n", 1)
 s = s.replace("  services = {\n", "  services = {\n    phoenix.enable = true;\n", 1)
 open(p, "w").write(s)
 PYEOF
 [ -n "$(host_workload_imports_of "$D")" ] ||
-  fail "7n-3d-2: the path-form-independent guard must reject ../../flake/phoenix.nix + enablement"
+  fail "7n-3d-2: the path-form-independent guard must reject ../../observability/phoenix.nix + enablement"
 expect_eval_fail "$D" la-admin-1 "The option \`flake' does not exist"
-sed -i 's#../../flake/phoenix\.nix#./../../flake/phoenix.nix#' "$D/modules/hosts/la-admin-1/_nixos.nix"
+sed -i 's#../../observability/phoenix\.nix#./../../observability/phoenix.nix#' "$D/modules/hosts/la-admin-1/_nixos.nix"
 [ -n "$(host_workload_imports_of "$D")" ] ||
-  fail "7n-3d-2: the host-import guard must reject ./../../flake/phoenix.nix"
+  fail "7n-3d-2: the host-import guard must reject ./../../observability/phoenix.nix"
 
 # 7n-3e. Discovery alone is inert: a freshly published, unselected aspect does
 # not activate anything, and selecting it is the only activation edge.
@@ -1976,10 +2035,10 @@ cat >"$D/modules/flake/tamper-aspect.nix" <<'EOF'
   flake.modules.nixos.tamper-aspect =
     { pkgs, ... }:
     {
-    # The unit is defined here so the fail-closed monitor contract is
+    # The unit is defined here so the fail-closed registration contract is
     # satisfied and only contribution visibility is under test (MON-1/MON-3).
     systemd.services.tamper-unit.serviceConfig.ExecStart = lib.getExe pkgs.coreutils;
-    services.notification-daemon.monitor.units."tamper-unit".onFailure = true;
+    services.notify.events."tamper-unit".failure = { };
     };
 }
 EOF
@@ -2030,22 +2089,22 @@ esac
 # mutation below proves it still fires.
 sibling_contributor_imports() { # $1 repo root
   grep -REl --include='*.nix' \
-    -e '\./(dj-engine|windows-vm|edge-ingress-application|edge-ingress-runtime|foundation|host-recovery)\.nix' \
+    -e '\./(dj-engine|windows-vm|ingress-runtime|foundation|host-recovery)\.nix' \
     "$1/modules" 2>/dev/null |
-    grep -vE "^$1/modules/(music|edge|flake/base)/" || true
+    grep -vE "^$1/modules/(music|web|flake/base)/" || true
 }
 [ -z "$(sibling_contributor_imports "$ROOT")" ] ||
   fail "7n-3f-2: sibling contributors must be reached by discovery only"
 D="$(make_copy)"
-printf '\n  imports = [ ./dj-engine.nix ];\n' >>"$D/modules/flake/phoenix.nix"
+printf '\n  imports = [ ./dj-engine.nix ];\n' >>"$D/modules/observability/phoenix.nix"
 [ -n "$(sibling_contributor_imports "$D")" ] ||
   fail "7n-3f-2: the sibling-contributor predicate must detect an import from another concern"
 D="$(make_copy)"
-printf '\n  imports = [ ../music/_beets/runners.nix ];\n' >>"$D/modules/flake/phoenix.nix"
+printf '\n  imports = [ ../music/_beets/runners.nix ];\n' >>"$D/modules/observability/phoenix.nix"
 [ -n "$(private_leaf_strays "$D")" ] ||
   fail "7n-3f-2: the underscore-private predicate must detect a cross-concern leaf import"
 D="$(make_copy)"
-printf '\n  imports = [ ../admin/homepage/_data.nix ];\n' >>"$D/modules/flake/phoenix.nix"
+printf '\n  imports = [ ../admin/homepage/_data.nix ];\n' >>"$D/modules/observability/phoenix.nix"
 [ -n "$(private_leaf_strays "$D")" ] ||
   fail "7n-3f-2: the underscore-private predicate must detect a cross-concern helper import"
 
@@ -2053,7 +2112,7 @@ printf '\n  imports = [ ../admin/homepage/_data.nix ];\n' >>"$D/modules/flake/ph
 # allowed (current-state docs and consumer comments legitimately name them),
 # while the import-form predicate above still rejects real imports.
 D="$(make_copy)"
-printf '\n# the dj engine contributor lives at modules/music/dj-engine.nix\n' >>"$D/modules/flake/phoenix.nix"
+printf '\n# the dj engine contributor lives at modules/music/dj-engine.nix\n' >>"$D/modules/observability/phoenix.nix"
 [ -z "$(sibling_contributor_imports "$D")" ] ||
   fail "7n-3f-3: a prose mention of a contributor path must not be treated as an import"
 
@@ -2065,31 +2124,37 @@ printf '{ ... }: { }\n' >"$D/modules/applications/wrapper.nix"
 [ "$(surviving_evacuated_roots "$D")" = "modules/applications" ] ||
   fail "7n-3g: the root-evacuation predicate must detect a reintroduced modules/applications"
 
-# --- 7o. Feature-owned monitor contract (MON-1..MON-4) ----------------------
+# --- 7o. Feature-owned notification registration contract (MON-1..MON-4) ---
 # (openspec change feature-owned-service-monitoring tasks 2.1-2.3, 3.1, 3.2.)
-# Monitoring participation is contributed by the capability that owns each
-# unit, so the observable contract is per host: the old list option and every
-# reverse index are gone, only real implementations are monitored, the Beets
-# units follow the music placement (home-forge yes, OCI no synthetic
-# fragments), and owner-defined hooks survive the additive merge.
+# Registration is contributed by the capability that owns each unit; the contract
+# itself — `services.notify.events.<unit>` plus the native OnFailure= /
+# OnSuccess= handler — is declared by the shared nix-fleet notify
+# aspect the notify foundation aspect consumes. The observable contract is
+# therefore per host: the old local registry and every reverse index are gone,
+# only real implementations are registered, the Beets units follow the music
+# placement (home-forge yes, OCI no synthetic fragments), and owner-defined
+# hooks survive the additive merge.
 
-# 7o-1. The host-maintained list option is gone: no assignment survives in
-# source, and the checks probe the typed contract instead of the removed list.
+# 7o-1. The host-maintained list option is gone and the local registry with it:
+# no assignment survives in source, and the checks probe the shared contract.
 if grep -RnE --include='*.nix' 'monitor\.services' modules lib policy; then
   fail "7o-1: the removed monitor.services list must have no assignment left"
 fi
-if grep -RnE --include='*.nix' 'monitor\.services' tests; then
-  fail "7o-1: checks must probe monitor.units, not the removed monitor.services list"
+if grep -RnE --include='*.nix' 'monitor\.services|monitor\.units' tests modules; then
+  fail "7o-1: the retired monitor registry must have no leftover reference; capabilities register through services.notify.events"
 fi
-grep -q 'monitor\.units' modules/notifications/notify.nix ||
-  fail "7o-1: the typed monitor.units contract must be declared by the notify aspect"
+grep -q 'inputs\.nix-fleet\.modules\.nixos\.notify' modules/notifications/notify.nix ||
+  fail "7o-1: the notify aspect must consume the shared nix-fleet aspect that declares the registration contract"
+grep -RqE --include='*.nix' 'services\.notify\.events' modules ||
+  fail "7o-1: capabilities must register through services.notify.events"
 
-# 7o-2. Per-host observable monitoring contract. Every contributed unit must
-# have a real implementation, the contribution set must match the owning
+# 7o-2. Per-host observable notification contract. Every registered unit must
+# have a real implementation, the registration set must match the owning
 # capabilities exactly (no host reverse index, no phantom Beets fragment), and
-# each contributed unit must really receive its declared generic hooks.
+# each registered unit must really receive the native handler the shared aspect
+# attaches for its declared events.
 MONITOR_PROBE='c: let
-  units = c.services.notification-daemon.monitor.units or { };
+  events = c.services.notify.events or { };
   svc = c.systemd.services or { };
   isReal = n: let s = svc.${n} or null; in
     s != null && ((s.serviceConfig.ExecStart or null) != null || ((s.script or "") != ""));
@@ -2102,11 +2167,22 @@ MONITOR_PROBE='c: let
     else if builtins.isList v then builtins.map render v
     else [ (render v) ];
   isBeets = n: builtins.match "beets-.*" n != null;
-  names = builtins.attrNames units;
+  names = builtins.attrNames events;
   beets = builtins.filter isBeets (builtins.attrNames svc);
+  # Non-root notify CLI callers: each is granted socket dispatch by joining the
+  # notify group from the module that owns it.
+  callers = builtins.filter (
+    u: c.users.users ? ${u} && builtins.elem "notify" (c.users.users.${u}.extraGroups or [ ])
+  ) [
+    "beets"
+    "dev"
+    "paperless"
+  ];
 in {
   drv = c.system.build.toplevel.drvPath;
-  enable = c.services.notification-daemon.monitor.enable or false;
+  daemonUnit = svc ? "notify";
+  handlerUnit = svc ? "notify-event@";
+  callers = callers;
   names = builtins.sort builtins.lessThan names;
   unreal = builtins.filter (n: !(isReal n)) names;
   beetsAttrs = builtins.sort builtins.lessThan beets;
@@ -2115,9 +2191,13 @@ in {
   hooks = builtins.listToAttrs (map (n: {
     name = n;
     value = {
-      onFailure = svc.${n}.onFailure or [ ];
+      onFailure = cmds (svc.${n}.onFailure or null);
+      onSuccess = cmds (svc.${n}.onSuccess or null);
       execStartPost = cmds (svc.${n}.serviceConfig.ExecStartPost or null);
-      execStopPost = cmds (svc.${n}.serviceConfig.ExecStopPost or null);
+      registered = {
+        failure = events.${n}.failure != null;
+        success = events.${n}.success != null;
+      };
     };
   }) names);
 }'
@@ -2127,78 +2207,111 @@ probe_monitor() { # $1 host -> JSON
 }
 
 monitor_json="$(probe_monitor oci-melb-1)" || fail "7o-2: oci-melb-1 monitor probe does not evaluate"
-python3 - oci-melb-1 "$monitor_json" <<'PYEOF' || fail "7o-2: oci-melb-1 monitor contract violated"
+python3 - oci-melb-1 "$monitor_json" <<'PYEOF' || fail "7o-2: oci-melb-1 notification contract violated"
 import json, sys
 host, got = sys.argv[1], json.loads(sys.argv[2])
 errs = []
-if not got["enable"]:
-    errs.append("monitor.enable must be true on a notify-selected host")
+if not got["daemonUnit"]:
+    errs.append("the notify unit must exist on a notify-selected host")
+if not got["handlerUnit"]:
+    errs.append("the notify-event@ handler template must exist when units are registered")
 if got["unreal"]:
-    errs.append(f"contributed units without an implementation: {got['unreal']!r}")
-if got["names"] != ["beszel-agent", "nh-clean", "podman-storage-prune"]:
-    errs.append(f"contributed units drifted from the owning capabilities: {got['names']!r}")
+    errs.append(f"registered units without an implementation: {got['unreal']!r}")
+if got["names"] != ["beszel-agent", "nh-clean", "podman-prune", "restic-backups-state"]:
+    errs.append(f"registered units drifted from the owning capabilities: {got['names']!r}")
+if got["callers"] != ["dev", "paperless"]:
+    errs.append(f"notify-group callers drifted: {got['callers']!r}")
 if got["beetsAttrs"]:
     errs.append(f"OCI must evaluate no Beets service fragments: {got['beetsAttrs']!r}")
 if got["beetsInboxPresent"]:
     errs.append("OCI must not define a beets-inbox unit")
 for name, hooks in got["hooks"].items():
-    if not any(c.endswith(f"{name}.service") and "svc-monitor" in c for c in hooks["onFailure"]):
-        errs.append(f"{name}: OnFailure monitor hook missing ({hooks['onFailure']!r})")
-    if not any("svc-monitor" in c and "onStart" in c for c in hooks["execStartPost"]):
-        errs.append(f"{name}: ExecStartPost monitor hook missing ({hooks['execStartPost']!r})")
-    if not any("svc-monitor" in c and "onSuccess" in c for c in hooks["execStopPost"]):
-        errs.append(f"{name}: ExecStopPost monitor hook missing ({hooks['execStopPost']!r})")
+    if not hooks["registered"]["failure"]:
+        errs.append(f"{name}: no failure registration")
+    if hooks["registered"]["success"]:
+        errs.append(f"{name}: unexpected success registration")
+    if not any(c.endswith(f"notify-event@{name}.service") for c in hooks["onFailure"]):
+        errs.append(f"{name}: native OnFailure handler missing ({hooks['onFailure']!r})")
+    if hooks["onSuccess"]:
+        errs.append(f"{name}: unexpected OnSuccess handler ({hooks['onSuccess']!r})")
 if errs:
     print(f"{host}: " + "; ".join(errs), file=sys.stderr)
     sys.exit(1)
 PYEOF
 
 monitor_json="$(probe_monitor la-admin-1)" || fail "7o-2: la-admin-1 monitor probe does not evaluate"
-python3 - la-admin-1 "$monitor_json" <<'PYEOF' || fail "7o-2: la-admin-1 monitor contract violated"
+python3 - la-admin-1 "$monitor_json" <<'PYEOF' || fail "7o-2: la-admin-1 notification contract violated"
 import json, sys
 host, got = sys.argv[1], json.loads(sys.argv[2])
 errs = []
-if not got["enable"]:
-    errs.append("monitor.enable must be true on a notify-selected host")
+if not got["daemonUnit"]:
+    errs.append("the notify unit must exist on a notify-selected host")
+if not got["handlerUnit"]:
+    errs.append("the notify-event@ handler template must exist when units are registered")
 if got["unreal"]:
-    errs.append(f"contributed units without an implementation: {got['unreal']!r}")
-if got["names"] != ["beszel-agent", "nh-clean"]:
-    errs.append(f"contributed units drifted from the owning capabilities: {got['names']!r}")
+    errs.append(f"registered units without an implementation: {got['unreal']!r}")
+if got["names"] != ["beszel-agent", "nh-clean", "restic-backups-state"]:
+    errs.append(f"registered units drifted from the owning capabilities: {got['names']!r}")
+if got["callers"] != ["dev"]:
+    errs.append(f"notify-group callers drifted: {got['callers']!r}")
 if got["beetsAttrs"]:
     errs.append(f"la-admin-1 must evaluate no Beets service fragments: {got['beetsAttrs']!r}")
+for name, hooks in got["hooks"].items():
+    if not hooks["registered"]["failure"]:
+        errs.append(f"{name}: no failure registration")
+    if not any(c.endswith(f"notify-event@{name}.service") for c in hooks["onFailure"]):
+        errs.append(f"{name}: native OnFailure handler missing ({hooks['onFailure']!r})")
 if errs:
     print(f"{host}: " + "; ".join(errs), file=sys.stderr)
     sys.exit(1)
 PYEOF
 
 monitor_json="$(probe_monitor home-forge)" || fail "7o-2: home-forge monitor probe does not evaluate"
-python3 - home-forge "$monitor_json" <<'PYEOF' || fail "7o-2: home-forge Beets monitoring contract violated"
+python3 - home-forge "$monitor_json" <<'PYEOF' || fail "7o-2: home-forge Beets notification contract violated"
 import json, sys
 host, got = sys.argv[1], json.loads(sys.argv[2])
 errs = []
-if not got["enable"]:
-    errs.append("monitor.enable must be true on a notify-selected host")
+if not got["daemonUnit"]:
+    errs.append("the notify unit must exist on a notify-selected host")
+if not got["handlerUnit"]:
+    errs.append("the notify-event@ handler template must exist when units are registered")
 if got["unreal"]:
-    errs.append(f"contributed units without an implementation: {got['unreal']!r}")
-expected = ["beets-duplicates", "beets-inbox", "beets-reconcile", "beszel-agent", "nh-clean", "podman-omniroute"]
+    errs.append(f"registered units without an implementation: {got['unreal']!r}")
+expected = ["beets-duplicates", "beets-inbox", "beets-reconcile", "beszel-agent", "nh-clean", "podman-omniroute", "restic-backups-state"]
 if got["names"] != expected:
-    errs.append(f"contributed units drifted from the owning capabilities: {got['names']!r}")
+    errs.append(f"registered units drifted from the owning capabilities: {got['names']!r}")
+if got["callers"] != ["beets", "dev"]:
+    errs.append(f"notify-group callers drifted: {got['callers']!r}")
 if got["beetsReal"] != ["beets-duplicates", "beets-inbox", "beets-reconcile"]:
     errs.append(f"real Beets units drifted: {got['beetsReal']!r}")
 # The interactive quarantine review worker is not an automated runner and must
-# stay unmonitored (it keeps only its own failure hook).
+# stay unregistered (it keeps only its own failure hook).
 hooks = got["hooks"]
 for unit in ("beets-inbox", "beets-reconcile", "beets-duplicates"):
     h = hooks.get(unit)
     if h is None:
-        errs.append(f"{unit}: no monitor hooks")
+        errs.append(f"{unit}: no notification registration")
         continue
-    if not any(c.endswith(f"{unit}.service") and "svc-monitor" in c for c in h["onFailure"]):
-        errs.append(f"{unit}: OnFailure monitor hook missing ({h['onFailure']!r})")
-    if not any("svc-monitor" in c and "onStart" in c for c in h["execStartPost"]):
-        errs.append(f"{unit}: ExecStartPost monitor hook missing ({h['execStartPost']!r})")
-    if not any("svc-monitor" in c and "onSuccess" in c for c in h["execStopPost"]):
-        errs.append(f"{unit}: ExecStopPost monitor hook missing ({h['execStopPost']!r})")
+    if not h["registered"]["failure"]:
+        errs.append(f"{unit}: no failure registration")
+    if h["registered"]["success"]:
+        errs.append(f"{unit}: unexpected success registration")
+    if not any(c.endswith(f"notify-event@{unit}.service") for c in h["onFailure"]):
+        errs.append(f"{unit}: native OnFailure handler missing ({h['onFailure']!r})")
+# The long-running OmniRoute container reports a clean stop: the only unit with
+# a success registration, and the only one carrying the native OnSuccess handler.
+omni = hooks.get("podman-omniroute", {})
+if not omni.get("registered", {}).get("success"):
+    errs.append(f"podman-omniroute: success registration missing ({omni.get('registered')!r})")
+if not any(c.endswith("notify-event@podman-omniroute.service") for c in omni.get("onSuccess", [])):
+    errs.append(f"podman-omniroute: native OnSuccess handler missing ({omni.get('onSuccess')!r})")
+for name, h in hooks.items():
+    if name == "podman-omniroute":
+        continue
+    if h["registered"]["success"]:
+        errs.append(f"{name}: unexpected success registration")
+    if h["onSuccess"]:
+        errs.append(f"{name}: unexpected OnSuccess handler ({h['onSuccess']!r})")
 # Feature-owned Beets hooks (deployed baseline: OnFailure retry timer plus the
 # failure notification template) survive the additive merge.
 inbox = hooks.get("beets-inbox", {})
@@ -2206,56 +2319,54 @@ if "beets-inbox-retry.timer" not in inbox.get("onFailure", []):
     errs.append(f"beets-inbox: feature-owned retry timer lost ({inbox.get('onFailure')!r})")
 if not any("beets-notify-failure" in c for c in inbox.get("onFailure", [])):
     errs.append(f"beets-inbox: feature-owned failure notification lost ({inbox.get('onFailure')!r})")
-# Preprocess cleanup ExecStartPost is preserved and deterministically ordered
-# after the monitor's start report.
+# Preprocess cleanup ExecStartPost is preserved now that the registration no
+# longer injects lifecycle hooks of its own.
 post = inbox.get("execStartPost", [])
 if not any("rm -f" in c and "inbox-ready" in c for c in post):
     errs.append(f"beets-inbox: feature-owned preprocess cleanup lost ({post!r})")
-elif not ("svc-monitor" in post[0] and "rm -f" in post[-1]):
-    errs.append(f"beets-inbox: ExecStartPost order is not monitor-then-cleanup ({post!r})")
 if errs:
     print(f"{host}: " + "; ".join(errs), file=sys.stderr)
     sys.exit(1)
 PYEOF
 
-# 7o-3. Negative: a contribution naming a unit with no implementation fails
+# 7o-3. Negative: a registration naming a unit with no implementation fails
 # closed and names that unit.
 D="$(make_copy)"
-python3 - "$D/modules/hosts/oci-melb-1/_nixos.nix" <<'PYEOF'
+python3 - "$D/modules/oci/oci.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
-anchor = '      monitor.units."podman-storage-prune" = {\n'
-assert anchor in s, "monitor anchor drifted"
-s = s.replace(anchor, '      monitor.units."phantom-unit".onFailure = true;\n' + anchor, 1)
+anchor = '        services.notify.events."podman-prune".failure = { };\n'
+assert anchor in s, "registration anchor drifted"
+s = s.replace(anchor, '        services.notify.events."phantom-unit".failure = { };\n' + anchor, 1)
 open(p, "w").write(s)
 PYEOF
-expect_eval_fail "$D" oci-melb-1 "'phantom-unit' is contributed for monitoring but has no systemd service implementation"
+expect_eval_fail "$D" oci-melb-1 "events.phantom-unit is registered but has no systemd service implementation"
 
 # 7o-4. Negative: the stale wrong-host Beets registration is rejected instead of
-# silently materialising a fragment. OCI owns no Beets unit, so a Beets monitor
-# contribution there must fail closed (this is the deployed-baseline drift).
+# silently materialising a handler. OCI owns no Beets unit, so a Beets
+# registration there must fail closed (this is the deployed-baseline drift).
 D="$(make_copy)"
-python3 - "$D/modules/hosts/oci-melb-1/_nixos.nix" <<'PYEOF'
+python3 - "$D/modules/oci/oci.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
-anchor = '      monitor.units."podman-storage-prune" = {\n'
-assert anchor in s, "monitor anchor drifted"
-s = s.replace(anchor, '      monitor.units."beets-inbox".onFailure = true;\n' + anchor, 1)
+anchor = '        services.notify.events."podman-prune".failure = { };\n'
+assert anchor in s, "registration anchor drifted"
+s = s.replace(anchor, '        services.notify.events."beets-inbox".failure = { };\n' + anchor, 1)
 open(p, "w").write(s)
 PYEOF
-expect_eval_fail "$D" oci-melb-1 "'beets-inbox' is contributed for monitoring but has no systemd service implementation"
+expect_eval_fail "$D" oci-melb-1 "events.beets-inbox is registered but has no systemd service implementation"
 
 # 7o-5. Negative: a phantom target contributed through a throwaway aspect is
 # rejected too, so the fail-closed check is about the implementation and not
-# about which file the contribution came from.
+# about which file the registration came from.
 D="$(make_copy)"
 cat >"$D/modules/flake/tamper-monitor-aspect.nix" <<'EOF'
 { ... }:
 {
   flake.modules.nixos.tamper-monitor-aspect = {
-    services.notification-daemon.monitor.units."ghost-unit".onStart = true;
+    services.notify.events."ghost-unit".failure = { };
   };
 }
 EOF
@@ -2268,7 +2379,7 @@ j = s.index("        aspects.oci", i)
 k = s.index("\n", j)
 open(p, "w").write(s[: k + 1] + "        aspects.tamper-monitor-aspect\n" + s[k + 1 :])
 PYEOF
-expect_eval_fail "$D" oci-melb-1 "'ghost-unit' is contributed for monitoring but has no systemd service implementation"
+expect_eval_fail "$D" oci-melb-1 "events.ghost-unit is registered but has no systemd service implementation"
 
 
 # 8a. Canonical host registry schema and generic materializer

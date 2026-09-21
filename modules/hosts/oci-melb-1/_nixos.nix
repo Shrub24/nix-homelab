@@ -56,35 +56,10 @@ in
 
   boot.loader.grub.configurationLimit = 10;
 
-  systemd = {
-    services = {
-      podman-storage-prune = {
-        description = "Prune unused Podman storage artifacts";
-        path = [ pkgs.podman ];
-        serviceConfig = {
-          Type = "oneshot";
-          Nice = 19;
-          IOSchedulingClass = "idle";
-        };
-        script = ''
-          set -euo pipefail
-          podman system prune --all --force --volumes
-        '';
-      };
-    };
-
-    timers.podman-storage-prune = {
-      description = "Periodic Podman storage prune";
-      wantedBy = [ "timers.target" ];
-      timerConfig = {
-        OnCalendar = "weekly";
-        RandomizedDelaySec = "1h";
-        Persistent = true;
-      };
-    };
+  services.ingress = {
+    role = "edge";
+    secretFiles.host = ../../../secrets/applications/edge-ingress.yaml;
   };
-
-  applications."edge-ingress".role = "origin";
 
   services = {
     paperless = {
@@ -119,10 +94,10 @@ in
       pamAllowedLoginGroups = [ "admins" ];
     };
 
-    bifrost-gateway = {
+    bifrost = {
       dataDir = "/srv/data/bifrost";
       configFile = globals.aiGateway.configFile;
-      secretFiles.host = ../../../secrets/services/bifrost-gateway.yaml;
+      secretFiles.host = ../../../secrets/services/bifrost.yaml;
     };
 
     karakeep-pod = {
@@ -170,20 +145,12 @@ in
     # The cache server runs locally, so uploads go to the loopback endpoint.
     niks3-publisher.serverUrl = "http://127.0.0.1:5751";
 
-    notification-daemon = {
+    notify = {
       secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
       secretFiles.hostSystem = ../../../secrets/hosts/oci-melb-1/system.yaml;
 
       ntfy = {
         enable = true;
-      };
-
-      # A host may contribute monitoring only for units it owns; the unit below
-      # is defined in this assembly.
-      monitor.units."podman-storage-prune" = {
-        onFailure = true;
-        onStart = true;
-        onStop = true;
       };
     };
   };

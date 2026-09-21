@@ -61,14 +61,15 @@ nix eval --impure --no-write-lock-file --expr '
 echo "web-service catalog duplicate-key: PASS"
 
 # Minimal physical deployment boundary: edgeHost and deployOrder remain the
-# only central physical facts, and the default target is a real deploy node.
+# only central physical facts, and the edge host is a real deploy node. The
+# serial deploy order is independent of which host is the edge.
 nix eval --impure --no-write-lock-file --expr '
   let
     flake = builtins.getFlake (toString ./.);
     deploy = flake.deployHosts;
   in
-  assert deploy.edgeHost == "la-admin-1";
-  assert builtins.head deploy.deployOrder == deploy.edgeHost;
+  assert deploy.edgeHost == "oci-melb-1";
+  assert builtins.elem deploy.edgeHost deploy.deployOrder;
   assert builtins.hasAttr deploy.edgeHost deploy.nodes;
   assert builtins.attrNames deploy == [ "deployOrder" "edgeHost" "nodes" ];
   true
@@ -135,5 +136,38 @@ if errors:
     sys.exit(1)
 PYEOF
 echo "web routing canonical-host references: PASS"
+
+# The private service policy is the single source for the Niks3 write port:
+# the provider listens on it and every publisher dials it. This is the one
+# fleet-placement invariant that the retired internal-contracts module used to
+# prove generically; it stays as a concrete check rather than an abstraction.
+nix eval --impure --no-write-lock-file --json --expr '
+  let
+    flake = builtins.getFlake (toString ./.);
+    provider = flake.nixosConfigurations.oci-melb-1.config;
+    catalog = provider.repo.web.catalog."niks3-write";
+    lib = flake.inputs.nixpkgs.lib;
+  in
+  {
+    isPrivate = catalog.declarePublic == false && catalog.exposureMode == "tailscale-only";
+    noPublicIdentity = catalog.publicUrl == null && catalog.publicHost == null;
+    providerListensOnDeclaredPort = provider.services.niks3.httpAddr
+      == "0.0.0.0:${toString catalog.endpoint.port}";
+    providerHostMatchesOrigin = lib.hasPrefix "oci-melb-1." catalog.endpoint.host;
+  }
+' | python3 -c '
+import json, sys
+got = json.load(sys.stdin)
+want = {
+    "isPrivate": True,
+    "noPublicIdentity": True,
+    "providerListensOnDeclaredPort": True,
+    "providerHostMatchesOrigin": True,
+}
+if got != want:
+    print(f"niks3 write-endpoint invariant: got {got!r} want {want!r}", file=sys.stderr)
+    sys.exit(1)
+'
+echo "private write-endpoint invariant: PASS"
 
 echo "check-web-service-catalog: PASS"

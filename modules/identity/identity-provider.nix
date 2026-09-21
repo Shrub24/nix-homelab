@@ -1,10 +1,10 @@
 # Identity-provider deployment aspect: owns the Kanidm server/provisioning
 # composition, the Kanidm top-level enablement, and the provider's identity and
-# OIDC provisioning secret sources. The provider derives its public URL and
-# endpoint/TLS data from canonical web policy and never writes the OIDC contract
-# namespace (`services.identity.oidc.*` is only asserted to agree, in the Kanidm
-# leaf, which imports that contract intrinsically); selecting this aspect does not
-# require any client capability to be selected as well.
+# OIDC provisioning secret sources. The provider derives its public URL from
+# canonical web policy, owns its TLS material locally, and never writes the OIDC
+# contract namespace (`services.identity.oidc.*` is only asserted to agree, in
+# the Kanidm leaf, which imports that contract intrinsically); selecting this
+# aspect does not require any client capability to be selected as well.
 _: {
   flake.modules.nixos.identity-provider =
     {
@@ -14,10 +14,10 @@ _: {
     }:
     let
       cfg = config.services.identity.kanidm;
-      kanidmRoute = config.repo.web.currentHost.services."kanidm-admin" or null;
+      kanidmRoute = config.repo.web.catalog."kanidm-admin" or null;
       providerPublicUrl =
         if kanidmRoute == null then
-          throw "identity-provider: required canonical web-policy route 'repo.web.currentHost.services.\"kanidm-admin\"' is missing for host '${
+          throw "identity-provider: required canonical web-policy route 'repo.web.catalog.\"kanidm-admin\"' is missing for host '${
             config.networking.hostName or "?"
           }'; select the host's web policy with a kanidm-admin route"
         else
@@ -29,11 +29,17 @@ _: {
         { services.identity.kanidm.enable = true; }
 
         (lib.mkIf cfg.enable {
+          # The private front the edge dials listens on the published route port,
+          # so a bind that drifts from policy would break identity silently.
+          assertions = [
+            {
+              assertion = lib.hasSuffix ":${toString kanidmRoute.upstreamPort}" cfg.bindAddress;
+              message = "identity-provider: bind address '${cfg.bindAddress}' must listen on the published route port '${toString kanidmRoute.upstreamPort}' declared by repo.web.catalog.\"kanidm-admin\"";
+            }
+          ];
+
           services.identity.kanidm = {
             appUrl = providerPublicUrl;
-            tlsChainFile = "/var/lib/acme/${kanidmRoute.primaryDomain}/fullchain.pem";
-            tlsKeyFile = "/var/lib/acme/${kanidmRoute.primaryDomain}/key.pem";
-            tlsReaderGroups = [ "caddy" ];
 
             secretFiles = {
               identity = ../../secrets/identity/kanidm.yaml;

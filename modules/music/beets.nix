@@ -386,9 +386,15 @@ _: {
                 description = "Send notification via the notification-daemon notify CLI on runner failure.";
               };
               tier = lib.mkOption {
-                type = lib.types.str;
-                default = "warning";
-                description = "Notification tier to use (routed by the notification-daemon Telegram topic mapping).";
+                type = lib.types.enum [
+                  "info"
+                  "success"
+                  "warning"
+                  "failure"
+                  "critical"
+                ];
+                default = "failure";
+                description = "Severity of the runner-failure notification (the notify CLI's severity vocabulary).";
               };
             };
           };
@@ -532,10 +538,13 @@ _: {
             group = "beets";
             home = cfg.dataDir;
             createHome = false;
+            # `notify` grants unix-socket dispatch to the runner-failure
+            # notifier unit, which runs as this user.
             extraGroups = [
               "music-ingest"
               "media"
-            ];
+            ]
+            ++ lib.optionals (config.users.groups ? notify) [ "notify" ];
           };
 
           environment.systemPackages = [
@@ -618,7 +627,7 @@ _: {
                           set -euo pipefail
                           runner="''${1:?}"
                           body="$(journalctl -u "beets-$runner.service" -n 20 --no-pager --output=short-full 2>/dev/null || echo '(no journal output)')"
-                          echo "$body" | notify ${cfg.notify.tier} "Beets runner $runner failed on ${config.networking.hostName}" "failure" "music"
+                          echo "$body" | notify send ${cfg.notify.tier} "Beets runner $runner failed on ${config.networking.hostName}" --topic music
                         '';
                       };
                     in

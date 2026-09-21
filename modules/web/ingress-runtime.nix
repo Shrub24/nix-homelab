@@ -1,7 +1,7 @@
-# Edge ingress runtime sibling of the `edge` aspect: deferredModule values merge
+# Ingress runtime contributor of the `ingress` aspect: deferredModule values merge
 # across sibling files, so the host selects one aspect name.
 _: {
-  flake.modules.nixos.edge =
+  flake.modules.nixos.ingress =
     {
       lib,
       config,
@@ -9,7 +9,8 @@ _: {
       ...
     }:
     let
-      cfg = config.services."edge-proxy-ingress";
+      cfg = config.services.ingress;
+      secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
       routeNames = builtins.attrNames cfg.routes;
       routeByName = name: cfg.routes.${name};
@@ -191,7 +192,7 @@ _: {
           in
           {
             assertion = lib.hasPrefix "/" route.path;
-            message = "edge-proxy-ingress route '${name}' path must start with '/'.";
+            message = "services.ingress route '${name}' path must start with '/'.";
           }
         ) routeNames
         ++ lib.map (
@@ -201,12 +202,14 @@ _: {
           in
           {
             assertion = route.exposureMode == "tailscale-only" || route.declarePublic;
-            message = "edge-proxy-ingress route '${name}' must set declarePublic=true for public exposure modes.";
+            message = "services.ingress route '${name}' must set declarePublic=true for public exposure modes.";
           }
         ) routeNames;
     in
     {
-      options.services."edge-proxy-ingress" = {
+      options.services.ingress = {
+        enable = lib.mkEnableOption "the host-level ingress composition (edge or origin role)";
+
         role = lib.mkOption {
           type = lib.types.enum [
             "none"
@@ -278,6 +281,8 @@ _: {
           };
         };
 
+        secretFiles.host = secretHelpers.mkSecretFileOption "the Cloudflare DNS-01 token used by the edge role";
+
         routes = lib.mkOption {
           default = { };
           description = "Route map keyed by route name.";
@@ -305,10 +310,11 @@ _: {
                   type = lib.types.enum [
                     "direct"
                     "tailscale-upstream"
+                    "tailscale-serve"
                     "tailscale-only"
                   ];
                   default = "tailscale-upstream";
-                  description = "Exposure mode for this route.";
+                  description = "Exposure mode for this route: how the edge reaches it and whether it is published.";
                 };
 
                 declarePublic = lib.mkOption {
@@ -388,29 +394,35 @@ _: {
 
       config = {
         assertions = [
+          (secretHelpers.mkRequiredSecretAssertion {
+            enable = cfg.enable && cfg.role == "edge";
+            file = cfg.secretFiles.host;
+            feature = "services.ingress";
+            label = "secretFiles.host";
+          })
           {
             assertion = cfg.role != "edge" || cfg.primaryDomain != "";
-            message = "edge-proxy-ingress requires primaryDomain when role=edge.";
+            message = "services.ingress requires primaryDomain when role=edge.";
           }
           {
             assertion = cfg.role != "edge" || cfg.acmeEmail != "";
-            message = "edge-proxy-ingress requires acmeEmail when role=edge.";
+            message = "services.ingress requires acmeEmail when role=edge.";
           }
           {
             assertion = cfg.role != "edge" || cfg.cloudflareCredentialsFile != null;
-            message = "edge-proxy-ingress requires cloudflareCredentialsFile when role=edge.";
+            message = "services.ingress requires cloudflareCredentialsFile when role=edge.";
           }
           {
             assertion = !cfg.authenticatedOriginPulls.enable || cfg.authenticatedOriginPulls.caCertFile != null;
-            message = "edge-proxy-ingress requires authenticatedOriginPulls.caCertFile when authenticatedOriginPulls.enable=true.";
+            message = "services.ingress requires authenticatedOriginPulls.caCertFile when authenticatedOriginPulls.enable=true.";
           }
           {
             assertion = cfg.authenticatedOriginPulls.enable || !(builtins.any hostRequiresAop siteHosts);
-            message = "edge-proxy-ingress has public hosts requiring authenticated origin pulls, but authenticatedOriginPulls.enable=false.";
+            message = "services.ingress has public hosts requiring authenticated origin pulls, but authenticatedOriginPulls.enable=false.";
           }
           {
             assertion = !(builtins.any hostHasMixedAopRequirement siteHosts);
-            message = "edge-proxy-ingress cannot mix authenticatedOriginPullsRequired true/false routes on the same host.";
+            message = "services.ingress cannot mix authenticatedOriginPullsRequired true/false routes on the same host.";
           }
           {
             assertion =
@@ -421,11 +433,11 @@ _: {
                 in
                 route.upstreamTlsInsecure && route.upstreamTlsCaCertFile != null
               ) routeNames);
-            message = "edge-proxy-ingress routes cannot set both upstreamTlsInsecure=true and upstreamTlsCaCertFile.";
+            message = "services.ingress routes cannot set both upstreamTlsInsecure=true and upstreamTlsCaCertFile.";
           }
           {
             assertion = cfg.role == "edge" || cfg.routes == { };
-            message = "edge-proxy-ingress routes may only be declared when role=edge.";
+            message = "services.ingress routes may only be declared when role=edge.";
           }
         ]
         ++ routeAssertions;
@@ -456,6 +468,32 @@ _: {
           wants = [ "acme-${cfg.primaryDomain}.service" ];
           after = [ "acme-${cfg.primaryDomain}.service" ];
         };
+
+        # Cloudflare DNS-01 credentials, materialized from the host secret file
+        # when this host is the edge.
+        services.ingress.cloudflareCredentialsFile = lib.mkIf (cfg.enable && cfg.role == "edge") (
+          config.sops.templates."caddy-cloudflare.env".path
+        );
+
+        sops.templates."caddy-cloudflare.env" = lib.mkIf (cfg.enable && cfg.role == "edge") {
+          owner = "root";
+          group = "root";
+          mode = "0400";
+          content = ''
+            CLOUDFLARE_DNS_API_TOKEN=${config.sops.placeholder.cloudflare_dns_api_token}
+          '';
+        };
+
+        sops.secrets = lib.mkIf (cfg.enable && cfg.role == "edge") (
+          secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
+            cloudflare_dns_api_token = {
+              key = "cloudflare/dns_api_token";
+              path = "/run/secrets/cloudflare.dns_api_token";
+              owner = "root";
+              group = "root";
+            };
+          }
+        );
       };
     };
 }

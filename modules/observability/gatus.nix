@@ -7,24 +7,44 @@ _: {
     let
       cfg = config.services.admin.gatus;
 
-      webServices = config.repo.web.currentHost.services or { };
+      webServices = config.repo.web.catalog or { };
       gatusRoute =
         webServices."gatus-admin"
-          or (throw "gatus: required canonical web-policy route 'repo.web.currentHost.services.\"gatus-admin\"' is missing for host '${
+          or (throw "gatus: required canonical web-policy route 'repo.web.catalog.\"gatus-admin\"' is missing for host '${
             config.networking.hostName or "?"
           }'");
 
-      webAddress = gatusRoute.origin.host;
-      webPort = gatusRoute.origin.port;
+      webAddress = "0.0.0.0";
+      webPort = gatusRoute.upstreamPort;
+
+      # Probes target the published URL: the signal is "the route answers",
+      # which is what an outage of either the edge or the origin breaks.
+      # Cloudflare Access answers unauthenticated probes with a redirect, so an
+      # Access-gated route counts as healthy when it reaches that gate.
+      healthyStatuses =
+        svc:
+        if svc.access.requireCloudflareAccess or false then
+          [
+            200
+            302
+            401
+            403
+          ]
+        else
+          [ svc.health.expectedStatus ];
 
       mkEndpoint = serviceName: svc: {
         name = serviceName;
-        url = svc.healthUrl;
+        url = svc.publicUrl;
         interval = "1m";
-        conditions = [ "[STATUS] == ${toString svc.health.expectedStatus}" ];
+        conditions = [
+          (lib.concatMapStringsSep " || " (status: "[STATUS] == ${toString status}") (healthyStatuses svc))
+        ];
       };
 
-      endpoints = lib.mapAttrsToList mkEndpoint webServices;
+      endpoints = lib.mapAttrsToList mkEndpoint (
+        lib.filterAttrs (_: svc: svc.publicUrl != null) webServices
+      );
     in
     {
       options.services.admin.gatus = {
@@ -53,9 +73,8 @@ _: {
                   };
                 };
                 body = builtins.toJSON {
-                  tier = "[ALERT_TRIGGERED_OR_RESOLVED]";
+                  severity = "[ALERT_TRIGGERED_OR_RESOLVED]";
                   title = "Gatus: [ENDPOINT_NAME]";
-                  type = "[ALERT_TRIGGERED_OR_RESOLVED]";
                   message = "[ALERT_DESCRIPTION]";
                   topic = "web";
                 };

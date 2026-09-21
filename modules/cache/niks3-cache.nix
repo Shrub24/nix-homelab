@@ -6,7 +6,7 @@
 { inputs, ... }:
 {
   flake.modules.nixos.niks3-cache =
-    { lib, ... }:
+    { config, lib, ... }:
     let
       globals = import ../../policy/globals.nix;
       s3 = globals.s3 or { };
@@ -28,6 +28,9 @@
           region = lib.mkDefault (s3.region or "");
         };
         cacheUrl = lib.mkDefault "https://cache.shrublab.xyz";
+        # The listen port is the private service policy's declaration, shared
+        # with every publisher that dials it.
+        httpAddr = lib.mkDefault "0.0.0.0:${toString config.repo.web.catalog."niks3-write".endpoint.port}";
       };
     };
 }

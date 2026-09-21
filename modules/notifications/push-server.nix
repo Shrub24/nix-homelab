@@ -37,8 +37,8 @@ in
     }:
     let
       cfg = config.services.ntfy;
-      ntfyRoute = config.repo.web.currentHost.services."ntfy-admin" or { };
-      listenAddress = "${ntfyRoute.origin.host}:${toString ntfyRoute.origin.port}";
+      ntfyRoute = config.repo.web.catalog."ntfy-admin" or { };
+      listenAddress = "0.0.0.0:${toString ntfyRoute.upstreamPort}";
       publicBaseUrl = ntfyRoute.publicUrl;
 
       inherit (cfg) dataDir;

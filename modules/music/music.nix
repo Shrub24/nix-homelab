@@ -23,25 +23,20 @@ _: {
       cfg = config.applications.music;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
-      # Shared-PostgreSQL endpoint for AudioMuse. A host that runs its own
-      # cluster serves AudioMuse locally over the container bridge; otherwise the
-      # internal transport contract resolves it. Forced only where used (inside
-      # the audiomuse enable gate below), so a host that selects music without
-      # AudioMuse never reads either. The explicit leaf options still win.
+      # AudioMuse's database is the cluster on this host: the container reaches
+      # it over the podman bridge. A host that selects music without running a
+      # cluster must say where the database lives via
+      # `applications.music.audiomuse.postgresHost`; the assertion below names
+      # that requirement instead of silently pointing at a remote endpoint.
       # `options` (not `config`) is what can be probed safely: reading an
       # undeclared option path raises NixOS' "did you mean" error, so the
       # declaration is checked before the value is read.
       hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
       localPostgres = if hasLocalCluster then config.services.postgres.localEndpoint else null;
-      internalPostgres = config.repo.internal.postgres.postgres;
-      audiomusePostgres =
-        if localPostgres != null then
-          {
-            host = "host.containers.internal";
-            inherit (localPostgres) port;
-          }
-        else
-          internalPostgres;
+      audiomusePostgres = {
+        host = "host.containers.internal";
+        port = if localPostgres != null then localPostgres.port else 5432;
+      };
 
       mediaPaths = rec {
         libraryDir = "${cfg.storageRoot}/library";
@@ -326,6 +321,10 @@ _: {
               feature = "applications.music";
               label = "secretFiles.host";
             })
+            {
+              assertion = !cfg.audiomuse.enable || localPostgres != null || cfg.audiomuse.postgresHost != null;
+              message = "applications.music.audiomuse is enabled but no PostgreSQL endpoint is available: run the cluster on this host (select the postgres aspect) or set applications.music.audiomuse.postgresHost for a database that lives elsewhere.";
+            }
           ];
 
           # Storage ownership (groups, media tmpfiles/ACLs, permission reconcile)
@@ -407,7 +406,10 @@ _: {
             runners = beetsRunnerInstances;
             notify = {
               enable = true;
-              tier = "music";
+              # Severity of the runner-failure notification: nix-fleet's severity
+              # vocabulary, replacing the retired apprise `type` positional. The
+              # music topic travels in the CLI call itself.
+              tier = "failure";
             };
           };
 
@@ -418,11 +420,14 @@ _: {
           };
 
           # The music capability owns the `beets-<runner>` units instantiated
-          # above, so it also owns their monitoring participation. Only the
-          # automated runners are monitored (the interactive quarantine review
-          # worker has no unattended lifecycle worth reporting). A renamed runner
-          # makes this contract fail closed instead of leaving a silent fragment.
-          services.notification-daemon.monitor.units =
+          # above, so it also owns their notification registration. Only the
+          # automated runners are registered (the interactive quarantine review
+          # worker has no unattended lifecycle worth reporting), failure-only: the
+          # notify aspect attaches the native OnFailure handler, and the runners
+          # are oneshots whose clean completion is not an operator event. A
+          # renamed runner makes this contract fail closed instead of leaving a
+          # silent fragment.
+          services.notify.events =
             lib.genAttrs
               [
                 "beets-inbox"
@@ -430,9 +435,7 @@ _: {
                 "beets-duplicates"
               ]
               (_: {
-                onFailure = true;
-                onStart = true;
-                onStop = true;
+                failure = { };
               });
 
           # Ingest mechanisms are owned by the music-ingest contributor; the

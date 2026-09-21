@@ -33,14 +33,13 @@ in
         aspects.kanidm-host-auth
         # Selection is enablement; no host imports an implementation.
         aspects.oci
-        aspects.edge
+        aspects.ingress
         aspects.cockpit
         aspects.paperless
         aspects.postgres
-        aspects.ai-gateway
+        aspects.bifrost
         aspects.karakeep
         aspects.niks3-cache
-        aspects.phoenix
         aspects.base
         aspects.shell
         aspects.networking
@@ -48,7 +47,6 @@ in
         aspects.notify
         aspects.state-backups
         aspects.cache-publisher
-        aspects.internal-contracts
         aspects.builder-access
         aspects.observability-agent
       ];

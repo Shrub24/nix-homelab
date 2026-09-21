@@ -4,8 +4,13 @@
   ...
 }:
 let
+  # `href` is the published URL (the browser reaches it through the edge);
+  # widget APIs are internal, so the dashboard declares its own targets from
+  # the fleet's single tailnet-suffix authority.
   requireRoute = name: policyServices.${name};
   serviceHref = name: (requireRoute name).publicUrl;
+  globals = import ../../../policy/globals.nix;
+  internalUrl = hostId: port: "http://${hostId}.${globals.tailnet.suffix}:${toString port}";
 in
 {
   settings = {
@@ -56,7 +61,7 @@ in
             href = serviceHref "beszel-admin";
             widget = {
               type = "beszel";
-              url = (requireRoute "beszel-admin").upstream;
+              url = internalUrl "la-admin-1" 8090;
               username = "{{HOMEPAGE_VAR_BESZEL_USER}}";
               password = "{{HOMEPAGE_VAR_BESZEL_PASSWORD}}";
               version = 2;
@@ -94,7 +99,7 @@ in
             href = serviceHref "gatus-admin";
             widget = {
               type = "gatus";
-              url = (requireRoute "gatus-admin").upstream;
+              url = internalUrl "la-admin-1" 8087;
             };
           };
         }
@@ -105,7 +110,7 @@ in
             href = serviceHref "navidrome";
             widget = {
               type = "navidrome";
-              url = (requireRoute "navidrome").upstream;
+              url = internalUrl "home-forge" 4533;
               user = "{{HOMEPAGE_VAR_NAVIDROME_USER}}";
               token = "{{HOMEPAGE_VAR_NAVIDROME_TOKEN}}";
               salt = "{{HOMEPAGE_VAR_NAVIDROME_SALT}}";
@@ -119,7 +124,7 @@ in
             href = serviceHref "slskd";
             widget = {
               type = "slskd";
-              url = (requireRoute "slskd").upstream;
+              url = internalUrl "home-forge" 5030;
               key = "{{HOMEPAGE_VAR_SLSKD_KEY}}";
             };
           };
@@ -129,7 +134,7 @@ in
             icon = "mdi-tag-multiple";
             description = "Manual metadata and artwork fallback";
             href = serviceHref "tagr";
-            siteMonitor = (requireRoute "tagr").healthUrl;
+            siteMonitor = serviceHref "tagr";
           };
         }
       ];
@@ -141,7 +146,7 @@ in
             icon = "mdi-console-network";
             description = "${config.networking.hostName} server administration";
             href = serviceHref "cockpit-admin";
-            siteMonitor = (requireRoute "cockpit-admin").healthUrl;
+            siteMonitor = serviceHref "cockpit-admin";
           };
         }
         {
@@ -149,7 +154,7 @@ in
             icon = "mdi-console-network";
             description = "oci-melb-1 server administration";
             href = serviceHref "cockpit-oci-melb-1";
-            siteMonitor = (requireRoute "cockpit-oci-melb-1").healthUrl;
+            siteMonitor = serviceHref "cockpit-oci-melb-1";
           };
         }
         {
@@ -157,7 +162,7 @@ in
             icon = "mdi-console";
             description = "Interactive admin shell";
             href = serviceHref "termix-admin";
-            siteMonitor = (requireRoute "termix-admin").healthUrl;
+            siteMonitor = serviceHref "termix-admin";
           };
         }
         {
@@ -165,7 +170,7 @@ in
             icon = "vaultwarden";
             description = "Password vault";
             href = serviceHref "vaultwarden-admin";
-            siteMonitor = (requireRoute "vaultwarden-admin").healthUrl;
+            siteMonitor = serviceHref "vaultwarden-admin";
           };
         }
         {
@@ -173,7 +178,7 @@ in
             icon = "mdi-bell-outline";
             description = "Notification broker";
             href = serviceHref "ntfy-admin";
-            siteMonitor = (requireRoute "ntfy-admin").healthUrl;
+            siteMonitor = serviceHref "ntfy-admin";
           };
         }
         {
@@ -181,7 +186,7 @@ in
             icon = "syncthing";
             description = "Cross-host file sync controller";
             href = serviceHref "syncthing-oci-melb-1";
-            siteMonitor = (requireRoute "syncthing-oci-melb-1").healthUrl;
+            siteMonitor = serviceHref "syncthing-oci-melb-1";
           };
         }
       ];

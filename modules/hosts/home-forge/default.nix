@@ -42,7 +42,6 @@ in
         aspects.notify
         aspects.state-backups
         aspects.cache-publisher
-        aspects.internal-contracts
         aspects.builder-access
         aspects.observability-agent
       ];

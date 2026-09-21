@@ -103,10 +103,12 @@ _: {
           description = "Optional Navidrome base URL presented to AudioMuseAI during initial setup.";
         };
 
-        # AudioMuse's PostgreSQL database lives remotely in OCI's shared Postgres,
-        # reached over Tailscale/MagicDNS (tailnet-only + SCRAM). The host is a leaf
-        # contract input so home-forge can point at oci-melb-1 while remaining local
-        # co-located deployments keep host.containers.internal. Redis/temp stay local.
+        # AudioMuse's PostgreSQL database is the cluster on this host, reached
+        # over the podman bridge (tailnet-only + SCRAM when it is remote). The
+        # host is a leaf contract input so an operator can point at a database
+        # that lives elsewhere; a deployment without a local cluster must set
+        # it, and `applications.music` names that requirement. Redis/temp stay
+        # local.
         postgresHost = lib.mkOption {
           type = lib.types.str;
           default = "host.containers.internal";

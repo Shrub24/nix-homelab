@@ -15,7 +15,7 @@ _: {
 
       # A soft null keeps hosts without the route evaluating; the named
       # assertions below own the contract failure when the material is enabled.
-      webServices = config.repo.web.currentHost.services or { };
+      webServices = config.repo.web.catalog or { };
       cockpitRoute = webServices."cockpit-admin" or null;
       inherit (loopbackTls) stateDir;
       publicCaCert = "/etc/cockpit/loopback-ca.crt";
@@ -139,7 +139,7 @@ _: {
             message = "Cockpit loopback TLS material requires a resolved cockpit-admin policy route.";
           }
           {
-            assertion = cockpitRoute.origin.scheme == "https";
+            assertion = cockpitRoute.upstreamScheme == "https";
             message = "Cockpit loopback TLS material requires cockpit-admin upstream scheme=https.";
           }
         ];

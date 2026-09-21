@@ -1296,3 +1296,70 @@ References:
 - `modules/flake/tailscale.nix`, `modules/flake/builder-access.nix`, `modules/flake/observability-agent.nix`, `modules/cache/niks3-cache.nix`
 - `tests/check-dendritic-scaffold-contract.sh`
 - `CONVENTIONS.md` (`### Shared Aspect Consumption`), `AGENTS.md` (`### Shared Aspects from nix-fleet`)
+## D-062: Private service endpoints are policy declarations; the internal-contract registry is retired
+
+**Status:** Accepted
+
+**Context:**
+
+D-056 introduced `modules/contracts/internal.nix` (HIC-4): a typed registry declaring two cross-host transports (shared PostgreSQL, private Niks3 write API) with provider host ID, declared port, a capability path, and a listen path. It resolved `repo.internal.*` per host and validated, by evaluating the provider's configuration, that the provider enables the capability on the declared port.
+
+Two developments shrank what that registry carried:
+
+- **The PostgreSQL half became dead weight.** D-058 moved the fleet to per-host clusters with a consumer registry, and AudioMuse's database moved to the same host as its compute. The surviving consumer path was a fallback (`localPostgres != null` in `modules/music/music.nix`) that can no longer fire, because the only host that composes the music application also runs the cluster.
+- **One live endpoint remained.** The Niks3 write API is the only contract with a consumer. Keeping ~300 lines of reflective machinery — `capabilityPath`, `listen.{path,kind}`, cross-host configuration traversal, a 260-line contract suite, a flake output — for one endpoint is disproportionate.
+
+Meanwhile the web policy had already absorbed the relevant facts. `policy/web-services.nix` distinguishes published from private services (`exposureMode = "tailscale-only"`, `declarePublic = false`) and already carries the private endpoints (bifrost, phoenix, webhook-admin). The second registry duplicated a decision the first one could express.
+
+**Decision:**
+
+- A private service is declared **once** in `policy/web-services.nix`. The resolved catalog projects it as `repo.web.catalog.<id>.endpoint = { scheme, host, port, url }` with `publicUrl` and `publicHost` set to `null` — a service that is never published must not manufacture a public identity.
+- A published service never exposes its origin host: the catalog carries its public identity (public URL/host, access, health) and the published upstream *shape* (`upstreamScheme`, `upstreamPort`) only. The edge remains the sole consumer of the full `repo.web.hosts` resolution, which carries origins.
+- The declaration is the **single source for both sides** of a private transport: the provider derives its listen address from `endpoint.port` (e.g. `services.niks3-cache.httpAddr`) and every consumer dials `endpoint.url` (e.g. `services.niks3-publisher.serverUrl`). Declared-port drift is therefore unrepresentable rather than checked.
+- The generic provider-capability introspection is retired with the registry. Its one surviving invariant — the host named as the private endpoint's origin is the host that renders the provider — is asserted as a concrete fleet check in `tests/check-web-service-catalog.sh`, not resurrected as a reusable abstraction.
+- Cross-host relationships remain fleet-level policy. This refines D-059's rule (support machinery is never an aspect, and cross-host facts cannot be a per-host NixOS module option) rather than contradicting it: the policy file is the appropriate authority precisely because the relationship exists above any single host evaluation.
+
+**Consequences:**
+
+- `modules/contracts/` and `tests/check-internal-contracts.sh` are deleted; the `internal-contracts` aspect is removed from all three host records; `repo.internal.*` and `flake.internalContracts` no longer exist.
+- `modules/music/music.nix` keeps no remote PostgreSQL fallback. A host that enables AudioMuse without a local cluster fails through a named assertion (`applications.music.audiomuse is enabled but no PostgreSQL endpoint is available…`) instead of silently dialing a remote endpoint.
+- The `niks3-write` entry is listed under the edge host's service key, which for a service with no ingress route is a mild oddity. It is tolerated deliberately: the hosts axis means "the ingress host that owns this service topology", and redesigning the policy into `services/` + `ingress/` for one entry is a larger refactor than the oddity costs.
+- Two honest deltas: the publisher's rendered target on a non-provider host becomes the provider's FQDN (`http://oci-melb-1.<tailnet>:5751`) instead of its short hostname — same host, resolvable under MagicDNS, and consistent with every other resolved endpoint — and the provider-capability invariant is now a fleet check rather than an architectural guarantee, so a host that stops rendering the cache server fails the check rather than the evaluation.
+- The file name `policy/web-services.nix` undersells its content (it now describes public routes, private endpoints, health, and access). Renaming it is deferred: it is consumed as text by `scripts/export-web-services-policy.sh` and OpenTofu and compared byte-for-byte by tests, so the rename carries churn without changing semantics.
+
+References:
+
+- `policy/web-services.nix`, `lib/policy.nix` (`mkCatalogEntry`, `isPublicService`), `modules/web/web-policy.nix`
+- `modules/cache/cache-publisher.nix`, `modules/cache/niks3-cache.nix`, `modules/music/music.nix`
+- `tests/check-web-service-catalog.sh`
+- `docs/decisions.md` D-056 (the registry this retires), D-058 (per-host clusters), D-059 (support machinery is not an aspect)
+
+## D-063: The private upstream transport is policy-declared and provider-rendered; the identity provider owns its TLS
+
+**Status:** Accepted
+
+**Context:**
+
+Moving the Caddy edge from `la-admin-1` to `oci-melb-1` was a routing change for nine services — plain-HTTP upstreams the edge now dials directly over the tailnet — and a structural failure for one. The Kanidm provider's socket is loopback-bound and TLS-only, and its configuration assumed the edge was co-located: it read the edge's ACME certificate, joined the `caddy` group only the edge role creates, and ordered itself after a reverse proxy its host no longer ran. The first two surfaced as a failed activation (`kanidm.service` exiting at spawn with an unresolvable supplementary group); the third would have surfaced as a silent identity outage once the borrowed certificate stopped renewing.
+
+**Decision:**
+
+1. `exposureMode` is the single axis describing how a route is exposed, and it is required on every route: `tailscale-upstream` (published; the edge dials the origin's tailnet-bound socket), `tailscale-serve` (published; the providing host renders the front the edge dials), `tailscale-only` (not published), with `direct` reserved for an edge-local loopback upstream. The served mechanism joins that vocabulary as a value rather than a second field, because the field already distinguished cross-host reachability — a parallel transport field would have written the same fact twice.
+2. The provider host renders the front the edge dials, from a provider-side projection (`repo.web.originServices`) rather than the edge's route table, which does not carry the services a non-edge host provides. All transport-specific code lives in one contributor beside the ingress aspect, so the transport is replaceable in one file and no service module learns how the private network exposes it.
+3. The front terminates the private network's own certificate and dials the service's loopback socket on the same port, so serve port = policy port = bind port and the port-drift property survives; nothing validates the inner pair, because its security boundary is localhost rather than PKI.
+4. The identity provider owns its TLS material: a self-signed pair generated on first start under its state directory, with the certificate paths left host-overridable for a future fleet CA. Its public identity (`appUrl`, issuer, discovery) is unchanged.
+
+Rejected: a host-facing `services.privateExposure.*` namespace (it would restate the port and reachability policy already declares, recreating the registry D-062 retired — the replaceable seam is a file, not an option surface); `tailscale cert` plus a tailnet bind (the operator then owns renewal, and the service acquires a second name for one identity); keeping ACME on the provider (the Cloudflare DNS-01 credential would move to a workload host); a fleet VPN abstraction with a backend discriminant.
+
+**Consequences:**
+
+- Edge placement stops being implied by who provides a route: the same policy table serves any edge, and a provider renders whatever its own routes need.
+- A private-transport route is validated at evaluation — unknown transports, a non-FQDN origin, a host fronting itself, and per-route TLS overrides on a private transport all fail closed with the route named.
+- Two bespoke fronts predate this mechanism (`modules/admin/cockpit/tailscale-serve.nix`, `modules/admin/termix.nix`); they are recorded as debt (TD-29) rather than migrated alongside a live cockpit.
+
+References:
+
+- `policy/web-services.nix`, `lib/policy.nix` (`providedServices`), `modules/web/{web-policy,ingress-origin-exposure}.nix`
+- `modules/identity/{identity-provider,kanidm-runtime}.nix`
+- `tests/check-dendritic-scaffold-contract.sh`
+- `docs/decisions.md` D-062 (private endpoints are policy declarations), D-058 (per-host clusters)

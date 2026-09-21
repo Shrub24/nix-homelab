@@ -44,9 +44,9 @@ deploy host="la-admin-1" rollback="true" verbose="false":
     fi; \
     nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST" "${NIX_ARGS[@]}" || EXIT=$?; \
     if [ "$EXIT" -eq 0 ]; then \
-        printf 'deploy-rs succeeded for %s' "$HOST" | nix run .#notify -- info "Deploy $HOST" deploy system || true; \
+        printf 'deploy-rs succeeded for %s' "$HOST" | ssh "$HOST" notify send info "Deploy $HOST" --topic system || true; \
     else \
-        printf 'deploy-rs failed for %s (exit %d)' "$HOST" "$EXIT" | nix run .#notify -- warning "Deploy $HOST" deploy system || true; \
+        printf 'deploy-rs failed for %s (exit %d)' "$HOST" "$EXIT" | ssh "$HOST" notify send warning "Deploy $HOST" --topic system || true; \
     fi; \
     exit "$EXIT"
 

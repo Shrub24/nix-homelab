@@ -41,7 +41,7 @@
 
     tailscale.debugMtu = 1200;
 
-    notification-daemon = {
+    notify = {
       secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
       secretFiles.hostSystem = ../../../secrets/hosts/la-admin-1/system.yaml;
       ntfy = {
@@ -77,9 +77,8 @@
 
   sops.defaultSopsFile = ../../../secrets/common.yaml;
 
-  applications."edge-ingress" = {
-    role = "edge";
-    secretFiles.host = ../../../secrets/applications/edge-ingress.yaml;
+  services.ingress = {
+    role = "origin";
   };
 
   system.stateVersion = "26.05";

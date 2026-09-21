@@ -218,12 +218,10 @@ _: {
             "d /var/tmp/state-restore 0700 root root - -"
           ];
 
-          # Failure-only monitoring: OnFailure=svc-monitor@... is wired directly,
-          # without the generic monitor's lifecycle hooks (ExecStopPost would
-          # report success after a failed run).
-          systemd.services."restic-backups-${cfg.backupName}".onFailure = lib.mkBefore [
-            "svc-monitor@restic-backups-${cfg.backupName}.service"
-          ];
+          # Failure-only registration: the notify aspect attaches its native
+          # OnFailure= handler for this unit, so a failed run is reported and a
+          # clean stop is not.
+          services.notify.events."restic-backups-${cfg.backupName}".failure = { };
 
           # The state-restore-stage helper package (option defined by this module).
           services.state-backups.restoreStagePackage = restoreStageScript;
@@ -247,15 +245,6 @@ _: {
             {
               assertion = bucketNameValid;
               message = "state-backups aspect: derived bucket '${bucketName}' must be a valid S3 bucket name (3-63 lowercase alnum/hyphen).";
-            }
-          ]
-          ++ lib.optionals hasHostSecrets [
-            {
-              # Assert the actual monitor option rather than importing notify: a
-              # host selecting state-backups without notify fails with a named
-              # message instead of silently missing the monitor template.
-              assertion = lib.attrByPath [ "services" "notification-daemon" "monitor" "enable" ] false config;
-              message = "state-backups aspect: services.notification-daemon.monitor.enable must be true (select the notify aspect) so restic-backups-state failures route through svc-monitor.";
             }
           ];
         }

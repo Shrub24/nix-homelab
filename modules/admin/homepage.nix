@@ -8,14 +8,14 @@ _: {
     let
       cfg = config.services.admin.homepage;
 
-      webServices = config.repo.web.currentHost.services or { };
+      webServices = config.repo.web.catalog or { };
       homepageRoute =
         webServices."admin-homepage"
-          or (throw "homepage: required canonical web-policy route 'repo.web.currentHost.services.\"admin-homepage\"' is missing for host '${
+          or (throw "homepage: required canonical web-policy route 'repo.web.catalog.\"admin-homepage\"' is missing for host '${
             config.networking.hostName or "?"
           }'");
 
-      listenPort = homepageRoute.origin.port;
+      listenPort = homepageRoute.upstreamPort;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
       homepageData = import ./homepage/_data.nix {

@@ -1,19 +1,18 @@
-# Edge deployment aspect: selecting it supplies
-# `applications."edge-ingress".enable`, so no host repeats the top-level enable.
-# This file keeps the edge-role projection from canonical web policy — routes,
-# primary domain, ACME identity, and Authenticated Origin Pulls derive from
-# `policy/web-services.nix` and the repo CA certificate. The read is one-way and
-# guarded so an origin host renders no routes and a non-web host cannot force
-# policy values.
+# Ingress deployment aspect: selecting it supplies `services.ingress.enable`, so
+# no host repeats the top-level enablement. This contributor keeps the edge-role
+# projection from canonical web policy — routes, primary domain, ACME identity,
+# and Authenticated Origin Pulls derive from `policy/web-services.nix` and the
+# repo CA certificate. The read is one-way and guarded so an origin host renders
+# no routes and a non-web host cannot force policy values.
 _: {
-  flake.modules.nixos.edge =
+  flake.modules.nixos.ingress =
     {
       lib,
       config,
       ...
     }:
     let
-      cfg = config.applications."edge-ingress";
+      cfg = config.services.ingress;
       currentHost = lib.attrByPath [ "repo" "web" "currentHost" ] { } config;
       resolvedRoutes = currentHost.services or { };
       primaryDomain = currentHost.primaryDomain or "";
@@ -41,7 +40,7 @@ _: {
       isEdge = cfg.role == "edge";
     in
     {
-      applications."edge-ingress" = lib.mkMerge [
+      services.ingress = lib.mkMerge [
         { enable = true; }
 
         (lib.mkIf isEdge {

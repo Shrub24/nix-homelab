@@ -1,9 +1,16 @@
-# Bifrost AI-gateway deployment aspect: selection supplies the gateway's
-# top-level enablement; the data root, the policy config file, and the service
-# secret source stay explicit host variants.
-
-_: {
-  flake.modules.nixos.ai-gateway =
+# Sibling contributor to the `bifrost` aspect: the options and runtime body for
+# the gateway, published as the same `flake.modules.nixos.bifrost` name that
+# ../bifrost.nix declares. Discovery reaches it; the aspect owner imports
+# nothing from here.
+#
+# Runtime boundary (BG-1, re-verified 2026-09): the digest-pinned container
+# stays — the upstream flake does not build its own UI package at its current
+# release tag. Networking follows the fleet's three-class rule: host network
+# namespace, no published port, so the NixOS firewall gates reachability
+# (tailnet-only via the foundation aspect's tailscale0 trust) and the host
+# record admits its own podman bridges to the gateway port.
+{
+  flake.modules.nixos.bifrost =
     {
       config,
       lib,
@@ -11,14 +18,13 @@ _: {
       ...
     }:
     let
-      cfg = config.services.bifrost-gateway;
-      secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      cfg = config.services.bifrost;
+      secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
 
       hostBase = "http://127.0.0.1:${toString cfg.port}";
       containerBase = "http://host.containers.internal:${toString cfg.port}";
       appDir = "${cfg.dataDir}/app";
       configPath = "${appDir}/config.json";
-      configDbPath = "${appDir}/config.db";
       parsedConfig = builtins.fromJSON (builtins.readFile cfg.configFile);
 
       runtimeUid = 1000;
@@ -30,8 +36,8 @@ _: {
       environmentFile = config.sops.templates."bifrost.environment".path;
     in
     {
-      imports = [ ../backups/state-backups/_consumer.nix ];
-      options.services.bifrost-gateway = {
+      imports = [ ../../backups/state-backups/_consumer.nix ];
+      options.services.bifrost = {
         enable = lib.mkEnableOption "Bifrost AI gateway";
 
         image = lib.mkOption {
@@ -68,17 +74,18 @@ _: {
           default = "${containerBase}/v1";
         };
       };
+
       config = lib.mkMerge [
         (lib.mkIf cfg.enable {
           assertions = [
             {
               assertion = !(lib.attrByPath [ "config_store" "enabled" ] false parsedConfig);
-              message = "services.bifrost-gateway.configFile must keep config_store.enabled=false for file-driven mode.";
+              message = "services.bifrost.configFile must keep config_store.enabled=false for file-driven mode.";
             }
             (secretHelpers.mkRequiredSecretAssertion {
               inherit (cfg) enable;
               file = cfg.secretFiles.host;
-              feature = "services.bifrost-gateway";
+              feature = "services.bifrost";
               label = "secretFiles.host";
             })
           ];
@@ -89,6 +96,8 @@ _: {
             mode = "0400";
             content = ''
               BIFROST_ENCRYPTION_KEY=${config.sops.placeholder.bifrost_encryption_key}
+              BIFROST_ADMIN_USERNAME=${config.sops.placeholder.bifrost_admin_username}
+              BIFROST_ADMIN_PASSWORD=${config.sops.placeholder.bifrost_admin_password}
               GEMINI_API_KEY=${config.sops.placeholder.bifrost_gemini_api_key}
               DEEPSEEK_API_KEY=${config.sops.placeholder.bifrost_deepseek_api_key}
               OPENCODE_API_KEY=${config.sops.placeholder.bifrost_opencode_api_key}
@@ -100,6 +109,14 @@ _: {
             bifrost_encryption_key = {
               key = "bifrost/encryption_key";
               path = "/run/secrets/bifrost.encryption_key";
+            };
+            bifrost_admin_username = {
+              key = "bifrost/admin_username";
+              path = "/run/secrets/bifrost.admin_username";
+            };
+            bifrost_admin_password = {
+              key = "bifrost/admin_password";
+              path = "/run/secrets/bifrost.admin_password";
             };
             bifrost_gemini_api_key = {
               key = "bifrost/gemini_api_key";
@@ -124,19 +141,22 @@ _: {
           virtualisation.oci-containers.containers.bifrost = {
             autoStart = true;
             inherit (cfg) image;
-            ports = [ "0.0.0.0:${toString cfg.port}:${toString cfg.port}" ];
             environment = {
               APP_DIR = "/app/data";
               APP_HOST = "0.0.0.0";
               APP_PORT = toString cfg.port;
             };
             environmentFiles = [ environmentFile ];
+            extraOptions = [ "--network=host" ];
+            # No `ports`: host networking shares the host's own listener, so
+            # reachability is whatever the firewall allows instead of a
+            # publish that bypasses it on every interface.
             volumes = [
               "${appDir}:/app/data"
             ];
           };
 
-          services.state-backups.services.bifrost-gateway = {
+          services.state-backups.services.bifrost = {
             enable = true;
             mode = "live";
             paths = [ appDir ];
@@ -178,8 +198,6 @@ _: {
                     install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${logsDir}"
                     install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${cacheDir}"
                     install -d -m 0775 -o ${toString runtimeUid} -g ${toString runtimeGid} "${vectorDir}"
-                    # Bifrost prefers the imperative SQLite config store over config.json when present.
-                    rm -f "${configDbPath}"
                     install -m 0644 -o ${toString runtimeUid} -g ${toString runtimeGid} "${cfg.configFile}" "${configPath}"
                   '';
                 };
@@ -206,9 +224,6 @@ _: {
             };
           };
         })
-        {
-          services.bifrost-gateway.enable = true;
-        }
       ];
     };
 }

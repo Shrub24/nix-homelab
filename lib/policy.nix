@@ -147,24 +147,76 @@ rec {
   hostPorts =
     policy: hostName: lib.mapAttrs (_: svc: svc.origin.port) (resolveHostServices policy hostName);
 
-  # Cross-host catalog projection: canonical public URL, access, and health
-  # metadata only. Edge-local transport fields (origin, upstream, healthUrl)
-  # stay out of the catalog so consumers cannot depend on a physical origin.
-  mkCatalogEntry = serviceName: resolved: {
-    service = serviceName;
-    inherit (resolved)
-      publicUrl
-      publicHost
-      primaryDomain
-      subdomain
-      path
-      category
-      declarePublic
-      exposureMode
-      access
-      health
-      ;
-  };
+  # Provider-side projection: the routes a host provides, so a host serving an
+  # origin can render the front the edge dials without reading the edge's route
+  # table and without restating the port. Origins themselves never enter the
+  # cross-host catalog.
+  providedServices =
+    policy: fqdn:
+    let
+      hosts = policy.hosts or { };
+      entries = lib.concatMap (
+        hostName:
+        let
+          hostDefaults = hosts.${hostName}.defaults or { };
+        in
+        lib.mapAttrsToList (serviceName: serviceCfg: {
+          inherit serviceName;
+          resolved = mergeDefaults (policy.defaults or { }) hostDefaults serviceCfg;
+        }) (hosts.${hostName}.services or { })
+      ) (builtins.attrNames hosts);
+
+      provided = lib.filter (entry: (entry.resolved.origin.host or null) == fqdn) entries;
+    in
+    builtins.listToAttrs (
+      map (entry: {
+        name = entry.serviceName;
+        value = {
+          inherit (entry.resolved.origin) scheme port;
+          inherit (entry.resolved) exposureMode;
+        };
+      }) provided
+    );
+
+  # Cross-host catalog projection. Public services expose their published
+  # identity (public URL/host, access, health) and the published upstream
+  # *shape* (scheme + port) — never the origin host, so a consumer can
+  # configure its own listen address and dial its published port without
+  # depending on which physical host serves the route. A service that is not
+  # published has no public identity at all: it exposes only its
+  # machine-to-machine `endpoint`, and no publicUrl is manufactured for it.
+  isPublicService =
+    resolved: (resolved.declarePublic or false) && resolved.exposureMode != "tailscale-only";
+
+  mkCatalogEntry =
+    serviceName: resolved:
+    let
+      public = isPublicService resolved;
+      endpoint = {
+        inherit (resolved.origin) scheme host;
+        port = resolved.origin.port;
+        url = "${resolved.origin.scheme}://${resolved.origin.host}:${toString resolved.origin.port}";
+      };
+    in
+    {
+      service = serviceName;
+      upstreamScheme = resolved.origin.scheme;
+      upstreamPort = resolved.origin.port;
+      publicUrl = if public then resolved.publicUrl else null;
+      publicHost = if public then resolved.publicHost else null;
+      publicDomain = if public then resolved.primaryDomain else null;
+      endpoint = if public then null else endpoint;
+      inherit (resolved)
+        primaryDomain
+        subdomain
+        path
+        category
+        declarePublic
+        exposureMode
+        access
+        health
+        ;
+    };
 
   serviceCatalog =
     policy:

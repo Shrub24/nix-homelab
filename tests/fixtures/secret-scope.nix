@@ -9,7 +9,7 @@
     "home-forge"
   ];
   "applications/admin" = [ "la-admin-1" ];
-  "applications/edge-ingress" = [ "la-admin-1" ];
+  "applications/edge-ingress" = [ "oci-melb-1" ];
 
   "identity/kanidm" = [ "la-admin-1" ];
   "identity/provisioning.json" = [ "la-admin-1" ];

@@ -13,15 +13,9 @@ _: {
     let
       cfg = config.services.admin.termix;
       oauth2Policy = (builtins.fromJSON (builtins.readFile ../../policy/identity.json)).systems.oauth2;
-      policyServices = config.repo.web.currentHost.services or { };
+      policyServices = config.repo.web.catalog or { };
       termixRoute = policyServices.${oauth2Policy.termix.routeKey} or null;
-      termixUpstream =
-        if termixRoute == null then
-          throw "termix: required canonical web-policy route 'repo.web.currentHost.services.\"${oauth2Policy.termix.routeKey}\"' is missing for host '${
-            config.networking.hostName or "?"
-          }'"
-        else
-          termixRoute.upstream;
+      termixUpstream = "127.0.0.1:8083"; # container publishes 8083 (see termix-runtime.nix)
       termixClient =
         let
           client = lib.attrByPath [ "services" "identity" "oidc" "clients" "termix" ] null config;

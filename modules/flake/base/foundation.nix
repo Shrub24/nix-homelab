@@ -8,6 +8,7 @@
 # Host recovery is a separate contributor of the same aspect
 # (./host-recovery.nix): break-glass base policy, not an independently
 # selected capability.
+{ inputs, ... }:
 {
   flake.modules.nixos.base =
     {
@@ -38,6 +39,7 @@
       ];
     in
     {
+      imports = [ inputs.nix-fleet.modules.nixos.nh-gc ];
 
       options = {
         fleet.foundation = {
@@ -138,9 +140,12 @@
           users.dev = {
             isNormalUser = true;
             description = "Dev User";
+            # `notify` grants unix-socket dispatch: `just deploy` sends its outcome
+            # notification through the target host's notify CLI as this user.
             extraGroups = [
               "wheel"
-            ];
+            ]
+            ++ lib.optionals (config.users.groups ? notify) [ "notify" ];
             shell = pkgs.zsh;
             openssh.authorizedKeys.keys = sshKeys;
           };
@@ -196,21 +201,14 @@
           ACTION=="add|change", KERNEL=="sd[a-z]|vd[a-z]", ATTR{queue/scheduler}="mq-deadline"
         '';
 
-        programs.nh = {
+        # Scheduled store garbage collection is a shared capability now: nix-fleet
+        # owns the `nh-clean` unit, its timer and its failure registration (the
+        # aspect registers the event itself), so this fleet-wide leaf only selects
+        # it. The schedule and retention are our policy.
+        services.nh-gc = {
           enable = true;
-          clean = {
-            enable = true;
-            dates = "daily";
-            extraArgs = "--keep 3";
-          };
-        };
-
-        # This leaf owns the `nh-clean` unit through programs.nh.clean, so it also
-        # owns its monitoring participation.
-        services.notification-daemon.monitor.units."nh-clean" = {
-          onFailure = true;
-          onStart = true;
-          onStop = true;
+          dates = "daily";
+          extraArgs = "--keep 3";
         };
 
         fleet.hostIdentity.sshPrivateKeyFile = lib.mkIf hasHostSecrets hostSystemSecret;

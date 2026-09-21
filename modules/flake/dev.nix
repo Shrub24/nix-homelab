@@ -25,19 +25,9 @@
           pkgs.lefthook
           pkgs.deploy-rs
         ]
-        ++ [
-          config.packages.notification-daemon
-          config.packages.notify
-          config.packages.niks3
-        ];
+        ++ [ config.packages.niks3 ];
         shellHook = ''
           unset PYTHONPATH
-          if [ -f /tmp/notification-daemon.json ]; then
-            NOTIFICATION_DAEMON_CONFIG=/tmp/notification-daemon.json notification-daemon &
-            DAEMON_PID=$!
-            trap "kill $DAEMON_PID 2>/dev/null; echo 'notification-daemon stopped'" EXIT TERM INT
-            echo "notification-daemon started (PID: $DAEMON_PID)"
-          fi
         '';
       };
 

@@ -9,7 +9,7 @@ _: {
     }:
     let
       cfg = config.services.paperless.paperless-gpt;
-      bifrostBaseUrl = config.services.bifrost-gateway.endpoint.containerBaseUrl;
+      bifrostBaseUrl = config.services.bifrost.endpoint.containerBaseUrl;
 
       enabledInstances = lib.filterAttrs (_n: v: v.enable) cfg.instances;
       hasDocling = cfg.docling.enable;

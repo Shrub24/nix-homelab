@@ -8,16 +8,16 @@ _: {
     let
       cfg = config.services.admin.beszel;
 
-      webServices = config.repo.web.currentHost.services or { };
+      webServices = config.repo.web.catalog or { };
       beszelRoute =
         webServices."beszel-admin"
-          or (throw "beszel: required canonical web-policy route 'repo.web.currentHost.services.\"beszel-admin\"' is missing for host '${
+          or (throw "beszel: required canonical web-policy route 'repo.web.catalog.\"beszel-admin\"' is missing for host '${
             config.networking.hostName or "?"
           }'");
 
       appUrl = beszelRoute.publicUrl;
-      host = beszelRoute.origin.host;
-      port = beszelRoute.origin.port;
+      host = "0.0.0.0";
+      port = beszelRoute.upstreamPort;
     in
     {
       imports = [ ../backups/state-backups/_consumer.nix ];

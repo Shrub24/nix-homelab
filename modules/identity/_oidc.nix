@@ -15,8 +15,7 @@ let
   webPolicyKanidmUrl = lib.attrByPath [
     "repo"
     "web"
-    "currentHost"
-    "services"
+    "catalog"
     "kanidm-admin"
     "publicUrl"
   ] null config;
@@ -38,7 +37,7 @@ in
     providerUrl = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = webPolicyKanidmUrl;
-      defaultText = "repo.web.currentHost.services.\"kanidm-admin\".publicUrl";
+      defaultText = "repo.web.catalog.\"kanidm-admin\".publicUrl";
       description = "Canonical public URL for the active identity provider. Defaults to the canonical web-policy Kanidm route.";
     };
 

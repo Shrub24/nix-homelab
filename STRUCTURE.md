@@ -14,7 +14,7 @@ nix-homelab/
 ├── generated/       # Committed generated artifacts (e.g., web policy JSON)
 ├── lib/             # Reusable Nix library functions
 ├── modules/             # Flake-parts modules + NixOS modules (domain aspect contributors + private leaves, canonical host contributors, fleet contracts, services, flake materialization)
-├── pkgs/            # Custom Nix packages/derivations (notification-daemon, notify CLI, _sources/)
+├── pkgs/            # Custom Nix packages/derivations (windows-dj-setup, _sources/)
 ├── openspec/        # OpenSpec change management artifacts
 ├── opentofu/        # OpenTofu infrastructure-as-code (Cloudflare)
 ├── policy/          # Canonical fleet-wide defaults and web service policy
@@ -75,10 +75,40 @@ nix-homelab/
 **`modules/flake/`:**
 
 - Purpose: What remains after the Stage 8 relocation — flake output/materialization concerns, the fleet baseline, and the infrastructure support quartet; discovered by `denful/import-tree` from `flake.nix` exactly like every other domain contributor
-- Contains: `flake-file.nix` (the `flake-file` dendritic preset and the repository description), `inputs.nix` (every flake input: the shared baseline as follows aliases to `nix-fleet/{nixpkgs,flake-parts,import-tree,sops-nix,niks3}` plus the fleet-owned `disko`, `deploy-rs`, `nix-index-database`, `traktor-m3u-sync`), `host-registry.nix` (the typed `nixos.hosts.<id>` schema plus the generic materializer into `flake.nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`, with named `host-registry:` validation errors), `registry.nix` (reduced to the `flake.bootstrap.nodes` projection over `config.nixos.hosts`), `deploy.nix` (deploy-rs wiring plus canonical-host-ID validation), `packages.nix`, `dev.nix`, `scaffold.nix` (the fleet's system set), the infrastructure support quartet `provenance.nix`, `oci-images.nix`, `fleet-packages.nix`, `web-policy.nix`, the foundation aspects `base/` (`foundation.nix` + `host-recovery.nix`), `shell.nix` (with `shell/p10k.zsh`), `networking.nix`, and the aspects that consume a shared nix-fleet mechanism while owning the fleet's conventions for it — `tailscale.nix`, `builder-access.nix`, `observability-agent.nix` — plus the remaining placement aspects `paperless.nix`, `ai-gateway.nix`, `karakeep.nix`, `phoenix.nix`, `omniroute.nix` (each owning its capability's top-level enablement). The import-tree boundary record was deleted with the transition (D-060)
-- Key files: `modules/flake/host-registry.nix`, `modules/flake/registry.nix`, `modules/flake/deploy.nix`, `modules/flake/web-policy.nix`, `modules/flake/base/foundation.nix`, `modules/flake/base/host-recovery.nix`
+- Contains: `flake-file.nix` (the `flake-file` dendritic preset, the repository description, and the fleet's system set), `inputs.nix` (every flake input: the shared baseline as follows aliases to `nix-fleet/{nixpkgs,flake-parts,import-tree,sops-nix,niks3}` plus the fleet-owned `disko`, `deploy-rs`, `nix-index-database`, `traktor-m3u-sync`), `host-registry.nix` (the typed `nixos.hosts.<id>` schema plus the generic materializer into `flake.nixosConfigurations` through `inputs.nixpkgs.lib.nixosSystem`, with named `host-registry:` validation errors), `bootstrap.nix` (the `flake.bootstrap.nodes` projection over `config.nixos.hosts`), `deploy.nix` (deploy-rs wiring plus canonical-host-ID validation), `packages.nix`, `dev.nix`, the two remaining infrastructure-support contributors `provenance.nix` and `fleet-packages.nix`, the foundation aspects `base/` (`foundation.nix` + `host-recovery.nix`), `shell.nix` (with `shell/p10k.zsh`) and `networking.nix`, and the three convention contributors that consume a shared nix-fleet mechanism — `tailscale.nix`, `builder-access.nix`, `observability-agent.nix`. Every workload aspect lives in its semantic domain instead: `modules/apps/`, `modules/ai/`, `modules/observability/`, `modules/web/`, `modules/containers/`, with the cross-host transports in `modules/contracts/`
+- Key files: `modules/flake/host-registry.nix`, `modules/flake/bootstrap.nix`, `modules/flake/deploy.nix`, `modules/flake/base/foundation.nix`, `modules/flake/base/host-recovery.nix`
 
-The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules/storage/` directories no longer exist: dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`) converted the core/profile contents into the foundation aspects above (with typed `fleet.foundation` host facts), and dendritic Stage 3 (`dendritic-stage-3-operational-aspects`) converted the five deferred operational leaves into the `builder-access` and `observability-agent` aspects plus the combined `backups` aspect (since split by D-055 into `state-backups` and `cache-publisher`); no host imports the deleted wrappers or the five leaves directly. Dendritic Stage 4 (`dendritic-stage-4-source-model-realignment`) replaced the central `aspects.nix` publication file with concern-owned discovered contributors and classified `provenance`/`oci-images`/`fleet-packages` as infrastructure support (D-050). Dendritic Stage 5 (`dendritic-stage-5-shared-source-contributors`, D-051) deleted the `shared`/`storage` roots, relocated the remaining private leaves beside their aspect owners (`_aspects`, `_backups`, `_builder-access`), promoted `web-policy` to a discovered all-host support contributor, merged `identity-oidc`/`kanidm-host-auth` into the single `identity-client` aspect, and shrank the filter from six entries to four (D-059 later retired that bundle: the OIDC contract is the intrinsic `modules/identity/_oidc.nix` and the capability is `kanidm-host-auth`). Dendritic Stage 6 (`dendritic-stage-6-music-composition`, D-052) converted the music stack from the directly host-imported `modules/applications/music/default.nix` coordinator into the discovered home-forge-only `music` aspect (now `modules/music/music.nix`; selection provides `applications.music.enable`), moved Beets secret/template/CLI ownership plus the ingest and storage/permission mechanisms into sibling contributors under `modules/music/**`, and gave `dj` a typed read-only `applications.music.contract` with a named assertion; the four-root filter is unchanged, and the change landed as `dendritic-stage-6-music-composition` (archived 2026-09-13). Dendritic Stage 7 (`dendritic-stage-7-placement-aspects`, D-053) converted every remaining deployed product/platform capability into a discovered placement aspect, relocated the admin/edge/DJ/OCI implementations beside their concern owners, deleted `modules/applications/` and `modules/providers/`, and shrank the filter to `hosts` and `services`; `decouple-identity-admin-capabilities` (D-054) then dissolved `admin-hub` into individual aspects. Dendritic Stage 8 (`dendritic-stage-8-host-identity-contracts`, D-056) made host identity a typed discovered record, reduced `modules/flake/registry.nix` to the bootstrap projection, removed `hosts` from the filter (now exactly `[ "services" ]`), added canonical-host-ID validation to deploy and web metadata, added the two internal transport contracts under `modules/fleet/`, and moved the settled concern contributors from the flat `modules/flake/` bucket into their domain directories.
+The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules/storage/` directories no longer exist: dendritic Stage 2 (`dendritic-stage-2-foundation-aspects`) converted the core/profile contents into the foundation aspects above (with typed `fleet.foundation` host facts), and dendritic Stage 3 (`dendritic-stage-3-operational-aspects`) converted the five deferred operational leaves into the `builder-access` and `observability-agent` aspects plus the combined `backups` aspect (since split by D-055 into `state-backups` and `cache-publisher`); no host imports the deleted wrappers or the five leaves directly. Dendritic Stage 4 (`dendritic-stage-4-source-model-realignment`) replaced the central `aspects.nix` publication file with concern-owned discovered contributors and classified `provenance`/`oci-images`/`fleet-packages` as infrastructure support (D-050). Dendritic Stage 5 (`dendritic-stage-5-shared-source-contributors`, D-051) deleted the `shared`/`storage` roots, relocated the remaining private leaves beside their aspect owners (`_aspects`, `_backups`, `_builder-access`), promoted `web-policy` to a discovered all-host support contributor, merged `identity-oidc`/`kanidm-host-auth` into the single `identity-client` aspect, and shrank the filter from six entries to four (D-059 later retired that bundle: the OIDC contract is the intrinsic `modules/identity/_oidc.nix` and the capability is `kanidm-host-auth`). Dendritic Stage 6 (`dendritic-stage-6-music-composition`, D-052) converted the music stack from the directly host-imported `modules/applications/music/default.nix` coordinator into the discovered home-forge-only `music` aspect (now `modules/music/music.nix`; selection provides `applications.music.enable`), moved Beets secret/template/CLI ownership plus the ingest and storage/permission mechanisms into sibling contributors under `modules/music/**`, and gave `dj` a typed read-only `applications.music.contract` with a named assertion; the four-root filter is unchanged, and the change landed as `dendritic-stage-6-music-composition` (archived 2026-09-13). Dendritic Stage 7 (`dendritic-stage-7-placement-aspects`, D-053) converted every remaining deployed product/platform capability into a discovered placement aspect, relocated the admin/edge/DJ/OCI implementations beside their concern owners, deleted `modules/applications/` and `modules/providers/`, and shrank the filter to `hosts` and `services`; `decouple-identity-admin-capabilities` (D-054) then dissolved `admin-hub` into individual aspects. Dendritic Stage 8 (`dendritic-stage-8-host-identity-contracts`, D-056) made host identity a typed discovered record, reduced `modules/flake/bootstrap.nix` to the bootstrap projection, removed `hosts` from the filter (now exactly `[ "services" ]`), added canonical-host-ID validation to deploy and web metadata, added the two internal transport contracts under `modules/fleet/`, and moved the settled concern contributors from the flat `modules/flake/` bucket into their domain directories.
+
+**`modules/apps/`:**
+
+- Purpose: End-user applications — the things a person opens
+- Contains: `paperless.nix`-equivalent composition in `paperless/core.nix` + `paperless/gpt.nix` (the stack owns its own enablement under `services.paperless`), `karakeep.nix`, `vaultwarden.nix`
+- Key files: `modules/apps/paperless/core.nix`, `modules/apps/karakeep.nix`
+
+**`modules/ai/`:**
+
+- Purpose: AI infrastructure and gateways
+- Contains: `bifrost.nix` (the `ai-gateway` aspect renamed to the implementation's own name; owns `services.bifrost-gateway`), `omniroute.nix`
+- Key files: `modules/ai/bifrost.nix`, `modules/ai/omniroute.nix`
+
+**`modules/observability/`:**
+
+- Purpose: Monitoring and telemetry — collection, dashboards, and traces
+- Contains: `beszel.nix`, `gatus.nix`, `phoenix.nix` (the Beszel hub stays in this repository; only the agent is shared infrastructure)
+- Key files: `modules/observability/beszel.nix`, `modules/observability/gatus.nix`
+
+**`modules/web/`:**
+
+- Purpose: Ingress and the resolved web policy
+- Contains: `web-policy.nix` (canonical-host validation, origin-transport validation, and resolution into `repo.web.*`), `ingress.nix` (the role-based proxy aspect: selection supplies `services.ingress.enable` and projects the edge role's routes, primary domain, ACME identity and Authenticated Origin Pulls from canonical policy), `ingress-runtime.nix` (the Caddy runtime, ACME/Cloudflare DNS-01 credentials, and the secret-file contract), and `ingress-origin-exposure.nix` (the provider-side front every host renders for its own private-transport routes; the one file holding transport-specific code)
+- Key files: `modules/web/web-policy.nix`, `modules/web/ingress.nix`, `modules/web/ingress-runtime.nix`, `modules/web/ingress-origin-exposure.nix`
+
+**`modules/containers/`:**
+
+- Purpose: Container-image policy
+- Contains: `oci-images.nix` (Renovate-managed tag+digest references published as `repo.ociImages.*`)
+- Key files: `modules/containers/oci-images.nix`
 
 **`modules/identity/`:**
 
@@ -88,8 +118,8 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **`modules/notifications/`:**
 
-- Purpose: Notification domain — dispatch baseline and the LA ntfy publisher
-- Contains: `notify.nix` (the foundation aspect, which carries the notification-daemon body inline) and `push-server.nix` (LA ntfy)
+- Purpose: Notification domain — the dispatch conventions and the LA ntfy publisher
+- Contains: `notify.nix` (the foundation aspect: a convention contributor over nix-fleet's shared `notify` mechanism) and `push-server.nix` (LA ntfy)
 - Key files: `modules/notifications/notify.nix`, `modules/notifications/push-server.nix`
 
 **`modules/cache/`:**
@@ -113,26 +143,14 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 **`modules/admin/`:**
 
 - Purpose: Admin surface domain — the self-contained admin capability aspects
-- Contains: `cockpit.nix`, `termix.nix`, `vaultwarden.nix`, `homepage.nix`, `gatus.nix`, `beszel.nix`, `webhook.nix` (each owning its capability's enablement, runtime wiring, and secret contract; all selected individually on `la-admin-1` since `admin-hub` was dissolved by D-054)
+- Contains: `cockpit.nix`, `termix.nix`, `homepage.nix`, `webhook.nix` (operator-facing tooling; each owning its capability's enablement, runtime wiring, and secret contract, all selected individually on `la-admin-1` since `admin-hub` was dissolved by D-054). End-user applications moved out with the domain split: `vaultwarden.nix` → `modules/apps/`, `beszel.nix` and `gatus.nix` → `modules/observability/`
 - Key files: `modules/admin/cockpit.nix`, `modules/admin/termix.nix`, `modules/admin/homepage.nix`
-
-**`modules/edge/`:**
-
-- Purpose: Edge/origin ingress domain
-- Contains: `edge.nix` (the discovered role-based proxy aspect), `edge-ingress-application.nix` (the routes projection), and `edge-ingress-runtime.nix` (the Caddy runtime)
-- Key files: `modules/edge/edge.nix`, `modules/edge/edge-ingress-application.nix`, `modules/edge/edge-ingress-runtime.nix`
 
 **`modules/oci/`:**
 
 - Purpose: Provider domain — OCI/Oracle Cloud host-safe defaults
 - Contains: `oci.nix` (the provider aspect, with the provider body inline)
 - Key files: `modules/oci/oci.nix`
-
-**`modules/fleet/`:**
-
-- Purpose: Fleet-wide cross-host contracts
-- Contains: `internal-contracts.nix` (the two internal transport contracts — shared PostgreSQL and the private Niks3 write API — publishing `flake.internalContracts` and the per-host `repo.internal` surface)
-- Key files: `modules/fleet/internal-contracts.nix`
 
 **`modules/hosts/`:**
 
@@ -143,21 +161,20 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 **`modules/applications/` (deleted in dendritic Stage 7, D-053):**
 
 - Purpose: former evaluator-class root for multi-service feature composition
-- Contains: nothing; the root was deleted after every implementation moved beside its discovered concern owner. The music stack became the `music` aspect (Stage 6, D-052); the admin split became the `identity-provider` and `cockpit` contributors and was then dissolved further into individual workload aspects (`termix`, `vaultwarden`, `homepage`, `gatus`, `beszel`, `webhook`) by D-054, edge became the `edge` aspect (+ private `_edge/edge-ingress.nix`), and DJ became `dj` (+ private `_dj/`). Stage 8 (D-056) then moved those owners from `modules/flake/` into their domain directories (`modules/music/`, `modules/admin/`, `modules/identity/`, `modules/edge/`). No compatibility wrapper or underscore-renamed replacement root exists.
+- Contains: nothing; the root was deleted after every implementation moved beside its discovered concern owner. The music stack became the `music` aspect (Stage 6, D-052); the admin split became the `identity-provider` and `cockpit` contributors and was then dissolved further into individual workload aspects (`termix`, `vaultwarden`, `homepage`, `gatus`, `beszel`, `webhook`) by D-054, edge became the `ingress` aspect (+ private `_edge/edge-ingress.nix`), and DJ became `dj` (+ private `_dj/`). Stage 8 (D-056) then moved those owners from `modules/flake/` into their domain directories (`modules/music/`, `modules/admin/`, `modules/identity/`, `modules/web/`). No compatibility wrapper or underscore-renamed replacement root exists.
 
 **Service leaves (beside the owning aspect):**
 
 - Purpose: Leaf service implementation modules — individual workloads with enable flags and secrets
-- Contains: the former service root no longer exists. Every leaf is now a discovered contributor beside its domain: the cache server `modules/cache/niks3-cache.nix`, `modules/flake/{tailscale,ai-gateway,paperless,karakeep,phoenix,omniroute}.nix`, `modules/notifications/{notify,push-server}.nix`, `modules/database/postgres.nix`, `modules/edge/edge-ingress-runtime.nix`, and the admin workloads under `modules/admin/`. Music services (Syncthing, Navidrome, Beets, slskd, Tagr, AudioMuse, ingest, storage) live under `modules/music/` with the Beets asset directory `beets/files/` and the private runner helper `_beets/runners.nix`
+- Contains: the former service root no longer exists. Every leaf is now a discovered contributor beside its domain: the cache server `modules/cache/niks3-cache.nix`, `modules/flake/tailscale.nix`, `modules/apps/{paperless,karakeep,vaultwarden}.nix`, `modules/observability/{beszel,gatus,phoenix}.nix`, `modules/ai/{bifrost,omniroute}.nix`, `modules/notifications/{notify,push-server}.nix`, `modules/database/postgres.nix`, `modules/web/ingress-runtime.nix`, and the operator tooling under `modules/admin/`. Music services (Syncthing, Navidrome, Beets, slskd, Tagr, AudioMuse, ingest, storage) live under `modules/music/` with the Beets asset directory `beets/files/` and the private runner helper `_beets/runners.nix`
 - `modules/database/postgres.nix` is both the `postgres` aspect and the mechanism for the fleet's PostgreSQL substrate: it renders provisioning (databases, roles, `pg_hba`, credential application, extension composition, setup SQL, backup export) from `services.postgres.instances.<name>` and `services.postgres.consumers.<name>` and names no consumer; port and data directory are declared per host by the enabling record, consumers register from their own modules through the declaration-only contract `modules/database/postgres/_consumer.nix`, and a co-located consumer resolves the local cluster through `services.postgres.localEndpoint` (D-058)
-- Key files: `modules/flake/tailscale.nix`, `modules/music/syncthing.nix`, `modules/music/navidrome.nix`, `modules/music/beets.nix`, `modules/music/_beets/runners.nix`, `modules/music/beets/files/beets-config.yaml`, `modules/music/ingest.nix`, `modules/music/storage.nix`, `modules/music/files/ffmpeg-preprocess.sh`, `modules/music/slskd.nix`, `modules/music/tagr.nix`, `modules/music/audiomuse.nix`, `modules/notifications/push-server.nix`, `modules/flake/ai-gateway.nix`, `modules/flake/paperless/core.nix`, `modules/flake/paperless/gpt.nix`, `modules/database/postgres.nix`, `modules/admin/cockpit.nix`
-- **ai-gateway.nix** (the bifrost gateway): AI gateway service with OpenRouter and CrofAI provider support
+- Key files: `modules/flake/tailscale.nix`, `modules/music/syncthing.nix`, `modules/music/navidrome.nix`, `modules/music/beets.nix`, `modules/music/_beets/runners.nix`, `modules/music/beets/files/beets-config.yaml`, `modules/music/ingest.nix`, `modules/music/storage.nix`, `modules/music/files/ffmpeg-preprocess.sh`, `modules/music/slskd.nix`, `modules/music/tagr.nix`, `modules/music/audiomuse.nix`, `modules/notifications/push-server.nix`, `modules/ai/bifrost.nix`, `modules/apps/paperless/core.nix`, `modules/apps/paperless/gpt.nix`, `modules/database/postgres.nix`, `modules/admin/cockpit.nix`
 
 **`pkgs/`:**
 
 - Purpose: Custom Nix packages/derivations
-- Contains: `default.nix` (package set aggregator), `_sources/` (nvfetcher output: `generated.nix`, `generated.json`), `notification-daemon/` (Python FastAPI daemon source, `pyproject.toml`, `default.nix`), `notify/` (CLI wrapper that POSTs to the daemon)
-- Key files: `pkgs/default.nix`, `pkgs/_sources/generated.nix`, `pkgs/notification-daemon/default.nix`, `pkgs/notify/default.nix`
+- Contains: `default.nix` (package set aggregator), `_sources/` (nvfetcher output: `generated.nix`, `generated.json`), `windows-dj-setup/` (the fleet's only remaining local package; the notification daemon and `notify` CLI now live in nix-fleet)
+- Key files: `pkgs/default.nix`, `pkgs/_sources/generated.nix`
 
 **`modules/providers/` (deleted in dendritic Stage 7, D-053):**
 
@@ -218,11 +235,11 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **Deploy Metadata:** `lib/deploy/hosts.nix`: Hostname, SSH user, system architecture, remote-build flag per host; `edgeHost` and `deployOrder` are the only physical deployment facts (serial order `la-admin-1` → `oci-melb-1`). Every referenced name must be a declared canonical host ID — `modules/flake/deploy.nix` fails closed with `deploy: unknown host reference …` otherwise
 
-**Core Logic:** `modules/`: domain aspect contributors with their sibling contributors (`modules/identity/`, `modules/notifications/`, `modules/cache/`, `modules/backups/`, `modules/music/`, `modules/admin/`, `modules/edge/`, `modules/oci/`, `modules/database/`), fleet contracts (`modules/fleet/`), canonical host contributors (`modules/hosts/`), and flake materialization plus the fleet baseline (`modules/flake/`)
+**Core Logic:** `modules/`: domain aspect contributors with their sibling contributors (`modules/identity/`, `modules/notifications/`, `modules/cache/`, `modules/backups/`, `modules/music/`, `modules/admin/`, `modules/web/`, `modules/oci/`, `modules/database/`), fleet contracts (`modules/fleet/`), canonical host contributors (`modules/hosts/`), and flake materialization plus the fleet baseline (`modules/flake/`)
 
-**Internal Contracts:** `modules/fleet/internal-contracts.nix`: the two typed cross-host transport contracts (shared PostgreSQL, private Niks3 write API) with provider ID, port, and resolved private endpoints; validated by `flake.internalContracts` and exercised by `tests/check-internal-contracts.sh`
+**Private Service Endpoints:** `policy/web-services.nix` declares every service, published or private; `lib/policy.nix` projects a private service (`tailscale-only` + `declarePublic = false`) as `repo.web.catalog.<id>.endpoint` with no public identity, so a provider's listen port and every consumer's target URL come from one declaration. The surviving provider-placement invariant is asserted in `tests/check-web-service-catalog.sh`
 
-**Policy SSOT:** `policy/web-services.nix`: All public web service endpoint definitions with origin, exposure mode, and Cloudflare config (plain data; host-backed origins are validated against canonical host records in `modules/flake/web-policy.nix`). `policy/globals.nix` `tailnet.suffix` is the single tailnet suffix authority
+**Policy SSOT:** `policy/web-services.nix`: All public web service endpoint definitions with origin, exposure mode, and Cloudflare config (plain data; host-backed origins are validated against canonical host records in `modules/web/web-policy.nix`). `policy/globals.nix` `tailnet.suffix` is the single tailnet suffix authority
 
 **Secrets Policy:** `.sops.yaml`: Path-scoped age recipient rules for encrypting/decrypting all secret files
 
@@ -230,15 +247,15 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **Bootstrap Script:** `deploy.sh`: nixos-anywhere bootstrap driver with host config resolution and age recipient derivation
 
-**Notification Daemon:** `pkgs/notification-daemon/notification_api/main.py`: FastAPI app with `/health`, `/notify`, `/debug/test-notify` endpoints
+**Notification Daemon:** nix-fleet `pkgs/notification-daemon/notification_api/main.py`: FastAPI app with `/health`, `/notify`, `/debug/test-notify` endpoints
 
-**Notify CLI:** `pkgs/notify/default.nix`: Python stdin-pipe wrapper that POSTs to the notification daemon
+**Notify CLI:** nix-fleet `pkgs/notify/default.nix`: Python stdin-pipe wrapper that POSTs to the notification daemon
 
 ## Naming Conventions
 
 **Files:** `kebab-case.nix` for Nix files: `disko-root.nix`, `edge-ingress.nix`, `kanidm-host-auth.nix`
 
-**Directories:** `kebab-case` for module directories: `notification-daemon/`, `edge-ingress/`, `host-recovery/`
+**Directories:** `kebab-case` for module directories: `state-backups/`, `edge-ingress/`, `host-recovery/`
 
 **Flake attributes:** `camelCase` for flake outputs: `nixosConfigurations`, `devShells`
 
@@ -249,7 +266,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 - `services.<name>` for top-level standalone services
 - `fleet.<name>` for fleet-wide module options
 - `nixos.hosts.<id>` for the canonical host records (flake-parts level, not a NixOS option namespace)
-- `repo.internal.<contract>` for resolved internal transport contract endpoints; `repo.web.*` for resolved web policy
+- `repo.web.*` for the resolved web policy (`catalog` for cross-host consumers, `hosts`/`currentHost` for the edge)
 
 **Host names:** `kebab-case`: `oci-melb-1`, `la-admin-1`
 
@@ -266,7 +283,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **New application/product aspect:** `modules/<domain>/<aspect>.nix` publishing `flake.modules.nixos.<aspect>` — composition with the app's `enable` flag supplied by selection, shared paths, and sub-service wiring; put a helper or a second contributor beside the owner under `modules/<domain>/` (a sibling file publishing the same aspect name, or a `_`-prefixed value-imported helper). Use `secretFiles.host` for secret passthrough. Then select the aspect in each deploying host's `nixos.hosts.<id>` record and assert the placement in `tests/check-dendritic-scaffold-contract.sh`. Put a contributor in `modules/flake/` only when it is a flake materialization, fleet-baseline, or infrastructure support concern (D-056).
 
-**New edge ingress host:** select `aspects.edge` in the host record — role-based (edge/origin/none) with the implementation at `modules/edge/edge-ingress-application.nix` over `modules/edge/edge-ingress-runtime.nix`; the host keeps only `role` and the application-scoped secret binding.
+**New edge ingress host:** select `aspects.ingress` in the host record — role-based (edge/origin/none) with the implementation at `modules/web/ingress.nix` over `modules/web/ingress-runtime.nix` and `modules/web/ingress-origin-exposure.nix`; the host keeps only `role` and the application-scoped secret binding. A service whose socket is loopback-bound or otherwise unreachable declares `exposureMode = "tailscale-serve"` in `policy/web-services.nix`: the edge then dials the provider's canonical private name and the provider host renders the front itself — no host or service wiring, and the port stays single-sourced.
 
 **New paperless stack deployment:** `modules/hosts/<host>/default.nix` — set `services.paperless.enable = true` and bind `services.paperless.secretFiles.host` and `.oidc` to host-scoped secret files. Optionally enable paperless-gpt via `services.paperless.paperless-gpt = { docling.enable = true; instances.llm.enable = true; instances.docling.enable = true; }` for AI document enhancement with docling-serve sidecar. Ensure the target host selects the `postgres` aspect (or another instance aspect) so the database role can be provisioned, and that paperless registers its database in that instance's consumer registry.
 
@@ -298,13 +315,8 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **New OCI image reference:** Add the image in `image:tag@sha256:digest` form to `policy/oci-images.nix`. The image is available to service modules via `config.repo.ociImages.<name>` (typed policy aspect from the `oci-images` flake module; no `specialArgs`). Renovate proposes digest and tag updates on its scheduled runs.
 
-**New notification daemon feature:** `pkgs/notification-daemon/notification_api/main.py` — add new handler or endpoint in the FastAPI app. Update `pkgs/notification-daemon/pyproject.toml` for new dependencies.
+**New notification daemon feature:** nix-fleet `pkgs/notification-daemon/notification_api/main.py` — add the handler or endpoint there. Update nix-fleet `pkgs/notification-daemon/pyproject.toml` for new dependencies. This repository only binds policy, conventions and registrations (`modules/notifications/notify.nix`, `services.notify.events.<unit>` from the owning capability).
 
 **New justfile module:** `.just/<domain>.just` — create domain-specific recipe file. Import in main `justfile` with `mod <name> '.just/<name>.just'`.
 
-**Local dev workflow:**
-
-1. Create a local config: `just dev setup` (decrypts to `/tmp/notification-daemon.json`)
-2. Enter the devShell: `nix develop` (daemon auto-starts if config exists)
-3. Use `notify` CLI directly: `echo "test" | notify info "test" test system`
-4. Exit the devShell — daemon auto-stops via trap
+**Notification policy change:** the daemon, CLI and event handler come from nix-fleet, so a policy change is local and small — Telegram chat/topics in `policy/globals.nix`, the ntfy server URL and topic map in `modules/notifications/notify.nix`, host secret files in the host assembly, and per-unit participation through `services.notify.events.<unit>` from the capability that owns the unit. Verify with `nix eval .#nixosConfigurations.<host>.config.systemd.services.notify` (the unit) and `<unit>.onFailure` (the native handler a registration attached).

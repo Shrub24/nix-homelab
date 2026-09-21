@@ -1,329 +1,75 @@
-# Notifications foundation aspect: selecting it is its enablement. The
-# notification-daemon implementation lives in this file, and its option
-# namespace stays `services.notification-daemon` for capabilities that
-# contribute monitor entries. Repo packages are resolved via withSystem at
-# flake level and passed into the module by value.
-{ withSystem, ... }:
+# Notifications foundation aspect: selecting it is its enablement. nix-fleet owns
+# the mechanism — the daemon, the `notify` CLI, the `unit-notify` systemd event
+# handler, the `services.notify` option surface and the
+# `services.notify.events.<unit>` registration contract that the capability
+# owning a unit writes directly. This contributor imports that shared aspect and
+# binds the fleet's conventions: the Telegram and ntfy policy from
+# policy/globals.nix, the ntfy server URL derived from the web catalog, the ntfy
+# topic map, and the fail-closed secret bootstrap.
+#
+# Secret readership is unchanged in shape and re-pointed in path: the shared
+# aspect renders sops.secrets."notify/telegram_bot_token" and
+# sops.secrets."notify/ntfy_token" from cfg.secretFiles.host and
+# cfg.secretFiles.hostSystem with the conventional keys and ownership, at
+# /run/secrets/notify/{telegram_bot_token,ntfy_token}.
+#
+# The daemon dispatches over /run/notify/notify.sock (mode 0660, group `notify`),
+# so non-root callers join that group from the module that owns them
+# (`users.users.<caller>.extraGroups`), and `services.notify.cliGroup` stays
+# null: root-only socket dispatch plus explicit per-caller grants.
+{ inputs, ... }:
 {
   flake.modules.nixos.notify =
-    {
-      config,
-      lib,
-      pkgs,
-      ...
-    }:
+    { config, lib, ... }:
     let
-      packages = withSystem pkgs.stdenv.hostPlatform.system (
-        { config, ... }:
-        {
-          inherit (config.packages) notification-daemon notify;
-        }
-      );
-      cfg = config.services.notification-daemon;
       globals = import ../../policy/globals.nix;
-      secretHelpers = import ../../lib/secrets.nix { inherit lib; };
-
-      notifyConfig = {
-        token_file = "/run/secrets/notification-daemon/telegram_bot_token";
-        chat_id = cfg.telegram.chatId;
-        topics = cfg.telegram.topics;
-        ntfy = lib.optionalAttrs (cfg.ntfy.enable && cfg.ntfy.serverUrl != "") {
-          server_url = cfg.ntfy.serverUrl;
-          topics = cfg.ntfy.topics;
-          token_file = "/run/secrets/notification-daemon/ntfy_token";
-        };
-      };
-
-      # Fail-closed: a monitor contribution may only name a unit with a real
-      # service implementation. The predicate reads only implementation attributes
-      # (serviceConfig.ExecStart or a non-empty script) and never the hooks this
-      # module injects (OnFailure, ExecStartPost, ExecStopPost), so a monitor-created
-      # fragment can never satisfy its own assertion.
-      monitorUnitImplemented =
-        unit:
-        let
-          svc = config.systemd.services.${unit} or null;
-        in
-        svc != null && ((svc.serviceConfig.ExecStart or null) != null || (svc.script or "") != "");
-
-      monitorScript = pkgs.writeScriptBin "svc-monitor" ''
-        #!${pkgs.python3}/bin/python3
-        import json, subprocess, sys, urllib.request
-
-        unit = sys.argv[1] if len(sys.argv) > 1 else sys.exit("Usage: svc-monitor <unit>")
-        event = sys.argv[2] if len(sys.argv) > 2 else "onFailure"
-
-        journal = subprocess.run(
-            ["journalctl", "-u", unit, "--since", "5 minutes ago", "--no-pager", "-n", "50"],
-            capture_output=True, text=True, timeout=15,
-        ).stdout or ""
-
-        title = "[%s] monitor: %s" % (event, unit)
-        body = journal
-        tier = "warning" if event == "onFailure" else "info"
-        ntype = event
-
-        payload = json.dumps({"tier": tier, "title": title, "type": ntype, "message": body}).encode()
-        req = urllib.request.Request(
-            "http://127.0.0.1:${toString cfg.port}/notify",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-        )
-        try:
-            urllib.request.urlopen(req, timeout=10)
-        except urllib.error.HTTPError as e:
-            sys.exit("daemon error: %d %s" % (e.code, e.read().decode()))
-        except (urllib.error.URLError, OSError) as e:
-            sys.exit("daemon connection failed: %s" % e)
-      '';
+      cfg = config.services.notify;
     in
     {
-      options.services.notification-daemon = {
-        enable = lib.mkEnableOption "notification dispatch daemon (Telegram + ntfy)";
+      imports = [ inputs.nix-fleet.modules.nixos.notify ];
 
-        port = lib.mkOption {
-          type = lib.types.port;
-          default = 5555;
-          description = "Port on which the notification daemon listens (127.0.0.1 only).";
-        };
-
-        package = lib.mkOption {
-          type = lib.types.package;
-          description = "Notification daemon package supplied by the owning aspect.";
-        };
-
-        notifyPackage = lib.mkOption {
-          type = lib.types.package;
-          description = "Notify CLI package supplied by the owning aspect.";
-        };
-
-        secretFiles.host = secretHelpers.mkSecretFileOption "notification-daemon-secrets";
-        secretFiles.hostSystem = secretHelpers.mkSecretFileOption "notification-daemon-host-system";
-
-        telegram = {
-          chatId = lib.mkOption {
-            type = lib.types.str;
-            default = globals.notifications.telegram.chatId;
-            description = "Telegram supergroup chat ID for notifications.";
+      config = {
+        services.notify = {
+          telegram = {
+            chatId = lib.mkDefault globals.notifications.telegram.chatId;
+            topics = lib.mkDefault globals.notifications.telegram.topics;
           };
 
-          topics = lib.mkOption {
-            type = lib.types.attrsOf lib.types.str;
-            default = globals.notifications.telegram.topics;
-            description = "Mapping of notification tiers to Telegram topic IDs within the supergroup.";
-          };
-        };
-
-        ntfy = {
-          enable = lib.mkEnableOption "ntfy dispatch alongside apprise";
-
-          serverUrl = lib.mkOption {
-            type = lib.types.str;
-            default = lib.attrByPath [ "repo" "web" "catalog" "ntfy-admin" "publicUrl" ] "" config;
-            defaultText = lib.literalExpression ''lib.attrByPath [ "repo" "web" "catalog" "ntfy-admin" "publicUrl" ] "" config'';
-            description = "ntfy server URL. Defaults to the policy-derived public URL; origin hosts should override to loopback.";
-          };
-
-          topics = lib.mkOption {
-            type = lib.types.attrsOf lib.types.str;
-            default = {
+          ntfy = {
+            serverUrl = lib.mkDefault (
+              lib.attrByPath [ "repo" "web" "catalog" "ntfy-admin" "publicUrl" ] "" config
+            );
+            topics = lib.mkDefault {
               system = "system";
               services = "services";
               web = "web";
               music = "music";
             };
-            description = "Semantic ntfy topic names (e.g. system, services, web, music).";
           };
         };
 
-        monitor = {
-          enable = lib.mkEnableOption "systemd service notification monitors";
-
-          # Participation is declared by the capability that owns each unit, per
-          # lifecycle event. An attribute set (not a list) keeps module merging
-          # additive and lets owners request only meaningful events.
-          units = lib.mkOption {
-            type = lib.types.attrsOf (
-              lib.types.submodule {
-                options = {
-                  onFailure = lib.mkOption {
-                    type = lib.types.bool;
-                    default = false;
-                    description = "Activate svc-monitor@<unit>.service when <unit> enters the failed state (OnFailure).";
-                  };
-
-                  onStart = lib.mkOption {
-                    type = lib.types.bool;
-                    default = false;
-                    description = "Report each start attempt of <unit> (ExecStartPost).";
-                  };
-
-                  onStop = lib.mkOption {
-                    type = lib.types.bool;
-                    default = false;
-                    description = "Report each termination of <unit> (ExecStopPost).";
-                  };
-                };
-              }
-            );
-            default = { };
-            description = ''
-              Systemd units to monitor, contributed by the capability that owns
-              them. Only the declared lifecycle events are hooked, and every entry
-              must name a real service implementation.
-            '';
-          };
+        assertions = [
+          {
+            assertion = cfg.telegram.chatId != "REPLACE_GROUP_CHAT_ID" && cfg.telegram.chatId != "";
+            message = "services.notify.telegram.chatId must be set to a real Telegram supergroup chat ID.";
+          }
+          {
+            assertion = cfg.telegram.topics != { };
+            message = "services.notify.telegram.topics must be configured with at least one tier.";
+          }
+          {
+            assertion = cfg.secretFiles.host != null;
+            message = "services.notify.secretFiles.host must be set to the conventional host-scoped secret file (secrets/services/notification-daemon.yaml).";
+          }
+        ]
+        ++ lib.optional (cfg.ntfy.enable && cfg.ntfy.serverUrl == "") {
+          assertion = false;
+          message = "services.notify.ntfy.serverUrl must be set when ntfy is enabled.";
+        }
+        ++ lib.optional (cfg.ntfy.enable && cfg.secretFiles.hostSystem == null) {
+          assertion = false;
+          message = "services.notify.ntfy.enable is true but services.notify.secretFiles.hostSystem is not set.";
         };
       };
-
-      config = lib.mkMerge [
-        (lib.mkIf cfg.enable {
-          assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.notification-daemon";
-              label = "secretFiles.host";
-            })
-            {
-              assertion = cfg.telegram.chatId != "REPLACE_GROUP_CHAT_ID" && cfg.telegram.chatId != "";
-              message = "services.notification-daemon.telegram.chatId must be set to a real Telegram supergroup chat ID.";
-            }
-            {
-              assertion = cfg.telegram.topics != { };
-              message = "services.notification-daemon.telegram.topics must be configured with at least one tier.";
-            }
-          ]
-          ++ lib.optional (cfg.ntfy.enable && cfg.ntfy.serverUrl == "") {
-            assertion = false;
-            message = "services.notification-daemon.ntfy.serverUrl must be set when ntfy is enabled.";
-          }
-          ++ lib.optional cfg.ntfy.enable (
-            secretHelpers.mkRequiredSecretAssertion {
-              enable = cfg.ntfy.enable;
-              file = cfg.secretFiles.hostSystem;
-              feature = "services.notification-daemon.ntfy";
-              label = "secretFiles.hostSystem";
-            }
-          )
-          ++ lib.optionals cfg.monitor.enable (
-            lib.mapAttrsToList (unit: _events: {
-              assertion = monitorUnitImplemented unit;
-              message = "services.notification-daemon.monitor.units: '${unit}' is contributed for monitoring but has no systemd service implementation (serviceConfig.ExecStart or script); monitor-generated hooks do not count. Contribute monitoring from the capability that owns the unit.";
-            }) cfg.monitor.units
-          );
-
-          environment.etc."notification-daemon/config.json" = {
-            mode = "0444";
-            text = builtins.toJSON notifyConfig;
-          };
-
-          environment.systemPackages = [
-            cfg.package
-            pkgs.apprise
-            cfg.notifyPackage
-          ]
-          ++ lib.optionals cfg.monitor.enable [ monitorScript ];
-
-          systemd.services = {
-            notification-daemon = {
-              description = "HTTP notification dispatch daemon";
-              after = [ "sops-nix.service" ];
-              wants = [ "sops-nix.service" ];
-              wantedBy = [ "multi-user.target" ];
-
-              serviceConfig = {
-                Type = "simple";
-                ExecStart = "${cfg.package}/bin/notification-daemon";
-                Restart = "on-failure";
-                RestartSec = "5s";
-                User = "root";
-                NoNewPrivileges = true;
-                PrivateTmp = true;
-                ProtectSystem = "strict";
-                ProtectHome = true;
-                ReadWritePaths = [ "/run" ];
-                ReadOnlyPaths = [
-                  "/etc/notification-daemon"
-                  "/run/secrets"
-                ];
-              };
-            };
-          }
-          // lib.optionalAttrs cfg.monitor.enable (
-            let
-              mon = "svc-monitor@";
-            in
-            {
-              "${mon}" = {
-                description = "Notification monitor for %I";
-                serviceConfig = {
-                  Type = "oneshot";
-                  ExecStart = "-${monitorScript}/bin/svc-monitor %I onFailure";
-                  User = "root";
-                  Group = "root";
-                };
-              };
-            }
-            //
-              lib.mapAttrs'
-                (
-                  unit: events:
-                  lib.nameValuePair unit (
-                    # OnFailure activates svc-monitor@<unit>.service when the unit
-                    # enters the failed state; the Exec hooks fire on every run. The
-                    # hooks are merged into (never replaced over) whatever the owning
-                    # capability already defined for the unit.
-                    lib.optionalAttrs events.onFailure {
-                      onFailure = lib.mkBefore [ "${mon}${unit}.service" ];
-                    }
-                    // lib.optionalAttrs (events.onStart || events.onStop) {
-                      serviceConfig =
-                        # Notification delivery is best-effort and must not decide unit health.
-                        lib.optionalAttrs events.onStart {
-                          ExecStartPost = lib.mkBefore [
-                            "-${monitorScript}/bin/svc-monitor ${unit} onStart"
-                          ];
-                        }
-                        // lib.optionalAttrs events.onStop {
-                          ExecStopPost = lib.mkAfter [
-                            "-${monitorScript}/bin/svc-monitor ${unit} onSuccess"
-                          ];
-                        };
-                    }
-                  )
-                )
-                (lib.filterAttrs (_: events: events.onFailure || events.onStart || events.onStop) cfg.monitor.units)
-          );
-
-          sops.secrets."notification-daemon/telegram_bot_token" = {
-            sopsFile = cfg.secretFiles.host;
-            key = "telegram_bot_token";
-            path = "/run/secrets/notification-daemon/telegram_bot_token";
-            owner = "root";
-            group = "root";
-            mode = "0440";
-          };
-
-          sops.secrets."notification-daemon/ntfy_token" = lib.mkIf cfg.ntfy.enable {
-            sopsFile = cfg.secretFiles.hostSystem;
-            key = "ntfy_token";
-            path = "/run/secrets/notification-daemon/ntfy_token";
-            owner = "root";
-            group = "root";
-            mode = "0440";
-          };
-        })
-        {
-          services.notification-daemon = {
-            enable = true;
-            package = packages.notification-daemon;
-            notifyPackage = packages.notify;
-            # Notify owns monitor composition (canonical apprise contract); the
-            # state-backups aspect asserts this option instead of importing notify.
-            monitor.enable = true;
-          };
-        }
-      ];
     };
 }

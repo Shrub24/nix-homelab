@@ -29,7 +29,7 @@ in
         aspects.web-policy
         aspects.kanidm-host-auth
         # Selection is enablement; no host imports an implementation.
-        aspects.edge
+        aspects.ingress
         aspects.push-server
         aspects.identity-provider
         aspects.vaultwarden
@@ -44,7 +44,6 @@ in
         aspects.notify
         aspects.state-backups
         aspects.cache-publisher
-        aspects.internal-contracts
         aspects.builder-access
         aspects.observability-agent
       ];

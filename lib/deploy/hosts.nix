@@ -4,8 +4,9 @@
 # `edgeHost` and `deployOrder` are physical-host facts for scripts, tests, and
 # deployment sequencing; they must never be interpreted as NixOS nodes.
 {
-  # Active public edge/admin host.
-  edgeHost = "la-admin-1";
+  # Active public edge host: the only host that projects the route catalog and
+  # terminates public TLS.
+  edgeHost = "oci-melb-1";
 
   # Serial deployment order for regular deploys.
   deployOrder = [
@@ -26,12 +27,10 @@
 
     la-admin-1 = {
       hostName = "la-admin-1";
-      bootstrapHostName = "216.75.75.168";
       sshUser = "dev";
       system = "x86_64-linux";
       remoteBuild = false;
       strictSubstituteOnly = false;
-      hostKeyFingerprint = "SHA256:g71ri368dh+EkeJgXrHmMsrxlkwHI2T9G8rFD+G6fWw";
     };
 
     home-forge = {

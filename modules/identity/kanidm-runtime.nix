@@ -22,6 +22,7 @@
     let
       cfg = config.services.identity.kanidm;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      kanidmPackages = import ./_kanidm-packages.nix { inherit pkgs; };
       identityPolicy = builtins.fromJSON (builtins.readFile ../../policy/identity.json);
       oauth2Policy = identityPolicy.systems.oauth2;
       oauth2ClientPolicies = lib.filterAttrs (
@@ -390,7 +391,7 @@
 
         services = {
           kanidm = {
-            package = pkgs.kanidmWithSecretProvisioning_1_11;
+            package = kanidmPackages.server;
 
             client = {
               enable = true;
@@ -438,7 +439,7 @@
           };
         };
 
-        environment.systemPackages = [ pkgs.kanidm_1_11 ];
+        environment.systemPackages = [ kanidmPackages.client ];
 
         systemd = {
           services = {

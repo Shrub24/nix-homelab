@@ -21,14 +21,6 @@ rec {
   mkUpstream =
     resolved: "${resolved.origin.scheme}://${resolved.origin.host}:${toString resolved.origin.port}";
 
-  mkOidcEndpoints = issuerUrl: {
-    inherit issuerUrl;
-    wellknownUrl = "${issuerUrl}/.well-known/openid-configuration";
-    authorizationUrl = "${issuerUrl}/authorize";
-    tokenUrl = "${issuerUrl}/api/oidc/token";
-    userinfoUrl = "${issuerUrl}/api/oidc/userinfo";
-  };
-
   mkPublicHost =
     primaryDomain: resolved:
     if resolved.subdomain != null then "${resolved.subdomain}.${primaryDomain}" else primaryDomain;

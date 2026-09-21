@@ -16,9 +16,15 @@
       envDir = builtins.dirOf cfg.environmentFile;
       globals = import ../../policy/globals.nix;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      # This application's canonical client record is the single source for its
+      # issuer endpoints; the host supplies enablement and credentials only.
+      oidcClient = config.services.identity.oidc.clients.karakeep or null;
     in
     {
-      imports = [ ../backups/state-backups/_consumer.nix ];
+      imports = [
+        ../backups/state-backups/_consumer.nix
+        ../identity/_oidc.nix
+      ];
       options.services.karakeep-pod = {
         enable = lib.mkEnableOption "Karakeep bookmark and read-later service";
 
@@ -84,14 +90,16 @@
 
           clientId = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "Canonical OIDC client ID for Karakeep.";
+            default = if oidcClient == null then null else oidcClient.clientId;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.karakeep.clientId";
+            description = "Canonical OIDC client ID for Karakeep, defaulted from the canonical client record.";
           };
 
           wellknownUrl = lib.mkOption {
             type = lib.types.str;
-            default = "";
-            description = "OIDC .well-known configuration URL (OAUTH_WELLKNOWN_URL).";
+            default = if oidcClient == null then "" else oidcClient.wellknownUrl;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.karakeep.wellknownUrl";
+            description = "OIDC .well-known configuration URL (OAUTH_WELLKNOWN_URL), defaulted from the canonical client record.";
           };
 
           providerName = lib.mkOption {
@@ -146,6 +154,10 @@
       config = lib.mkMerge [
         (lib.mkIf cfg.enable {
           assertions = [
+            {
+              assertion = !cfg.oidc.enable || oidcClient != null;
+              message = "services.karakeep-pod.oidc: canonical OIDC client 'karakeep' is missing from services.identity.oidc.clients; check systems.oauth2.karakeep in policy/identity.json and the host's kanidm-admin web-policy route.";
+            }
             {
               assertion = !cfg.oidc.enable || cfg.oidc.clientId != null;
               message = "services.karakeep-pod.oidc.clientId must be set when OIDC is enabled.";

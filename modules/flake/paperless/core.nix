@@ -14,6 +14,9 @@
       secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
       repoPackages = config.repo.packages;
       oidcEnabled = cfg.oidc.enable;
+      # This application's canonical client record is the single source for its
+      # issuer endpoints; the host supplies enablement and credentials only.
+      oidcClient = config.services.identity.oidc.clients.paperless or null;
       socialAccountProvidersJson = builtins.toJSON {
         openid_connect = {
           SCOPE = [
@@ -64,7 +67,10 @@
       '';
     in
     {
-      imports = [ ../../backups/state-backups/_consumer.nix ];
+      imports = [
+        ../../backups/state-backups/_consumer.nix
+        ../../identity/_oidc.nix
+      ];
       options.services.paperless = {
         dataRoot = lib.mkOption {
           type = lib.types.str;
@@ -81,14 +87,16 @@
 
           wellknownUrl = lib.mkOption {
             type = lib.types.str;
-            default = "";
-            description = "OIDC provider .well-known/openid-configuration URL.";
+            default = if oidcClient == null then "" else oidcClient.wellknownUrl;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.paperless.wellknownUrl";
+            description = "OIDC provider .well-known/openid-configuration URL, defaulted from the canonical client record.";
           };
 
           clientId = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
-            default = null;
-            description = "OIDC client ID registered with the identity provider.";
+            default = if oidcClient == null then null else oidcClient.clientId;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.paperless.clientId";
+            description = "OIDC client ID registered with the identity provider, defaulted from the canonical client record.";
           };
         };
 
@@ -110,6 +118,10 @@
             feature = "services.paperless";
             label = "secretFiles.host";
           })
+          {
+            assertion = !oidcEnabled || oidcClient != null;
+            message = "services.paperless.oidc: canonical OIDC client 'paperless' is missing from services.identity.oidc.clients; check systems.oauth2.paperless in policy/identity.json and the host's kanidm-admin web-policy route.";
+          }
           {
             assertion = !oidcEnabled || cfg.oidc.clientId != null;
             message = "services.paperless.oidc.clientId must be set when OIDC is enabled.";

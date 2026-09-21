@@ -9,6 +9,7 @@
     }:
     let
       cfg = config.services.identity.hostAuth;
+      kanidmPackages = import ./_kanidm-packages.nix { inherit pkgs; };
     in
     {
       imports = [ ./_oidc.nix ];
@@ -31,7 +32,7 @@
 
       config = lib.mkIf cfg.enable {
         services.kanidm = {
-          package = lib.mkDefault pkgs.kanidm_1_11;
+          package = lib.mkDefault kanidmPackages.client;
 
           client = {
             enable = true;

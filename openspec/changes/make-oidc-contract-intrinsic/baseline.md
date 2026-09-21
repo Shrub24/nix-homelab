@@ -249,3 +249,36 @@ Current expected suite state after this packet (both pin the retired contract):
   ("discovered publications drifted …", the expected list still naming `flake.modules.nixos.identity-client`).
 - `tests/check-identity-contract-directionality.sh` -> rc 1, first failure `AssertionError:
   identity-client selection anchor drifted` (the LA mutation script, line 222).
+
+## 6. Post-change delta (consumer wiring and the Kanidm release family)
+
+### 6.1 Equivalence
+
+The section-3 expression, re-evaluated after the consumer wiring moved and the helper
+changed: `la-admin-1` **IDENTICAL**, `oci-melb-1` **IDENTICAL** across `providerUrl`,
+`clientPathPrefix`, `tokenUrl`, all five clients with all five endpoints each, `hostAuth` values,
+`services.kanidm.package`, the kanidm system packages, the paperless/karakeep OIDC values, and the
+SOPS secret name sets. The three toplevel drvPaths moved, which is expected and is not evidence:
+`modules/flake/provenance.nix:15` publishes the tracked tree, so any tracked edit moves `/etc`.
+
+### 6.2 Consumer-only composition (task 4.5)
+
+Scratch copy outside the repository, `oci-melb-1` with `aspects.kanidm-host-auth` removed **and**
+the host fragment's own `identity.hostAuth` assignment removed, so the only identity participants
+are the importing consumers:
+
+```
+toplevel drvPath   /nix/store/g9nx5jn2nz4sivr5fc27psan9cggr014-nixos-system-oci-melb-1-26.11.20260813.0e251e2.drv
+providerUrl        https://id.shrublab.xyz
+identityNamespaces [ "oidc" ]                  (no hostAuth, no provider namespace)
+kanidmClientEnable false   kanidmUnixEnable false   kanidmSystemPackages []
+paperlessOidc      { clientId = "paperless"; enable = true; wellknownUrl = "…/paperless/.well-known/openid-configuration" }
+karakeepOidc       { clientId = "karakeep";  enable = true; wellknownUrl = "…/karakeep/.well-known/openid-configuration"; … }
+```
+
+Both consumer records are byte-identical to the baseline values in section 3.1.
+
+Observation, pre-existing and not introduced here: in a composition where nothing consumes
+`services.kanidm.package`, the option resolves to nixpkgs' removed `pkgs.kanidm` alias and throws if
+forced. `home-forge` behaves identically before and after (`forceable: false`), so the state follows
+from the option's nixpkgs default rather than from this change.

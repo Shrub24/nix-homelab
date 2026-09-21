@@ -1,7 +1,7 @@
 # Termix deployment aspect: selection imports the leaf and owns the shared
-# composition (identity-client OIDC endpoint wiring, state-backup registration,
+# composition (OIDC endpoint wiring, state-backup registration,
 # dedicated Tailscale serve unit). It consumes only public contracts — the
-# identity-client client record and the canonical web-policy route.
+# canonical OIDC client record and the canonical web-policy route.
 { ... }:
 {
   flake.modules.nixos.termix =
@@ -28,9 +28,9 @@
           client = lib.attrByPath [ "services" "identity" "oidc" "clients" "termix" ] null config;
         in
         if client == null then
-          throw "termix: required identity-client contract 'services.identity.oidc.clients.termix' is missing for host '${
+          throw "termix: required OIDC contract 'services.identity.oidc.clients.termix' is missing for host '${
             config.networking.hostName or "?"
-          }'; select the identity-client aspect"
+          }'; enable systems.oauth2.termix in policy/identity.json"
         else
           client;
       oidcRuntimeEnabled =

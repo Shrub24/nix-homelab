@@ -91,11 +91,7 @@ in
       dataRoot = "/srv/data";
       secretFiles.host = ../../../secrets/services/paperless.yaml;
       secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
-      oidc = {
-        enable = config.repo.web.catalog.paperless.access.oidc.enabled;
-        clientId = config.services.identity.oidc.clients.paperless.clientId;
-        wellknownUrl = config.services.identity.oidc.clients.paperless.wellknownUrl;
-      };
+      oidc.enable = config.repo.web.catalog.paperless.access.oidc.enabled;
       paperless-gpt = {
         docling.enable = false;
         instances.llm = {
@@ -132,8 +128,6 @@ in
     karakeep-pod = {
       oidc = {
         enable = config.repo.web.catalog.karakeep.access.oidc.enabled;
-        clientId = config.services.identity.oidc.clients.karakeep.clientId;
-        wellknownUrl = config.services.identity.oidc.clients.karakeep.wellknownUrl;
         providerName = "Kanidm";
         autoRedirect = true;
         disablePasswordAuth = true;

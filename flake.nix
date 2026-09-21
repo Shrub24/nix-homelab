@@ -1,45 +1,36 @@
+# DO-NOT-EDIT. This file was auto-generated using github:denful/flake-file.
+# Use `nix run .#write-flake` to regenerate it.
 {
   description = "Modular NixOS fleet infrastructure";
 
+  outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);
+
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    disko.url = "github:nix-community/disko";
-    disko.inputs.nixpkgs.follows = "nixpkgs";
-    sops-nix.url = "github:Mic92/sops-nix";
-    sops-nix.inputs.nixpkgs.follows = "nixpkgs";
-    deploy-rs.url = "github:serokell/deploy-rs";
-    deploy-rs.inputs.nixpkgs.follows = "nixpkgs";
-    niks3.url = "github:Mic92/niks3";
-    niks3.inputs.nixpkgs.follows = "nixpkgs";
-    traktor-m3u-sync.url = "github:Shrub24/traktor-m3u-sync";
-    traktor-m3u-sync.inputs.nixpkgs.follows = "nixpkgs";
-    nix-index-database.url = "github:nix-community/nix-index-database";
-    nix-index-database.inputs.nixpkgs.follows = "nixpkgs";
-    flake-parts.url = "github:hercules-ci/flake-parts";
-    flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
-    import-tree.url = "github:denful/import-tree";
+    deploy-rs = {
+      url = "github:serokell/deploy-rs";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    flake-file.url = "github:denful/flake-file";
+    flake-parts = {
+      follows = "nix-fleet/flake-parts";
+      inputs.nixpkgs-lib.follows = "nixpkgs";
+    };
+    import-tree.follows = "nix-fleet/import-tree";
+    niks3.follows = "nix-fleet/niks3";
     nix-fleet.url = "github:Shrub24/nix-fleet";
-    nix-fleet.inputs.nixpkgs.follows = "nixpkgs";
-    nix-fleet.inputs.flake-parts.follows = "flake-parts";
-    nix-fleet.inputs.import-tree.follows = "import-tree";
-    nix-fleet.inputs.sops-nix.follows = "sops-nix";
-    nix-fleet.inputs.niks3.follows = "niks3";
+    nix-index-database = {
+      url = "github:nix-community/nix-index-database";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixpkgs.follows = "nix-fleet/nixpkgs";
+    sops-nix.follows = "nix-fleet/sops-nix";
+    traktor-m3u-sync = {
+      url = "github:Shrub24/traktor-m3u-sync";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
-
-  outputs =
-    inputs:
-    let
-      inherit (inputs.nixpkgs) lib;
-
-      # Temporary boundary: directories under modules/ that still hold plain
-      # NixOS leaves not yet converted to aspect contributors. The enumerated
-      # list is inspectable in modules/flake/_unconverted-nixos-dirs.nix; entries
-      # are removed as conversion progresses. A leaked leaf fails evaluation
-      # loudly; there is no fallback blanket-import root.
-      unconvertedNixosDirs = import ./modules/flake/_unconverted-nixos-dirs.nix;
-      discovery = inputs.import-tree.filterNot (
-        relPath: lib.any (dir: lib.hasPrefix "/${dir}/" relPath) unconvertedNixosDirs
-      ) ./modules;
-    in
-    inputs.flake-parts.lib.mkFlake { inherit inputs; } discovery;
 }

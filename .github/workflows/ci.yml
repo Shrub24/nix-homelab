@@ -49,6 +49,8 @@ jobs:
         run: nix develop --command just checks all
       - name: Validate flake wiring
         run: nix flake check --no-build --no-write-lock-file --refresh .#
+      - name: Check generated flake.nix is current
+        run: nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).check-flake-file"
   build-hosts:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest

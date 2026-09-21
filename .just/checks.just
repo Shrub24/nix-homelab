@@ -2,8 +2,11 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 set no-cd
 
 # No `nix flake check` here: CI owns that wiring gate, and the LA toplevel
-# needs operator ciphertext that does not exist before task 3.3.
+# needs operator ciphertext that does not exist before task 3.3. The generated
+# flake.nix is the exception: building its check is cheap and does not touch a
+# host configuration.
 all:
+  @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).check-flake-file"
   @./tests/check-secret-scope.sh
   @./tests/check-secret-scope-extra-reader.sh
   @./tests/check-secret-updatekeys-selection.sh

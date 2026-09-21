@@ -103,11 +103,11 @@ in
       };
     };
 
-    journald.extraConfig = ''
-      SystemMaxUse=300M
-      SystemKeepFree=1G
-      MaxRetentionSec=7day
-    '';
+    journald.settings.Journal = {
+      SystemMaxUse = "300M";
+      SystemKeepFree = "1G";
+      MaxRetentionSec = "7day";
+    };
 
     identity.oidc = {
       providerUrl = config.repo.web.catalog."kanidm-admin".publicUrl;

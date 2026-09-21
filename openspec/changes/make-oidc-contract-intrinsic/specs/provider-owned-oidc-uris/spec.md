@@ -46,18 +46,10 @@ Service modules and host configurations that require OIDC endpoint URIs SHALL re
 - **THEN** evaluation fails with a named assertion naming that consumer's client
 - **AND** the failure is not a missing option namespace
 
+## REMOVED Requirements
+
 ### Requirement: mkOidcEndpoints SHALL provide consistent OIDC URI derivation
 
-A shared `mkOidcEndpoints` helper SHALL exist in `lib/policy.nix` that derives the five canonical OIDC endpoint URIs from a single issuer base URL, and the canonical OIDC contract SHALL use it as its only derivation so no call site re-implements the logic.
+**Reason**: The helper was Pocket-ID-shaped and is dead code: `lib/policy.nix` was its only occurrence, with no call site in `lib/`, `modules/`, `tests/`, `scripts/`, or `opentofu/`. Kanidm's authorization and token endpoints are provider-level while discovery and userinfo are client-level, so a single-issuer-base signature cannot express the shape in use; mandating the helper keeps a wrong-shaped derivation in the repository for a future consumer to adopt.
 
-#### Scenario: Helper is used for OIDC endpoint derivation
-
-- **WHEN** an issuer URL is passed to `mkOidcEndpoints`
-- **THEN** the returned attrset contains all five canonical OIDC endpoint URIs
-- **AND** the derivation logic is identical across all call sites
-
-#### Scenario: The contract derives per-client endpoints through the helper
-
-- **WHEN** the canonical OIDC contract emits endpoints for an enabled client
-- **THEN** it passes that client's issuer base to `mkOidcEndpoints`
-- **AND** no local re-derivation of the five URIs exists in the identity domain
+**Migration**: The canonical OIDC contract remains the single derivation site (`modules/identity/_oidc.nix`) and consumers read its read-only outputs, which is the requirement's actual intent. Delete `mkOidcEndpoints` from `lib/policy.nix`; the contract's divergence from it is the reason for removal, not a regression.

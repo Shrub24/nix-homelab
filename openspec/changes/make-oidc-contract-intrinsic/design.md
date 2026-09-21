@@ -2,7 +2,7 @@
 
 ## Context
 
-`identity-client` is a placement aspect assembled from two contributors of different kinds: a derived projection (`identity-oidc.nix`, read-only OIDC endpoint data from `policy/identity.json` + the canonical web-policy route) and a runtime capability (`kanidm-host-auth.nix`, Kanidm client package + `services.kanidm.client`/`services.kanidm.unix` + PAM/SSH integration). The bundle forces the provider host to select a client capability to evaluate a derived value, makes consumer failures missing-option errors that a canonical requirement already forbids, and pins the Kanidm release family by convention in three places.
+`identity-client` is a placement aspect assembled from two contributors of different kinds: a derived projection (`modules/identity/identity-oidc.nix` at proposal time, read-only OIDC endpoint data from `policy/identity.json` + the canonical web-policy route) and a runtime capability (`kanidm-host-auth.nix`, Kanidm client package + `services.kanidm.client`/`services.kanidm.unix` + PAM/SSH integration). The bundle forces the provider host to select a client capability to evaluate a derived value, makes consumer failures missing-option errors that a canonical requirement already forbids, and pins the Kanidm release family by convention in three places.
 
 The fleet-level boundary rule this change applies (same rule that restructured backups and postgres): **same-host aggregation uses a declaration-only fragment imported by mechanism and participants; cross-host relationships are fleet-level policy consumed independently; runtime functionality is a placement aspect; projections, helpers, and package-family invariants are support machinery.** OIDC registration is cross-host: provider and application run in separate `nixosConfigurations` evaluations, so registration stays in `policy/identity.json` and is consumed from both sides — never a consumer registry.
 
@@ -12,7 +12,7 @@ The fleet-level boundary rule this change applies (same rule that restructured b
   - The provider evaluates from its own selection plus policy, with no client capability selected.
   - A consumer host without the provider still resolves the projection; a consumer without any identity selection fails with a named assertion, not a missing option.
   - The remaining aspect is named for what it deploys: `kanidm-host-auth`.
-  - One Kanidm release-family value; one OIDC URI derivation (`lib/policy.nix#mkOidcEndpoints`).
+  - One Kanidm release-family value; one derivation site for OIDC endpoints (the dead `mkOidcEndpoints` helper is deleted and its canonical requirement removed — see D6).
   - Applications own their OIDC wiring; hosts keep only credential bindings.
 - Non-Goals:
   - No Kanidm consumer registry (cross-host composition is impossible at NixOS level; the flake-parts alternative couples provisioning to source presence).
@@ -24,11 +24,11 @@ The fleet-level boundary rule this change applies (same rule that restructured b
 
 ### D1. The projection is a fragment imported by its consumers (not a support aspect)
 
-**Choice**: `modules/identity/identity-oidc.nix` stops publishing `flake.modules.nixos.identity-client` and becomes an intrinsic fragment: `options.services.identity.oidc` declarations plus the derivation, imported by `kanidm-runtime.nix`, `kanidm-host-auth.nix`, `paperless/core.nix`, `karakeep.nix`, `termix.nix` — the same shape as `modules/database/postgres/_consumer.nix` and `modules/backups/state-backups/_consumer.nix`.
+**Choice**: `identity-oidc.nix` stops publishing `flake.modules.nixos.identity-client` and becomes the intrinsic fragment `modules/identity/_oidc.nix`: `options.services.identity.oidc` declarations plus the derivation, imported by `kanidm-runtime.nix`, `kanidm-host-auth.nix`, `paperless/core.nix`, `karakeep.nix`, `termix.nix` — the same shape as `modules/database/postgres/_consumer.nix` and `modules/backups/state-backups/_consumer.nix`.
 
 **Alternative considered — a support-style contributor like `web-policy`**: rejected because `web-policy` is selected on every host by the fleet baseline, so its options exist everywhere by construction. The OIDC projection is needed only by identity participants; making it all-host would widen the surface for no reader, and the fragment form is already the repo's established pattern for exactly this need.
 
-**Naming**: the fragment stays `modules/identity/identity-oidc.nix` (renaming the file adds churn with no information; the *aspect* name is what disappears). File path and option path stay aligned on `identity`.
+**Location**: the fragment is renamed `modules/identity/_oidc.nix`. Discovery is the reason: every non-underscore file under `modules/` is imported as a flake-parts module, and a plain NixOS module evaluated in that context reads flake-parts `config`, not NixOS `config`. Underscore-prefixing keeps it invisible to discovery and importable by its consumers — the same form as `modules/database/postgres/_consumer.nix` and `modules/backups/state-backups/_consumer.nix`. The file name keeps the `oidc` stem so file path, option path, and the "canonical OIDC contract" wording agree.
 
 ### D2. `kanidm-host-auth` is the aspect name; `identity-client` is retired with no alias
 
@@ -53,10 +53,16 @@ With the fragment imported, `services.identity.oidc` always exists, so a missing
 `modules/identity/_kanidm-packages.nix` (value-imported helper, the `homepage/_data.nix` precedent):
 
 ```nix
-# Kanidm release family: server wrapper and client tooling move together.
+# Kanidm release family: the server wrapper and the client tooling are bound
+# together here so they cannot drift, and the `kanidmd domain upgrade-check` gate
+# still applies before this binding moves.
+{ pkgs }:
+let
+  release = "1_11";
+in
 {
-  server = pkgs.kanidmWithSecretProvisioning_1_11;
-  client = pkgs.kanidm_1_11;
+  server = pkgs."kanidmWithSecretProvisioning_${release}";
+  client = pkgs."kanidm_${release}";
 }
 ```
 
@@ -65,13 +71,17 @@ With the fragment imported, `services.identity.oidc` always exists, so a missing
 - Not an option, not an aspect: it is an implementation invariant. `_`-prefixed and value-imported, so discovery never sees it.
 - The upgrade-gate requirement in `kanidm-identity` (`kanidmd domain upgrade-check` before bumping) is unchanged; the helper makes the bump one edit instead of three.
 
-### D6. One URI derivation: `mkOidcEndpoints` becomes real
+### D6. One derivation site; the dead Pocket-ID-era helper is deleted
 
-`lib/policy.nix:24` already defines `mkOidcEndpoints` (five canonical URIs from an issuer base) and `provider-owned-oidc-uris` requires it to be the single derivation. The projection's local `mkClientOidcEndpoints` is deleted; `mkClientOidcEndpoints clientId = mkOidcEndpoints "${clientPathPrefix}/${clientId}"` — the issuer base for client `id` is `…/oauth2/openid/<id>`, which is exactly the helper's input contract. Call-site logic becomes identical by construction, satisfying the spec instead of merely resembling it.
+**Finding**: `lib/policy.nix:24` defines `mkOidcEndpoints` as a Pocket-ID-shaped helper (`<issuer>/authorize`, `<issuer>/api/oidc/token`, `<issuer>/api/oidc/userinfo`, all derived from one issuer base) and it has **zero call sites** in `lib/`, `modules/`, `tests/`, `scripts/`, or `opentofu/`. Kanidm's shape differs in three of five fields, and its authorization and token endpoints are **provider-level** (`<provider>/ui/oauth2`, `<provider>/oauth2/token`) while discovery and userinfo are client-level — so a single-issuer-base signature cannot express the shape the fleet actually uses (`modules/identity/_oidc.nix:22-29`).
+
+**Choice**: delete the helper and remove the canonical requirement that mandates it (`## REMOVED Requirements` in the `provider-owned-oidc-uris` delta). The requirement's intent — no URI re-derivation at call sites — is satisfied structurally once the contract is the only owner of the derivation: one derivation site, consumers read read-only outputs. A provider-mismatched helper with no call site in a generic policy library is worse than an absent one, because the next consumer would adopt the wrong shape.
+
+**Rejected**: re-signing the helper to `{ providerUrl, clientId }`. That centralizes a derivation which has exactly one site, inside a module whose job is generic policy resolution rather than identity-provider endpoint shapes.
 
 ### D7. Application leaves own their OIDC wiring
 
-`paperless/core.nix` and `karakeep.nix` gain `imports = [ ../../identity/identity-oidc.nix ]` (path depth per file) and take `clientId`/`wellknownUrl` from `config.services.identity.oidc.clients.<name>` in their own `let`. `modules/hosts/oci-melb-1/_nixos.nix` drops the four assignment lines (96-97, 135-136) and keeps `secretFiles.oidc` bindings only. `termix.nix` changes only its failure prose (`identity-client contract` → `OIDC contract`).
+`paperless/core.nix` and `karakeep.nix` gain `imports = [ ../../identity/_oidc.nix ]` (path depth per file) and take `clientId`/`wellknownUrl` from `config.services.identity.oidc.clients.<name>` in their own `let`. `modules/hosts/oci-melb-1/_nixos.nix` drops the four assignment lines (96-97, 135-136) and keeps `secretFiles.oidc` bindings only. `termix.nix` changes only its failure prose (`identity-client contract` → `OIDC contract`).
 
 This is the direction `admin-module-structure` already requires; the change completes it for the two consumers still wired host-side.
 
@@ -88,6 +98,7 @@ This is the direction `admin-module-structure` already requires; the change comp
 
 - **[Aspect-name churn in specs/docs]** `identity-client` appears in four canonical specs and several docs → mitigated by updating them in this change (they are live descriptions of the surface); historical decision entries are annotated, not rewritten.
 - **[Consumers must remember the import]** A new OIDC consumer that forgets the fragment import gets a missing-option error again → mitigated by the pattern now having three in-repo precedents (postgres, state-backups, identity) and by the scaffold re-import guard covering the projection.
+- **[The fragment must stay undiscovered]** A non-underscore file under `modules/` is imported as a flake-parts module, where `config` is the flake-parts config and the NixOS option tree is unavailable → the fragment is published as `modules/identity/_oidc.nix`, and the scaffold contract asserts the published-aspect inventory so a future file that gains or loses its underscore prefix is caught.
 - **[`mkDefault` package override retained]** A host could override the client package off the release family → accepted; it is the existing leaf-default convention and the family helper makes the default correct rather than forcing it.
 - **[Both hosts edit selection in the same change]** `la-admin-1` and `oci-melb-1` swap `identity-client` → `kanidm-host-auth` atomically with the rename; a partial application fails evaluation loudly (unknown aspect), which is the desired failure mode.
 

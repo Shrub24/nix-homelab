@@ -31,7 +31,7 @@ in
         aspects.oci-images
         aspects.fleet-packages
         aspects.web-policy
-        aspects.identity-client
+        aspects.kanidm-host-auth
         # Selection is enablement; no host imports an implementation.
         aspects.oci
         aspects.edge

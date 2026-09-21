@@ -3,8 +3,8 @@
 # provider state paths, bootstrap/provisioning secret sources, and the explicit
 # per-client OIDC provisioning secret-source map keyed by canonical oauth2
 # client id. The only endpoint source is canonical web policy
-# (`repo.web.currentHost.services`); the provider URL comes from the
-# identity-client contract, which the provider consumes but never writes.
+# (`repo.web.currentHost.services`); the provider URL comes from the intrinsic
+# OIDC contract (`./_oidc.nix`), which the provider consumes but never writes.
 #
 # Runtime sibling of the `identity-provider` aspect: the two halves
 # cross-reference option values (provider URL wiring reads the sops templates
@@ -224,7 +224,10 @@
       '';
     in
     {
-      imports = [ ../backups/state-backups/_consumer.nix ];
+      imports = [
+        ../backups/state-backups/_consumer.nix
+        ./_oidc.nix
+      ];
       options.services.identity.kanidm = {
         enable = lib.mkEnableOption "Kanidm identity-provider runtime and provisioning";
 
@@ -386,12 +389,6 @@
           // oauth2SecretSpecs;
 
         services = {
-          identity.kanidm.oidc = {
-            clientPathPrefix = config.services.identity.oidc.clientPathPrefix;
-            tokenUrl = config.services.identity.oidc.tokenUrl;
-            clients = config.services.identity.oidc.clients;
-          };
-
           kanidm = {
             package = pkgs.kanidmWithSecretProvisioning_1_11;
 

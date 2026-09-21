@@ -1,10 +1,10 @@
 # Identity-provider deployment aspect: owns the Kanidm server/provisioning
 # composition, the Kanidm top-level enablement, and the provider's identity and
 # OIDC provisioning secret sources. The provider derives its public URL and
-# endpoint/TLS data from canonical web policy and never reads or writes the
-# client namespace (`services.identity.oidc.*` is only asserted to agree, in the
-# Kanidm leaf); a host selecting this aspect without `identity-client` fails
-# through the named provider-URL assertion in the Kanidm leaf.
+# endpoint/TLS data from canonical web policy and never writes the OIDC contract
+# namespace (`services.identity.oidc.*` is only asserted to agree, in the Kanidm
+# leaf, which imports that contract intrinsically); selecting this aspect does not
+# require any client capability to be selected as well.
 { ... }:
 {
   flake.modules.nixos.identity-provider =

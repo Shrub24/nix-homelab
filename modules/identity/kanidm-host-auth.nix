@@ -1,6 +1,6 @@
 { ... }:
 {
-  flake.modules.nixos.identity-client =
+  flake.modules.nixos.kanidm-host-auth =
     {
       lib,
       config,
@@ -11,6 +11,8 @@
       cfg = config.services.identity.hostAuth;
     in
     {
+      imports = [ ./_oidc.nix ];
+
       options.services.identity.hostAuth = {
         enable = lib.mkEnableOption "Kanidm-backed host auth integration";
 

@@ -22,6 +22,6 @@ None.
 
 ## Impact
 
-- `modules/services/paperless/default.nix`
+- `modules/flake/paperless/core.nix`
 - `openspec/specs/paperless-service/spec.md`
 - No secret contents, host bindings, or external interfaces change.

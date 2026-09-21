@@ -13,7 +13,6 @@ top@{ inputs, ... }:
       packages = {
         inherit (pkgs) deploy-rs;
         niks3 = inputs.niks3.packages.${system}.niks3;
-        nix-path-filter = pkgs.callPackage ../../pkgs/nix-path-filter { };
         notification-daemon = pkgs.callPackage ../../pkgs/notification-daemon { };
         notify = pkgs.callPackage ../../pkgs/notify { };
         windows-dj-setup = pkgs.callPackage ../../pkgs/windows-dj-setup { };

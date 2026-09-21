@@ -23,7 +23,6 @@ in
       extraModules = [
         inputs.disko.nixosModules.disko
         inputs.sops-nix.nixosModules.sops
-        inputs.niks3.nixosModules.niks3
       ];
 
       aspects = [

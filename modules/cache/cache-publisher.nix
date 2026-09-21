@@ -1,45 +1,33 @@
-# Cache publication: the Niks3 closure-upload capability only. Selection is
-# enablement; the aspect imports the upstream niks3-auto-upload module, injects
-# the nix-path-filter package per system, and owns the enablement its sibling
-# contributors render, so it has no hidden fleet-packages dependency. Mutable
-# state backups are owned by the separate state-backups aspect.
-{ inputs, withSystem, ... }:
+# Cache-publication aspect (bridge to nix-fleet's shared publisher).
+#
+# nix-fleet owns the closure-upload mechanism (`niks3-publisher`): the upstream
+# post-build hook, the fail-closed serverUrl assertion and the API-token
+# registration. This contributor supplies the fleet's conventions — the write
+# endpoint from the niks3Write internal contract and the host-scoped push token,
+# gated on the two-step sops bootstrap — so host records keep selecting
+# `cache-publisher` and never learn the mechanism moved.
+{ inputs, ... }:
 {
   flake.modules.nixos.cache-publisher =
-    {
-      config,
-      lib,
-      pkgs,
-      ...
-    }:
+    { config, lib, ... }:
     let
       hostSystemSecret = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
       hasHostSecrets = builtins.pathExists hostSystemSecret;
-      packages = withSystem pkgs.stdenv.hostPlatform.system (
-        { config, ... }:
-        {
-          inherit (config.packages) nix-path-filter;
-        }
-      );
     in
     {
-      imports = [ inputs.niks3.nixosModules.niks3-auto-upload ];
+      imports = [ inputs.nix-fleet.modules.nixos.niks3-publisher ];
 
-      # Publication activates only when the conventional host secret exists; the
-      # client leaf gates itself on the same path.
-      services.niks3-post-deploy = lib.mkIf hasHostSecrets {
-        enable = true;
-        filterPackage = packages.nix-path-filter;
+      services.niks3-publisher = lib.mkIf hasHostSecrets {
+        # Composed from scheme/host/port rather than the contract's `url`, which
+        # carries the derived FQDN: this client addresses the provider by its
+        # short tailnet hostname, and the rendered value must stay byte-identical.
+        serverUrl = lib.mkDefault (
+          let
+            niks3Write = config.repo.internal.niks3Write;
+          in
+          "${niks3Write.scheme}://${niks3Write.host}:${toString niks3Write.port}"
+        );
+        secretFiles.apiToken = hostSystemSecret;
       };
-
-      assertions = lib.optionals hasHostSecrets [
-        {
-          # Assert the actual monitor option rather than importing notify: a host
-          # selecting cache-publisher without notify fails with a named message
-          # instead of silently missing its failure-monitoring template.
-          assertion = lib.attrByPath [ "services" "notification-daemon" "monitor" "enable" ] false config;
-          message = "cache-publisher aspect: services.notification-daemon.monitor.enable must be true (select the notify aspect).";
-        }
-      ];
     };
 }

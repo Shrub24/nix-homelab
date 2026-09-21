@@ -68,9 +68,11 @@ let
       provider = "oci-melb-1";
       port = 5751;
       scheme = "http";
+      # The cache-server aspect publishes no enable option (selection is
+      # enablement), so the capability observable is the service it renders.
       capabilityPath = [
         "services"
-        "niks3-cache"
+        "niks3"
         "enable"
       ];
       listen = {

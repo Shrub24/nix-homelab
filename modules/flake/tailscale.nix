@@ -1,72 +1,20 @@
-# Tailscale foundation aspect: selecting it is its enablement. One file: the
-# conventional host-scoped auth-key registration, the nullable debugMtu variant,
-# and the service wiring itself.
-#
-# - auth-key source: secrets/hosts/${config.networking.hostName}/system.yaml
-#   under key tailscale/auth_key, rendered to /run/secrets/tailscale.auth_key
-#   (mode 0400) and set as services.tailscale.authKeyFile. When the host scope
-#   does not exist yet (two-step sops bootstrap) nothing is registered and
-#   tailscaled stays unauthenticated until the operator adds the scope.
-# - debugMtu: when a host declares services.tailscale.debugMtu, the leaf
-#   writes TS_DEBUG_MTU into the tailscaled unit environment.
-
-_: {
+# Tailscale foundation aspect. nix-fleet owns the mechanism (service wiring,
+# the debugMtu override, the auth-key registration); this contributor supplies
+# the fleet's conventions around it: the host-scoped secret file
+# (secrets/hosts/${networking.hostName}/system.yaml, key tailscale/auth_key) and
+# its two-step sops bootstrap, so a host whose scope does not exist yet
+# registers nothing and tailscaled stays unauthenticated until the operator
+# adds it.
+{ inputs, ... }:
+{
   flake.modules.nixos.tailscale =
-    { lib, config, ... }:
+    { config, lib, ... }:
     let
-      hostName = config.networking.hostName;
-      hostSystemSecret = ../../secrets/hosts + "/${hostName}/system.yaml";
-      hasHostSecrets = builtins.pathExists hostSystemSecret;
-      cfg = config.services.tailscale;
+      authKeyFile = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
     in
     {
-      options.services.tailscale.debugMtu = lib.mkOption {
-        type = lib.types.nullOr lib.types.int;
-        default = null;
-        description = ''
-          Optional Tailscale TUN MTU override; when set, the module writes
-          TS_DEBUG_MTU into the tailscaled unit environment. Host-scoped packet
-          size workaround only.
-        '';
-      };
-      config = lib.mkMerge [
-        {
-          systemd.services = {
-            tailscaled = {
-              restartIfChanged = false;
-              stopIfChanged = false;
-            };
-            tailscaled-autoconnect = {
-              restartIfChanged = false;
-              stopIfChanged = false;
-              wants = [ "sops-install-secrets.service" ];
-              after = [ "sops-install-secrets.service" ];
-            };
-          };
+      imports = [ inputs.nix-fleet.modules.nixos.tailscale ];
 
-          services.tailscale = {
-            enable = true;
-            openFirewall = false;
-            extraSetFlags = [ "--ssh" ];
-            extraUpFlags = lib.mkDefault [
-              "--hostname=${hostName}"
-            ];
-            authKeyFile = lib.mkIf hasHostSecrets "/run/secrets/tailscale.auth_key";
-          };
-
-          sops.secrets = lib.mkIf hasHostSecrets {
-            tailscale_auth_key = {
-              sopsFile = hostSystemSecret;
-              key = "tailscale/auth_key";
-              path = "/run/secrets/tailscale.auth_key";
-              mode = "0400";
-            };
-          };
-
-          systemd.services.tailscaled.environment = lib.mkIf (cfg.debugMtu != null) {
-            TS_DEBUG_MTU = toString cfg.debugMtu;
-          };
-        }
-      ];
+      services.tailscale.secretFiles.auth = lib.mkIf (builtins.pathExists authKeyFile) authKeyFile;
     };
 }

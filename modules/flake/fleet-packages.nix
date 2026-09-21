@@ -17,7 +17,6 @@
         { config, ... }:
         {
           inherit (config.packages)
-            nix-path-filter
             notification-daemon
             notify
             ;

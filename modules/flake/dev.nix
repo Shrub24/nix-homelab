@@ -29,7 +29,6 @@
           config.packages.notification-daemon
           config.packages.notify
           config.packages.niks3
-          config.packages.nix-path-filter
         ];
         shellHook = ''
           unset PYTHONPATH

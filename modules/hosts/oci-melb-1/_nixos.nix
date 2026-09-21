@@ -152,7 +152,9 @@ in
     state-backups.stagingRoot = "/srv/data/state-backups";
 
     niks3-cache = {
-      hostSecretFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
+      # API token in the host scope; signing key and S3 credentials in the
+      # service scope.
+      secretFiles.apiToken = ../../../secrets/hosts/oci-melb-1/system.yaml;
       secretFiles.host = ../../../secrets/services/niks3.yaml;
     };
 
@@ -166,7 +168,7 @@ in
     };
 
     # The cache server runs locally, so uploads go to the loopback endpoint.
-    niks3-auto-upload.serverUrl = "http://127.0.0.1:5751";
+    niks3-publisher.serverUrl = "http://127.0.0.1:5751";
 
     notification-daemon = {
       secretFiles.host = ../../../secrets/services/notification-daemon.yaml;

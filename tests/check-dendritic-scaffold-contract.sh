@@ -43,12 +43,6 @@ surviving_evacuated_roots() { # $1 repo root
   done
 }
 
-# The temporary import-tree filter literal, read without the flake so it also
-# works against throwaway copies. Check 1 and mutation 7l-2 call this.
-unconverted_roots() { # $1 repo root -> JSON list
-  nix-instantiate --eval --strict --json "$1/modules/flake/_unconverted-nixos-dirs.nix"
-}
-
 # Throwaway repo copies for the negative mutation checks (7i/7j/7n). Heavy
 # local-only dirs are excluded, but the copy keeps flake.nix/flake.lock,
 # modules/, lib/, policy/, pkgs/, and the whole secrets/ tree (including
@@ -73,31 +67,13 @@ make_copy() { # prints path to a fresh repo copy
   printf '%s' "$d"
 }
 
-# --- 1. Temporary import-tree boundary (DS-1) --------------------------------
+# --- 1. Discovery boundary: none remains (DS-1) ------------------------------
 
-LIST_FILE="modules/flake/_unconverted-nixos-dirs.nix"
-test -f "$LIST_FILE" || fail "$LIST_FILE missing (Stage 1 boundary)"
-
-# The named list must cover the plain-NixOS roots exactly (order is part of
-# the contract so drift shows up as a visible diff). Stage 2 (foundation
-# aspects) removed `core` and `profiles` after their contents became aspect
-# contributors or were deleted. Stage 5 removed `shared` and `storage` (S5-6).
-# Stage 7 removed `applications` and `providers` after every implementation
-# leaf moved beside its discovered concern owner (S7-4/S7-5/S7-8). Stage 8
-# removed `hosts` (HIC-2). The post-Stage-8 services-tree conversion removed
-# `services`: every leaf became a discovered aspect file, a sibling
-# contributor of its owner aspect, or an underscore-private helper, and the
-# PostgreSQL mechanism became the aspect pair
-# modules/database/postgres.nix + postgres/_consumer.nix. This exact empty equality is the
-# future-work guard: the boundary may not grow again; re-add an entry only
-# when a genuinely transitional plain-module directory appears.
-actual="$(unconverted_roots "$ROOT")"
-if [ "$actual" != '[]' ]; then
-  fail "unconverted-dir list drifted from empty (transition complete): $actual"
-fi
-# Root evacuation (S5-6/S7-8): the four converted roots must be gone, not
-# merely unlisted, and no underscore-renamed replacement root may exist. A fake
-# shrink that drops an entry while the directory survives fails here.
+# The import-tree boundary was retired with the transition: the generated
+# flake.nix discovers ./modules unfiltered, so a plain-NixOS module directory
+# fails loudly at discovery instead of being excluded by a list. What remains is
+# the root-evacuation guard — the converted roots must be gone, not merely
+# unlisted, and no underscore-renamed replacement root may exist.
 surviving="$(surviving_evacuated_roots "$ROOT")"
 [ -z "$surviving" ] || fail "evacuated roots must be deleted (S5-6 root evacuation): $surviving"
 
@@ -209,7 +185,7 @@ done
 for system in x86_64-linux aarch64-linux; do
   pkgs="$(ne --raw --apply 'p: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames p))' "path:.#packages.${system}")" ||
     fail "packages.${system} does not evaluate"
-  if [ "$pkgs" != '["deploy-rs","host-la-admin-1","host-oci-melb-1","niks3","nix-path-filter","notification-daemon","notify","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
+  if [ "$pkgs" != '["deploy-rs","host-la-admin-1","host-oci-melb-1","niks3","notification-daemon","notify","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
     fail "packages.${system} keys drifted (host-home-forge must stay absent): $pkgs"
   fi
 done
@@ -507,7 +483,7 @@ host_aspects() { # $1 repo root, $2 host -> sorted selected aspect names
   registry_selections "$1" | awk -v h="$2" '$1 == h { print $2 }' | LC_ALL=C sort -u
 }
 host_leaf_imports_of() { # $1 dir
-  grep -RnE --include='*.nix' 'modules/((backups/state-backups|flake/observability-agent|identity/_oidc)|(cache/cache-publisher/(upload-client|post-deploy)|flake/builder-access))\.nix' "$1/modules/hosts" || true
+  grep -RnE --include='*.nix' 'modules/((backups/state-backups|flake/observability-agent|identity/_oidc)|flake/builder-access)\.nix' "$1/modules/hosts" || true
 }
 
 # 7a. Exactly thirty-five publications are discovered across the distributed
@@ -813,13 +789,12 @@ for host in oci-melb-1 la-admin-1 home-forge; do
     fail "${host}: host-recovery units missing after relocation: $recovery"
 done
 
-# 7e. Tailscale ownership (FND-4, secrets-management spec): the module leaf
-# owns auth-key registration and MTU rendering; hosts never repeat them.
-grep -q 'key = "tailscale/auth_key"' modules/flake/tailscale.nix || fail "tailscale leaf must register key tailscale/auth_key"
-grep -q 'path = "/run/secrets/tailscale.auth_key"' modules/flake/tailscale.nix || fail "tailscale leaf must render /run/secrets/tailscale.auth_key"
-grep -q 'mode = "0400"' modules/flake/tailscale.nix || fail "tailscale auth-key secret must be mode 0400"
-grep -q 'authKeyFile = lib.mkIf hasHostSecrets "/run/secrets/tailscale.auth_key"' modules/flake/tailscale.nix || fail "tailscale leaf must own authKeyFile"
-grep -q 'TS_DEBUG_MTU = toString cfg.debugMtu' modules/flake/tailscale.nix || fail "tailscale leaf must render TS_DEBUG_MTU from debugMtu"
+# 7e. Tailscale ownership (FND-4, secrets-management spec): the shared nix-fleet
+# aspect owns the service wiring, the auth-key registration, the auth-key file
+# path and MTU rendering; this contributor binds the conventional host-scoped
+# secret file; hosts never repeat any of it.
+grep -q 'inputs.nix-fleet.modules.nixos.tailscale' modules/flake/tailscale.nix || fail "tailscale aspect must consume the shared nix-fleet aspect"
+grep -q 'services.tailscale.secretFiles.auth' modules/flake/tailscale.nix || fail "tailscale contributor must bind the conventional host-scoped auth key"
 if grep -RnE 'tailscale_auth_key|authKeyFile|TS_DEBUG_MTU|tailscale\.auth_key' modules/hosts; then
 fail "hosts must not repeat tailscale secret/MTU registration"
 fi
@@ -838,17 +813,14 @@ fi
 # 7g. Stage 3 composition ownership (OPS-1..OPS-9): the five deferred leaves
 # exist (relocated beside their aspect owners under underscore-private paths,
 # S5-3) and are imported by exactly their owning aspect; host assemblies never
-# import, enable, or conventionally bind them; the upstream niks3-auto-upload
-# module is imported only by the cache-publisher aspect (never by the registry); the
-# retired fleet.nixbuild-ssh option is gone; and the post-deploy leaf takes
-# its filter package from the typed option injected by the aspect (no hidden
-# fleet-packages dependency). The services import-tree exclusion is unchanged
+# import, enable, or conventionally bind them; the upstream niks3 modules arrive
+# through the shared nix-fleet aspects (never as a local import or a host import);
+# the retired fleet.nixbuild-ssh option is gone; and no aspect takes a package
+# from a hidden fleet-packages dependency. The services import-tree exclusion is unchanged
 # (OPS-9, check 1).
 for leaf in \
   modules/backups/state-backups.nix \
   modules/backups/state-backups/_consumer.nix \
-  modules/cache/cache-publisher/upload-client.nix \
-  modules/cache/cache-publisher/post-deploy.nix \
   modules/flake/builder-access.nix \
   modules/flake/observability-agent.nix; do
   test -f "$leaf" || fail "operational leaf $leaf missing"
@@ -862,33 +834,22 @@ grep -q 'imports = \[ ./state-backups/_consumer.nix \]' modules/backups/state-ba
 if grep -qE '_backups\b|niks3' modules/backups/state-backups.nix; then
   fail "state-backups aspect must own no Niks3 upload/publication surface"
 fi
-grep -qE '^[[:space:]]*flake\.modules\.nixos\.cache-publisher[[:space:]]*=' modules/cache/cache-publisher/upload-client.nix || fail "the upload-client contributor must publish the cache-publisher aspect"
-grep -qE '^[[:space:]]*flake\.modules\.nixos\.cache-publisher[[:space:]]*=' modules/cache/cache-publisher/post-deploy.nix || fail "the post-deploy contributor must publish the cache-publisher aspect"
-grep -q 'programs.ssh.knownHosts.nixbuild' modules/flake/builder-access.nix || fail "builder-access aspect must own the nixbuild SSH trust"
-grep -q 'options\.services\.beszel-agent-auth' modules/flake/observability-agent.nix || fail "observability-agent aspect must own the beszel-agent-auth implementation body"
-grep -q 'inputs.niks3.nixosModules.niks3-auto-upload' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must import the upstream niks3-auto-upload module"
-# Narrowed to the exact upstream module import (S5-7): the relocated
-# post-deploy leaf mentions the `services.niks3-auto-upload` option, which must
-# not false-positive as a second import site.
-if grep -RnE 'inputs\.niks3\.nixosModules\.niks3-auto-upload' modules/flake | grep -v '^modules/cache/cache-publisher.nix:'; then
-  fail "niks3-auto-upload must be imported only by the cache-publisher aspect (not the registry)"
-fi
-grep -qE 'inputs\.niks3\.nixosModules\.niks3[[:space:]]*$' modules/hosts/oci-melb-1/default.nix modules/hosts/la-admin-1/default.nix modules/hosts/home-forge/default.nix modules/flake/registry.nix || fail "OCI must keep the niks3 server module import"
+grep -q 'inputs.nix-fleet.modules.nixos.niks3-publisher' modules/cache/cache-publisher.nix || fail "cache-publisher must consume the shared nix-fleet publisher"
+grep -q 'services.builder-access.hosts.nixbuild' modules/flake/builder-access.nix || fail "builder-access contributor must name the fleet's remote builder"
+grep -q 'inputs.nix-fleet.modules.nixos.builder-access' modules/flake/builder-access.nix || fail "builder-access aspect must consume the shared nix-fleet aspect"
+grep -q 'inputs.nix-fleet.modules.nixos.beszel-agent' modules/flake/observability-agent.nix || fail "observability-agent aspect must consume the shared nix-fleet aspect"
+grep -q 'services.beszel-agent.secretFiles' modules/flake/observability-agent.nix || fail "observability-agent contributor must bind the fleet's beszel secret conventions"
+if grep -RnE 'inputs\.niks3\.nixosModules\.niks3-auto-upload' modules/; then fail "the upstream niks3-auto-upload module must arrive through the shared nix-fleet publisher, not a local import"; fi
+if grep -RnE 'inputs\.niks3\.nixosModules\.niks3[[:space:]]*$' modules/hosts; then fail "the upstream niks3 server module must arrive through the shared cache aspect, not a host import"; fi
 [ -z "$(host_leaf_imports_of "$ROOT")" ] || fail "host assemblies must not import the five operational leaves directly"
-if grep -RnE 'services\.(state-backups|niks3-post-deploy|niks3-auto-upload|beszel-agent-auth)\.enable' modules/hosts; then
+if grep -RnE 'services\.(state-backups|niks3-auto-upload|beszel-agent)\.enable' modules/hosts; then
   fail "host assemblies must not repeat operational enablement"
 fi
-if grep -RnE 'state-backups\.(secretFile|bucket)|beszel-agent-auth\.secretFiles|shrublab-backup-' modules/hosts; then
+if grep -RnE 'state-backups\.(secretFile|bucket)|beszel-agent\.secretFiles|shrublab-backup-' modules/hosts; then
   fail "host assemblies must not repeat conventional secret/bucket bindings"
 fi
 if grep -RnE '^[^#]*fleet\.nixbuild-ssh' modules; then
   fail "the retired fleet.nixbuild-ssh option must be gone"
-fi
-grep -q 'filterPackage' modules/cache/cache-publisher/post-deploy.nix || fail "post-deploy contributor must define the typed filterPackage option"
-grep -q 'type = lib.types.package' modules/cache/cache-publisher/post-deploy.nix || fail "filterPackage must be a typed package option"
-grep -q 'filterPackage = packages.nix-path-filter' modules/cache/cache-publisher.nix || fail "cache-publisher aspect must inject nix-path-filter into post-deploy"
-if grep -nE '^[^#]*config\.repo\.packages' modules/cache/cache-publisher/post-deploy.nix; then
-  fail "post-deploy contributor must not read config.repo.packages (no hidden fleet-packages dependency)"
 fi
 grep -q 'inputs.nix-index-database.nixosModules.nix-index' modules/flake/shell.nix || fail "shell aspect must import the nix-index-database module"
 test -f modules/flake/shell/p10k.zsh || fail "p10k data must live with the shell aspect that renders it"
@@ -920,7 +881,7 @@ if grep -RnE --include='*.nix' 'identity/kanidm-host-auth\.nix|identity-oidc' mo
 fi
 
 # 7h. Stage 3 observable contract (OPS-1..OPS-8): derived bucket and secret
-# path, selection-is-enablement for backups/post-deploy/client/Beszel, OCI
+# path, selection-is-enablement for backups/publication/client/Beszel, OCI
 # token ownership and loopback endpoint, builder SSH trust, Beszel KEY/TOKEN
 # scopes, and the notify-owned monitor wiring (OPS-4).
 probe_ops() { # $1 host, $2 expected JSON (python dict literal)
@@ -929,14 +890,13 @@ probe_ops() { # $1 host, $2 expected JSON (python dict literal)
     bucket = c.services.state-backups.bucket or "";
     secretFile = c.services.state-backups.secretFile or "";
     sbEnable = c.services.state-backups.enable or false;
-    postEnable = c.services.niks3-post-deploy.enable or false;
     clientEnable = c.services.niks3-auto-upload.enable or false;
     serverUrl = c.services.niks3-auto-upload.serverUrl or "";
     tokenOwner = (c.sops.secrets.niks3_api_token.owner or null);
     niks3Srv = c.services.niks3.enable or false;
-    beszelEnable = c.services.beszel-agent-auth.enable or false;
+    beszelEnable = c.services.beszel-agent.secretFiles.host != null;
     beszelAgent = c.services.beszel.agent.enable or false;
-    beszelHost = (c.services.beszel-agent-auth.secretFiles.host or "");
+    beszelHost = (c.services.beszel-agent.secretFiles.host or "");
     beszelKeySops = (baseNameOf (c.sops.secrets.beszel_agent_key.sopsFile or ""));
     beszelTokenSops = (baseNameOf (c.sops.secrets.beszel_agent_token.sopsFile or ""));
     monitor = c.services.notification-daemon.monitor.enable or false;
@@ -972,9 +932,9 @@ if errs:
 PYEOF
 }
 
-probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"postEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":true,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
-probe_ops la-admin-1 '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"postEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":true,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
-probe_ops home-forge '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"postEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":true,"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}'
+probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":true,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
+probe_ops la-admin-1 '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":true,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
+probe_ops home-forge '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":true,"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}'
 
 # 7i. Negative mutation checks (OPS-4, OPS-11, OPS-3/OPS-8 bootstrap gates).
 # Each runs against a throwaway copy so the working tree is never modified.
@@ -1020,22 +980,21 @@ open(p, "w").write(s.replace(old, new))
 PY
 expect_eval_fail "$D" oci-melb-1 "must be a valid S3 bucket name"
 
-# 7i-3. Missing conventional host secret disables backups/post-deploy/Beszel
+# 7i-3. Missing conventional host secret disables backups/publication/Beszel
 # without failing the base activation (OPS-3/OPS-8 two-step bootstrap).
 D="$(make_copy)"
 mv "$D/secrets/hosts/home-forge/system.yaml" "$D/secrets/hosts/home-forge/system.yaml.moved"
 json="$(ne --json --apply 'c: {
   sb = c.services.state-backups.enable or false;
-  post = c.services.niks3-post-deploy.enable or false;
   client = c.services.niks3-auto-upload.enable or false;
-  beszel = c.services.beszel-agent-auth.enable or false;
+  beszelAgent = (c.services.beszel-agent or { }) != { };
   agent = c.services.beszel.agent.enable or false;
 }' "path:${D}#nixosConfigurations.home-forge.config")" ||
 fail "home-forge without host secrets must still evaluate (two-step bootstrap)"
-python3 - "$json" <<'PY' || fail "home-forge without host secrets must disable backups/post-deploy/Beszel: $json"
+python3 - "$json" <<'PY' || fail "home-forge without host secrets must disable backups/publication/Beszel: $json"
 import json, sys
 got = json.loads(sys.argv[1])
-want = {"sb": False, "post": False, "client": False, "beszel": False, "agent": False}
+want = {"sb": False, "client": False, "beszelAgent": True, "agent": False}
 if got != want:
     raise SystemExit(f"got {got!r} want {want!r}")
 PY
@@ -1062,6 +1021,10 @@ subset_probe() { # $1 copy root, $2 aspect name -> eval report JSON
         modules = [
           repo.inputs.sops-nix.nixosModules.sops
           repo.modules.nixos.notify
+          # The publication aspect resolves its write endpoint from the fleet's
+          # internal transport contract, so the contract is part of its
+          # composition — as it is on every host that selects the aspect.
+          repo.modules.nixos.internal-contracts
           repo.modules.nixos.$aspect
           { networking.hostName = "home-forge"; system.stateVersion = "25.11"; }
         ];
@@ -1072,12 +1035,7 @@ subset_probe() { # $1 copy root, $2 aspect name -> eval report JSON
       resticUnitAbsent = !((c.systemd.services or { }) ? "restic-backups-state");
       clientEnable = c.services.niks3-auto-upload.enable or false;
       clientOptionAbsent = !((c.services.niks3-auto-upload or { }) ? enable);
-      postEnable = c.services.niks3-post-deploy.enable or false;
-      postOptionAbsent = !((c.services.niks3-post-deploy or { }) ? enable);
-      postActivationPresent = (c.system.activationScripts.niks3-post-deploy or null) != null;
-      postActivationAbsent = (c.system.activationScripts.niks3-post-deploy or null) == null;
       uploadUnitPresent = (c.systemd.services or { }) ? "niks3-auto-upload";
-      postUnitPresent = (c.systemd.services or { }) ? "niks3-post-deploy";
     };
   };
 }
@@ -1094,10 +1052,8 @@ python3 - "$json" <<'PY' || fail "cache-publisher-only subset: observables viola
 import json, sys
 got = json.loads(sys.argv[1])
 want = {"resticBackupsEmpty": True, "resticUnitAbsent": True,
-        "clientEnable": True, "postEnable": True, "uploadUnitPresent": True,
-        "postUnitPresent": True, "postActivationPresent": True,
-        "postActivationAbsent": False,
-        "postOptionAbsent": False, "clientOptionAbsent": False}
+        "clientEnable": True, "clientOptionAbsent": False,
+        "uploadUnitPresent": True}
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in want.items() if got.get(k) != v]
 if errs:
     raise SystemExit("; ".join(errs))
@@ -1110,7 +1066,7 @@ python3 - "$json" <<'PY' || fail "state-backups-only subset: observables violate
 import json, sys
 got = json.loads(sys.argv[1])
 want = {"resticBackupsEmpty": False, "resticUnitAbsent": False,
-        "clientOptionAbsent": True, "postOptionAbsent": True}
+        "clientOptionAbsent": True, "uploadUnitPresent": False}
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in want.items() if got.get(k) != v]
 if errs:
     raise SystemExit("; ".join(errs))
@@ -1183,7 +1139,7 @@ sed -i 's/flake.modules.nixos.state-backups =/flake.modules.nixos.state-backups-
 for h in oci-melb-1 la-admin-1 home-forge; do
   sed -i '/aspects.state-backups/d' "$D/modules/hosts/$h/default.nix"
 done
-sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/cache/cache-publisher/post-deploy.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
+sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/backups/state-backups.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
 [ "$(pub_names_of "$D")" != "$expected_pub" ] ||
 fail "7a publication check must detect an unpublished state-backups aspect"
 [ "$(host_aspects "$D" oci-melb-1)" != "$oci_sel" ] ||
@@ -1266,14 +1222,8 @@ touch "$D/modules/storage/disko-root.nix"
 [ "$(surviving_evacuated_roots "$D")" = "modules/storage" ] ||
   fail "7l-1: root-evacuation predicate must detect a surviving modules/storage"
 
-# 7l-2. The boundary file is the transition's completion record: an entry for a
-# root that does not exist (or a re-added services root) breaks the exact empty
-# set the contract asserts. Discovery itself no longer reads this file, so the
-# check guards the record rather than a filter.
-D="$(make_copy)"
-sed -i 's/^\[ \]$/[ "core" ]/' "$D/modules/flake/_unconverted-nixos-dirs.nix"
-[ "$(unconverted_roots "$D")" != '[]' ] ||
-  fail "7l-2: a widened boundary must break the exact empty set"
+# 7l-2. The boundary list is gone: a transitional-root name reappearing under
+# modules/ is caught by the root-evacuation predicate (7l-1), not by a list.
 
 # 7l-3. Private leaves must stay undiscoverable/non-publishing. A publication
 # smuggled into an underscore-private path is caught by the 7a private-owner scan
@@ -1293,7 +1243,7 @@ esac
 # identity-import grep for the capability aspect — all anchored on a line that
 # survives this change, so the checks are exercised non-vacuously.
 D="$(make_copy)"
-sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/cache/cache-publisher/post-deploy.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
+sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/backups/state-backups.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
 [ -n "$(host_leaf_imports_of "$D")" ] ||
   fail "7l-4: host_leaf_imports_of must detect a directly re-imported relocated leaf"
 sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/identity/_oidc.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
@@ -1794,7 +1744,6 @@ INTRINSIC = {
     "database/postgres/_consumer.nix",
     "backups/state-backups/_consumer.nix",
     "identity/_oidc.nix",
-    "flake/_unconverted-nixos-dirs.nix",
 }
 
 
@@ -1922,7 +1871,7 @@ PLACEMENT_PROBE='c: {
   postgresConsumers = builtins.attrNames (c.services.postgres.consumers or { });
   bifrostEnable = c.services.bifrost-gateway.enable or false;
   karakeepEnable = c.services.karakeep-pod.enable or false;
-  niks3CacheEnable = c.services.niks3-cache.enable or false;
+  niks3CacheAspect = (c.services.niks3-cache or { }) != { };
   niks3ServerEnable = c.services.niks3.enable or false;
   phoenixEnable = c.services.phoenix.enable or false;
   omnirouteEnable = c.services.omniroute.enable or false;
@@ -1950,15 +1899,15 @@ PYEOF
 }
 
 placement_json="$(probe_placement "$ROOT" oci-melb-1)" || fail "7n-2: oci-melb-1 placement probe does not evaluate"
-assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["paperless"],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheEnable":true,"niks3ServerEnable":true,"phoenixEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["paperless"],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheAspect":true,"niks3ServerEnable":true,"phoenixEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" la-admin-1)" || fail "7n-2: la-admin-1 placement probe does not evaluate"
-assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" home-forge)" || fail "7n-2: home-forge placement probe does not evaluate"
 la_absence="$(ne --raw --apply 'c: builtins.toJSON { cockpit = !(c.services.admin ? cockpit); termix = !(c.services.admin ? termix); adminSsh = (builtins.filter (n: n == "admin_ssh_identity" || n == "admin_ssh_known_hosts") (builtins.attrNames c.sops.secrets)) == []; }' "path:.#nixosConfigurations.la-admin-1.config")" ||
   fail "7n-2: LA absence probe does not evaluate"
 [ "$la_absence" = '{"adminSsh":true,"cockpit":true,"termix":true}' ] ||
   fail "7n-2: demoted capabilities must leave no namespace or secret registration on la-admin-1: $la_absence"
-assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse"],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheEnable":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
+assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse"],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"phoenixEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
 
 # 7n-3. Semantic throwaway mutations (tasks 6.2/6.3). Each fails for its
 # intended semantic reason rather than a generic parse error, and the working
@@ -2081,9 +2030,9 @@ esac
 # mutation below proves it still fires.
 sibling_contributor_imports() { # $1 repo root
   grep -REl --include='*.nix' \
-    -e '\./(dj-engine|windows-vm|edge-ingress-application|edge-ingress-runtime|upload-client|post-deploy|foundation|host-recovery)\.nix' \
+    -e '\./(dj-engine|windows-vm|edge-ingress-application|edge-ingress-runtime|foundation|host-recovery)\.nix' \
     "$1/modules" 2>/dev/null |
-    grep -vE "^$1/modules/(music|edge|cache/cache-publisher|flake/base)/" || true
+    grep -vE "^$1/modules/(music|edge|flake/base)/" || true
 }
 [ -z "$(sibling_contributor_imports "$ROOT")" ] ||
   fail "7n-3f-2: sibling contributors must be reached by discovery only"
@@ -2108,28 +2057,13 @@ printf '\n# the dj engine contributor lives at modules/music/dj-engine.nix\n' >>
 [ -z "$(sibling_contributor_imports "$D")" ] ||
   fail "7n-3f-3: a prose mention of a contributor path must not be treated as an import"
 
-# 7n-3g. A reintroduced compatibility root is rejected even when the boundary
-# list is widened to hide it.
+# 7n-3g. A reintroduced compatibility root is rejected: the root-evacuation
+# predicate names it, and no boundary list exists to hide it behind.
 D="$(make_copy)"
 mkdir -p "$D/modules/applications"
 printf '{ ... }: { }\n' >"$D/modules/applications/wrapper.nix"
 [ "$(surviving_evacuated_roots "$D")" = "modules/applications" ] ||
   fail "7n-3g: the root-evacuation predicate must detect a reintroduced modules/applications"
-sed -i '/^  "services"$/i\  "applications"' "$D/modules/flake/_unconverted-nixos-dirs.nix"
-[ "$(unconverted_roots "$D")" != '["services"]' ] ||
-  fail "7n-3g: widening the boundary back to applications must break the exact single-root set"
-
-# 7n-3h. The transitional boundary may not grow and may not be thinned without
-# deleting the directory.
-D="$(make_copy)"
-sed -i 's/^\[ \]$/[ "core" ]/' "$D/modules/flake/_unconverted-nixos-dirs.nix"
-[ "$(unconverted_roots "$D")" != '[]' ] ||
-  fail "7n-3h: a widened boundary must be rejected"
-D="$(make_copy)"
-sed -i 's/^\[ \]$/[ "services" ]/' "$D/modules/flake/_unconverted-nixos-dirs.nix"
-test ! -d "$D/modules/services" || fail "7n-3h: services must stay evacuated"
-[ "$(unconverted_roots "$D")" != '[]' ] ||
-  fail "7n-3h: an unbacked boundary entry must be rejected"
 
 # --- 7o. Feature-owned monitor contract (MON-1..MON-4) ----------------------
 # (openspec change feature-owned-service-monitoring tasks 2.1-2.3, 3.1, 3.2.)

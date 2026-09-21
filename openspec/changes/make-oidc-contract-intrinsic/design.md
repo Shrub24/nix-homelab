@@ -24,7 +24,7 @@ The fleet-level boundary rule this change applies (same rule that restructured b
 
 ### D1. The projection is a fragment imported by its consumers (not a support aspect)
 
-**Choice**: `identity-oidc.nix` stops publishing `flake.modules.nixos.identity-client` and becomes the intrinsic fragment `modules/identity/_oidc.nix`: `options.services.identity.oidc` declarations plus the derivation, imported by `kanidm-runtime.nix`, `kanidm-host-auth.nix`, `paperless/core.nix`, `karakeep.nix`, `termix.nix` — the same shape as `modules/database/postgres/_consumer.nix` and `modules/backups/state-backups/_consumer.nix`.
+**Choice**: `identity-oidc.nix` stops publishing `flake.modules.nixos.identity-client` and becomes the intrinsic fragment `modules/identity/_oidc.nix`: `options.services.identity.oidc` declarations plus the derivation, imported by `kanidm-runtime.nix`, `kanidm-host-auth.nix`, `paperless/core.nix`, and `karakeep.nix`; `termix.nix` reads the same namespace without importing it (tolerant lookup plus a named throw), so it depends on another participant declaring the contract — the same shape as `modules/database/postgres/_consumer.nix` and `modules/backups/state-backups/_consumer.nix`.
 
 **Alternative considered — a support-style contributor like `web-policy`**: rejected because `web-policy` is selected on every host by the fleet baseline, so its options exist everywhere by construction. The OIDC projection is needed only by identity participants; making it all-host would widen the surface for no reader, and the fragment form is already the repo's established pattern for exactly this need.
 

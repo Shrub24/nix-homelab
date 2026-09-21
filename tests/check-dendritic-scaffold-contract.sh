@@ -911,6 +911,9 @@ done
 if grep -RnE --include='*.nix' 'identity/(_oidc|kanidm-host-auth)\.nix|identity-oidc' modules/hosts; then
   fail "no host fragment may import an identity contributor directly (S5-5)"
 fi
+if grep -RnE --include='*.nix' 'identity/kanidm-host-auth\.nix|identity-oidc' modules/; then
+  fail "only registry selection may reach the Kanidm host-auth capability; no concern or sibling file may import it directly (S5-5)"
+fi
 
 # 7h. Stage 3 observable contract (OPS-1..OPS-8): derived bucket and secret
 # path, selection-is-enablement for backups/post-deploy/client/Beszel, OCI
@@ -1313,7 +1316,10 @@ forge_identity_mut="$(ne --raw --apply 'c: builtins.toJSON (builtins.attrNames (
 # from policy fails through its own named assertion rather than a missing-option
 # namespace. The host's `identity.hostAuth` assignment goes with the deselected
 # capability because the capability declares that namespace (select-then-
-# configure coupling, not a contract dependency).
+# configure coupling, not a contract dependency). The host's providerUrl write
+# stays: the contract's web-policy default only resolves on hosts declared in
+# policy/web-services.nix, so this leg proves consumer independence given that
+# write rather than the policy-default path on a consumer host.
 D="$(make_copy)"
 python3 - "$D" <<'PYEOF' > /dev/null || fail "7l-6 consumer-only mutation script failed"
 import sys

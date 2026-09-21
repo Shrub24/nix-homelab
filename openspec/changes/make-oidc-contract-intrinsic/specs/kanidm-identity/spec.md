@@ -43,5 +43,5 @@ The identity provider and the intrinsic OIDC contract SHALL independently consum
 
 - **WHEN** a host selects identity-provider and does not select kanidm-host-auth
 - **THEN** the provider's runtime, provisioning inputs, and OIDC client secret map evaluate successfully
-- **AND** `services.identity.hostAuth.enable` remains false
-- **AND** no Kanidm client package or unixd integration is installed by the provider alone
+- **AND** `services.identity.hostAuth` is not declared at all — the capability declares that namespace, so its absence, not a `false` flag, is the observable
+- **AND** no Kanidm Unix/PAM/SSH integration (`services.kanidm.unix`) is enabled by the provider alone, although the provider still installs the Kanidm client tooling its provisioning requires

@@ -275,26 +275,6 @@
           description = "Supplementary groups granted to the Kanidm service so it can read externally managed TLS material.";
         };
 
-        oidc = {
-          clientPathPrefix = lib.mkOption {
-            type = lib.types.str;
-            readOnly = true;
-            description = "Base client-specific Kanidm OIDC path prefix.";
-          };
-
-          tokenUrl = lib.mkOption {
-            type = lib.types.str;
-            readOnly = true;
-            description = "Canonical Kanidm OAuth2 token endpoint.";
-          };
-
-          clients = lib.mkOption {
-            type = lib.types.attrs;
-            readOnly = true;
-            description = "Canonical client-specific Kanidm OIDC endpoint outputs keyed by oauth2 client identifier.";
-          };
-        };
-
         secretFiles = {
           identity = secretHelpers.mkSecretFileOption "kanidm-identity-secrets";
           provisioning = secretHelpers.mkSecretFileOption "kanidm-provisioning-overlay";

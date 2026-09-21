@@ -503,16 +503,20 @@ host_aspects() { # $1 repo root, $2 host -> sorted selected aspect names
   registry_selections "$1" | awk -v h="$2" '$1 == h { print $2 }' | LC_ALL=C sort -u
 }
 host_leaf_imports_of() { # $1 dir
-  grep -RnE --include='*.nix' 'modules/((backups/state-backups|flake/observability-agent)|(cache/cache-publisher/(upload-client|post-deploy)|flake/builder-access))\.nix' "$1/modules/hosts" || true
+  grep -RnE --include='*.nix' 'modules/((backups/state-backups|flake/observability-agent|identity/_oidc)|(cache/cache-publisher/(upload-client|post-deploy)|flake/builder-access))\.nix' "$1/modules/hosts" || true
 }
 
 # 7a. Exactly thirty-five publications are discovered across the distributed
 # contributors: the infrastructure support quartet, the twelve Stage 2-6
 # deployment aspects (base, shell, networking, tailscale, notify,
 # state-backups, cache-publisher, builder-access, observability-agent, dj,
-# music, identity-client), and the eighteen Stage 7 placement aspects (S7-2), plus the Stage 8 internal transport contracts publication (task 4.1).
+# music, kanidm-host-auth), and the eighteen Stage 7 placement aspects (S7-2), plus the Stage 8 internal transport contracts publication (task 4.1).
 # split-state-backups-cache-publication replaced the combined backups aspect
 # with independent state-backups and cache-publisher aspects.
+# make-oidc-contract-intrinsic retired the former combined identity aspect: the
+# OIDC contract is now the intrinsic module modules/identity/_oidc.nix
+# (underscore, undiscovered, publishes nothing) and kanidm-host-auth is the
+# single identity-side capability aspect.
 # decouple-identity-admin-capabilities
 # task 3.3 extracted the six admin capabilities (termix, vaultwarden, gatus,
 # beszel, homepage, webhook) into their own published aspects; admin-hub stays
@@ -530,9 +534,9 @@ flake.modules.nixos.edge \
 flake.modules.nixos.fleet-packages \
 flake.modules.nixos.gatus \
 flake.modules.nixos.homepage \
-flake.modules.nixos.identity-client \
 flake.modules.nixos.identity-provider \
 flake.modules.nixos.internal-contracts \
+flake.modules.nixos.kanidm-host-auth \
 flake.modules.nixos.karakeep \
 flake.modules.nixos.music \
 flake.modules.nixos.networking \
@@ -578,7 +582,7 @@ done
 
 # 7b. Per-host registry selections are semantically exact: every host selects
 # the support quartet and the eight foundation/operational aspects; OCI and LA
-# additionally select identity-client and their own Stage 7 placement set,
+# additionally select kanidm-host-auth and their own Stage 7 placement set,
 # while home-forge selects dj, music, and omniroute instead. Aspect order is
 # not part of the contract, and host assemblies receive aspects only via the
 # registry.
@@ -616,14 +620,14 @@ aspects.gatus
 aspects.beszel
 aspects.homepage
 aspects.webhook"
-oci_sel="$(printf '%s\n%s\n%s\naspects.identity-client\n' "$support_quartet" "$foundation_operational" "$oci_placement" | LC_ALL=C sort)"
-la_sel="$(printf '%s\n%s\n%s\naspects.identity-client\n' "$support_quartet" "$foundation_operational" "$la_placement" | LC_ALL=C sort)"
+oci_sel="$(printf '%s\n%s\n%s\naspects.kanidm-host-auth\n' "$support_quartet" "$foundation_operational" "$oci_placement" | LC_ALL=C sort)"
+la_sel="$(printf '%s\n%s\n%s\naspects.kanidm-host-auth\n' "$support_quartet" "$foundation_operational" "$la_placement" | LC_ALL=C sort)"
 forge_placement="aspects.postgres"
 forge_sel="$(printf '%s\n%s\n%s\naspects.dj\naspects.music\naspects.omniroute\n' "$support_quartet" "$foundation_operational" "$forge_placement" | LC_ALL=C sort)"
 [ "$(host_aspects "$ROOT" oci-melb-1)" = "$oci_sel" ] ||
-  fail "registry: oci-melb-1 must select the support quartet + eight deployment aspects + identity-client + its nine placement aspects: $(host_aspects "$ROOT" oci-melb-1)"
+  fail "registry: oci-melb-1 must select the support quartet + eight deployment aspects + kanidm-host-auth + its nine placement aspects: $(host_aspects "$ROOT" oci-melb-1)"
 [ "$(host_aspects "$ROOT" la-admin-1)" = "$la_sel" ] ||
-  fail "registry: la-admin-1 must select the support quartet + eight deployment aspects + identity-client + its eight placement aspects: $(host_aspects "$ROOT" la-admin-1)"
+  fail "registry: la-admin-1 must select the support quartet + eight deployment aspects + kanidm-host-auth + its eight placement aspects: $(host_aspects "$ROOT" la-admin-1)"
 [ "$(host_aspects "$ROOT" home-forge)" = "$forge_sel" ] ||
   fail "registry: home-forge must select the support quartet + eight deployment aspects + dj + music + omniroute + its postgres placement: $(host_aspects "$ROOT" home-forge)"
 # Host records (modules/hosts/<host>/default.nix) are the aspect-selection
@@ -735,7 +739,7 @@ probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBo
 # 7d-2. Stage 5 web/identity observables (S5-4, S5-5, S5-8). web-policy is an
 # all-host infrastructure-support selection: config.repo.web resolves on every
 # host and the ntfy serverUrl default derives from it (LA keeps its explicit
-# loopback override). identity-client is selected on OCI/LA only: both expose
+# loopback override). kanidm-host-auth is selected on OCI/LA only: both expose
 # the policy-derived provider URL, clients, hostAuth, and Kanidm URI; forge
 # evaluates with services.identity absent (probed via `or {}`).
 probe_web_identity() { # $1 host, $2 expected JSON (python dict literal)
@@ -886,18 +890,26 @@ grep -q 'inputs.nix-index-database.nixosModules.nix-index' modules/flake/shell.n
 test -f modules/flake/shell/p10k.zsh || fail "p10k data must live with the shell aspect that renders it"
 grep -q 'builtins.readFile ./shell/p10k.zsh' modules/flake/shell.nix || fail "shell aspect must render its p10k data file"
 
-# 7g-2. Identity is the multi-contributor single-aspect merge (S5-5): two
-# discovered top-level contributors each nest their body directly inside the
-# same identity-client publication, with no private leaf, wrapper, or
-# cross-import; no host or application file imports either contributor
-# directly (discovery + registry selection is the only path).
-for idf in modules/identity/identity-oidc.nix modules/identity/kanidm-host-auth.nix; do
-  test -f "$idf" || fail "identity contributor $idf missing"
-  grep -q 'flake.modules.nixos.identity-client' "$idf" || fail "$idf must publish identity-client"
+# 7g-2. Identity separates an intrinsic contract from one capability aspect:
+# `_oidc.nix` derives the read-only OIDC data, publishes nothing, and is
+# imported by every participant that reads it, while `kanidm-host-auth` is the
+# single identity-side deployment capability. No host fragment imports either
+# directly (discovery + registry selection is the capability's only path), and
+# every reading consumer must import the contract itself (7l-6 exercises both
+# the resolving and the missing-client outcomes).
+test -f modules/identity/_oidc.nix || fail "the intrinsic OIDC contract modules/identity/_oidc.nix is missing"
+test ! -e modules/identity/identity-oidc.nix || fail "the retired identity-oidc contributor must be gone"
+if grep -nE 'flake\.modules\.nixos\.' modules/identity/_oidc.nix; then
+  fail "the intrinsic OIDC contract must not publish an aspect"
+fi
+grep -q 'flake.modules.nixos.kanidm-host-auth' modules/identity/kanidm-host-auth.nix ||
+  fail "kanidm-host-auth.nix must publish kanidm-host-auth"
+for reader in modules/identity/kanidm-runtime.nix modules/identity/kanidm-host-auth.nix \
+  modules/flake/paperless/core.nix modules/flake/karakeep.nix; do
+  grep -q '_oidc\.nix' "$reader" || fail "$reader must import the intrinsic OIDC contract"
 done
-test ! -e modules/flake/_identity-client || fail "no _identity-client private leaf directory may exist (S5-5)"
-if grep -RnE --include='*.nix' 'identity-oidc|kanidm-host-auth' modules/hosts modules/flake/*.nix modules/identity/*.nix | grep -vE '^modules/identity/(identity-oidc|kanidm-host-auth)\.nix'; then
-  fail "no host or concern file may import an identity contributor directly (S5-5)"
+if grep -RnE --include='*.nix' 'identity/(_oidc|kanidm-host-auth)\.nix|identity-oidc' modules/hosts; then
+  fail "no host fragment may import an identity contributor directly (S5-5)"
 fi
 
 # 7h. Stage 3 observable contract (OPS-1..OPS-8): derived bucket and secret
@@ -1232,10 +1244,11 @@ printf '  # intrinsic composition: base requires notify placement\n' >>"$D/modul
 
 # 7l. Stage 5 semantic negative mutations (S5-6, S5-7). Each runs against a
 # throwaway copy so the working tree is never modified, and each fails for its
-# intended semantic reason rather than a generic parse/eval error. Contributor
-# deletion is detected through the missing OIDC or host-auth/Kanidm
-# observable/eval — never a missing publication, because the sibling
-# contributor still defines identity-client.
+# intended semantic reason rather than a generic parse/eval error. Identity
+# contributor deletion is detected twice over: the capability owns its aspect
+# name, so removing it leaves the host's selection unresolvable (7l-7), while
+# the intrinsic contract is a private module no aspect carries, so its
+# presence is what a consumer depends on (7l-6).
 
 # 7l-1. A surviving evacuated root must be rejected even when the filter no
 # longer lists it (a fake shrink that untracks the directory instead of
@@ -1268,54 +1281,121 @@ esac
 
 # 7l-4. Relocated private leaves and identity contributors must not be imported
 # directly by a host. Fresh imports inserted on the surviving
-# `./_cockpit-auth.nix` import line are detected by host_leaf_imports_of (for
-# the relocated leaf) and by the 7g-2 identity-import grep (for the
-# contributor) — both anchored on a line that survives this change, so the
-# checks are exercised non-vacuously.
+# `./_cockpit-auth.nix` import line are detected by host_leaf_imports_of for
+# the relocated leaf and for the intrinsic OIDC contract, and by the 7g-2
+# identity-import grep for the capability aspect — all anchored on a line that
+# survives this change, so the checks are exercised non-vacuously.
 D="$(make_copy)"
 sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/cache/cache-publisher/post-deploy.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
 [ -n "$(host_leaf_imports_of "$D")" ] ||
   fail "7l-4: host_leaf_imports_of must detect a directly re-imported relocated leaf"
-sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/identity/identity-oidc.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
-grep -RnE --include='*.nix' 'identity-oidc|kanidm-host-auth' "$D/modules/hosts" >/dev/null ||
+sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/identity/_oidc.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
+[ -n "$(host_leaf_imports_of "$D")" ] ||
+  fail "7l-4: host_leaf_imports_of must detect a directly imported intrinsic OIDC contract"
+sed -i '/\.\/_cockpit-auth\.nix/a\  ../../../modules/identity/kanidm-host-auth.nix' "$D/modules/hosts/oci-melb-1/_nixos.nix"
+grep -RnE --include='*.nix' 'identity/(_oidc|kanidm-host-auth)\.nix' "$D/modules/hosts" >/dev/null ||
   fail "7l-4: identity-import grep must detect a directly imported identity contributor"
 
-# 7l-5. Identity must not activate on forge. Adding aspects.identity-client to
+# 7l-5. Identity must not activate on forge. Adding aspects.kanidm-host-auth to
 # the forge record is detected through the missing-services.identity observable,
 # not a publication diff.
 D="$(make_copy)"
-sed -i '/aspects\.dj/i\        aspects.identity-client' "$D"/modules/hosts/*/default.nix
+sed -i '/aspects\.dj/i\        aspects.kanidm-host-auth' "$D"/modules/hosts/*/default.nix
 forge_identity_mut="$(ne --raw --apply 'c: builtins.toJSON (builtins.attrNames (c.services.identity or {}))' \
   "path:${D}#nixosConfigurations.home-forge.config")" ||
   fail "7l-5: forge identity mutation probe must evaluate"
 [ "$forge_identity_mut" != '[]' ] ||
-  fail "7l-5: forge must expose identity activation when identity-client is wrongly selected"
+  fail "7l-5: forge must expose identity activation when kanidm-host-auth is wrongly selected"
 
-# 7l-6. Deleting the OIDC contributor removes OIDC behavior/eval while the
-# sibling kanidm contributor still publishes identity-client. Detection is the
-# missing services.identity.oidc option (eval failure), never a publication.
+# 7l-6. The intrinsic contract replaces the retired selection: a composition
+# whose only identity participants are importing consumers still evaluates and
+# resolves the canonical client records, and a consumer whose client is absent
+# from policy fails through its own named assertion rather than a missing-option
+# namespace. The host's `identity.hostAuth` assignment goes with the deselected
+# capability because the capability declares that namespace (select-then-
+# configure coupling, not a contract dependency).
 D="$(make_copy)"
-rm "$D/modules/identity/identity-oidc.nix"
-[ "$(pub_names_of "$D" | grep -c 'identity-client')" -ge 1 ] ||
-  fail "7l-6: sibling contributor must still publish identity-client after OIDC deletion"
+python3 - "$D" <<'PYEOF' > /dev/null || fail "7l-6 consumer-only mutation script failed"
+import sys
+
+d = sys.argv[1]
+
+p = d + "/modules/hosts/oci-melb-1/default.nix"
+s = open(p).read()
+assert s.count("        aspects.kanidm-host-auth\n") == 1, "kanidm-host-auth selection anchor drifted"
+open(p, "w").write(s.replace("        aspects.kanidm-host-auth\n", "", 1))
+
+p = d + "/modules/hosts/oci-melb-1/_nixos.nix"
+s = open(p).read()
+block = """    identity.hostAuth = {
+      enable = true;
+      sshIntegration = true;
+      pamAllowedLoginGroups = [ "admins" ];
+    };
+"""
+assert s.count(block) == 1, "identity.hostAuth consumer block drifted"
+open(p, "w").write(s.replace(block, "", 1))
+PYEOF
+consumer_json="$(ne --raw --apply 'c: builtins.toJSON {
+  providerUrl = c.services.identity.oidc.providerUrl;
+  identityNamespaces = builtins.attrNames c.services.identity;
+  clientKeys = builtins.attrNames c.services.identity.oidc.clients;
+  paperlessClientId = c.services.paperless.oidc.clientId;
+  paperlessWellknownAligned = c.services.paperless.oidc.wellknownUrl == "${c.services.identity.oidc.providerUrl}/oauth2/openid/paperless/.well-known/openid-configuration";
+  karakeepClientId = c.services.karakeep-pod.oidc.clientId;
+  kanidmUnixEnable = c.services.kanidm.unix.enable or false;
+}' "path:${D}#nixosConfigurations.oci-melb-1.config")" ||
+  fail "7l-6: consumer-only composition (OCI without the host-auth capability) does not evaluate"
+python3 - "$consumer_json" <<'PYEOF' || fail "7l-6: consumer-only composition must resolve the canonical client records"
+import json, sys
+got = json.loads(sys.argv[1])
+expected = {
+    "providerUrl": "https://id.shrublab.xyz",
+    "identityNamespaces": ["oidc"],
+    "clientKeys": ["beszel", "cloudflare-access", "karakeep", "paperless", "termix"],
+    "paperlessClientId": "paperless",
+    "paperlessWellknownAligned": True,
+    "karakeepClientId": "karakeep",
+    "kanidmUnixEnable": False,
+}
+errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
+if errs:
+    print("; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+# 7l-6b. Same composition, with the client disabled in canonical policy: OIDC
+# stays enabled through web policy, the contract stops carrying the client, and
+# the consumer must fail through its named assertion.
+python3 - "$D" <<'PYEOF' > /dev/null || fail "7l-6b policy mutation script failed"
+import json, sys
+
+p = sys.argv[1] + "/policy/identity.json"
+d = json.load(open(p))
+assert d["systems"]["oauth2"]["paperless"]["enable"] is True, "paperless policy anchor drifted"
+d["systems"]["oauth2"]["paperless"]["enable"] = False
+json.dump(d, open(p, "w"), indent=2)
+PYEOF
 set +e
-oidc_out="$(nix eval --no-write-lock-file --raw \
+assertion_out="$(nix eval --no-write-lock-file --raw \
   "path:${D}#nixosConfigurations.oci-melb-1.config.system.build.toplevel.drvPath" 2>&1)"
-oidc_rc=$?
+assertion_rc=$?
 set -e
-[ "$oidc_rc" -ne 0 ] || fail "7l-6: deleting the OIDC contributor must break OCI identity eval"
-case "$oidc_out" in
-  *"services.identity.oidc' does not exist"*) ;;
-  *) fail "7l-6: expected missing services.identity.oidc, got: $(printf '%s' "$oidc_out" | tail -3)" ;;
+[ "$assertion_rc" -ne 0 ] || fail "7l-6b: a missing canonical client must fail the consumer's assertions"
+case "$assertion_out" in
+  *"canonical OIDC client 'paperless' is missing"*) ;;
+  *) fail "7l-6b: expected the Paperless named assertion, got: $(printf '%s' "$assertion_out" | tail -3)" ;;
 esac
 
-# 7l-7. Deleting the Kanidm host-auth contributor removes host-auth/Kanidm
-# behavior/eval while the sibling OIDC contributor still publishes
-# identity-client. Detection is the missing services.identity.hostAuth option.
+# 7l-7. Deleting the Kanidm host-auth capability removes its publication, and
+# the host selection that names it becomes unresolvable — detection is the
+# registry's by-name failure, not a silently empty namespace. The intrinsic
+# OIDC contract is a separate private module and survives.
 D="$(make_copy)"
 rm "$D/modules/identity/kanidm-host-auth.nix"
-[ "$(pub_names_of "$D" | grep -c 'identity-client')" -ge 1 ] ||
-  fail "7l-7: sibling contributor must still publish identity-client after host-auth deletion"
+[ "$(pub_names_of "$D" | grep -c 'kanidm-host-auth')" -eq 0 ] ||
+  fail "7l-7: deleting the host-auth contributor must remove its publication"
+test -e "$D/modules/identity/_oidc.nix" ||
+  fail "7l-7: the intrinsic OIDC contract must survive host-auth deletion"
 set +e
 hostauth_out="$(nix eval --no-write-lock-file --raw \
   "path:${D}#nixosConfigurations.oci-melb-1.config.system.build.toplevel.drvPath" 2>&1)"
@@ -1323,8 +1403,8 @@ hostauth_rc=$?
 set -e
 [ "$hostauth_rc" -ne 0 ] || fail "7l-7: deleting the host-auth contributor must break OCI Kanidm eval"
 case "$hostauth_out" in
-  *"services.identity.hostAuth' does not exist"*) ;;
-  *) fail "7l-7: expected missing services.identity.hostAuth, got: $(printf '%s' "$hostauth_out" | tail -3)" ;;
+  *"attribute 'kanidm-host-auth' missing"*) ;;
+  *) fail "7l-7: expected the unresolvable kanidm-host-auth selection, got: $(printf '%s' "$hostauth_out" | tail -3)" ;;
 esac
 
 # --- 7m. Stage 6 music composition (S6-2..S6-11) -----------------------------
@@ -1538,7 +1618,7 @@ import sys
 p = sys.argv[1]
 s = open(p).read()
 i = s.index("la-admin-1 = {")
-j = s.index("aspects.identity-client", i)
+j = s.index("aspects.kanidm-host-auth", i)
 k = s.index("\n", j)
 open(p, "w").write(s[: k + 1] + "        aspects.music\n" + s[k + 1 :])
 PYEOF

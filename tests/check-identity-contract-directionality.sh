@@ -159,7 +159,7 @@ PYEOF
 
 # 3. Client-only subset: the provider-only mutation already deselected the
 # admin aspects and the host's admin bindings; additionally deselect
-# identity-provider so identity-client and web-policy are the only selected
+# identity-provider so kanidm-host-auth and web-policy are the only selected
 # identity-side concerns. The client contract must still resolve the canonical
 # web-policy provider URL (never an accidental null) and must not materialise
 # the provider's Kanidm namespace (IDB-2)
@@ -206,21 +206,23 @@ if errs:
     sys.exit(1)
 PYEOF
 
-# 4. Negative case: Termix selected without identity-client must fail
-# through the named identity-client contract throw, not a raw missing-option
+# 4. Negative case: Termix selected without the OIDC contract must fail
+# through the named OIDC contract throw, not a raw missing-option
 # namespace (feature-topology/admin-module-structure). Termix is demoted on
 # the real host, so the copy re-selects the aspect and its host-scoped OIDC
 # secret source first: the guard is about the aspect's dependency contract,
-# not about where the capability happens to be deployed today.
-python3 - "$D" <<'PYEOF' > /dev/null || fail "no-identity-client mutation script failed"
+# not about where the capability happens to be deployed today. With the
+# contract intrinsic, the only importer selected in this composition is the
+# host-auth capability, so deselecting it is what removes the contract.
+python3 - "$D" <<'PYEOF' > /dev/null || fail "no-OIDC-contract mutation script failed"
 import sys
 
 d = sys.argv[1]
 
 p = d + "/modules/hosts/la-admin-1/default.nix"
 la = open(p).read()
-assert la.count("        aspects.identity-client\n") == 1, "identity-client selection anchor drifted"
-la = la.replace("        aspects.identity-client\n", "", 1)
+assert la.count("        aspects.kanidm-host-auth\n") == 1, "kanidm-host-auth selection anchor drifted"
+la = la.replace("        aspects.kanidm-host-auth\n", "", 1)
 anchor = "        aspects.push-server\n"
 assert la.count(anchor) == 1, "push-server selection anchor drifted"
 la = la.replace(anchor, "        aspects.termix\n" + anchor, 1)
@@ -228,7 +230,7 @@ open(p, "w").write(la)
 
 p = d + "/modules/hosts/la-admin-1/_nixos.nix"
 host = open(p).read()
-# Anchor on the identity-client consumer block: the workload secret bindings
+# Anchor on the host's identity block: the workload secret bindings
 # were already stripped by the provider-only mutation above.
 anchor = "    identity.hostAuth = {"
 assert host.count(anchor) == 1, "identity.hostAuth anchor drifted"
@@ -236,8 +238,8 @@ termix_binding = "    admin.termix.secretFiles.oidc = ../../../secrets/hosts/la-
 host = host.replace(anchor, termix_binding + anchor, 1)
 open(p, "w").write(host)
 
-# The copied host also carries an unrelated identity-client consumer
-# assignment (`services.identity.hostAuth`). With the aspect deselected that
+# The copied host also carries the capability's own consumer assignment
+# (`services.identity.hostAuth`). With the capability deselected that
 # write references a namespace Nix no longer declares, so the raw
 # "The option services.identity does not exist" error fires before Termix's
 # named contract throw. Remove the exact host block (anchor + drift
@@ -261,8 +263,8 @@ stderr="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
   enable = c.services.admin.termix.enable;
   forcedClientId = c.services.admin.termix.oidc.clientId;
 }' "path:${D}#nixosConfigurations.la-admin-1.config" 2>&1 >/dev/null || true)"
-if ! printf '%s' "$stderr" | grep -q "required identity-client contract 'services.identity.oidc.clients.termix' is missing"; then
-  fail "Termix without identity-client must fail with the named identity-client contract message; stderr was: $stderr"
+if ! printf '%s' "$stderr" | grep -q "required OIDC contract 'services.identity.oidc.clients.termix' is missing"; then
+  fail "Termix without the OIDC contract must fail with the named contract message; stderr was: $stderr"
 fi
 
 # 4b. Negative cases: a selected capability whose canonical web-policy route
@@ -421,7 +423,7 @@ for a in placement:
 for a in ["admin-hub", "cockpit", "termix"]:
     if f"        aspects.{a}\n" in la:
         raise SystemExit(f"LA host record must not select the demoted/deleted aspects.{a}")
-for a in ["provenance", "oci-images", "fleet-packages", "web-policy", "identity-client",
+for a in ["provenance", "oci-images", "fleet-packages", "web-policy", "kanidm-host-auth",
           "base", "shell", "networking", "tailscale", "notify",
           "state-backups", "cache-publisher",
           "builder-access", "observability-agent"]:
@@ -429,12 +431,12 @@ for a in ["provenance", "oci-images", "fleet-packages", "web-policy", "identity-
         raise SystemExit(f"LA host record must explicitly select aspects.{a} exactly once")
 PYEOF
 if ! grep -q 'oauth2Clients = {' modules/identity/identity-provider.nix \
-  || ! grep -q 'webPolicyKanidmUrl' modules/identity/identity-oidc.nix; then
+  || ! grep -q 'webPolicyKanidmUrl' modules/identity/_oidc.nix; then
   fail "provider-owned explicit oauth2 secret-source map / web-policy URL default missing"
 fi
 if grep -nE 'services\.identity\.oidc(\.[A-Za-z0-9_]+)?[[:space:]]*(=[^=]|=$)' \
   modules/identity/identity-provider.nix modules/identity/kanidm-runtime.nix; then
-  fail "identity-provider/Kanidm leaf must not write services.identity.oidc.* (identity-client owns the contract)"
+  fail "identity-provider/Kanidm leaf must not write services.identity.oidc.* (the intrinsic contract owns it)"
 fi
 if grep -RnE --include='*.nix' 'applications\.admin' modules/admin/termix.nix modules/admin/termix-runtime.nix \
   | grep -vE '^[^:]+:[0-9]+: *#'; then
@@ -1085,9 +1087,187 @@ shared = [
 ]
 for path, placement in pins.items():
     body = open(path).read()
-    for a in placement + shared + (["identity-client"] if "oci-melb-1" in path else []):
+    for a in placement + shared + (["kanidm-host-auth"] if "oci-melb-1" in path else []):
         if body.count(f"        aspects.{a}\n") != 1:
             raise SystemExit(f"{path}: must select aspects.{a} exactly once")
 PYEOF
+
+# 14. Provider-only composition (make-oidc-contract-intrinsic): the provider
+# leaf consumes the intrinsic OIDC contract itself, so the provider host must
+# evaluate with the host-auth capability absent and must not need any client
+# capability selected to read the derived provider URL. The host's own
+# `identity.hostAuth` assignment goes with the deselected capability, because
+# the capability declares that namespace (select-then-configure coupling).
+D3="$(mktemp -d /tmp/identity-prov.XXXXXX)"
+trap 'rm -rf "$D" "$D2" "$D3"' EXIT
+tar -C "$ROOT" \
+  --exclude=.git --exclude=.jj --exclude=./opentofu --exclude=./opentofu/* \
+  --exclude=.hp-forge-esp-backup --exclude=.qmd --exclude=.direnv \
+  --exclude=.cortexkit --exclude=.tmp --exclude=.pi --exclude=.firecrawl \
+  --exclude=.ruff_cache \
+  -cf - . | tar -C "$D3" -xf -
+python3 - "$D3" <<'PYEOF' > /dev/null || fail "provider-only mutation script failed"
+import sys
+
+d = sys.argv[1]
+
+p = d + "/modules/hosts/la-admin-1/default.nix"
+s = open(p).read()
+assert s.count("        aspects.kanidm-host-auth\n") == 1, "kanidm-host-auth selection anchor drifted"
+open(p, "w").write(s.replace("        aspects.kanidm-host-auth\n", "", 1))
+
+p = d + "/modules/hosts/la-admin-1/_nixos.nix"
+s = open(p).read()
+block = """    identity.hostAuth = {
+      enable = true;
+      sshIntegration = true;
+      pamAllowedLoginGroups = [ "admins" ];
+    };
+"""
+assert s.count(block) == 1, "identity.hostAuth consumer block drifted"
+open(p, "w").write(s.replace(block, "", 1))
+PYEOF
+json="$(nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
+  providerUrl = c.services.identity.oidc.providerUrl;
+  identityNamespaces = builtins.attrNames c.services.identity;
+  hostAuthAbsent = !(c.services.identity ? hostAuth);
+  kanidmServerEnable = c.services.identity.kanidm.enable;
+  kanidmUnixEnable = c.services.kanidm.unix.enable or false;
+  kanidmProvisionEnable = c.services.kanidm.provision.enable or false;
+  provisionClientKeys = builtins.attrNames (c.services.kanidm.provision.systems.oauth2 or {});
+  oauth2SecretSourceKeys = builtins.attrNames c.services.identity.kanidm.secretFiles.oauth2Clients;
+}' "path:${D3}#nixosConfigurations.la-admin-1.config")" ||
+  fail "provider-only composition (LA without the host-auth capability) does not evaluate"
+python3 - "$json" <<'PYEOF' || fail "provider-only composition observables violated"
+import json, sys
+got = json.loads(sys.argv[1])
+expected = {
+    "providerUrl": "https://id.shrublab.xyz",
+    "identityNamespaces": ["kanidm", "oidc"],
+    "hostAuthAbsent": True,
+    "kanidmServerEnable": True,
+    "kanidmUnixEnable": False,
+    "kanidmProvisionEnable": True,
+}
+errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
+if got.get("provisionClientKeys") != ["beszel", "cloudflare-access", "karakeep", "paperless", "termix"]:
+    errs.append(f"provisionClientKeys: got {got.get('provisionClientKeys')!r}")
+if got.get("oauth2SecretSourceKeys") != ["beszel", "cloudflare-access", "karakeep", "paperless", "termix"]:
+    errs.append(f"oauth2SecretSourceKeys: got {got.get('oauth2SecretSourceKeys')!r}")
+if errs:
+    print("; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+# 15. Projection-only probe (make-oidc-contract-intrinsic): the contract is a
+# standalone module, so importing it alone — with no identity aspect selected
+# anywhere — must still resolve every enabled client's canonical endpoints, and
+# it must not drag the host-auth capability or the Kanidm runtime with it.
+oidc_fragment_probe() { # $1 copy root -> eval report JSON
+  local d="$1" t out
+  t="$(mktemp -d /tmp/identity-fragment.XXXXXX)"
+  cat >"$t/flake.nix" <<EOF2
+{
+  inputs.repo.url = "path:$d";
+  outputs = { self, repo }: {
+    report = let
+      sys = repo.inputs.nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          (import "$d/modules/identity/_oidc.nix")
+          {
+            services.identity.oidc.providerUrl = "https://probe-id.example";
+            networking.hostName = "probe-host";
+            system.stateVersion = "25.11";
+          }
+        ];
+      };
+      c = sys.config;
+      beszel = c.services.identity.oidc.clients.beszel or { };
+    in {
+      providerUrl = c.services.identity.oidc.providerUrl;
+      clientPathPrefix = c.services.identity.oidc.clientPathPrefix;
+      tokenUrl = c.services.identity.oidc.tokenUrl;
+      clientKeys = builtins.attrNames c.services.identity.oidc.clients;
+      paperlessWellknown = c.services.identity.oidc.clients.paperless.wellknownUrl or "";
+      beszel = {
+        clientId = beszel.clientId or "";
+        issuerUrl = beszel.issuerUrl or "";
+        wellknownUrl = beszel.wellknownUrl or "";
+        authorizationUrl = beszel.authorizationUrl or "";
+        tokenUrl = beszel.tokenUrl or "";
+        userinfoUrl = beszel.userinfoUrl or "";
+      };
+      hostAuthAbsent = !(c.services.identity ? hostAuth);
+      providerNamespaceAbsent = !(c.services.identity ? kanidm);
+      # The contract deploys nothing: the nixpkgs Kanidm options exist because
+      # every nixosSystem carries the nixpkgs module list, so the meaningful
+      # absence is that no Kanidm runtime surface is ENABLED by importing it.
+      kanidmServerEnable = c.services.kanidm.server.enable or false;
+      kanidmClientEnable = c.services.kanidm.client.enable or false;
+      kanidmUnixEnable = c.services.kanidm.unix.enable or false;
+      kanidmProvisionEnable = c.services.kanidm.provision.enable or false;
+    };
+  };
+}
+EOF2
+  out="$(nix eval --raw --impure --no-write-lock-file --expr "builtins.toJSON ((builtins.getFlake (toString $t)).report)")"
+  rm -rf "$t"
+  printf '%s' "$out"
+}
+D4="$(mktemp -d /tmp/identity-projection.XXXXXX)"
+trap 'rm -rf "$D" "$D2" "$D3" "$D4"' EXIT
+tar -C "$ROOT" \
+  --exclude=.git --exclude=.jj --exclude=./opentofu --exclude=./opentofu/* \
+  --exclude=.hp-forge-esp-backup --exclude=.qmd --exclude=.direnv \
+  --exclude=.cortexkit --exclude=.tmp --exclude=.pi --exclude=.firecrawl \
+  --exclude=.ruff_cache \
+  -cf - . | tar -C "$D4" -xf -
+frag_json="$(oidc_fragment_probe "$D4")" || fail "projection-only fragment probe did not evaluate"
+python3 - "$frag_json" <<'PYEOF' || fail "projection-only fragment observables violated"
+import json, sys
+got = json.loads(sys.argv[1])
+expected = {
+    "providerUrl": "https://probe-id.example",
+    "clientPathPrefix": "https://probe-id.example/oauth2/openid",
+    "tokenUrl": "https://probe-id.example/oauth2/token",
+    "paperlessWellknown": "https://probe-id.example/oauth2/openid/paperless/.well-known/openid-configuration",
+    "hostAuthAbsent": True,
+    "providerNamespaceAbsent": True,
+    "kanidmServerEnable": False,
+    "kanidmClientEnable": False,
+    "kanidmUnixEnable": False,
+    "kanidmProvisionEnable": False,
+}
+errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
+if got.get("clientKeys") != ["beszel", "cloudflare-access", "karakeep", "paperless", "termix"]:
+    errs.append(f"clientKeys: got {got.get('clientKeys')!r}")
+beszel = got.get("beszel") or {}
+for field, want in {
+    "clientId": "beszel",
+    "issuerUrl": "https://probe-id.example/oauth2/openid/beszel",
+    "wellknownUrl": "https://probe-id.example/oauth2/openid/beszel/.well-known/openid-configuration",
+    "authorizationUrl": "https://probe-id.example/ui/oauth2",
+    "tokenUrl": "https://probe-id.example/oauth2/token",
+    "userinfoUrl": "https://probe-id.example/oauth2/openid/beszel/userinfo",
+}.items():
+    if beszel.get(field) != want:
+        errs.append(f"beszel.{field}: got {beszel.get(field)!r} want {want!r}")
+if errs:
+    print("; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+# 16. Terminology ratchet (make-oidc-contract-intrinsic): the retired aspect
+# name must not survive in the implementation or in either suite. This file is
+# excluded so the pattern cannot match its own source; archived changes and
+# historical documents are out of scope, because they record what was true when
+# they were written.
+retired_hits="$(grep -rn --include='*.nix' --include='*.sh' 'identity-client' modules/ tests/ \
+  | grep -v '^tests/check-identity-contract-directionality.sh:' || true)"
+[ -z "$retired_hits" ] ||
+  fail "the retired identity aspect name must not appear in modules/ or tests/: $retired_hits"
+grep -rq 'kanidm-host-auth' modules/ ||
+  fail "the replacement capability name must be present, so the terminology ratchet cannot pass vacuously"
 
 echo "check-identity-contract-directionality: PASS"

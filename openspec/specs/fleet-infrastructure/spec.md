@@ -239,7 +239,12 @@ The fleet composition model SHALL distinguish host-selected deployment capabilit
 - **WHEN** several top-level source contributors provide pieces of one coherent deployment capability
 - **THEN** they merge into a single host-selected deployment aspect without a central wrapper module
 - **AND** selecting the deployment aspect on a host enables all of its contributors' configuration
-- **AND** `aspects.identity-client` is selected on `oci-melb-1` and `la-admin-1` only, each contributor nests its own options/config directly in its `flake.modules.nixos.identity-client` definition with no shared private leaf or wrapper, and no host or application file imports `identity-oidc` or `kanidm-host-auth` directly
+- **AND** `cache-publisher` is the current multi-contributor example (`cache-publisher.nix` plus the `cache-publisher/{upload-client,post-deploy}.nix` siblings), each contributor nesting its own options/config directly in its `flake.modules.nixos.cache-publisher` definition
+
+#### Scenario: A projection is not carried by a deployment aspect
+- **WHEN** a module provides only derived, read-only contract data and deploys no runtime
+- **THEN** it is imported intrinsically by the participants that read it and is not published as a host-selected aspect
+- **AND** a capability is not bundled with a projection such that selecting the capability becomes a condition for reading the projection
 
 #### Scenario: Reclassification preserves evaluated behavior
 - **WHEN** source contributors are reclassified or relocated without changing the public deployment surface
@@ -269,12 +274,12 @@ Every deployed product and provider-specific capability SHALL be represented by 
 
 #### Scenario: OCI host placement is inspected
 - **WHEN** `oci-melb-1` is evaluated
-- **THEN** its typed record explicitly selects `oci`, `edge`, `cockpit`, `paperless`, `postgres`, `ai-gateway`, `karakeep`, `niks3-cache`, and `phoenix` in addition to its established foundation, operational, identity-client, and support selections
+- **THEN** its typed record explicitly selects `oci`, `edge`, `cockpit`, `paperless`, `postgres`, `ai-gateway`, `karakeep`, `niks3-cache`, `phoenix`, and `kanidm-host-auth` in addition to its established foundation, operational, and support selections
 - **AND** its host module directly imports none of those implementations
 
 #### Scenario: LA host placement is inspected
 - **WHEN** `la-admin-1` is evaluated
-- **THEN** its typed record explicitly selects `edge`, `cockpit`, `push-server`, `identity-provider`, and `admin-hub` in addition to its established foundation, operational, identity-client, and support selections
+- **THEN** its typed record explicitly selects `edge`, `push-server`, `identity-provider`, `kanidm-host-auth`, `vaultwarden`, `gatus`, `beszel`, `homepage`, and `webhook` in addition to its established foundation, operational, and support selections
 - **AND** its host module directly imports none of those implementations
 
 #### Scenario: Home-forge placement is inspected

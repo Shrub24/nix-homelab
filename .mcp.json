@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "agent-lsp": {
+      "command": "/home/saurabhj/.local/bin-agent-lsp/agent-lsp",
+      "args": [
+        "nix:nixd",
+        "shellscript:bash-language-server,start"
+      ]
+    }
+  }
+}

@@ -18,6 +18,12 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
     import-tree.url = "github:denful/import-tree";
+    nix-fleet.url = "github:Shrub24/nix-fleet";
+    nix-fleet.inputs.nixpkgs.follows = "nixpkgs";
+    nix-fleet.inputs.flake-parts.follows = "flake-parts";
+    nix-fleet.inputs.import-tree.follows = "import-tree";
+    nix-fleet.inputs.sops-nix.follows = "sops-nix";
+    nix-fleet.inputs.niks3.follows = "niks3";
   };
 
   outputs =

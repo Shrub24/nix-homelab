@@ -132,6 +132,39 @@
         "type": "github"
       }
     },
+    "nix-fleet": {
+      "inputs": {
+        "flake-parts": [
+          "flake-parts"
+        ],
+        "import-tree": [
+          "import-tree"
+        ],
+        "niks3": [
+          "niks3"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "sops-nix": [
+          "sops-nix"
+        ],
+        "treefmt-nix": "treefmt-nix_2"
+      },
+      "locked": {
+        "lastModified": 1789991341,
+        "narHash": "sha256-3lAJfzbaTVLe7qwkwav4a282m27yL7xwIinOux2+JxA=",
+        "owner": "Shrub24",
+        "repo": "nix-fleet",
+        "rev": "fef3a3b0664e20a825defed2be637a44050bdfe3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Shrub24",
+        "repo": "nix-fleet",
+        "type": "github"
+      }
+    },
     "nix-index-database": {
       "inputs": {
         "nixpkgs": [
@@ -206,6 +239,7 @@
         "flake-parts": "flake-parts",
         "import-tree": "import-tree",
         "niks3": "niks3",
+        "nix-fleet": "nix-fleet",
         "nix-index-database": "nix-index-database",
         "nixpkgs": "nixpkgs",
         "sops-nix": "sops-nix",
@@ -253,7 +287,7 @@
         "nixpkgs": [
           "nixpkgs"
         ],
-        "treefmt-nix": "treefmt-nix_2"
+        "treefmt-nix": "treefmt-nix_3"
       },
       "locked": {
         "lastModified": 1788348761,
@@ -291,6 +325,27 @@
       }
     },
     "treefmt-nix_2": {
+      "inputs": {
+        "nixpkgs": [
+          "nix-fleet",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786901030,
+        "narHash": "sha256-WSFCsDSE5ffgD2MqzkM2CYjeFiKhRF/dJUN8uedb6YE=",
+        "owner": "numtide",
+        "repo": "treefmt-nix",
+        "rev": "27b3b12a8e6375f28ebe122f07d230ca5459bbfa",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "treefmt-nix",
+        "type": "github"
+      }
+    },
+    "treefmt-nix_3": {
       "inputs": {
         "nixpkgs": "nixpkgs_2"
       },

@@ -1,7 +1,6 @@
 # Navidrome aspect contributor: composed by the music coordinator aspect
 # by flake-level import; this file owns the feature body.
-{ ... }:
-{
+_: {
   flake.modules.nixos.music =
     {
       lib,
@@ -99,15 +98,15 @@
 
         systemd.tmpfiles.settings.navidromeDirs."${cfg.settings.DataFolder or "/var/lib/navidrome"}"."d" = {
           mode = "700";
-          user = cfg.user;
-          group = cfg.group;
+          inherit (cfg) user;
+          inherit (cfg) group;
         };
         systemd.tmpfiles.settings.navidromeDirs."${cfg.settings.CacheFolder or "/var/lib/navidrome/cache"
         }"."d" =
           {
             mode = "700";
-            user = cfg.user;
-            group = cfg.group;
+            inherit (cfg) user;
+            inherit (cfg) group;
           };
 
         # AudioMuseAI plugin directory + packaged WASM `.ndp` symlink (cache-preserving).
@@ -117,8 +116,8 @@
         systemd.tmpfiles.settings.navidromeDirs."${cfg.dataDir}/plugins" = {
           "d" = {
             mode = "700";
-            user = cfg.user;
-            group = cfg.group;
+            inherit (cfg) user;
+            inherit (cfg) group;
           };
         };
         systemd.tmpfiles.settings.navidromeDirs."${cfg.dataDir}/plugins/audiomuseai.ndp" = {

@@ -2,8 +2,7 @@
 # secret bootstrap — the service and its notification-daemon monitor
 # registration activate only once `secrets/services/omniroute.yaml` exists.
 
-{ ... }:
-{
+_: {
   flake.modules.nixos.omniroute =
     {
       lib,
@@ -244,7 +243,7 @@
             ];
           };
         })
-        ({
+        {
           services.omniroute = lib.mkIf hasSecret {
             enable = true;
             secretFiles.host = secretFile;
@@ -259,7 +258,7 @@
             onStart = true;
             onStop = true;
           };
-        })
+        }
       ];
     };
 }

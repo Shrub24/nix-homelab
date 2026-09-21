@@ -10,8 +10,7 @@
 # cross-reference option values (provider URL wiring reads the sops templates
 # defined here), so they stay separate files contributing to the same aspect
 # name.
-{ ... }:
-{
+_: {
   flake.modules.nixos.identity-provider =
     {
       lib,

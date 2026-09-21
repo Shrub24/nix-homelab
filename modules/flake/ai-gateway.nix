@@ -2,8 +2,7 @@
 # top-level enablement; the data root, the policy config file, and the service
 # secret source stay explicit host variants.
 
-{ ... }:
-{
+_: {
   flake.modules.nixos.ai-gateway =
     {
       config,
@@ -207,9 +206,9 @@
             };
           };
         })
-        ({
+        {
           services.bifrost-gateway.enable = true;
-        })
+        }
       ];
     };
 }

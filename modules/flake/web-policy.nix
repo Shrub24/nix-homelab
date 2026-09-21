@@ -1,5 +1,4 @@
-top@{ ... }:
-{
+top: {
   flake.modules.nixos.web-policy =
     {
       lib,

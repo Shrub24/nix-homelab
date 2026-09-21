@@ -3,8 +3,7 @@
 # conventional host secret gate (two-step sops bootstrap). Cache publication is
 # owned by the separate cache-publisher aspect.
 
-{ ... }:
-{
+_: {
   flake.modules.nixos.state-backups =
     {
       config,
@@ -149,7 +148,7 @@
         (lib.mkIf cfg.enable {
           assertions = [
             (secretHelpers.mkRequiredSecretAssertion {
-              enable = cfg.enable;
+              inherit (cfg) enable;
               file = cfg.secretFile;
               feature = "services.state-backups";
               label = "secretFile";
@@ -198,15 +197,15 @@
 
           services.restic.backups.${cfg.backupName} = {
             initialize = true;
-            repository = repository;
+            inherit repository;
             environmentFile = config.sops.templates."state-backups.env".path;
             passwordFile = config.sops.secrets.state_backups_restic_password.path;
             paths = allBackupPaths;
             exclude = allExcludePaths;
-            timerConfig = cfg.timerConfig;
-            pruneOpts = cfg.pruneOpts;
-            checkOpts = cfg.checkOpts;
-            extraOptions = cfg.extraOptions;
+            inherit (cfg) timerConfig;
+            inherit (cfg) pruneOpts;
+            inherit (cfg) checkOpts;
+            inherit (cfg) extraOptions;
           }
           // lib.optionalAttrs (prepareCommands != [ ]) { backupPrepareCommand = prepareScript; }
           // lib.optionalAttrs (cleanupCommands != [ ]) { backupCleanupCommand = cleanupScript; };
@@ -235,7 +234,7 @@
             restoreStageScript
           ];
         })
-        ({
+        {
           # The restic capability activates only when the conventional host
           # secret exists.
           services.state-backups = lib.mkIf hasHostSecrets {
@@ -259,7 +258,7 @@
               message = "state-backups aspect: services.notification-daemon.monitor.enable must be true (select the notify aspect) so restic-backups-state failures route through svc-monitor.";
             }
           ];
-        })
+        }
       ];
     };
 }

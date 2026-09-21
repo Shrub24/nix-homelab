@@ -10,8 +10,7 @@
 # separately selected aspects; DJ consumes applications.music.contract through
 # a read-only config edge with a named assertion and never imports or enables
 # music.
-{ ... }:
-{
+_: {
   flake.modules.nixos.music =
     {
       lib,
@@ -315,14 +314,14 @@
         (lib.mkIf cfg.enable {
           # Assigned only while the application is enabled.
           applications.music.contract = {
-            storageRoot = cfg.storageRoot;
-            libraryDir = mediaPaths.libraryDir;
-            playlistsDir = mediaPaths.playlistsDir;
+            inherit (cfg) storageRoot;
+            inherit (mediaPaths) libraryDir;
+            inherit (mediaPaths) playlistsDir;
           };
 
           assertions = [
             (secretHelpers.mkRequiredSecretAssertion {
-              enable = cfg.enable;
+              inherit (cfg) enable;
               file = cfg.secretFiles.host;
               feature = "applications.music";
               label = "secretFiles.host";
@@ -334,12 +333,12 @@
           # injected here.
           services.musicStorage = {
             enable = true;
-            storageRoot = cfg.storageRoot;
-            libraryDir = mediaPaths.libraryDir;
-            playlistsDir = mediaPaths.playlistsDir;
-            inboxDir = mediaPaths.inboxDir;
-            quarantineDir = mediaPaths.quarantineDir;
-            versionArchiveRoot = mediaPaths.versionArchiveRoot;
+            inherit (cfg) storageRoot;
+            inherit (mediaPaths) libraryDir;
+            inherit (mediaPaths) playlistsDir;
+            inherit (mediaPaths) inboxDir;
+            inherit (mediaPaths) quarantineDir;
+            inherit (mediaPaths) versionArchiveRoot;
           };
 
           users.users.dev.extraGroups = lib.mkAfter [
@@ -370,8 +369,8 @@
 
           services.navidrome = {
             enable = cfg.navidrome.enable;
-            libraryDir = mediaPaths.libraryDir;
-            quarantineDir = mediaPaths.quarantineDir;
+            inherit (mediaPaths) libraryDir;
+            inherit (mediaPaths) quarantineDir;
             extraDirs = [ mediaPaths.setsDir ];
             dataDir = "${cfg.dataRoot}/navidrome";
             audiomuse.enable = cfg.audiomuse.enable;
@@ -397,9 +396,9 @@
 
           services.beets = {
             dataDir = "${cfg.dataRoot}/beets";
-            inboxDir = mediaPaths.inboxDir;
-            libraryDir = mediaPaths.libraryDir;
-            quarantineDir = mediaPaths.quarantineDir;
+            inherit (mediaPaths) inboxDir;
+            inherit (mediaPaths) libraryDir;
+            inherit (mediaPaths) quarantineDir;
             secretFiles.host = cfg.secretFiles.host;
             configFiles = {
               standard = cfg.configFiles.standard;
@@ -441,8 +440,8 @@
           # and slskd completion hook.
           services.musicIngest = {
             enable = true;
-            inboxDir = mediaPaths.inboxDir;
-            storageRoot = cfg.storageRoot;
+            inherit (mediaPaths) inboxDir;
+            inherit (cfg) storageRoot;
             onSuccessUnit = "beets-inbox.service";
           };
 

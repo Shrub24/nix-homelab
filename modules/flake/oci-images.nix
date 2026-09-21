@@ -5,15 +5,13 @@ let
   ociImagesPolicy = import ../../policy/oci-images.nix;
 in
 {
-  flake.modules.nixos.oci-images =
-    { ... }:
-    {
-      options.repo.ociImages = lib.mkOption {
-        type = lib.types.attrs;
-        readOnly = true;
-        description = "Canonical OCI image refs from policy/oci-images.nix.";
-      };
-
-      config.repo.ociImages = ociImagesPolicy;
+  flake.modules.nixos.oci-images = _: {
+    options.repo.ociImages = lib.mkOption {
+      type = lib.types.attrs;
+      readOnly = true;
+      description = "Canonical OCI image refs from policy/oci-images.nix.";
     };
+
+    config.repo.ociImages = ociImagesPolicy;
+  };
 }

@@ -2,8 +2,7 @@
 # enablement; the runtime composition (policy public URL, origin host/port, and
 # the state-backups registration) stays in the leaf, which reads only the
 # canonical web policy.
-{ ... }:
-{
+_: {
   flake.modules.nixos.beszel =
     { lib, config, ... }:
     let
@@ -11,12 +10,10 @@
 
       webServices = config.repo.web.currentHost.services or { };
       beszelRoute =
-        if webServices ? "beszel-admin" then
-          webServices."beszel-admin"
-        else
-          throw "beszel: required canonical web-policy route 'repo.web.currentHost.services.\"beszel-admin\"' is missing for host '${
+        webServices."beszel-admin"
+          or (throw "beszel: required canonical web-policy route 'repo.web.currentHost.services.\"beszel-admin\"' is missing for host '${
             config.networking.hostName or "?"
-          }'";
+          }'");
 
       appUrl = beszelRoute.publicUrl;
       host = beszelRoute.origin.host;
@@ -44,9 +41,9 @@
             paths = [ "/var/lib/private/${baseNameOf config.services.beszel.hub.dataDir}" ];
           };
         })
-        ({
+        {
           services.admin.beszel.enable = true;
-        })
+        }
       ];
     };
 }

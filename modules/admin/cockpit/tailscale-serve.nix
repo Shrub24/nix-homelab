@@ -1,8 +1,7 @@
 # Runtime sibling of the `cockpit` aspect: deferredModule values merge across
 # sibling files, so this file contributes to the same aspect name without an
 # imports list. Owns the dedicated Cockpit Tailscale serve unit.
-{ ... }:
-{
+_: {
   flake.modules.nixos.cockpit =
     {
       lib,

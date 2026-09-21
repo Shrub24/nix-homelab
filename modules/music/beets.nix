@@ -1,7 +1,6 @@
 # Beets aspect contributor: composed by the music coordinator aspect by
 # flake-level import; this file owns the feature body.
-{ ... }:
-{
+_: {
   flake.modules.nixos.music =
     {
       config,
@@ -169,9 +168,9 @@
         inherit pkgs lib;
         beets = beetsRuntime;
         notify = notifyPkg;
-        mediaPaths = mediaPaths;
-        dataDir = cfg.dataDir;
-        ffmpegCheck = ffmpegCheck;
+        inherit mediaPaths;
+        inherit (cfg) dataDir;
+        inherit ffmpegCheck;
       };
 
       # Operator CLIs: the leaf owns the binaries generated from built-in runner
@@ -315,7 +314,7 @@
         assert builtins.isString runnerName && runnerName != "";
         assert builtins.isString kind;
         {
-          description = runnerInstance.description;
+          inherit (runnerInstance) description;
           unitConfig = {
             RequiresMountsFor = runnerInstance.mountFor;
             ConditionPathIsDirectory = runnerInstance.conditionDir;
@@ -630,7 +629,7 @@
           ];
 
           # Generate timer units for runner instances that declare timer triggers.
-          systemd.timers = (
+          systemd.timers =
             lib.mapAttrs'
               (
                 runnerName: runnerInstance:
@@ -657,8 +656,7 @@
                   Unit = "beets-${runnerName}.service";
                 };
               }
-            ) (lib.filterAttrs (_: runnerInstance: runnerInstance.runnerKind == "import") cfg.runners))
-          );
+            ) (lib.filterAttrs (_: runnerInstance: runnerInstance.runnerKind == "import") cfg.runners));
 
           # Generate path units for runner instances that declare path triggers.
           systemd.paths =

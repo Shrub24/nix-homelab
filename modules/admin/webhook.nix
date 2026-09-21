@@ -1,7 +1,6 @@
 # Webhook deployment aspect: the leaf consumes no web policy, secret source, or
 # runtime path; the `webhook-admin` policy route serves external callers only.
-{ ... }:
-{
+_: {
   flake.modules.nixos.webhook =
     {
       lib,

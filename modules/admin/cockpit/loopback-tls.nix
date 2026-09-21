@@ -1,8 +1,7 @@
 # Runtime sibling of the `cockpit` aspect: deferredModule values merge across
 # sibling files, so this file contributes to the same aspect name without an
 # imports list. Owns the loopback TLS material for the Cockpit host route.
-{ ... }:
-{
+_: {
   flake.modules.nixos.cockpit =
     {
       lib,
@@ -17,7 +16,7 @@
       # A soft null keeps hosts without the route evaluating; the named
       # assertions below own the contract failure when the material is enabled.
       webServices = config.repo.web.currentHost.services or { };
-      cockpitRoute = if webServices ? "cockpit-admin" then webServices."cockpit-admin" else null;
+      cockpitRoute = webServices."cockpit-admin" or null;
       inherit (loopbackTls) stateDir;
       publicCaCert = "/etc/cockpit/loopback-ca.crt";
       certName = "99-loopback";

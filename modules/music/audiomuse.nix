@@ -1,8 +1,7 @@
 # Music feature sibling: contributes to the `music` aspect
 # (flake.modules.nixos.music) as a deferredModule sibling; the host selects one
 # name and the module system merges every sibling file.
-{ ... }:
-{
+_: {
   flake.modules.nixos.music =
     {
       lib,
@@ -146,13 +145,13 @@
 
         assertions = [
           (secretHelpers.mkRequiredSecretAssertion {
-            enable = cfg.enable;
+            inherit (cfg) enable;
             file = cfg.secretFiles.host;
             feature = "services.audiomuse";
             label = "secretFiles.host";
           })
           (secretHelpers.mkRequiredSecretAssertion {
-            enable = cfg.enable;
+            inherit (cfg) enable;
             file = cfg.secretFiles.db;
             feature = "services.audiomuse";
             label = "secretFiles.db";
@@ -265,7 +264,7 @@
 
         virtualisation.oci-containers.containers.audiomuse-worker = {
           autoStart = true;
-          image = cfg.image;
+          inherit (cfg) image;
           extraOptions = [ "--network=${cfg.networkName}" ];
           environment = {
             SERVICE_TYPE = "worker";
@@ -277,7 +276,7 @@
 
         virtualisation.oci-containers.containers.audiomuse-web = {
           autoStart = true;
-          image = cfg.image;
+          inherit (cfg) image;
           extraOptions = [ "--network=${cfg.networkName}" ];
           ports = [ "${cfg.listenAddress}:${toString cfg.port}:8000" ];
           environment = {

@@ -158,13 +158,13 @@ let
         if decl ? instances then
           lib.mapAttrsToList (instance: inst: {
             label = "${name}.${instance}";
-            port = inst.port;
+            inherit (inst) port;
           }) decl.instances
         else
           [
             {
               label = name;
-              port = decl.port;
+              inherit (decl) port;
             }
           ];
     in
@@ -290,9 +290,9 @@ in
         # endpoint outside the fleet's tailnet.
         assertions = [
           {
-            assertion = lib.all (contract: lib.hasSuffix ".${suffix}" contract.fqdn || contract.fqdn == null) (
-              resolvedEndpoints
-            );
+            assertion = lib.all (
+              contract: lib.hasSuffix ".${suffix}" contract.fqdn || contract.fqdn == null
+            ) resolvedEndpoints;
             message = "internal-contracts: resolved provider FQDN must sit under the '${suffix}' tailnet suffix from policy/globals.nix";
           }
         ];

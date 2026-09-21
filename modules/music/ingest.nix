@@ -3,8 +3,7 @@
 # poke/timers, the scoped slskd-settle polkit rule, and the slskd completion
 # hook. Composed by the music coordinator aspect by flake-level import; never
 # host-imported.
-{ ... }:
-{
+_: {
   flake.modules.nixos.music =
     {
       lib,

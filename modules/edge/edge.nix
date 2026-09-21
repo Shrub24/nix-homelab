@@ -5,8 +5,7 @@
 # `policy/web-services.nix` and the repo CA certificate. The read is one-way and
 # guarded so an origin host renders no routes and a non-web host cannot force
 # policy values.
-{ ... }:
-{
+_: {
   flake.modules.nixos.edge =
     {
       lib,

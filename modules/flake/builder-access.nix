@@ -1,8 +1,7 @@
 # Builder access: nixbuild.net SSH trust only. Substituter policy stays in the
 # base aspect; selection is enablement, and the SSH trust is nested in the
 # publication, so there is no private leaf.
-{ ... }:
-{
+_: {
   flake.modules.nixos.builder-access = {
     programs.ssh.knownHosts.nixbuild = {
       hostNames = [ "eu.nixbuild.net" ];

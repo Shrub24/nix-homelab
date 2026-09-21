@@ -10,8 +10,7 @@
 # - debugMtu: when a host declares services.tailscale.debugMtu, the leaf
 #   writes TS_DEBUG_MTU into the tailscaled unit environment.
 
-{ ... }:
-{
+_: {
   flake.modules.nixos.tailscale =
     { lib, config, ... }:
     let
@@ -31,7 +30,7 @@
         '';
       };
       config = lib.mkMerge [
-        ({
+        {
           systemd.services = {
             tailscaled = {
               restartIfChanged = false;
@@ -67,7 +66,7 @@
           systemd.services.tailscaled.environment = lib.mkIf (cfg.debugMtu != null) {
             TS_DEBUG_MTU = toString cfg.debugMtu;
           };
-        })
+        }
       ];
     };
 }

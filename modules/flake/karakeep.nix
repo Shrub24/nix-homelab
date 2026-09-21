@@ -2,8 +2,7 @@
 # enablement; OIDC wiring, the S3 asset store toggle, and both secret sources
 # stay explicit host variants.
 
-{ ... }:
-{
+_: {
   flake.modules.nixos.karakeep =
     {
       lib,
@@ -392,9 +391,9 @@
             ];
           };
         })
-        ({
+        {
           services.karakeep-pod.enable = true;
-        })
+        }
       ];
     };
 }

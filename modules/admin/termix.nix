@@ -2,8 +2,7 @@
 # composition (OIDC endpoint wiring, state-backup registration,
 # dedicated Tailscale serve unit). It consumes only public contracts — the
 # canonical OIDC client record and the canonical web-policy route.
-{ ... }:
-{
+_: {
   flake.modules.nixos.termix =
     {
       lib,
@@ -48,11 +47,11 @@
         (lib.mkIf cfg.enable {
           services.admin.termix.oidc = {
             enabled = oidcRuntimeEnabled;
-            clientId = termixClient.clientId;
-            issuerUrl = termixClient.issuerUrl;
-            authorizationUrl = termixClient.authorizationUrl;
-            tokenUrl = termixClient.tokenUrl;
-            userinfoUrl = termixClient.userinfoUrl;
+            inherit (termixClient) clientId;
+            inherit (termixClient) issuerUrl;
+            inherit (termixClient) authorizationUrl;
+            inherit (termixClient) tokenUrl;
+            inherit (termixClient) userinfoUrl;
             environmentFile = if oidcRuntimeEnabled then config.sops.templates."termix-oidc.env".path else null;
           };
 

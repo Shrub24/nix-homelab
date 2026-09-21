@@ -4,8 +4,7 @@
 # fleet-wide cache consumer, upload client, and backups behavior belong to the
 # `backups` aspect.
 
-{ ... }:
-{
+_: {
   flake.modules.nixos.niks3-cache =
     { config, lib, ... }:
     let
@@ -123,9 +122,9 @@
             wants = lib.mkAfter [ "sops-nix.service" ];
           };
         })
-        ({
+        {
           services.niks3-cache.enable = true;
-        })
+        }
       ];
     };
 }

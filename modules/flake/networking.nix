@@ -1,8 +1,7 @@
 # Networking foundation aspect: selecting it is its enablement. The native
 # systemd-networkd contract is owned here: units are derived from the
 # `fleet.networking` host facts, and the scripted/dhcpcd backend is disabled.
-{ ... }:
-{
+_: {
   flake.modules.nixos.networking =
     {
       config,

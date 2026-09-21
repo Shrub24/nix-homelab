@@ -1,7 +1,6 @@
 # Syncthing aspect contributor: composed by the music coordinator aspect
 # by flake-level import; this file owns the feature body.
-{ ... }:
-{
+_: {
   flake.modules.nixos.music =
     {
       lib,

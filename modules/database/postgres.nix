@@ -134,7 +134,7 @@
 
           services.postgresql = lib.mkIf (instance != null) {
             enable = true;
-            dataDir = instance.dataDir;
+            inherit (instance) dataDir;
 
             enableTCPIP = true;
 
@@ -158,7 +158,7 @@
             extensions = ps: lib.unique (lib.concatMap (c: c.extensions ps) consumers);
 
             settings = {
-              port = instance.port;
+              inherit (instance) port;
               max_connections = lib.mkDefault "40";
               shared_buffers = lib.mkDefault "64MB";
               effective_cache_size = lib.mkDefault "128MB";

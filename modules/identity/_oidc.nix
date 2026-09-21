@@ -12,9 +12,14 @@ let
   # The Kanidm web-policy route is the single source of the provider URL; this
   # contract (via the default) and the identity-provider leaf (directly) read the
   # same resolved route, and neither writes the other's option namespace.
-  webPolicyKanidmUrl = (
-    lib.attrByPath [ "repo" "web" "currentHost" "services" "kanidm-admin" "publicUrl" ] null config
-  );
+  webPolicyKanidmUrl = lib.attrByPath [
+    "repo"
+    "web"
+    "currentHost"
+    "services"
+    "kanidm-admin"
+    "publicUrl"
+  ] null config;
   providerUrlMatch =
     if cfg.providerUrl == null then null else builtins.match "https://([^/]+).*" cfg.providerUrl;
   providerUrlValid = cfg.providerUrl == null || providerUrlMatch != null;

@@ -4,8 +4,7 @@
 # this module owns domain XML generation and lifecycle units, and only consumes
 # the fleet-networking bridge that guests attach to — it never creates or owns
 # physical networking.
-{ ... }:
-{
+_: {
   flake.modules.nixos.dj =
     {
       lib,

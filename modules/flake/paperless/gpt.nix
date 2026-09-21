@@ -1,7 +1,6 @@
 # Paperless-GPT/docling sibling of the `paperless` aspect: contributes the
 # multi-instance OCR sidecar wiring to the same aspect name.
-{ ... }:
-{
+_: {
   flake.modules.nixos.paperless =
     {
       lib,

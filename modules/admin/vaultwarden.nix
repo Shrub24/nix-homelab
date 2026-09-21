@@ -1,8 +1,7 @@
 # Vaultwarden deployment aspect: selection imports the leaf and owns its
 # enablement; the leaf reads only the canonical web-policy route, has no OIDC,
 # and is direct edge-proxied (no Tailscale serve unit).
-{ ... }:
-{
+_: {
   flake.modules.nixos.vaultwarden =
     {
       lib,
@@ -16,12 +15,10 @@
         let
           route = config.repo.web.currentHost.services or { };
         in
-        if route ? "vaultwarden-admin" then
-          route."vaultwarden-admin"
-        else
-          throw "vaultwarden: required canonical web-policy route 'repo.web.currentHost.services.\"vaultwarden-admin\"' is missing for host '${
+        route."vaultwarden-admin"
+          or (throw "vaultwarden: required canonical web-policy route 'repo.web.currentHost.services.\"vaultwarden-admin\"' is missing for host '${
             config.networking.hostName or "?"
-          }'";
+          }'");
       vaultHost = vaultRoute.origin.host;
       vaultPort = vaultRoute.origin.port;
       vaultwardenExportFile = "${config.services.state-backups.stagingRoot}/vaultwarden/db.sqlite3";
@@ -197,9 +194,9 @@
             ];
           };
         })
-        ({
+        {
           services.admin.vaultwarden.enable = true;
-        })
+        }
       ];
     };
 }

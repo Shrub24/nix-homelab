@@ -76,7 +76,7 @@ in
   applications.dj = {
     engine = {
       enable = true;
-      traktorStateDir = traktorStateDir;
+      inherit traktorStateDir;
       secretFiles.navidrome = ../../../secrets/applications/music.yaml;
     };
   };

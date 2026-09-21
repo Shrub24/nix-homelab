@@ -1,8 +1,7 @@
 # Phoenix deployment aspect: selection supplies the collector's top-level
 # enablement; image policy and data paths keep their leaf defaults.
 
-{ ... }:
-{
+_: {
   flake.modules.nixos.phoenix =
     {
       config,
@@ -179,9 +178,9 @@
             paths = [ cfg.dataDir ];
           };
         })
-        ({
+        {
           services.phoenix.enable = true;
-        })
+        }
       ];
     };
 }

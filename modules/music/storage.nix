@@ -2,8 +2,7 @@
 # media root/layout tmpfiles + ACL rule, the media permission-reconcile service,
 # and the media-fixperms operator CLI. Composed by the music coordinator aspect
 # by flake-level import; never host-imported.
-{ ... }:
-{
+_: {
   flake.modules.nixos.music =
     {
       lib,

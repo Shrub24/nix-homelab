@@ -2,8 +2,7 @@
 # derives the conventional host secret path and gates enrollment on its
 # existence; the Beszel hub remains an admin-service leaf.
 
-{ ... }:
-{
+_: {
   flake.modules.nixos.observability-agent =
     { config, lib, ... }:
     let
@@ -65,7 +64,7 @@
             environmentFile = config.sops.templates."beszel-agent.env".path;
           };
         })
-        ({
+        {
           services.beszel-agent-auth = lib.mkIf hasHostSecrets {
             enable = true;
             secretFiles.host = hostSystemSecret;
@@ -80,7 +79,7 @@
             onStart = true;
             onStop = true;
           };
-        })
+        }
       ];
     };
 }

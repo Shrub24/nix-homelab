@@ -1,7 +1,6 @@
 # Paperless runtime sibling of the `paperless` aspect: deferredModule values
 # merge across sibling files, so the host selects one aspect name.
-{ ... }:
-{
+_: {
   flake.modules.nixos.paperless =
     {
       lib,

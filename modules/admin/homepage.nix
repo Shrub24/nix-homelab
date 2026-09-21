@@ -2,8 +2,7 @@
 # enablement; the runtime composition (policy origin host/port, the secret map,
 # the auth template, and the catalog-derived dashboard data) stays in the leaf,
 # which reads only the canonical web policy.
-{ ... }:
-{
+_: {
   flake.modules.nixos.homepage =
     { lib, config, ... }:
     let
@@ -11,12 +10,10 @@
 
       webServices = config.repo.web.currentHost.services or { };
       homepageRoute =
-        if webServices ? "admin-homepage" then
-          webServices."admin-homepage"
-        else
-          throw "homepage: required canonical web-policy route 'repo.web.currentHost.services.\"admin-homepage\"' is missing for host '${
+        webServices."admin-homepage"
+          or (throw "homepage: required canonical web-policy route 'repo.web.currentHost.services.\"admin-homepage\"' is missing for host '${
             config.networking.hostName or "?"
-          }'";
+          }'");
 
       listenPort = homepageRoute.origin.port;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
@@ -125,9 +122,9 @@
               ;
           };
         })
-        ({
+        {
           services.admin.homepage.enable = true;
-        })
+        }
       ];
     };
 }

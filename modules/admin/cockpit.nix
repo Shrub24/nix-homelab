@@ -2,8 +2,7 @@
 # is true) and owns the wiring common to every host — the dedicated service user
 # and the service-user secret registration. Host variants stay explicit:
 # `publicHost`/`urlRoot` and `loopbackTls.enable` are host-local.
-{ ... }:
-{
+_: {
   flake.modules.nixos.cockpit =
     {
       lib,
@@ -20,12 +19,10 @@
 
       webServices = config.repo.web.currentHost.services or { };
       cockpitRoute =
-        if webServices ? "cockpit-admin" then
-          webServices."cockpit-admin"
-        else
-          throw "cockpit: required canonical web-policy route 'repo.web.currentHost.services.\"cockpit-admin\"' is missing for host '${
+        webServices."cockpit-admin"
+          or (throw "cockpit: required canonical web-policy route 'repo.web.currentHost.services.\"cockpit-admin\"' is missing for host '${
             config.networking.hostName or "?"
-          }'";
+          }'");
 
       cockpitPublicHost = if cfg.publicHost != null then cfg.publicHost else cockpitRoute.publicHost;
       cockpitUrlRoot = if cfg.urlRoot != null then cfg.urlRoot else cockpitRoute.path;
@@ -192,7 +189,7 @@
             }
           ];
         })
-        ({
+        {
           services.admin.cockpit = {
             serviceUser = {
               enable = true;
@@ -213,7 +210,7 @@
               mode = "0400";
             };
           };
-        })
+        }
       ];
     };
 }

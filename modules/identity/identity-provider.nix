@@ -5,8 +5,7 @@
 # namespace (`services.identity.oidc.*` is only asserted to agree, in the Kanidm
 # leaf, which imports that contract intrinsically); selecting this aspect does not
 # require any client capability to be selected as well.
-{ ... }:
-{
+_: {
   flake.modules.nixos.identity-provider =
     {
       lib,

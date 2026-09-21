@@ -1,8 +1,7 @@
 # Gatus deployment aspect: selection imports the leaf and owns its enablement;
 # the leaf reads only the canonical web policy and has no secrets or runtime
 # paths.
-{ ... }:
-{
+_: {
   flake.modules.nixos.gatus =
     { lib, config, ... }:
     let
@@ -10,12 +9,10 @@
 
       webServices = config.repo.web.currentHost.services or { };
       gatusRoute =
-        if webServices ? "gatus-admin" then
-          webServices."gatus-admin"
-        else
-          throw "gatus: required canonical web-policy route 'repo.web.currentHost.services.\"gatus-admin\"' is missing for host '${
+        webServices."gatus-admin"
+          or (throw "gatus: required canonical web-policy route 'repo.web.currentHost.services.\"gatus-admin\"' is missing for host '${
             config.networking.hostName or "?"
-          }'";
+          }'");
 
       webAddress = gatusRoute.origin.host;
       webPort = gatusRoute.origin.port;
@@ -66,9 +63,9 @@
             };
           };
         })
-        ({
+        {
           services.admin.gatus.enable = true;
-        })
+        }
       ];
     };
 }

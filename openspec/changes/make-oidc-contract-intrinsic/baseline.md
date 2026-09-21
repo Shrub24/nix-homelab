@@ -229,3 +229,23 @@ oauth2SecretSourceKeys  beszel, cloudflare-access, karakeep, paperless, termix
 Deviation from the stated expectation: `tasks.md` 2.4 asks for `services.identity.hostAuth.enable ==
 false`; the namespace does not exist at all in that composition, so the observable is its absence
 rather than a false flag.
+
+## 5. Anchors for the follow-up packets
+
+Task 4.3 (consumer prose): `modules/admin/termix.nix` lines 2, 4, 31, 33.
+
+Tasks 6.1-6.4 (test anchors): `tests/check-dendritic-scaffold-contract.sh` lines 513, 533, 581,
+619, 620, 624, 626, 738, 891, 896, 898, 1238, 1283, 1287, 1292, 1295, 1299, 1300, 1314, 1317,
+1318, 1541; `tests/check-identity-contract-directionality.sh` lines 162, 209, 210, 215, 222, 223,
+231, 239, 264, 265, 424, 437, 1088.
+
+Task 7.2 (live documentation): `ARCHITECTURE.md:56`; `STRUCTURE.md:81, 86, 87`; `CONVENTIONS.md:29`;
+`docs/architecture.md:100`; `docs/plan.md:198`. Historical and to be annotated only:
+`docs/decisions.md:983, 1032`; `docs/context-history.md:117`; `docs/dendritic-transition-analysis.md:20`.
+
+Current expected suite state after this packet (both pin the retired contract):
+
+- `tests/check-dendritic-scaffold-contract.sh` -> rc 1, first failure at the publication inventory
+  ("discovered publications drifted …", the expected list still naming `flake.modules.nixos.identity-client`).
+- `tests/check-identity-contract-directionality.sh` -> rc 1, first failure `AssertionError:
+  identity-client selection anchor drifted` (the LA mutation script, line 222).

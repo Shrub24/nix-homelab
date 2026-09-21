@@ -282,3 +282,27 @@ Observation, pre-existing and not introduced here: in a composition where nothin
 `services.kanidm.package`, the option resolves to nixpkgs' removed `pkgs.kanidm` alias and throws if
 forced. `home-forge` behaves identically before and after (`forceable: false`), so the state follows
 from the option's nixpkgs default rather than from this change.
+
+## 7. Final validation on the change head (parent-owned battery)
+
+
+Run at `@` on the change head after the test inversion, documentation and artifact alignment landed.
+All three exit codes were captured explicitly (never through a pipe):
+
+```
+observables-rc=0   just-checks-rc=0   flakecheck-rc=0
+just checks all  -> 18 suites, all PASS (incl. check-dendritic-scaffold-contract,
+                    check-identity-contract-directionality, check-internal-contracts)
+nix flake check --no-build .# -> all checks passed
+```
+
+Identity observables re-measured on the final tree, identical to section 3/6:
+
+- `oci-melb-1` providerUrl=https://id.shrublab.xyz clients=beszel,cloudflare-access,karakeep,paperless,termix hostAuth={"enable": true, "pamAllowedLoginGroups": ["admins"], "sshIntegration": true} kanidm=kanidm-1.11.0.drv
+- `la-admin-1` providerUrl=https://id.shrublab.xyz clients=beszel,cloudflare-access,karakeep,paperless,termix hostAuth={"enable": true, "pamAllowedLoginGroups": ["admins"], "sshIntegration": true} kanidm=kanidm-with-secret-provisioning-1.11.0.drv
+
+- OCI consumer records: `{"clientId": "paperless", "enable": true, "wellknownUrl": "https://id.shrublab.xyz/oauth2/openid/paperless/.well-known/openid-configuration"}`,
+  `{"allowDangerousEmailAccountLinking": false, "autoRedirect": true, "clientId": "karakeep", "disablePasswordAuth": true, "enable": true, "providerName": "Kanidm", "scope": "openid email profile", "wellknownUrl": "https://id.shrublab.xyz/oauth2/openid/karakeep/.well-known/openid-configuration"}`
+- Toplevel drvPaths moved again, as expected: `environment.etc."nixos-source"` publishes the
+  tracked tree, so every tracked edit moves `/etc` → `activate` → toplevel (D-057).
+  Derivation equality is not evidence; the observables above are.

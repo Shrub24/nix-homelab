@@ -456,6 +456,10 @@ _: {
             dnsProvider = "cloudflare";
             environmentFile = cfg.cloudflareCredentialsFile;
             group = "caddy";
+            # Caddy loads these files at config load, so a cert written after a
+            # reload is not served until the next one. Without this the postrun
+            # never fires and the edge keeps serving whatever it loaded last.
+            reloadServices = [ "caddy.service" ];
             # lego checks propagation twice: against the zone's authoritative
             # nameservers, which it queries directly, and against the recursive
             # resolvers this host uses, which answer from cache. The recursive

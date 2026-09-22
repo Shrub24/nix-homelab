@@ -13,7 +13,10 @@ nix eval --impure --no-write-lock-file --expr '
     lib = flake.inputs.nixpkgs.lib;
     policy = import ./policy/web-services.nix;
     policyLib = import ./lib/policy.nix { inherit lib; };
-    catalog = policyLib.serviceCatalog policy;
+    # Data-level call: an edge-independent projection is checked here, so the
+    # catalog is resolved for a nominal host and only identity fields are
+    # asserted (dial fields are host-relative and asserted per host below).
+    catalog = policyLib.serviceCatalog policy "edge-invariant-nominal";
   in
   assert builtins.hasAttr "kanidm-admin" catalog;
   assert catalog."kanidm-admin".publicUrl == "https://id.shrublab.xyz";
@@ -37,23 +40,23 @@ nix eval --impure --no-write-lock-file --expr '
     lib = flake.inputs.nixpkgs.lib;
     policyLib = import ./lib/policy.nix { inherit lib; };
     dupPolicy = {
-      defaults = { primaryDomain = "example.com"; };
+      defaults = { primaryDomain = "example.com"; exposureMode = "tailscale-only"; };
       hosts = {
         a = {
           services.dup = {
             subdomain = "dup";
-            origin = { scheme = "http"; host = "127.0.0.1"; port = 1; };
+            origin = { scheme = "http"; provider = "a"; port = 1; };
           };
         };
         b = {
           services.dup = {
             subdomain = "dup";
-            origin = { scheme = "http"; host = "127.0.0.1"; port = 2; };
+            origin = { scheme = "http"; provider = "b"; port = 2; };
           };
         };
       };
     };
-    result = builtins.tryEval (builtins.deepSeq (policyLib.serviceCatalog dupPolicy) true);
+    result = builtins.tryEval (builtins.deepSeq (policyLib.serviceCatalog dupPolicy "dup-eval") true);
   in
   assert !result.success;
   true
@@ -152,7 +155,12 @@ nix eval --impure --no-write-lock-file --json --expr '
     noPublicIdentity = catalog.publicUrl == null && catalog.publicHost == null;
     providerListensOnDeclaredPort = provider.services.niks3.httpAddr
       == "0.0.0.0:${toString catalog.endpoint.port}";
-    providerHostMatchesOrigin = lib.hasPrefix "oci-melb-1." catalog.endpoint.host;
+    # Placement-derived locality: the endpoint resolves loopback for the
+    # provider host evaluation (it used to round-trip through its tailnet
+    # name) and the provider FQDN for every other host.
+    colocatedLoopback = catalog.endpoint.host == "127.0.0.1";
+    remoteFqdn = flake.nixosConfigurations.la-admin-1.config.repo.web.catalog."niks3-write".endpoint.host
+      == "oci-melb-1.${(import ./policy/globals.nix).tailnet.suffix}";
   }
 ' | python3 -c '
 import json, sys
@@ -161,7 +169,8 @@ want = {
     "isPrivate": True,
     "noPublicIdentity": True,
     "providerListensOnDeclaredPort": True,
-    "providerHostMatchesOrigin": True,
+    "colocatedLoopback": True,
+    "remoteFqdn": True,
 }
 if got != want:
     print(f"niks3 write-endpoint invariant: got {got!r} want {want!r}", file=sys.stderr)

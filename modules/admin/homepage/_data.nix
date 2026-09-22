@@ -142,14 +142,6 @@ in
     {
       Access = [
         {
-          Cockpit = {
-            icon = "mdi-console-network";
-            description = "${config.networking.hostName} server administration";
-            href = serviceHref "cockpit-admin";
-            siteMonitor = serviceHref "cockpit-admin";
-          };
-        }
-        {
           "Cockpit (OCI)" = {
             icon = "mdi-console-network";
             description = "oci-melb-1 server administration";

@@ -117,21 +117,6 @@ in
           category = "admin";
         };
 
-        cockpit-admin = {
-          subdomain = "cockpit";
-          exposureMode = "tailscale-upstream";
-          path = "/la-admin-1";
-          forceTrailingSlash = true;
-          origin = {
-            scheme = "https";
-            provider = "la-admin-1";
-            port = 9090;
-          };
-          upstreamTlsCaCertFile = "/etc/cockpit/loopback-ca.crt";
-          upstreamTlsServerName = "localhost";
-          category = "admin";
-        };
-
         cockpit-oci-melb-1 = {
           subdomain = "cockpit";
           path = "/oci-melb-1";

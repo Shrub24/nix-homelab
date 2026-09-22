@@ -18,14 +18,26 @@ _: {
       svcUser = cfg.serviceUser;
 
       webServices = config.repo.web.catalog or { };
-      cockpitRoute =
-        webServices."cockpit-admin"
-          or (throw "cockpit: required canonical web-policy route 'repo.web.catalog.\"cockpit-admin\"' is missing for host '${
-            config.networking.hostName or "?"
-          }'");
+      # The demoted cockpit has no canonical route in the policy; a host that
+      # publishes cockpit without one must set the publicHost override.
+      cockpitRoute = webServices."cockpit-admin" or null;
 
-      cockpitPublicHost = if cfg.publicHost != null then cfg.publicHost else cockpitRoute.publicHost;
-      cockpitUrlRoot = if cfg.urlRoot != null then cfg.urlRoot else cockpitRoute.path;
+      cockpitPublicHost =
+        if cfg.publicHost != null then
+          cfg.publicHost
+        else if cockpitRoute != null then
+          cockpitRoute.publicHost
+        else
+          (throw "cockpit: no canonical web-policy route 'cockpit-admin' for host '${
+            config.networking.hostName or "?"
+          }' and no services.admin.cockpit.publicHost override");
+      cockpitUrlRoot =
+        if cfg.urlRoot != null then
+          cfg.urlRoot
+        else if cockpitRoute != null then
+          cockpitRoute.path
+        else
+          "/";
     in
     {
       options.services.admin.cockpit = {

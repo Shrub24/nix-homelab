@@ -793,6 +793,7 @@ builtins.toJSON {
   navidromeHrefAligned = (entry "Navidrome").href == c.repo.web.catalog."navidrome".publicUrl;
   gatusHrefAligned = (entry "Gatus").href == c.repo.web.catalog."gatus-admin".publicUrl;
   cockpitOciHrefAligned = (entry "Cockpit (OCI)").href == c.repo.web.catalog."cockpit-oci-melb-1".publicUrl;
+  # The demoted cockpit has no dashboard entry (its policy route is retired).
   # The widget dials the origin the module declares, not the policy: the
   # pattern pins that construction (short host + tailnet suffix + port)
   # without hardcoding the suffix, and asserts it is not the public URL.
@@ -805,7 +806,6 @@ builtins.toJSON {
   caddyWidgetUrl = (entry "Caddy").widget.url;
   tailscaleDeviceVar = (entry "Tailscale").widget.deviceid;
   slskdKeyVar = (entry "Slskd").widget.key;
-  cockpitDescription = (entry "Cockpit").description;
   bookmarkCount = builtins.length linkGroup;
   bookmarkAdminHrefAligned = adminBookmark.href == route.publicUrl;
   widgetsCpu = (builtins.head c.services.homepage-dashboard.widgets).resources.cpu;
@@ -851,8 +851,9 @@ expected = {
     "sopsFilesAligned": True,
     "settingsTitle": "Shrublab Admin",
     "startUrlAligned": True,
-    # 13 entries: the Quantum bookmark was removed with the retired workload.
-    "entryCount": 13,
+    # 12 entries: the Quantum bookmark and the demoted Cockpit entry were
+    # removed with the retired workloads.
+    "entryCount": 12,
     "navidromeHrefAligned": True,
     "gatusHrefAligned": True,
     "cockpitOciHrefAligned": True,
@@ -860,7 +861,6 @@ expected = {
     "caddyWidgetUrl": "http://127.0.0.1:2019",
     "tailscaleDeviceVar": "{{HOMEPAGE_VAR_TAILSCALE_DEVICEID}}",
     "slskdKeyVar": "{{HOMEPAGE_VAR_SLSKD_KEY}}",
-    "cockpitDescription": "la-admin-1 server administration",
     "bookmarkCount": 4,
     "bookmarkAdminHrefAligned": True,
     "widgetsCpu": True,
@@ -938,10 +938,10 @@ PYEOF
 
 # 11. Cockpit subset: Cockpit is demoted on the real host, so this copy
 # re-selects the aspect and restores the LA-only loopback TLS variant inline.
-# Cockpit must compose from the canonical web-policy route alone: the
-# WebService origins/UrlRoot from the cockpit-admin route, the explicit
-# loopback socket bind, and the loopback TLS material/ordering with the leaf's
-# own named assertions holding.
+# The cockpit-admin policy route is gone (retired with the demoted cockpit),
+# so the published identity comes from the explicit host overrides while the
+# loopback socket bind and the loopback TLS material/ordering still hold
+# through the leaf's own named assertions.
 python3 - "$D" <<'PYEOF' > /dev/null || fail "cockpit subset mutation script failed"
 import sys
 
@@ -959,6 +959,10 @@ anchor = "  services = {\n"
 assert s.count(anchor) == 1, "host services block anchor drifted"
 variant = "    admin.cockpit.loopbackTls.enable = true;\n"
 assert variant not in s, "cockpit loopback variant anchor drifted"
+# The canonical cockpit-admin route is retired: a re-enabled host must supply
+# its published identity through the module's explicit overrides.
+variant += '    admin.cockpit.publicHost = "cockpit.shrublab.xyz";\n'
+variant += '    admin.cockpit.urlRoot = "/la-admin-1";\n'
 open(p, "w").write(s.replace(anchor, anchor + variant, 1))
 PYEOF
 
@@ -966,7 +970,13 @@ PYEOF
 
 json="$(nix eval --no-write-lock-file --raw --apply 'c:
 let
-  route = c.repo.web.catalog."cockpit-admin";
+  # The canonical route is retired; the demoted host supplies its published
+  # identity through services.admin.cockpit.{publicHost,urlRoot} overrides.
+  route = {
+    publicHost = "cockpit.shrublab.xyz";
+    path = "/la-admin-1";
+    upstreamScheme = "https";
+  };
 in
 builtins.toJSON {
   leafEnable = c.services.admin.cockpit.enable;

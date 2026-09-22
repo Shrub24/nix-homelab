@@ -221,6 +221,7 @@ Project-owned rules that must survive tool regeneration. They live here rather t
 nix-fleet owns the fleet's shared aspect mechanisms; this repository consumes them through one local convention contributor per aspect.
 
 - The contributor publishes our aspect name, imports `inputs.nix-fleet.modules.nixos.<aspect>`, and supplies the fleet's conventions (conventional secret paths, `policy/globals.nix` values, host-facing bindings). Host records keep selecting the same aspect name; they never learn a mechanism moved.
+- A shared realization that is constructed per consumer (`fleet-builders`) is imported from **our** `config.flake.modules.nixos.<name>` after importing its flake-level module; importing `inputs.nix-fleet.modules.nixos.<name>` would bind nix-fleet's own inventory.
 - Do not copy a shared module's body back in or re-declare its options locally. If a shared module needs a fleet-specific seam, add the option upstream in nix-fleet and bind it here.
 - Aspect names are ours: an upstream file name does not force a rename here (`cache-publisher` consumes nix-fleet's `niks3-publisher`).
 - Verify a swap on structured observables per host — option values, `sops.secrets` entries, systemd unit wiring and ordering — never on derivation equality, because the published source set changes whenever a file is added or removed.

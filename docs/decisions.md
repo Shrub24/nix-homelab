@@ -1389,3 +1389,29 @@ References:
 - `policy/web-services.nix`, `lib/policy.nix` (`upstreamHost`, `endpointHost`), `modules/web/web-policy.nix`
 - `tests/check-web-service-catalog.sh`, `tests/check-dendritic-scaffold-contract.sh`
 - `docs/decisions.md` D-062 (policy as the endpoint SSOT), D-063 (exposure axis), D-059 (cross-host facts are not module options)
+
+## D-065: Machine identity and build capacity live in the fleet registry; the realization is consumer-constructed
+
+**Status:** Accepted
+
+**Context:**
+nix-fleet replaced its `services.builder-access.hosts` trust module with a typed fleet registry (`fleet.hosts` / `fleet.builders` / `fleet.builderSets`) plus a NixOS realization constructed from that registry, and its hosts contract asks a consumer's own host registry to derive identity — system, tailscale hostname, host key — from it rather than restating it. This repository held the same facts twice (the host records, and an SSH-trust binding naming one external builder) and declared no host keys at all, so nothing could dial a fleet host as a builder.
+
+**Decision:**
+
+1. `fleet.hosts.<id>` is the machine-identity SSOT — target system, tailscale hostname, known-hosts names, and the host's SSH host public key — declared per host beside its canonical record. `nixos.hosts.<id>` derives `system` and `tailscale.hostname` from it and keeps this fleet's own concerns: the tailnet suffix authority, composition, and bootstrap metadata.
+2. `fleet.builders` declares each host's build profile (systems, `maxJobs`, `speedFactor`, supported features) from observed capacity, and `fleet.builderSets.ci` names the capacity CI may draw on. Both live in `modules/flake/builder-access.nix` — the aspect's contributor — because participation and scheduling are fleet policy rather than host data.
+3. Scheduling stays off: `services.fleet-builders.activeSet` is null on every host, so selecting the aspect yields trust (known-hosts entries and client tuning) without `nix.buildMachines`. The fleet builds in CI, which coordinates builders by architecture; local iteration builds on the workstation. A host that should offload to a peer sets `activeSet` in its own host-private composition.
+4. The realization is **consumer-constructed**: importing nix-fleet's flake-level `flakeModules.fleet-builders` builds `flake.modules.nixos.fleet-builders` inside this evaluation with the fleet registry closed over, and our aspect imports that. Importing `inputs.nix-fleet.modules.nixos.fleet-builders` would bind nix-fleet's own inventory — measured, not assumed: the first attempt resolved the rendered trust entries to nix-fleet's fixture hosts.
+
+**Consequences:**
+
+- One hostname/system/host-key declaration per host; the registry renders trust for all three hosts, and the CI bundle (`packages.ci-builders`) renders the machines file, known-hosts and ssh client config from the same inventory.
+- `nix flake check` now carries the shared `checks.registry-render`, which fails closed on an invalid registry: an unknown builder-set member, a builder that does not set exactly one of `host`/`uri`, or a builder referencing a host absent from `fleet.hosts`.
+- The beszel-agent swap that arrived with the same pin bump retires the per-host agent token entirely: the shared module registers only the fleet-wide key, owns the unit's failure registration itself, and the local contributor is a two-field secret binding. The host-scoped secrets file remains the enrollment gate.
+
+References:
+
+- `modules/flake/builder-access.nix`, `modules/hosts/*/default.nix`, `modules/flake/observability-agent.nix`
+- `tests/check-dendritic-scaffold-contract.sh`, `CONVENTIONS.md`, `AGENTS.md` (shared aspects)
+- `docs/decisions.md` D-056 (canonical host records), D-061 (shared aspects and convention contributors)

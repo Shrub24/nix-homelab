@@ -1,27 +1,23 @@
 # Observability agent aspect. nix-fleet owns the Beszel agent enrollment
-# mechanism (the two-step secret gate, the environment template, the agent
-# service); this contributor supplies the fleet's secret conventions — the
-# fleet-wide agent key in secrets/common.yaml and the host-scoped enrollment
-# token in secrets/hosts/${hostname}/system.yaml — and the unit's monitoring
-# participation, which only exists once that token does.
+# mechanism: the two-step secret gate, the environment template, the agent
+# service, and the failure registration for the unit it creates. This contributor
+# supplies only the fleet's secret conventions — the fleet-wide agent key in
+# secrets/common.yaml, and the host-scoped secrets file whose presence gates
+# enrollment. There is no host-scoped credential: the agent authenticates the
+# hub with that shared key over SSH.
 { inputs, ... }:
 {
   flake.modules.nixos.observability-agent =
     { config, lib, ... }:
     let
       hostSystemSecret = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
-      hasHostSecrets = builtins.pathExists hostSystemSecret;
     in
     {
       imports = [ inputs.nix-fleet.modules.nixos.beszel-agent ];
 
       services.beszel-agent.secretFiles = {
         common = ../../secrets/common.yaml;
-        host = lib.mkIf hasHostSecrets hostSystemSecret;
-      };
-
-      services.notify.events."beszel-agent" = lib.mkIf hasHostSecrets {
-        failure = { };
+        host = lib.mkIf (builtins.pathExists hostSystemSecret) hostSystemSecret;
       };
     };
 }

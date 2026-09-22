@@ -181,11 +181,14 @@ done
 
 # Package keys stay exact per system, including the absent host-home-forge.
 # `write-flake`/`write-inputs`/`write-lock` are flake-file's generator tooling
-# (D-060): the packages that render the generated flake.nix.
+# (D-060): the packages that render the generated flake.nix. `ci`/`ci-builders`
+# are the fleet registry's CI builder bundles rendered from
+# `fleet.builderSets.ci` (D-065): machines file, known-hosts and ssh client
+# config for the capacity CI draws on.
 for system in x86_64-linux aarch64-linux; do
   pkgs="$(ne --raw --apply 'p: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames p))' "path:.#packages.${system}")" ||
     fail "packages.${system} does not evaluate"
-  if [ "$pkgs" != '["deploy-rs","host-la-admin-1","host-oci-melb-1","niks3","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
+  if [ "$pkgs" != '["ci","ci-builders","deploy-rs","host-la-admin-1","host-oci-melb-1","niks3","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
     fail "packages.${system} keys drifted (host-home-forge must stay absent): $pkgs"
   fi
 done
@@ -864,8 +867,11 @@ if grep -qE '_backups\b|niks3' modules/backups/state-backups.nix; then
   fail "state-backups aspect must own no Niks3 upload/publication surface"
 fi
 grep -q 'inputs.nix-fleet.modules.nixos.niks3-publisher' modules/cache/cache-publisher.nix || fail "cache-publisher must consume the shared nix-fleet publisher"
-grep -q 'services.builder-access.hosts.nixbuild' modules/flake/builder-access.nix || fail "builder-access contributor must name the fleet's remote builder"
-grep -q 'inputs.nix-fleet.modules.nixos.builder-access' modules/flake/builder-access.nix || fail "builder-access aspect must consume the shared nix-fleet aspect"
+grep -q 'inputs.nix-fleet.flakeModules.registry' modules/flake/builder-access.nix || fail "builder-access contributor must import the shared fleet registry"
+grep -q 'fleet.builders' modules/flake/builder-access.nix || fail "builder-access contributor must declare the fleet's build profiles"
+grep -q 'config.flake.modules.nixos.fleet-builders' modules/flake/builder-access.nix || fail "builder-access aspect must import the realization constructed in this evaluation"
+if grep -RnE '^[^#]*inputs\.nix-fleet\.modules\.nixos\.fleet-builders' modules/; then fail "the shared realization is consumer-constructed: import flakeModules.fleet-builders, never nix-fleet's own flake.modules output"; fi
+if grep -RnE 'services\.builder-access\.hosts' modules/; then fail "the retired services.builder-access.hosts option must be gone, not shimmed"; fi
 grep -q 'inputs.nix-fleet.modules.nixos.beszel-agent' modules/flake/observability-agent.nix || fail "observability-agent aspect must consume the shared nix-fleet aspect"
 grep -q 'services.beszel-agent.secretFiles' modules/flake/observability-agent.nix || fail "observability-agent contributor must bind the fleet's beszel secret conventions"
 if grep -RnE 'inputs\.niks3\.nixosModules\.niks3-auto-upload' modules/; then fail "the upstream niks3-auto-upload module must arrive through the shared nix-fleet publisher, not a local import"; fi
@@ -911,7 +917,8 @@ fi
 
 # 7h. Stage 3 observable contract (OPS-1..OPS-8): derived bucket and secret
 # path, selection-is-enablement for backups/publication/client/Beszel, OCI
-# token ownership and loopback endpoint, builder SSH trust, Beszel KEY/TOKEN
+# token ownership and loopback endpoint, fleet-registry builder trust, Beszel
+# KEY-only enrollment
 # scopes, and the notify-owned monitor wiring (OPS-4).
 probe_ops() { # $1 host, $2 expected JSON (python dict literal)
   local host="$1" json
@@ -927,14 +934,14 @@ probe_ops() { # $1 host, $2 expected JSON (python dict literal)
     beszelAgent = c.services.beszel.agent.enable or false;
     beszelHost = (c.services.beszel-agent.secretFiles.host or "");
     beszelKeySops = (baseNameOf (c.sops.secrets.beszel_agent_key.sopsFile or ""));
-    beszelTokenSops = (baseNameOf (c.sops.secrets.beszel_agent_token.sopsFile or ""));
+    beszelTokenAbsent = !(c.sops.secrets ? beszel_agent_token);
     monitor = builtins.mapAttrs (_: ev: {
       failure = ev.failure != null;
       success = ev.success != null;
     }) (c.services.notify.events or { });
     onFailure = (c.systemd.services."restic-backups-state".onFailure or []);
-    nixbuildHosts = (c.programs.ssh.knownHosts.nixbuild.hostNames or []);
-    nixbuildExtra = c.programs.ssh.extraConfig or "";
+    registryHosts = builtins.length (builtins.attrNames (c.programs.ssh.knownHosts or { }));
+    buildMachines = builtins.length (c.nix.buildMachines or [ ]);
     stagingRoot = c.services.state-backups.stagingRoot or "";
     hostCorePaths = (c.services.state-backups.services.host-core.paths or []);
   }' "path:.#nixosConfigurations.${host}.config")" ||
@@ -954,19 +961,29 @@ if not got["beszelHost"].endswith(f"/secrets/hosts/{host}/system.yaml"):
     errs.append(f"beszelHost: {got['beszelHost']!r} not the conventional host secret path")
 if not any(c.endswith("restic-backups-state.service") for c in got["onFailure"]):
     errs.append(f"onFailure: missing the notify aspect handler for restic-backups-state ({got['onFailure']!r})")
-if "eu.nixbuild.net" not in got["nixbuildHosts"]:
-    errs.append(f"nixbuildHosts: {got['nixbuildHosts']!r} missing eu.nixbuild.net")
-if "eu.nixbuild.net" not in got["nixbuildExtra"]:
-    errs.append("nixbuildExtra: missing eu.nixbuild.net host config")
+if got["registryHosts"] != 3:
+    errs.append(f"registryHosts: {got['registryHosts']!r} known-hosts entries, want the three registry hosts")
+if got["buildMachines"] != 0:
+    errs.append(f"buildMachines: {got['buildMachines']!r} entries; scheduling must stay off (CI builds)")
+if not got["beszelTokenAbsent"]:
+    errs.append("beszel_agent_token: the retired per-host agent token must not be registered")
 if errs:
     print(f"{host}: " + "; ".join(errs), file=sys.stderr)
     sys.exit(1)
 PYEOF
 }
 
-probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":{"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-prune":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
-probe_ops la-admin-1 "$(printf '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":{"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}' "$web_suffix")"
-probe_ops home-forge "$(printf '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenSops":"system.yaml","monitor":{"beets-duplicates":{"failure":true,"success":false},"beets-inbox":{"failure":true,"success":false},"beets-reconcile":{"failure":true,"success":false},"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-omniroute":{"failure":true,"success":true},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}' "$web_suffix")"
+probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenAbsent":true,"registryHosts":3,"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-prune":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
+probe_ops la-admin-1 "$(printf '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenAbsent":true,"registryHosts":3,"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}' "$web_suffix")"
+probe_ops home-forge "$(printf '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenAbsent":true,"registryHosts":3,"buildMachines":0,"monitor":{"beets-duplicates":{"failure":true,"success":false},"beets-inbox":{"failure":true,"success":false},"beets-reconcile":{"failure":true,"success":false},"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-omniroute":{"failure":true,"success":true},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}' "$web_suffix")"
+
+# The registry's host keys are the trust half of the builder contract; check
+# one end to end rather than trusting the known-hosts count alone.
+registry_key="$(ne --raw --apply 'c: c.programs.ssh.knownHosts."host-home-forge".publicKey' path:.#nixosConfigurations.oci-melb-1.config 2>/dev/null)"
+case "$registry_key" in
+  'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILre5rGGN4yjhV8XJpREgl+BRdru24t8NZgHTvpgouKf'*) ;;
+  *) fail "fleet registry: home-forge known-hosts entry is '${registry_key}'" ;;
+esac
 
 # 7i. Negative mutation checks (OPS-4, OPS-11, OPS-3/OPS-8 bootstrap gates).
 # Each runs against a throwaway copy so the working tree is never modified.

@@ -68,6 +68,8 @@ Local evaluation of this repository uses the Git-tree flake form `.#`. `path:` r
 
 nix-fleet publishes the fleet's shared aspects (`tailscale`, `beszel-agent`, `builder-access`, `nh-gc`, `niks3-cache`, `niks3-publisher`, `notify`, `podman-prune`) in its own `flake.modules.nixos` namespace. This repository cannot select them directly — an input repository's aspects do not enter our namespace — so each consumed aspect keeps a local contributor under its domain directory that publishes our aspect name, imports the shared module, and supplies the fleet's conventions.
 
+One shared realization is constructed rather than published whole: nix-fleet's `fleet-builders` is built by its flake-level module (`flakeModules.fleet-builders`) inside this evaluation, closing over the registry this repository declares (`fleet.hosts` / `fleet.builders` / `fleet.builderSets`). The consumer imports the flake-level module and then imports **its own** `config.flake.modules.nixos.fleet-builders`. Importing `inputs.nix-fleet.modules.nixos.fleet-builders` binds nix-fleet's own inventory (its fixture registry) and silently wires the wrong hosts — a mistake evaluation catches only if something asserts the rendered trust entries.
+
 - The shared module owns the mechanism: service wiring, option declarations, fail-closed assertions, secret registration, unit ordering.
 - The local contributor owns the fleet's conventions and policy: conventional secret paths (`secrets/hosts/<host>/system.yaml`), the values policy/globals.nix holds, and the host-facing bindings that keep host records unchanged. A host record never learns that the mechanism moved.
 - The bridge is the whole file. Do not fork the shared module's body back in, and do not re-declare its options locally.

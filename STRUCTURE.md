@@ -239,7 +239,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **Private Service Endpoints:** `policy/web-services.nix` declares every service, published or private; `lib/policy.nix` projects a private service (`tailscale-only` + `declarePublic = false`) as `repo.web.catalog.<id>.endpoint` with no public identity, so a provider's listen port and every consumer's target URL come from one declaration. The surviving provider-placement invariant is asserted in `tests/check-web-service-catalog.sh`
 
-**Policy SSOT:** `policy/web-services.nix`: All public web service endpoint definitions with origin, exposure mode, and Cloudflare config (plain data; host-backed origins are validated against canonical host records in `modules/web/web-policy.nix`). `policy/globals.nix` `tailnet.suffix` is the single tailnet suffix authority
+**Policy SSOT:** `policy/web-services.nix`: All public web service endpoint definitions with `origin.provider` placement (canonical host ID, scheme, port), exposure mode, and Cloudflare config (plain data; placements are validated against canonical host records in `modules/web/web-policy.nix`; dial addresses derive at the consumer). `policy/globals.nix` `tailnet.suffix` is the single tailnet suffix authority
 
 **Secrets Policy:** `.sops.yaml`: Path-scoped age recipient rules for encrypting/decrypting all secret files
 

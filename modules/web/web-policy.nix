@@ -9,14 +9,12 @@ top: {
       policyLib = import ../../lib/policy.nix { inherit lib; };
       webServicesPolicy = import ../../policy/web-services.nix;
 
-      # Every host-backed reference in the web data must name a declared
-      # canonical host ID, and every host-backed origin FQDN must equal the
-      # record's derived tailscale.fqdn. Externally managed names (public
-      # domains, 127.0.0.1 loopback) stay literal and are never classified as
-      # host-backed. Unknown references fail closed at flake evaluation.
-      tailnetSuffix = (import ../../policy/globals.nix).tailnet.suffix;
+      # Every host-backed reference in the web data — the policy host keys and
+      # each route's `origin.provider` placement — must name a declared
+      # canonical host ID; dial addresses never appear in this file. Unknown
+      # or missing placements fail closed at flake evaluation.
       canonicalHosts = top.config.nixos.hosts;
-      canonicalFqdns = lib.mapAttrsToList (_: host: host.tailscale.fqdn) canonicalHosts;
+      canonicalHostIds = builtins.attrNames canonicalHosts;
       policyHosts = webServicesPolicy.hosts or { };
 
       unknownHostKeys = lib.filter (name: !(canonicalHosts ? ${name})) (builtins.attrNames policyHosts);
@@ -26,11 +24,10 @@ top: {
         let
           services = policyHosts.${hostName}.services or { };
         in
-        lib.mapAttrsToList (_: svc: svc.origin.host or null) services
+        lib.mapAttrsToList (_: svc: svc.origin.provider or null) services
       ) (builtins.attrNames policyHosts);
 
-      hostBackedOrigins = lib.filter (h: h != null && lib.hasSuffix ".${tailnetSuffix}" h) allOrigins;
-      unknownOrigins = lib.filter (h: !(builtins.elem h canonicalFqdns)) hostBackedOrigins;
+      unknownOrigins = lib.filter (p: p != null && !(builtins.elem p canonicalHostIds)) allOrigins;
 
       allowedExposureModes = [
         "direct"
@@ -52,9 +49,10 @@ top: {
         in
         lib.mapAttrsToList (serviceName: svc: {
           where = "${hostName}.${serviceName}";
+          policyHost = hostName;
           exposureMode =
             (policyLib.mergeDefaults (webServicesPolicy.defaults or { }) hostDefaults svc).exposureMode or null;
-          originHost = svc.origin.host or null;
+          originProvider = svc.origin.provider or null;
           hasTlsOverride =
             (svc.upstreamTlsServerName or null) != null
             || (svc.upstreamTlsInsecure or false)
@@ -70,13 +68,17 @@ top: {
           lib.optional
             (route.exposureMode != null && !(builtins.elem route.exposureMode allowedExposureModes))
             "web-policy: route '${route.where}' declares unknown exposureMode '${route.exposureMode}' (allowed: ${lib.concatStringsSep ", " allowedExposureModes})"
+        ++ lib.optional (
+          route.originProvider == null
+        ) "web-policy: route '${route.where}' must declare origin.provider (a canonical host ID)"
         ++
           lib.optional
             (
-              route.exposureMode == "tailscale-serve"
-              && !(lib.hasSuffix ".${tailnetSuffix}" (route.originHost or ""))
+              route.exposureMode == "direct"
+              && route.originProvider != null
+              && route.originProvider != route.policyHost
             )
-            "web-policy: route '${route.where}' is served through a provider front, so its origin must be a canonical host FQDN, not '${toString route.originHost}'"
+            "web-policy: route '${route.where}' declares direct (edge-local loopback) but origin.provider '${toString route.originProvider}' is not this policy host"
         ++
           lib.optional (route.exposureMode == "tailscale-serve" && route.hasTlsOverride)
             "web-policy: route '${route.where}' is served through a provider front and must not also set an upstream TLS server name, insecure flag, or CA file"
@@ -90,7 +92,7 @@ top: {
           (
             lib.throwIf (unknownOrigins != [ ])
               (lib.concatMapStringsSep "; " (
-                fqdn: "web-policy: origin FQDN '${fqdn}' does not match any declared canonical host identity"
+                provider: "web-policy: origin provider '${provider}' is not a declared canonical host ID"
               ) unknownOrigins)
               (
                 lib.throwIf (
@@ -106,7 +108,7 @@ top: {
         cloudflare.hosts = policyLib.resolveCloudflareHosts checkedPolicy hostName;
       }) (checkedPolicy.hosts or { });
 
-      catalog = policyLib.serviceCatalog checkedPolicy;
+      catalog = policyLib.serviceCatalog checkedPolicy currentHostName;
     in
     {
       options.repo.web = {
@@ -148,7 +150,7 @@ top: {
             { };
         originServices =
           if currentHostName != null && canonicalHosts ? ${currentHostName} then
-            policyLib.providedServices checkedPolicy canonicalHosts.${currentHostName}.tailscale.fqdn
+            policyLib.providedServices checkedPolicy currentHostName
           else
             { };
       };

@@ -325,19 +325,19 @@ import sys
 
 p, suffix = sys.argv[1], sys.argv[2]
 s = open(p).read()
-anchor = "            host = homeForge;\n            port = 4533;"
+anchor = '            provider = "home-forge";\n            port = 4533;'
 assert s.count(anchor) == 1, "navidrome origin anchor drifted"
-s = s.replace(anchor, f'            host = "ghost-origin.{suffix}";\n            port = 4533;', 1)
+s = s.replace(anchor, f'            provider = "ghost-origin.{suffix}";\n            port = 4533;', 1)
 open(p, "w").write(s)
 PYEOF
 set +e
 web_bad_origin="$(ne --raw "path:${D}#nixosConfigurations.oci-melb-1.config.repo.web.hosts.oci-melb-1.primaryDomain" 2>&1)"
 web_bad_origin_rc=$?
 set -e
-[ "$web_bad_origin_rc" -ne 0 ] || fail "3.2: a host-backed origin FQDN with no canonical identity must fail closed"
+[ "$web_bad_origin_rc" -ne 0 ] || fail "3.2: an origin provider with no canonical identity must fail closed"
 case "$web_bad_origin" in
-  *"web-policy: origin FQDN 'ghost-origin.${web_suffix}' does not match any declared canonical host identity"*) ;;
-  *) fail "3.2: expected the named origin-FQDN error, got: $(printf '%s' "$web_bad_origin" | tail -n 3)" ;;
+  *"web-policy: origin provider 'ghost-origin.${web_suffix}' is not a declared canonical host ID"*) ;;
+  *) fail "3.2: expected the named origin-provider error, got: $(printf '%s' "$web_bad_origin" | tail -n 3)" ;;
 esac
 
 # --- 5. Bootstrap projection and resolver agreement (DS-6) -------------------

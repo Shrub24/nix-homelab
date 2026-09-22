@@ -1,10 +1,17 @@
-# Host-backed origin FQDNs are composed from the canonical host ID and the
-# single fleet suffix (`policy/globals.nix` `tailnet.suffix`), never
-# hand-written. Every origin is absolute: the edge runs on a different host
-# from the services, so a loopback origin would proxy to the edge itself.
-# Plain nix attribute set on purpose: three consumers read this file as data
-# (web-policy aspect, scripts/export-web-services-policy.sh,
-# tests/check-web-service-catalog.sh).
+# Placement, not addresses: every route declares `origin.provider` — the
+# canonical host ID that runs the service — plus scheme and port. Dial
+# addresses are derived where they are consumed, by two distinct policies
+# over the same placement: `lib/policy.nix` renders an ingress upstream from
+# the route's `exposureMode` (`direct` loops back edge-locally; every tailnet
+# mode dials the provider by FQDN, even when provider and edge coincide,
+# because its socket belongs to the tailnet), while a private service's
+# machine-to-machine `endpoint` resolves against the evaluating host and
+# loops back when colocated with its provider. Moving the edge or a workload
+# therefore changes placement here — never a consumer's config — and
+# identity (public URLs, OIDC endpoints, TLS server names) stays literal and
+# stable, separate from transport. Plain nix attribute set on purpose: three
+# consumers read this file as data (web-policy aspect,
+# scripts/export-web-services-policy.sh, tests/check-web-service-catalog.sh).
 #
 # Every route declares its `exposureMode`, the one axis describing how the
 # service is exposed: `tailscale-upstream` (published; the edge dials the
@@ -15,10 +22,6 @@
 # — an unlabelled route fails evaluation.
 let
   globals = import ./globals.nix;
-  fqdnOf = id: "${id}.${globals.tailnet.suffix}";
-  oci = fqdnOf "oci-melb-1";
-  homeForge = fqdnOf "home-forge";
-  la = fqdnOf "la-admin-1";
 in
 {
   defaults = {
@@ -59,7 +62,7 @@ in
           origin = {
             scheme = "http";
             # Host-backed internal origin: canonical host home-forge.
-            host = homeForge;
+            provider = "home-forge";
             port = 4533;
           };
           exposureMode = "tailscale-upstream";
@@ -77,7 +80,7 @@ in
           exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = la;
+            provider = "la-admin-1";
             port = 8083;
           };
           category = "admin";
@@ -92,7 +95,7 @@ in
           exposureMode = "tailscale-serve";
           origin = {
             scheme = "https";
-            host = la;
+            provider = "la-admin-1";
             port = 8443;
           };
           category = "admin";
@@ -108,7 +111,7 @@ in
           exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = la;
+            provider = "la-admin-1";
             port = 8082;
           };
           category = "admin";
@@ -121,7 +124,7 @@ in
           forceTrailingSlash = true;
           origin = {
             scheme = "https";
-            host = la;
+            provider = "la-admin-1";
             port = 9090;
           };
           upstreamTlsCaCertFile = "/etc/cockpit/loopback-ca.crt";
@@ -135,9 +138,12 @@ in
           forceTrailingSlash = true;
           origin = {
             scheme = "https";
-            host = oci;
+            provider = "oci-melb-1";
             port = 9443;
           };
+          # Tailnet-bound bespoke front (TD-29): the edge reaches the
+          # tailnet socket by provider name, never loopback — even though
+          # provider and edge coincide on oci-melb-1.
           exposureMode = "tailscale-upstream";
           category = "admin";
         };
@@ -147,7 +153,7 @@ in
           exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = la;
+            provider = "la-admin-1";
             port = 8090;
           };
           category = "admin";
@@ -159,7 +165,7 @@ in
           exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = la;
+            provider = "la-admin-1";
             port = 8087;
           };
           category = "admin";
@@ -170,7 +176,7 @@ in
           exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = la;
+            provider = "la-admin-1";
             port = 8222;
           };
           category = "admin";
@@ -182,7 +188,7 @@ in
           exposureMode = "tailscale-upstream";
           origin = {
             scheme = "http";
-            host = la;
+            provider = "la-admin-1";
             port = 2586;
           };
           category = "admin";
@@ -197,7 +203,7 @@ in
           stripPrefix = true;
           origin = {
             scheme = "http";
-            host = oci;
+            provider = "oci-melb-1";
             port = 8384;
           };
           upstreamHostHeader = "{upstream_hostport}";
@@ -212,7 +218,7 @@ in
           stripPrefix = true;
           origin = {
             scheme = "http";
-            host = homeForge;
+            provider = "home-forge";
             port = 8384;
           };
           upstreamHostHeader = "{upstream_hostport}";
@@ -224,7 +230,7 @@ in
           subdomain = "slskd";
           origin = {
             scheme = "http";
-            host = homeForge;
+            provider = "home-forge";
             port = 5030;
           };
           exposureMode = "tailscale-upstream";
@@ -235,7 +241,7 @@ in
           subdomain = "tagr";
           origin = {
             scheme = "http";
-            host = homeForge;
+            provider = "home-forge";
             port = 3003;
           };
           exposureMode = "tailscale-upstream";
@@ -253,7 +259,7 @@ in
           subdomain = "keep";
           origin = {
             scheme = "http";
-            host = oci;
+            provider = "oci-melb-1";
             port = 3010;
           };
           exposureMode = "tailscale-upstream";
@@ -272,7 +278,7 @@ in
           subdomain = "paper";
           origin = {
             scheme = "http";
-            host = oci;
+            provider = "oci-melb-1";
             port = 8080;
           };
           exposureMode = "tailscale-upstream";
@@ -291,7 +297,7 @@ in
           subdomain = "webhook";
           origin = {
             scheme = "http";
-            host = la;
+            provider = "la-admin-1";
             port = 9000;
           };
           exposureMode = "tailscale-only";
@@ -303,7 +309,7 @@ in
           subdomain = "phoenix";
           origin = {
             scheme = "http";
-            host = oci;
+            provider = "oci-melb-1";
             port = 6006;
           };
           exposureMode = "tailscale-only";
@@ -316,7 +322,7 @@ in
           subdomain = "bifrost";
           origin = {
             scheme = "http";
-            host = oci;
+            provider = "oci-melb-1";
             port = 7411;
           };
           exposureMode = "tailscale-only";
@@ -334,7 +340,7 @@ in
           subdomain = null;
           origin = {
             scheme = "http";
-            host = oci;
+            provider = "oci-melb-1";
             port = 5751;
           };
           exposureMode = "tailscale-only";

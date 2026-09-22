@@ -36,6 +36,12 @@ Rejected: keeping ACME on the provider. It requires the Cloudflare DNS-01 creden
 
 The front listens on the policy port and dials the service on the same port, so serve port = policy port = bind port and the existing "the port cannot drift" property survives. The provider asserts its configured bind matches the policy port, so a drift fails at evaluation with the two values named.
 
+### D6 — Placement is a canonical ID; each consumer derives transport by its own policy
+
+Routes declare `origin.provider` (a canonical host ID) plus scheme and port; no dial address lives in the policy, so moving the edge or a workload is one placement edit. Two derivation policies share that fact without sharing rules: the **ingress upstream** derives from `exposureMode` (`direct` loops back and is validated edge-local; every tailnet mode dials the provider by FQDN even when colocated, because origin sockets and serve fronts are tailnet-bound — confirmed against live listeners, which showed the fronts on the tailnet IP only), while a private service's **machine-to-machine `endpoint`** resolves against the evaluating host and loops back when colocated with its provider. Identity (public URLs, OIDC endpoints, TLS server names) never derives.
+
+Rejected: a locality rule for ingress upstreams — it would break the colocated cockpit route (its bespoke front is a tailnet listener) and contradict the route's own declared exposure. Rejected: one universal resolver for both consumers — the edge dials by exposure semantics, services dial by locality; forcing one rule would encode the other's policy into a shared helper (D-064 records this split).
+
 ## Risks
 
 - **Serve configuration is node-local state, not declarative Nix.** The unit reconciles it on start and clears it on stop; the tailnet's ACLs still decide who may reach the front.

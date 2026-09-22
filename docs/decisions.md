@@ -1363,3 +1363,29 @@ References:
 - `modules/identity/{identity-provider,kanidm-runtime}.nix`
 - `tests/check-dendritic-scaffold-contract.sh`
 - `docs/decisions.md` D-062 (private endpoints are policy declarations), D-058 (per-host clusters)
+
+## D-064: Web policy declares placement, not dial addresses; each consumer derives transport by its own policy
+
+**Status:** Accepted
+
+**Context:**
+The ingress cleanup exposed a general defect: routes carried `origin.host` as a hand-composed tailnet FQDN (and, earlier, loopback literals), so placement topology lived in policy data *and* in every consumer that read it. Independently placeable services — the Niks3 write endpoint, Bifrost's gateway, any future workload move — required editing consumers or host files whenever a provider moved, and a colocated provider looked identical to a remote one.
+
+**Decision:**
+
+1. Routes declare `origin = { scheme; provider; port; }` — `provider` is a canonical host ID from the host records, never an address. Validation fails closed on unknown or missing providers, and a `direct` route additionally must have the policy host as its provider (edge-local means edge-local).
+2. The two consumers of placement derive transport differently, over the same fact. The **ingress upstream** is exposure-driven: `direct` loops back; `tailscale-upstream` and `tailscale-serve` dial the provider's FQDN even when provider and edge coincide, because both sockets (origin and serve front) are tailnet-bound — verified against live listeners before adopting (the serve fronts bind the tailnet IP only). The **machine-to-machine `endpoint`** is locality-driven: a private service colocated with the host evaluating the catalog resolves to loopback, otherwise to the provider FQDN; a served endpoint is always reached by name. One resolver file (`lib/policy.nix`), two rules, one placement declaration.
+3. Identity never derives: public URLs, OIDC endpoints, and TLS server names stay literal in the policy, so colocation can never rewrite what a client trusts.
+
+Rejected: a locality rule for ingress upstreams — it would loop back a colocated `tailscale-upstream` route against its own declared semantics and break the bespoke cockpit front, a tailnet listener. Rejected: a generic service-discovery registry or a new option namespace — `policy/web-services.nix` already holds every placement, and cross-host registration cannot be expressed as per-host module options anyway (D-059). The postgres `localEndpoint` pattern stays separate: same shape, different contract (typed ports and credentials).
+
+**Consequences:**
+
+- Moving the edge or a workload is one placement edit; no consumer, host file, or route literal changes. The catalog's machine endpoint now reads `http://127.0.0.1:5751` on the colocated publisher and the provider FQDN everywhere else, with no publisher code involved.
+- The catalog contract's placement test pins provider IDs against the host records instead of parsing FQDN suffixes.
+
+References:
+
+- `policy/web-services.nix`, `lib/policy.nix` (`upstreamHost`, `endpointHost`), `modules/web/web-policy.nix`
+- `tests/check-web-service-catalog.sh`, `tests/check-dendritic-scaffold-contract.sh`
+- `docs/decisions.md` D-062 (policy as the endpoint SSOT), D-063 (exposure axis), D-059 (cross-host facts are not module options)

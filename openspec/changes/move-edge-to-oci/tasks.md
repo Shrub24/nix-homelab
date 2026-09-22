@@ -20,13 +20,20 @@
 
 ## 4. Contracts and documentation
 
-- [ ] 4.1 Extend the web-service catalog contract for the new transport and projection
-- [ ] 4.2 Re-pin the scaffold contract's resolved-policy keys and identity unit assertions
-- [ ] 4.3 Update architecture documentation and record the decision
+- [x] 4.1 Extend the web-service catalog contract for the new transport and projection
+- [x] 4.2 Re-pin the scaffold contract's resolved-policy keys and identity unit assertions
+- [x] 4.3 Update architecture documentation and record the decision
 
-## 5. Cutover
+## 5. Placement identity, derived transport
 
-- [ ] 5.1 Deploy `la-admin-1` and confirm the front answers on the tailnet name
-- [ ] 5.2 Deploy `oci-melb-1` and confirm the edge renders the route
-- [ ] 5.3 Flip the edge DNS record and verify a public route plus the identity URL
-- [ ] 5.4 Verify OIDC discovery through the full chain and record the result
+- [x] 5.1 Replace `origin.host` with `origin.provider` (canonical host ID) across the policy and delete the FQDN bindings
+- [x] 5.2 Derive ingress upstreams from `exposureMode` (`direct` → edge-local loopback with an edge-local guard; every tailnet mode → provider FQDN even when colocated)
+- [x] 5.3 Resolve a private service's machine-to-machine `endpoint` against the evaluating host (loopback when colocated), keeping identity fields literal
+- [x] 5.4 Rewrite the catalog contract's placement assertions to provider IDs and record the decision (D-064)
+
+## 6. Cutover
+
+- [ ] 6.1 Deploy `la-admin-1` and confirm the front answers on the tailnet name
+- [ ] 6.2 Deploy `oci-melb-1` and confirm the edge renders the route
+- [ ] 6.3 Flip the edge DNS record and verify a public route plus the identity URL
+- [ ] 6.4 Verify OIDC discovery through the full chain and record the result

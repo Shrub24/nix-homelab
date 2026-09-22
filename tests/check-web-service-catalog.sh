@@ -78,7 +78,7 @@ echo "deploy default-target boundary: PASS"
 
 # Stage 8 task 3.2 (HIC-3): host-backed web routing references canonical host
 # identities. Every `hosts` table key must be a declared canonical host ID, and
-# every host-backed origin FQDN must be composed from a canonical host ID plus
+# every origin must name a canonical host ID as its `origin.provider`
 # the single tailnet suffix authority (policy/globals.nix).
 web_refs="$(nix eval --impure --raw --no-write-lock-file --expr '
   let
@@ -88,7 +88,7 @@ web_refs="$(nix eval --impure --raw --no-write-lock-file --expr '
     hostsTable = policy.hosts or { };
     origins = builtins.concatMap (
       hostName:
-      builtins.map (svc: svc.origin.host or null) (builtins.attrValues (hostsTable.${hostName}.services or { }))
+      builtins.map (svc: svc.origin.provider or null) (builtins.attrValues (hostsTable.${hostName}.services or { }))
     ) (builtins.attrNames hostsTable);
   in
   builtins.toJSON {
@@ -96,7 +96,7 @@ web_refs="$(nix eval --impure --raw --no-write-lock-file --expr '
     policyHostKeys = builtins.attrNames hostsTable;
     canonicalHostKeys = builtins.attrNames flake.nixosConfigurations;
     hostNames = builtins.mapAttrs (_: c: c.config.networking.hostName or null) flake.nixosConfigurations;
-    originHosts = builtins.filter (h: h != null) origins;
+    originProviders = builtins.filter (h: h != null) origins;
   }
 ')" || { echo "web routing references must evaluate" >&2; exit 1; }
 python3 - "$web_refs" <<'PYEOF'
@@ -115,19 +115,18 @@ unknown_keys = sorted(set(got["policyHostKeys"]) - canonical)
 if unknown_keys:
     errors.append(f"policy hosts keys are not canonical host IDs: {unknown_keys!r}")
 
-# Non-vacuity: the policy must actually contain host-backed origins to check.
-host_backed = sorted({h for h in got["originHosts"] if h.endswith("." + suffix)})
-if not host_backed:
-    errors.append("no host-backed origin FQDN found (this check would be vacuous)")
+# Non-vacuity: the policy must actually carry placement IDs to check.
+placements = sorted({p for p in got["originProviders"] if p})
+if not placements:
+    errors.append("no origin provider placement found (this check would be vacuous)")
 
-for fqdn in host_backed:
-    host_id = fqdn[: -(len(suffix) + 1)]
+for host_id in placements:
     if host_id not in canonical:
-        errors.append(f"origin FQDN {fqdn!r} does not name a canonical host ID")
+        errors.append(f"origin provider {host_id!r} is not a canonical host ID")
         continue
     if got["hostNames"].get(host_id) != host_id:
         errors.append(
-            f"origin FQDN {fqdn!r} disagrees with canonical host {host_id!r} "
+            f"origin provider {host_id!r} disagrees with canonical host "
             f"(networking.hostName {got['hostNames'].get(host_id)!r})"
         )
 

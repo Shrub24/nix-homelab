@@ -456,6 +456,13 @@ _: {
             dnsProvider = "cloudflare";
             environmentFile = cfg.cloudflareCredentialsFile;
             group = "caddy";
+            # lego checks propagation twice: against the zone's authoritative
+            # nameservers, which it queries directly, and against the recursive
+            # resolvers this host uses, which answer from cache. The recursive
+            # check runs first, so a cached pre-challenge answer fails the order
+            # even though the record is already live. The authoritative check is
+            # the one ACME validation itself performs, so drop the cached one.
+            extraLegoFlags = [ "--dns.propagation.disable-rns" ];
           };
         };
 

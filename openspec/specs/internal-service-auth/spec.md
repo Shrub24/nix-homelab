@@ -62,16 +62,21 @@ Beszel agent authentication and enrollment SHALL be owned by the observability-a
 - **THEN** the observability-agent aspect gates Beszel agent enrollment on the derived conventional path without failing the base activation
 - **AND** enrollment activates once the host-scoped secret exists, preserving the two-step secret bootstrap behavior
 
-### Requirement: Ntfy publisher authorization SHALL be keyed by canonical host identity
+### Requirement: Ntfy publisher authorization SHALL name each principal explicitly
 
-Each authorized ntfy publisher SHALL have an explicit identity, role, and runtime token contract keyed by canonical fleet host ID. ACL generation and contract validation SHALL use that typed policy.
+Each authorized ntfy publisher SHALL have an explicit principal, permission, and credential contract. A principal is a credential holder — a managed host, a host from another repository, a CLI, or a script — and need not be a canonical fleet host ID, so ACL generation and contract validation SHALL use the typed publisher policy rather than the host registry.
 
-#### Scenario: Active host publishes notifications
+#### Scenario: Any principal publishes notifications
 
-- **WHEN** an active host is declared as an ntfy publisher
-- **THEN** the push server renders its write-only ACL subject
-- **AND** the host's notification client references its own runtime token
+- **WHEN** a principal is declared as an ntfy publisher
+- **THEN** the push server renders its ACL subject from that declaration
+- **AND** the principal's notification client references its own runtime credential
 - **AND** compromise or removal of one publisher does not alter another publisher's contract
+
+#### Scenario: Publisher credentials are missing
+
+- **WHEN** a declared publisher has no `auth-users` or `auth-tokens` entry in the decrypted auth file, or the file carries an `auth-access` key of its own
+- **THEN** activation fails and names the offending publisher or ownership error
 
 #### Scenario: Encrypted secret policy is reviewed
 

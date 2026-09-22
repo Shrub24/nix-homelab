@@ -11,6 +11,11 @@ set -euo pipefail
 
 LA='path:.#nixosConfigurations.la-admin-1.config'
 
+fail() {
+  echo "$1" >&2
+  exit 1
+}
+
 # The host assembly must not import destructive install/provider/static-network
 # inputs; the source check is feasible here because these imports would be
 # written by hand and never enter LA host declarations.
@@ -20,29 +25,47 @@ if grep -Eq 'disko|nixos-anywhere|networking\.(interfaces|defaultGateway|useDHCP
   exit 1
 fi
 
-# Transition: all publisher hosts (oci-melb-1, la-admin-1, home-forge) plus
-# admin may publish to LA ntfy. ACL subjects are the bare-hostname publisher
-# users declared in the plain-text template (secrets/.templates/services/ntfy.yaml
-# is ciphertext-free source); ntfy ACLs match user names, and publish auth
-# resolves to the user that owns the token. The transition contract pins
-# exactly three write-only publishers.
+# ntfy publisher authorization is policy owned by the push-server aspect:
+# `services.ntfy.auth.publishers` maps each ntfy principal (a fleet host, a
+# dotfiles machine, a CLI) to its topic-wide permission, and the module renders
+# `auth-access` from that map alone. Credentials are secret owned: every policy
+# publisher must appear in the plain-text template's `auth-users` and
+# `auth-tokens` sections, while extra users (the administrator) are allowed.
+# The template is ciphertext-free source, so this check needs no decryption.
 TEMPLATE="secrets/.templates/services/ntfy.yaml"
-TEMPLATE_USERS=$(awk -F'"' '/^auth-users:/{u=1; next} /^auth-tokens:/{u=0} u && /^  - "(oci-melb-1|la-admin-1|home-forge):/{split($2, f, ":"); print f[1]}' "$TEMPLATE")
-if [ "$(printf '%s\n' "$TEMPLATE_USERS" | wc -l)" -ne 3 ]; then
-  echo "la-admin-1: ntfy template must declare exactly three bare-hostname token users" >&2
+TEMPLATE_USERS=$(awk -F'"' '/^auth-users:|^auth_users:/{u=1; next} /^auth-tokens:|^auth_tokens:/{u=0} u && /^  - "/{split($2, f, ":"); print f[1]}' "$TEMPLATE")
+TEMPLATE_TOKENS=$(awk -F'"' '/^auth-tokens:|^auth_tokens:/{t=1; next} t && /^  - "/{split($2, f, ":"); print f[1]}' "$TEMPLATE")
+if grep -qE '^auth-access:|^auth_access:' "$TEMPLATE"; then
+  echo "la-admin-1: ntfy auth-access is push-server policy; it must not appear in the auth secret template" >&2
+  exit 1
+fi
+# ntfy accepts either spelling but silently keeps just one when both appear, so
+# the template must not declare both forms of a key.
+if grep -qE '^auth-users:' "$TEMPLATE" && grep -qE '^auth_users:' "$TEMPLATE"; then
+  echo "la-admin-1: ntfy template must not declare both auth-users and auth_users" >&2
+  exit 1
+fi
+if grep -qE '^auth-tokens:' "$TEMPLATE" && grep -qE '^auth_tokens:' "$TEMPLATE"; then
+  echo "la-admin-1: ntfy template must not declare both auth-tokens and auth_tokens" >&2
   exit 1
 fi
 
-# The publisher policy the push-server aspect declares and the publisher users
-# the encrypted auth file provisions must be the same set: a publisher added to
-# one side without the other is the drift this change exists to prevent. The
-# policy is read from the evaluated config (canonical host IDs) and the template
-# from plain-text source, so the check needs no decryption.
+# The publisher policy the push-server aspect declares and the publisher
+# credentials the encrypted auth file provisions must agree in the direction
+# that matters: a publisher declared without credentials is an authorization
+# entry no one can use, and a credential removed from one side only is the
+# drift this contract exists to catch. The policy is read from the evaluated
+# config and the template from plain-text source, so no decryption is needed.
 POLICY_PUBLISHERS=$(nix eval --raw --no-write-lock-file --apply 'c: builtins.concatStringsSep "\n" (builtins.attrNames c.services.ntfy.auth.publishers)' "$LA")
-if [ "$(printf '%s\n' "$TEMPLATE_USERS" | LC_ALL=C sort)" != "$(printf '%s\n' "$POLICY_PUBLISHERS" | LC_ALL=C sort)" ]; then
-  echo "la-admin-1: ntfy publisher policy and template token users disagree" >&2
-  echo "  policy  : $(printf '%s ' "$POLICY_PUBLISHERS")" >&2
-  echo "  template: $(printf '%s ' "$TEMPLATE_USERS")" >&2
+POLICY_GRANTS=$(nix eval --raw --no-write-lock-file --apply 'c: builtins.concatStringsSep "\n" (map (u: u + ":*:" + c.services.ntfy.auth.publishers.${u}) (builtins.attrNames c.services.ntfy.auth.publishers))' "$LA")
+missing=""
+while IFS= read -r publisher; do
+  [ -n "$publisher" ] || continue
+  printf '%s\n' "$TEMPLATE_USERS" | grep -Fqx "$publisher" || missing="$missing $publisher:auth-users"
+  printf '%s\n' "$TEMPLATE_TOKENS" | grep -Fqx "$publisher" || missing="$missing $publisher:auth-tokens"
+done <<< "$POLICY_PUBLISHERS"
+if [ -n "$missing" ]; then
+  echo "la-admin-1: ntfy publisher policy has no credential in the auth template:$missing" >&2
   exit 1
 fi
 
@@ -69,20 +92,73 @@ else
   exit 1
 fi
 
-# 3.2d: the ntfy module exposes its auth-users entry validator as an option
-# attribute (services.ntfy.auth.validateAuthUser). Prove it rejects empty-hash
-# (legacy `oci-melb-1::user`), role-less, and short entries while accepting
-# valid <...> placeholders and bcrypt hashes — the same checks that guard a
-# declarative auth.users option — without reading any encrypted secret.
-nix eval --no-write-lock-file --apply '
-  v:
-    if   (v "oci-melb-1::user") then throw "ntfy validator must reject empty-hash auth-user entries"
-    else if (v "saurabhj:<value>") then throw "ntfy validator must reject role-less auth-user entries"
-    else if (v "oci-melb-1:user") then throw "ntfy validator must reject short auth-user entries"
-    else if !(v "la-admin-1:<disposable bcrypt hash from ntfy user hash>:user") then throw "ntfy validator must accept <...> placeholder auth-user entries"
-    else if !(v "saurabhj:$2a$10$abcdefghijklmnopqrstuvwx:admin") then throw "ntfy validator must accept bcrypt auth-user entries"
-    else true
-' "$LA.services.ntfy.auth.validateAuthUser" >/dev/null
+# 3.2d: the publisher contract has a runtime half. The rendered activation
+# validator must reject a decrypted auth file that carries auth-access (policy
+# owned), that is missing a credential for a declared publisher, or that holds a
+# malformed auth-users entry, and must accept a complete file and render
+# auth-access from policy. Exercised against synthetic plaintext fixtures, so no
+# ciphertext is read.
+PRESTART=$(nix eval --raw --no-write-lock-file "$LA.systemd.services.ntfy-sh.preStart")
+fixture_dir=$(mktemp -d)
+trap 'rm -rf "$fixture_dir"' EXIT
+printf 'base-url: https://ntfy.example.invalid\n' > "$fixture_dir/base.yml"
+{
+  printf 'auth-access: ['
+  first_grant=1
+  while IFS= read -r grant; do
+    [ -n "$grant" ] || continue
+    [ "$first_grant" -eq 1 ] || printf ','
+    printf '"%s"' "$grant"
+    first_grant=0
+  done <<< "$POLICY_GRANTS"
+  printf ']\n'
+} >> "$fixture_dir/base.yml"
+{
+  echo 'auth-users:'
+  while IFS= read -r publisher; do
+    [ -n "$publisher" ] || continue
+    printf '  - "%s:$2a$10$fixturehash:user"\n' "$publisher"
+  done <<< "$POLICY_PUBLISHERS"
+  echo 'auth-tokens:'
+  while IFS= read -r publisher; do
+    [ -n "$publisher" ] || continue
+    printf '  - "%s:tk_fixture"\n' "$publisher"
+  done <<< "$POLICY_PUBLISHERS"
+} > "$fixture_dir/complete.yml"
+cp "$fixture_dir/complete.yml" "$fixture_dir/leaky.yml"
+printf 'auth-access:\n  - "rogue:*:read-write"\n' >> "$fixture_dir/leaky.yml"
+sed 's|^auth-users:$|auth_users:|; s|^auth-tokens:$|auth_tokens:|' "$fixture_dir/complete.yml" > "$fixture_dir/underscore.yml"
+cp "$fixture_dir/complete.yml" "$fixture_dir/mixed.yml"
+printf 'auth_users:\n  - "extra:$2a$10$fixturehash:user"\n' >> "$fixture_dir/mixed.yml"
+sed 's|^auth-users:$|auth-users:\n  - "broken::user"|' "$fixture_dir/complete.yml" > "$fixture_dir/malformed.yml"
+first_publisher=$(printf '%s\n' "$POLICY_PUBLISHERS" | head -n 1)
+awk -v p="$first_publisher" '$0 !~ ("^  - \"" p ":")' "$fixture_dir/complete.yml" > "$fixture_dir/missing.yml"
+run_validator() {
+  sed \
+    -e "s|^base_config=.*|base_config=$fixture_dir/base.yml|" \
+    -e "s|^auth_config=.*|auth_config=$1|" \
+    -e "s|^install -m 0440 \"\$tmp\" /run/ntfy-sh/server.yml|install -m 0444 \"\$tmp\" $fixture_dir/server.yml|" \
+    <<< "$PRESTART" > "$fixture_dir/validator.sh"
+  bash "$fixture_dir/validator.sh"
+}
+run_validator "$fixture_dir/complete.yml" > "$fixture_dir/complete.log" 2>&1 \
+  || fail "runtime validator must accept a complete auth file: $(tail -n 2 "$fixture_dir/complete.log")"
+# ntfy documents the hyphen spelling and accepts underscores; a file written
+# either way must validate, because the operator picks one and ntfy honours it.
+run_validator "$fixture_dir/underscore.yml" > "$fixture_dir/underscore.log" 2>&1 \
+  || fail "runtime validator must accept the underscore key spelling: $(tail -n 2 "$fixture_dir/underscore.log")"
+while IFS= read -r grant; do
+  [ -n "$grant" ] || continue
+  grep -Fq "\"$grant\"" "$fixture_dir/server.yml" \
+    || fail "runtime validator must render policy auth-access entry '$grant'"
+done <<< "$POLICY_GRANTS"
+for case_name in leaky malformed missing mixed; do
+  if run_validator "$fixture_dir/$case_name.yml" > "$fixture_dir/$case_name.log" 2>&1; then
+    fail "runtime validator must reject the $case_name auth file"
+  fi
+  grep -q '^ntfy: ' "$fixture_dir/$case_name.log" \
+    || fail "runtime validator must fail '$case_name' with a named ntfy error"
+done
 
 # CI must configure strict known_hosts/StrictHostKeyChecking via an ephemeral
 # ~/.ssh/config Host entry rather than passing a CLI ssh-opts override; host

@@ -1,7 +1,7 @@
 # notification-policy-defaults Specification
 
 ## Purpose
-Define the notification defaults a host inherits: fleet-wide routing values, canonical publisher identities, and validation of both, held in repository policy and kept separate from the generic dispatch mechanics.
+Define the notification defaults a host inherits: fleet-wide routing values, publisher principals and their permissions, and validation of both, held in repository policy and kept separate from the generic dispatch mechanics.
 
 ## Requirements
 
@@ -45,22 +45,27 @@ The policy SHALL assert that chat ID and topic mappings are not empty placeholde
 - **WHEN** `notifications.telegram.topics` is an empty attrset
 - **THEN** NixOS evaluation fails with an assertion message
 
-### Requirement: Policy SHALL define canonical notification publishers
+### Requirement: Policy SHALL define ntfy publishers as explicit principals
 
-The repository notification policy SHALL define authorized ntfy publishers by canonical fleet host ID and role. The host running the ntfy server SHALL consume this policy and SHALL NOT independently maintain a fleet publisher list.
+The repository notification policy SHALL declare every authorized ntfy publisher as an explicit principal with a topic-wide permission. A publisher is a credential holder — a managed fleet host, a host from another fleet repository, a CLI, or a script — and not necessarily a canonical host ID of this repository, so publisher membership SHALL NOT be derived from the canonical host registry. The host running the ntfy server SHALL consume this policy, SHALL render `auth-access` from it alone, and SHALL NOT maintain a fleet publisher list of its own.
 
 #### Scenario: Publisher ACLs are rendered
 
 - **WHEN** the push-server capability evaluates
-- **THEN** its ntfy ACL subjects derive from canonical publisher policy
-- **AND** every publisher ID resolves to a canonical host
+- **THEN** its ntfy ACL subjects derive from the publisher policy
+- **AND** the rendered `auth-access` is that policy alone
 - **AND** moving the push server does not change publisher membership
 
-#### Scenario: Publisher contract is inconsistent
+#### Scenario: Publisher credentials are inconsistent
 
-- **WHEN** a publisher is present in policy but absent from the required runtime secret/template contract, or vice versa
-- **THEN** validation fails and names the mismatched publisher
+- **WHEN** a declared publisher has no `auth-users` or `auth-tokens` entry in the decrypted auth file, or the file carries an `auth-access` key or a malformed `auth-users` entry
+- **THEN** activation fails and names the offending publisher or entry
 - **AND** no secret value is generated or exposed
+
+#### Scenario: Non-publisher auth users exist
+
+- **WHEN** the auth file provisions a user that is not a declared publisher, such as an administrator or a read-only client
+- **THEN** the publisher contract holds and that user keeps its own role and permission
 
 ### Requirement: Notification policy SHALL remain separate from generic mechanics
 

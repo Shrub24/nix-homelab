@@ -4,28 +4,35 @@
 # by the notification daemon) stay host-set.
 #
 # Publisher authorization is fleet policy, not an LA machine fact, so it lives
-# here and is validated against the canonical host records: every publisher must
-# be a declared host ID, and the module derives the ntfy `auth-access` entries
-# from it. The matching `auth-users`/`auth-tokens` provisioning stays in the
-# encrypted `auth.secretFiles.auth` (see `secrets/.templates/services/ntfy.yaml`);
-# `tests/phase-la-admin-contract.sh` pins policy membership against that
-# plaintext template so the two cannot drift.
+# here. Publishers are explicit ntfy principals: fleet host daemons, dotfiles
+# machines, CLIs, or scripts. The canonical host registry is not the authority.
+# The module derives ntfy `auth-access` from this map; the matching
+# `auth-users`/`auth-tokens` credentials stay in the encrypted
+# `auth.secretFiles.auth`, which must not carry an `auth-access` key of its own.
+# The activation preStart validates the decrypted file against this policy: it
+# rejects a secret-owned `auth-access` or a malformed `auth-users` entry, and it
+# fails by name when a declared publisher has no credential. ntfy's underscore
+# key spelling is accepted, but a file declaring both forms of one key is
+# rejected because ntfy's loader would silently keep just one of them. Other
+# auth users (for example an administrator or a read-only client) may exist
+# without being publishers.
 
-# The file-level let (publishers + unknownPublishers) stays at flake-parts
-# level because it is fleet policy validated against `top.config.nixos.hosts`;
-# the NixOS module cannot read flake-level values, so the aspect passes the
-# publishers map into the module by value and keeps the host-ID check here.
-top@{ lib, ... }:
+# The file-level policy stays at flake-parts level because it is shared
+# notification policy, independent of any host's NixOS evaluation. The aspect
+# passes the map into the NixOS module by value.
+{ ... }:
 let
   publishers = {
     "oci-melb-1" = "write-only";
     "la-admin-1" = "write-only";
     "home-forge" = "write-only";
+    # Principals outside this repo's host registry (dotfiles machines, CLIs).
+    # Not validated against nixos.hosts: a ntfy publisher is a credential
+    # holder, not a deployed NixOS configuration.
+    "shrub" = "read-write";
+    "spectre" = "read-write";
   };
 
-  unknownPublishers = lib.filter (id: !(top.config.nixos.hosts ? ${id})) (
-    builtins.attrNames publishers
-  );
 in
 {
   flake.modules.nixos.push-server =
@@ -51,21 +58,17 @@ in
 
       # ntfy auth-users entries are `<username>:<bcrypt-hash>:<role>`; even
       # token-only accounts need a real `ntfy user hash` (username::role is
-      # invalid). A documented non-secret `<...>` placeholder is accepted so hosts
-      # can declare user/role in plaintext while the hash stays in the encrypted
-      # auth file.
-      isValidAuthUserHash =
-        hash: lib.hasPrefix "$2" hash || (lib.hasPrefix "<" hash && lib.hasSuffix ">" hash);
+      # invalid). The allowed hashes and roles are enforced against the decrypted
+      # file at activation; this list is the role half of that check.
+      rolePattern = "^(${lib.concatStringsSep "|" validRoles})$";
 
-      isValidAuthUser =
-        entry:
-        let
-          parts = lib.splitString ":" entry;
-        in
-        lib.length parts == 3
-        && lib.elemAt parts 0 != ""
-        && isValidAuthUserHash (lib.elemAt parts 1)
-        && lib.elem (lib.elemAt parts 2) validRoles;
+      publisherNames = builtins.attrNames cfg.auth.publishers;
+      invalidPublisherNames = lib.filter (
+        name: builtins.match "^[A-Za-z0-9][A-Za-z0-9_.-]*$" name == null
+      ) publisherNames;
+      publisherAccessEntries = lib.mapAttrsToList (
+        user: permission: "${user}:*:${permission}"
+      ) cfg.auth.publishers;
     in
     {
 
@@ -138,43 +141,13 @@ in
               "service" = "write-only";
             };
             description = ''
-              Publish-enabled ntfy users, keyed by user name (canonical fleet host
-              IDs in this repository), mapped to their topic-wide ACL permission.
-              The module renders these into `auth-access` as
-              `<user>:*:<permission>` entries, so publisher authorization has one
-              owner instead of a hand-maintained ACL list per host. Membership is
-              fleet policy owned by the `push-server` aspect; the matching
-              `auth-users`/`auth-tokens` entries stay in
-              `auth.secretFiles.auth` (set `auth.users` to declare them).
-            '';
-          };
-
-          users = lib.mkOption {
-            type = lib.types.listOf lib.types.str;
-            default = [ ];
-            example = [
-              "publisher-host:<disposable bcrypt hash from ntfy user hash>:user"
-            ];
-            description = ''
-              Non-secret declaration of the ntfy auth-users entries the encrypted
-              auth secret file must provision, in ntfy's documented
-              `<username>:<bcrypt-hash>:<role>` shape. The bcrypt hashes and access
-              tokens themselves stay in `auth.secretFiles.auth`; hashes declared
-              here must be a real bcrypt hash from `ntfy user hash` or a documented
-              `<...>` placeholder. Every entry is validated at evaluation time when
-              auth is enabled.
-            '';
-          };
-
-          validateAuthUser = lib.mkOption {
-            type = lib.types.functionTo lib.types.bool;
-            default = isValidAuthUser;
-            readOnly = true;
-            description = ''
-              Pure validation function for a single ntfy `auth-users` entry.
-              Exposed as an option so contract tests can exercise the same shape
-              checks that guard `auth.users` without reading any encrypted secret.
-              Accepts only `<username>:<bcrypt-hash|<...>>:<role>` entries.
+              Publish-enabled ntfy principals, keyed by username and mapped to
+              their topic-wide ACL permission. A principal may be a managed host,
+              a host from another fleet repository, a CLI, or a script. The module
+              renders these into `auth-access` as `<user>:*:<permission>` entries;
+              the matching `auth-users`/`auth-tokens` credentials stay in
+              `auth.secretFiles.auth`. Activation fails if a declared publisher
+              has no corresponding user and token credential.
             '';
           };
 
@@ -232,12 +205,12 @@ in
                   assertion = false;
                   message = "services.ntfy.auth.secretFiles.auth must be set when auth is enabled.";
                 }
-                ++ lib.optionals (cfg.auth.users != [ ]) (
-                  map (entry: {
-                    assertion = isValidAuthUser entry;
-                    message = "services.ntfy.auth.users entry '${entry}' must be '<username>:<bcrypt-hash|<...>>:<role>' with a nonempty username, a bcrypt hash from `ntfy user hash` (or <...> placeholder), and a role in ${builtins.toString validRoles}.";
-                  }) cfg.auth.users
-                );
+                ++ lib.optional (invalidPublisherNames != [ ]) {
+                  assertion = false;
+                  message =
+                    "services.ntfy.auth.publishers contains invalid ntfy usernames: "
+                    + builtins.concatStringsSep ", " invalidPublisherNames;
+                };
 
               services.ntfy-sh = {
                 enable = true;
@@ -267,11 +240,7 @@ in
                   enable-signup: false
                   auth-file: ${toString cfg.auth.file}
                   auth-default-access: ${cfg.auth.defaultAccess}
-                  auth-access: ${
-                    builtins.toJSON (
-                      lib.mapAttrsToList (user: permission: "${user}:*:${permission}") cfg.auth.publishers
-                    )
-                  }
+                  auth-access: ${builtins.toJSON publisherAccessEntries}
                 ''
                 + lib.optionalString (cfg.secretFiles.firebase != null) ''
                   firebase-key-file: /run/secrets/ntfy/firebase-key.json
@@ -293,10 +262,55 @@ in
                 ];
                 preStart = ''
                   tmp=$(mktemp) && trap 'rm -f "$tmp"' EXIT
-                  ${pkgs.yq-go}/bin/yq eval-all '. as $item ireduce ({}; . * $item)' \
-                    ${config.sops.templates."ntfy-base-config".path} \
-                    /run/secrets/ntfy/auth.yml \
-                    > "$tmp"
+                  base_config=${config.sops.templates."ntfy-base-config".path}
+                  auth_config=/run/secrets/ntfy/auth.yml
+                  yq=${pkgs.yq-go}/bin/yq
+                  grep=${pkgs.gnugrep}/bin/grep
+
+                  # ntfy documents `auth-users`/`auth-tokens` and accepts the
+                  # underscore spelling as an alias, so either form is valid here;
+                  # declaring both would let ntfy's loader pick one silently.
+                  if [ "$($yq -r 'has("auth-users") and has("auth_users")' "$auth_config")" = true ] \
+                    || [ "$($yq -r 'has("auth-tokens") and has("auth_tokens")' "$auth_config")" = true ]; then
+                    echo "ntfy: the auth secret file must use one spelling per key (auth-users or auth_users, auth-tokens or auth_tokens), not both" >&2
+                    exit 1
+                  fi
+
+                  # auth-access is policy-owned; the encrypted file carries only
+                  # credentials. Reject the ownership error instead of masking it.
+                  if [ "$($yq -r 'has("auth-access") or has("auth_access")' "$auth_config")" = true ]; then
+                    echo "ntfy: auth-access must be owned by push-server policy, not the auth secret file" >&2
+                    exit 1
+                  fi
+
+                  # auth-users entries must be `<username>:<bcrypt-hash>:<role>`;
+                  # ntfy rejects empty-hash entries even for token-only accounts.
+                  bad_users="$($yq -r '(.["auth-users"] // .auth_users // [])[] | select((split(":") | length) != 3 or (split(":")[1] | length) == 0 or (split(":")[2] | test("${rolePattern}") | not))' "$auth_config")"
+                  if [ -n "$bad_users" ]; then
+                    echo "ntfy: auth-users entries must be <username>:<bcrypt-hash>:<role>; offending: $bad_users" >&2
+                    exit 1
+                  fi
+
+                  # Every declared publisher needs both credential forms in the
+                  # encrypted file. Extra users (an administrator, a read-only
+                  # client) are allowed; missing publishers are not.
+                  users="$($yq -r '(.["auth-users"] // .auth_users // [])[] | split(":")[0]' "$auth_config")"
+                  tokens="$($yq -r '(.["auth-tokens"] // .auth_tokens // [])[] | split(":")[0]' "$auth_config")"
+                  for publisher in ${lib.concatStringsSep " " publisherNames}; do
+                    if ! printf '%s\n' "$users" | $grep -Fqx "$publisher"; then
+                      echo "ntfy: publisher '$publisher' has no auth-users credential" >&2
+                      exit 1
+                    fi
+                    if ! printf '%s\n' "$tokens" | $grep -Fqx "$publisher"; then
+                      echo "ntfy: publisher '$publisher' has no auth-tokens credential" >&2
+                      exit 1
+                    fi
+                  done
+
+                  # Merge the credentials, then the policy again: the rendered
+                  # auth-access is this module's map regardless of the secret file.
+                  $yq eval-all '. as $item ireduce ({}; . * $item)' \
+                    "$base_config" "$auth_config" "$base_config" > "$tmp"
                   install -m 0440 "$tmp" /run/ntfy-sh/server.yml
                 '';
                 serviceConfig.ExecStart = lib.mkForce [
@@ -327,16 +341,6 @@ in
           # host records at flake level (the aspect's own let); the map is passed into
           # the module by value.
           services.ntfy.auth.publishers = publishers;
-
-          assertions = [
-            {
-              assertion = unknownPublishers == [ ];
-              message =
-                "push-server: notification publisher '"
-                + builtins.concatStringsSep "', '" unknownPublishers
-                + "' is not a declared canonical host ID";
-            }
-          ];
         }
       ];
     };

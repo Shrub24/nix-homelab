@@ -83,7 +83,7 @@ A capability that serves more than one service exposes a typed registry and prov
 - Register where provisioning happens: a same-host consumer registers from its own module; a cross-host consumer is registered by the host that provisions its role, because that is the only host that can create it.
 - Registrations are fail-closed: a phantom unit, a host declaring two clusters, a password consumer without a credential, or a credential file that does not exist fails evaluation with a named error.
 - A registration carries the consumer's own credential (`password = { file, key }`) and dependency contributions in the shared option's native shape (`extensions = ps: [ ps.pgvector ]`, a function of the instance's extension set). SQL that accompanies an extension belongs in `setupSQL`, which must be idempotent because it runs on every start.
-- A capability that instead holds a participant list (a host name, a publisher, a monitored-unit list) is debt to convert, not a pattern to copy.
+- A capability that instead holds a participant list (a host name, a publisher, a monitored-unit list) is debt to convert, not a pattern to copy. The exception is policy the capability itself owns and no other module can supply: the ntfy publisher map in `modules/notifications/push-server.nix` is authorization policy whose principals may be CLIs or machines in another repository, which cannot self-register.
 
 ### Application vs Service Ownership
 

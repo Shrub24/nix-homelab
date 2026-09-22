@@ -226,7 +226,9 @@ _: {
             passwordFile = lib.mkDefault config.sops.secrets.paperless_admin_pass.path;
 
             database.createLocally = lib.mkDefault false;
-            configureTika = lib.mkDefault true;
+            # Plain PDFs/images only: no Tika/Gotenberg sidecar for office and
+            # email documents.
+            configureTika = lib.mkDefault false;
             openMPThreadingWorkaround = lib.mkDefault true;
 
             settings = {

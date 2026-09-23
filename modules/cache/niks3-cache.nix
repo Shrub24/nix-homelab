@@ -28,6 +28,20 @@
           region = lib.mkDefault (s3.region or "");
         };
         cacheUrl = lib.mkDefault "https://cache.shrublab.xyz";
+        # CI federation: GitHub Actions authenticates to the push API with
+        # short-lived OIDC tokens (nix-fleet's build-push-cache workflow), so no
+        # long-lived write secret exists in any repository. Reads are not part
+        # of this: the public substituter serves narinfo/nar from R2 behind
+        # Cloudflare, and niks3's own read proxy is not on that path — binding a
+        # provider gates the API, where write implies read for tokens only.
+        # Branch-only subjects keep refs/pull/* out of the cache.
+        oidc.providers.github = {
+          issuer = "https://token.actions.githubusercontent.com";
+          audience = "https://cache.shrublab.xyz";
+          boundClaims.repository_owner = [ "Shrub24" ];
+          boundSubject = [ "repo:Shrub24/*:ref:refs/heads/*" ];
+          scopes = [ "write" ];
+        };
         # The listen port is the private service policy's declaration, shared
         # with every publisher that dials it.
         httpAddr = lib.mkDefault "0.0.0.0:${toString config.repo.web.catalog."niks3-write".endpoint.port}";

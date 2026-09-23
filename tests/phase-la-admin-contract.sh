@@ -99,6 +99,13 @@ fi
 # auth-access from policy. Exercised against synthetic plaintext fixtures, so no
 # ciphertext is read.
 PRESTART=$(nix eval --raw --no-write-lock-file "$LA.systemd.services.ntfy-sh.preStart")
+# The validator resolves its tools from PATH, which systemd supplies from the
+# unit's own `path`. Provide that same PATH here, so the suite is independent of
+# the caller's environment (CI runs it inside the devShell, a developer may not,
+# and the ambient yq is not necessarily mikefarah's).
+VALIDATOR_PATH=$(nix eval --raw --no-write-lock-file \
+  --apply 'ps: builtins.concatStringsSep ":" (map (p: "${toString p}/bin") ps)' \
+  "$LA.systemd.services.ntfy-sh.path")
 fixture_dir=$(mktemp -d)
 trap 'rm -rf "$fixture_dir"' EXIT
 printf 'base-url: https://ntfy.example.invalid\n' > "$fixture_dir/base.yml"
@@ -139,7 +146,7 @@ run_validator() {
     -e "s|^auth_config=.*|auth_config=$1|" \
     -e "s|^install -m 0440 \"\$tmp\" /run/ntfy-sh/server.yml|install -m 0444 \"\$tmp\" $fixture_dir/server.yml|" \
     <<< "$PRESTART" > "$fixture_dir/validator.sh"
-  bash "$fixture_dir/validator.sh"
+  PATH="$VALIDATOR_PATH:$PATH" bash "$fixture_dir/validator.sh"
 }
 run_validator "$fixture_dir/complete.yml" > "$fixture_dir/complete.log" 2>&1 \
   || fail "runtime validator must accept a complete auth file: $(tail -n 2 "$fixture_dir/complete.log")"

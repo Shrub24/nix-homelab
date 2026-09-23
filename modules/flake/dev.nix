@@ -8,7 +8,7 @@
           pkgs.just
           pkgs.git
           pkgs.jq
-          pkgs.yq
+          pkgs.yq-go
           pkgs.opentofu
           pkgs.prettier
           pkgs.shfmt

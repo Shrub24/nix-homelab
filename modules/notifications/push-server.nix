@@ -251,6 +251,16 @@ in
               };
 
               systemd.services.ntfy-sh = {
+                # The activation validator shells out to yq (mikefarah's yq-go, not
+                # the jq-syntax wrapper) and grep. Give the unit a PATH instead of
+                # baking store paths into the script, so the same script is
+                # runnable out of context (the contract suite executes it against
+                # synthetic fixtures).
+                path = [
+                  pkgs.coreutils
+                  pkgs.gnugrep
+                  pkgs.yq-go
+                ];
                 restartTriggers = [
                   config.sops.templates."ntfy-base-config".path
                 ]
@@ -264,28 +274,26 @@ in
                   tmp=$(mktemp) && trap 'rm -f "$tmp"' EXIT
                   base_config=${config.sops.templates."ntfy-base-config".path}
                   auth_config=/run/secrets/ntfy/auth.yml
-                  yq=${pkgs.yq-go}/bin/yq
-                  grep=${pkgs.gnugrep}/bin/grep
 
                   # ntfy documents `auth-users`/`auth-tokens` and accepts the
                   # underscore spelling as an alias, so either form is valid here;
                   # declaring both would let ntfy's loader pick one silently.
-                  if [ "$($yq -r 'has("auth-users") and has("auth_users")' "$auth_config")" = true ] \
-                    || [ "$($yq -r 'has("auth-tokens") and has("auth_tokens")' "$auth_config")" = true ]; then
+                  if [ "$(yq -r 'has("auth-users") and has("auth_users")' "$auth_config")" = true ] \
+                    || [ "$(yq -r 'has("auth-tokens") and has("auth_tokens")' "$auth_config")" = true ]; then
                     echo "ntfy: the auth secret file must use one spelling per key (auth-users or auth_users, auth-tokens or auth_tokens), not both" >&2
                     exit 1
                   fi
 
                   # auth-access is policy-owned; the encrypted file carries only
                   # credentials. Reject the ownership error instead of masking it.
-                  if [ "$($yq -r 'has("auth-access") or has("auth_access")' "$auth_config")" = true ]; then
+                  if [ "$(yq -r 'has("auth-access") or has("auth_access")' "$auth_config")" = true ]; then
                     echo "ntfy: auth-access must be owned by push-server policy, not the auth secret file" >&2
                     exit 1
                   fi
 
                   # auth-users entries must be `<username>:<bcrypt-hash>:<role>`;
                   # ntfy rejects empty-hash entries even for token-only accounts.
-                  bad_users="$($yq -r '(.["auth-users"] // .auth_users // [])[] | select((split(":") | length) != 3 or (split(":")[1] | length) == 0 or (split(":")[2] | test("${rolePattern}") | not))' "$auth_config")"
+                  bad_users="$(yq -r '(.["auth-users"] // .auth_users // [])[] | select((split(":") | length) != 3 or (split(":")[1] | length) == 0 or (split(":")[2] | test("${rolePattern}") | not))' "$auth_config")"
                   if [ -n "$bad_users" ]; then
                     echo "ntfy: auth-users entries must be <username>:<bcrypt-hash>:<role>; offending: $bad_users" >&2
                     exit 1
@@ -294,14 +302,14 @@ in
                   # Every declared publisher needs both credential forms in the
                   # encrypted file. Extra users (an administrator, a read-only
                   # client) are allowed; missing publishers are not.
-                  users="$($yq -r '(.["auth-users"] // .auth_users // [])[] | split(":")[0]' "$auth_config")"
-                  tokens="$($yq -r '(.["auth-tokens"] // .auth_tokens // [])[] | split(":")[0]' "$auth_config")"
+                  users="$(yq -r '(.["auth-users"] // .auth_users // [])[] | split(":")[0]' "$auth_config")"
+                  tokens="$(yq -r '(.["auth-tokens"] // .auth_tokens // [])[] | split(":")[0]' "$auth_config")"
                   for publisher in ${lib.concatStringsSep " " publisherNames}; do
-                    if ! printf '%s\n' "$users" | $grep -Fqx "$publisher"; then
+                    if ! printf '%s\n' "$users" | grep -Fqx "$publisher"; then
                       echo "ntfy: publisher '$publisher' has no auth-users credential" >&2
                       exit 1
                     fi
-                    if ! printf '%s\n' "$tokens" | $grep -Fqx "$publisher"; then
+                    if ! printf '%s\n' "$tokens" | grep -Fqx "$publisher"; then
                       echo "ntfy: publisher '$publisher' has no auth-tokens credential" >&2
                       exit 1
                     fi
@@ -309,7 +317,7 @@ in
 
                   # Merge the credentials, then the policy again: the rendered
                   # auth-access is this module's map regardless of the secret file.
-                  $yq eval-all '. as $item ireduce ({}; . * $item)' \
+                  yq eval-all '. as $item ireduce ({}; . * $item)' \
                     "$base_config" "$auth_config" "$base_config" > "$tmp"
                   install -m 0440 "$tmp" /run/ntfy-sh/server.yml
                 '';

@@ -36,5 +36,10 @@
     nix-index-database.inputs.nixpkgs.follows = "nixpkgs";
     traktor-m3u-sync.url = "github:Shrub24/traktor-m3u-sync";
     traktor-m3u-sync.inputs.nixpkgs.follows = "nixpkgs";
+    # Traktor pins its own flake-parts and treefmt-nix; the lock's only
+    # divergent duplicate pins. Redirect both to the shared nodes — nix-fleet
+    # declares treefmt-nix — so one nix-fleet revision moves them too.
+    traktor-m3u-sync.inputs.flake-parts.follows = "flake-parts";
+    traktor-m3u-sync.inputs.treefmt-nix.follows = "nix-fleet/treefmt-nix";
   };
 }

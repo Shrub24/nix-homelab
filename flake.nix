@@ -30,7 +30,11 @@
     sops-nix.follows = "nix-fleet/sops-nix";
     traktor-m3u-sync = {
       url = "github:Shrub24/traktor-m3u-sync";
-      inputs.nixpkgs.follows = "nixpkgs";
+      inputs = {
+        flake-parts.follows = "flake-parts";
+        nixpkgs.follows = "nixpkgs";
+        treefmt-nix.follows = "nix-fleet/treefmt-nix";
+      };
     };
   };
 }

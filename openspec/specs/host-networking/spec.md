@@ -1,7 +1,7 @@
 # host-networking Specification
 
 ## Purpose
-TBD - created by archiving change adopt-native-systemd-networkd. Update Purpose after archive.
+Define how a fleet host owns its physical networking declaratively: interface and bridge facts rendered as native systemd-networkd units, DHCP identity tied to the network interface MAC, a standard resolver, and explicit boundaries for virtual and overlay interfaces.
 
 ## Requirements
 

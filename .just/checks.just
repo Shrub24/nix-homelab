@@ -2,17 +2,23 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 set no-cd
 
 # No `nix flake check` here: CI owns that wiring gate, and the LA toplevel
-# needs operator ciphertext that does not exist before task 3.3.
+# needs operator ciphertext that does not exist before task 3.3. The generated
+# flake.nix is the exception: building its check is cheap and does not touch a
+# host configuration.
 all:
+  @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).check-flake-file"
   @./tests/check-secret-scope.sh
   @./tests/check-secret-scope-extra-reader.sh
   @./tests/check-secret-updatekeys-selection.sh
   @./tests/check-ssh-host-fingerprint.sh
   @./tests/check-host-age-anchor.sh
   @./tests/check-deploy-bootstrap-gate.sh
+  @./tests/check-flake-source-tracking.sh
+  @./tests/check-dendritic-scaffold-contract.sh
   @./tests/check-web-services-policy.sh
   @./tests/check-web-service-catalog.sh
   @./tests/phase-la-admin-contract.sh
+  @./tests/check-identity-contract-directionality.sh
   @./tests/kanidm-restore-contract.sh
   @./tests/check-shell-account-contract.sh
   @./tests/check-backup-surface-contract.sh
@@ -35,8 +41,11 @@ test-host-age-anchor:
 test-deploy-bootstrap-gate:
   @./tests/check-deploy-bootstrap-gate.sh
 
-test-web-policy host="la-admin-1":
-  @./tests/check-web-services-policy.sh {{host}}
+test-dendritic-scaffold-contract:
+  @./tests/check-dendritic-scaffold-contract.sh
+
+test-web-policy:
+  @./tests/check-web-services-policy.sh
 
 test-web-catalog:
   @./tests/check-web-service-catalog.sh

@@ -1,7 +1,7 @@
 # opentofu-state-recovery Specification
 
 ## Purpose
-TBD - created by archiving change opentofu-import-recovery-remote-backend. Update Purpose after archive.
+Define how the Cloudflare OpenTofu state is recovered deterministically: imports limited to resources the stack declares, and a post-recovery plan comparison that separates real drift from provider noise.
 ## Requirements
 ### Requirement: OpenTofu Cloudflare state recovery SHALL be runbook-driven and deterministic
 The Cloudflare OpenTofu stack SHALL provide a documented, deterministic recovery workflow that maps declared resource addresses to live Cloudflare IDs and restores state ownership without ad-hoc address conventions.

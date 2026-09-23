@@ -1,175 +1,40 @@
+# DO-NOT-EDIT. This file was auto-generated using github:denful/flake-file.
+# Use `nix run .#write-flake` to regenerate it.
 {
   description = "Modular NixOS fleet infrastructure";
 
+  outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);
+
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    disko.url = "github:nix-community/disko";
-    disko.inputs.nixpkgs.follows = "nixpkgs";
-    sops-nix.url = "github:Mic92/sops-nix";
-    sops-nix.inputs.nixpkgs.follows = "nixpkgs";
-    deploy-rs.url = "github:serokell/deploy-rs";
-    deploy-rs.inputs.nixpkgs.follows = "nixpkgs";
-    niks3.url = "github:Mic92/niks3";
-    niks3.inputs.nixpkgs.follows = "nixpkgs";
-    traktor-m3u-sync.url = "github:Shrub24/traktor-m3u-sync";
-    traktor-m3u-sync.inputs.nixpkgs.follows = "nixpkgs";
-    nix-index-database.url = "github:nix-community/nix-index-database";
-    nix-index-database.inputs.nixpkgs.follows = "nixpkgs";
-  };
-
-  outputs =
-    inputs@{
-      self,
-      nixpkgs,
-      disko,
-      sops-nix,
-      deploy-rs,
-      niks3,
-      ...
-    }:
-    let
-      devShellSystems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
-      mkDevShell =
-        system:
-        let
-          pkgs = import nixpkgs { inherit system; };
-        in
-        pkgs.mkShell {
-          packages =
-            with pkgs;
-            [
-              just
-              git
-              jq
-              yq
-              opentofu
-              prettier
-              shfmt
-              taplo
-              treefmt
-              sops
-              age
-              nixos-anywhere
-              nix-output-monitor
-              nixfmt
-              ruff
-              statix
-              ssh-to-age
-              lefthook
-              self.packages.${system}.notification-daemon
-              self.packages.${system}.notify
-              self.packages.${system}.niks3
-              self.packages.${system}.nix-path-filter
-            ]
-            ++ [ pkgs.deploy-rs ];
-          shellHook = ''
-            unset PYTHONPATH
-            if [ -f /tmp/notification-daemon.json ]; then
-              NOTIFICATION_DAEMON_CONFIG=/tmp/notification-daemon.json notification-daemon &
-              DAEMON_PID=$!
-              trap "kill $DAEMON_PID 2>/dev/null; echo 'notification-daemon stopped'" EXIT TERM INT
-              echo "notification-daemon started (PID: $DAEMON_PID)"
-            fi
-          '';
-        };
-
-      ociImages = import ./policy/oci-images.nix;
-
-      deployTopology = import ./lib/deploy/hosts.nix;
-
-      deployConfig = import ./lib/deploy {
-        inherit self nixpkgs deploy-rs;
-        nodes = deployTopology.nodes;
-      };
-
-    in
-    {
-      devShells = nixpkgs.lib.genAttrs devShellSystems (system: {
-        default = mkDevShell system;
-      });
-
-      packages = nixpkgs.lib.genAttrs devShellSystems (
-        system:
-        let
-          pkgs = import nixpkgs { inherit system; };
-        in
-        {
-          deploy-rs = pkgs.deploy-rs;
-          niks3 = niks3.packages.${system}.niks3;
-          nix-path-filter = pkgs.callPackage ./pkgs/nix-path-filter { };
-          notification-daemon = pkgs.callPackage ./pkgs/notification-daemon { };
-          notify = pkgs.callPackage ./pkgs/notify { };
-          windows-dj-setup = pkgs.callPackage ./pkgs/windows-dj-setup { };
-          host-la-admin-1 = deployConfig.deploy.nodes.la-admin-1.profiles.system.path;
-          host-oci-melb-1 = deployConfig.deploy.nodes.oci-melb-1.profiles.system.path;
-        }
-      );
-
-      deployHosts = deployTopology;
-
-      formatter = nixpkgs.lib.genAttrs devShellSystems (
-        system: (import nixpkgs { inherit system; }).nixfmt
-      );
-
-      nixosConfigurations.oci-melb-1 = nixpkgs.lib.nixosSystem {
-        modules = [
-          disko.nixosModules.disko
-          sops-nix.nixosModules.sops
-          niks3.nixosModules.niks3
-          niks3.nixosModules.niks3-auto-upload
-          inputs.traktor-m3u-sync.nixosModules.traktor-m3u-sync
-          inputs.nix-index-database.nixosModules.nix-index
-          ./hosts/oci-melb-1/default.nix
-        ];
-        specialArgs = {
-          inherit
-            self
-            inputs
-            ociImages
-            ;
-        };
-      };
-
-      nixosConfigurations.la-admin-1 = nixpkgs.lib.nixosSystem {
-        modules = [
-          sops-nix.nixosModules.sops
-          niks3.nixosModules.niks3-auto-upload
-          inputs.nix-index-database.nixosModules.nix-index
-          ./hosts/la-admin-1/default.nix
-        ];
-        specialArgs = {
-          inherit
-            self
-            inputs
-            ociImages
-            ;
-        };
-      };
-
-      nixosConfigurations.home-forge = nixpkgs.lib.nixosSystem {
-        # x86_64 physical host; no facter report/hardware-configuration exists
-        # yet (captured at operator gate 8.3), so pin the architecture explicitly.
-        system = "x86_64-linux";
-        modules = [
-          disko.nixosModules.disko
-          sops-nix.nixosModules.sops
-          niks3.nixosModules.niks3-auto-upload
-          inputs.nix-index-database.nixosModules.nix-index
-          ./hosts/home-forge/default.nix
-        ];
-        specialArgs = {
-          inherit
-            self
-            inputs
-            ociImages
-            ;
-        };
-      };
-
-      deploy = deployConfig.deploy;
-      checks = deployConfig.checks;
+    deploy-rs = {
+      url = "github:serokell/deploy-rs";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    flake-file.url = "github:denful/flake-file";
+    flake-parts = {
+      follows = "nix-fleet/flake-parts";
+      inputs.nixpkgs-lib.follows = "nixpkgs";
+    };
+    import-tree.follows = "nix-fleet/import-tree";
+    niks3.follows = "nix-fleet/niks3";
+    nix-fleet.url = "github:Shrub24/nix-fleet";
+    nix-index-database = {
+      url = "github:nix-community/nix-index-database";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixpkgs.follows = "nix-fleet/nixpkgs";
+    sops-nix.follows = "nix-fleet/sops-nix";
+    traktor-m3u-sync = {
+      url = "github:Shrub24/traktor-m3u-sync";
+      inputs = {
+        flake-parts.follows = "flake-parts";
+        nixpkgs.follows = "nixpkgs";
+        treefmt-nix.follows = "nix-fleet/treefmt-nix";
+      };
+    };
+  };
 }

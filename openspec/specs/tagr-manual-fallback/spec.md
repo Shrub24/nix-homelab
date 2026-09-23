@@ -1,7 +1,7 @@
 # tagr-manual-fallback Specification
 
 ## Purpose
-TBD - created by archiving change add-tagr-manual-fallback. Update Purpose after archive.
+Define the operator-invoked fallback for manual metadata and album-art correction: a Tagr service that writes against the canonical library and quarantine paths and requires host-scoped credentials.
 ## Requirements
 ### Requirement: Tagr manual metadata fallback service is available on oci-melb-1
 The system SHALL provide a Tagr web service on `oci-melb-1` as an operator-invoked fallback for manual metadata and album-art correction on canonical music files.

@@ -1,4 +1,35 @@
 { lib }:
+let
+  # Single tailnet suffix authority (policy/globals.nix), used only to turn a
+  # placement ID into a dialable tailnet name.
+  tailnetSuffix = (import ../policy/globals.nix).tailnet.suffix;
+
+  # Ingress upstream transport — mode-driven: `direct` is the edge-local
+  # loopback exception, and every other mode names a tailnet-bound socket
+  # (the origin's own socket or a `tailscale-serve` front), so it is dialed
+  # by provider FQDN even when provider and edge coincide. Identity (public
+  # URLs, OIDC endpoints, TLS server names) never derives through here; it
+  # stays literal and stable in the policy.
+  upstreamHost =
+    provider: exposureMode: dialer:
+    if exposureMode == "direct" && provider == dialer then
+      "127.0.0.1"
+    else
+      "${provider}.${tailnetSuffix}";
+
+  # Machine-to-machine endpoint transport — locality-driven, the service-to-
+  # service counterpart the ingress policy does not subsume: a private service
+  # colocated with the host evaluating this projection is reached over
+  # loopback (unless it is served through a tailnet front), otherwise by
+  # provider FQDN. A provider move stays a placement edit in the policy; no
+  # consumer changes.
+  endpointHost =
+    provider: exposureMode: consumer:
+    if exposureMode != "tailscale-serve" && provider == consumer then
+      "127.0.0.1"
+    else
+      "${provider}.${tailnetSuffix}";
+in
 rec {
   hostPolicy =
     policy: hostName:
@@ -19,15 +50,10 @@ rec {
     lib.recursiveUpdate (lib.recursiveUpdate globalDefaults hostDefaults) serviceCfg;
 
   mkUpstream =
-    resolved: "${resolved.origin.scheme}://${resolved.origin.host}:${toString resolved.origin.port}";
-
-  mkOidcEndpoints = issuerUrl: {
-    issuerUrl = issuerUrl;
-    wellknownUrl = "${issuerUrl}/.well-known/openid-configuration";
-    authorizationUrl = "${issuerUrl}/authorize";
-    tokenUrl = "${issuerUrl}/api/oidc/token";
-    userinfoUrl = "${issuerUrl}/api/oidc/userinfo";
-  };
+    dialer: resolved:
+    "${resolved.origin.scheme}://${
+      upstreamHost resolved.origin.provider resolved.exposureMode dialer
+    }:${toString resolved.origin.port}";
 
   mkPublicHost =
     primaryDomain: resolved:
@@ -49,7 +75,7 @@ rec {
         in
         if resolved.path == "/" then base else "${base}${resolved.path}";
 
-      mkHealthUrl = resolved: "${mkUpstream resolved}${resolved.health.path}";
+      mkHealthUrl = resolved: "${mkUpstream hostName resolved}${resolved.health.path}";
     in
     lib.mapAttrs (
       serviceName: serviceCfg:
@@ -61,7 +87,7 @@ rec {
         service = serviceName;
         inherit primaryDomain;
         publicHost = mkPublicHost primaryDomain resolved;
-        upstream = mkUpstream resolved;
+        upstream = mkUpstream hostName resolved;
         publicUrl = mkPublicUrl resolved;
         healthUrl = mkHealthUrl resolved;
       }
@@ -113,17 +139,17 @@ rec {
           value = {
             inherit publicHost;
             hostname = canonicalService.subdomain;
-            primaryDomain = canonicalService.primaryDomain;
+            inherit (canonicalService) primaryDomain;
             proxied = canonicalService.cloudflare.proxied or true;
             declarePublic = true;
-            exposureMode = canonicalService.exposureMode;
+            inherit (canonicalService) exposureMode;
             routes = map (service: service.service) hostServices;
           }
           // lib.optionalAttrs (canonicalAccessService != null) {
             access = canonicalAccessService.access // {
-              service = canonicalAccessService.service;
-              publicUrl = canonicalAccessService.publicUrl;
-              path = canonicalAccessService.path;
+              inherit (canonicalAccessService) service;
+              inherit (canonicalAccessService) publicUrl;
+              inherit (canonicalAccessService) path;
             };
           };
         }
@@ -155,27 +181,82 @@ rec {
   hostPorts =
     policy: hostName: lib.mapAttrs (_: svc: svc.origin.port) (resolveHostServices policy hostName);
 
-  # Cross-host catalog projection: canonical public URL, access, and health
-  # metadata only. Edge-local transport fields (origin, upstream, healthUrl)
-  # stay out of the catalog so consumers cannot depend on a physical origin.
-  mkCatalogEntry = serviceName: resolved: {
-    service = serviceName;
-    inherit (resolved)
-      publicUrl
-      publicHost
-      primaryDomain
-      subdomain
-      path
-      category
-      declarePublic
-      exposureMode
-      access
-      health
-      ;
-  };
+  # Provider-side projection: the routes a host provides, so a host serving an
+  # origin can render the front the edge dials without reading the edge's route
+  # table and without restating the port. Origins themselves never enter the
+  # cross-host catalog; placement is matched by canonical host ID.
+  providedServices =
+    policy: hostId:
+    let
+      hosts = policy.hosts or { };
+      entries = lib.concatMap (
+        hostName:
+        let
+          hostDefaults = hosts.${hostName}.defaults or { };
+        in
+        lib.mapAttrsToList (serviceName: serviceCfg: {
+          inherit serviceName;
+          resolved = mergeDefaults (policy.defaults or { }) hostDefaults serviceCfg;
+        }) (hosts.${hostName}.services or { })
+      ) (builtins.attrNames hosts);
+
+      provided = lib.filter (entry: (entry.resolved.origin.provider or null) == hostId) entries;
+    in
+    builtins.listToAttrs (
+      map (entry: {
+        name = entry.serviceName;
+        value = {
+          inherit (entry.resolved.origin) scheme port;
+          inherit (entry.resolved) exposureMode;
+        };
+      }) provided
+    );
+
+  # Cross-host catalog projection. Public services expose their published
+  # identity (public URL/host, access, health) and the published upstream
+  # *shape* (scheme + port) — never a dial address, so a consumer can
+  # configure its own listen address and dial its published port without
+  # depending on which physical host serves the route. A private service's
+  # machine-to-machine `endpoint` *is* derived: its host resolves against the
+  # evaluating host (loopback when colocated with the provider), so a
+  # provider move stays a placement edit here and never a consumer edit.
+  isPublicService =
+    resolved: (resolved.declarePublic or false) && resolved.exposureMode != "tailscale-only";
+
+  mkCatalogEntry =
+    evalHostName: serviceName: resolved:
+    let
+      public = isPublicService resolved;
+      endpointHostValue = endpointHost resolved.origin.provider resolved.exposureMode evalHostName;
+      endpoint = {
+        inherit (resolved.origin) scheme;
+        host = endpointHostValue;
+        port = resolved.origin.port;
+        url = "${resolved.origin.scheme}://${endpointHostValue}:${toString resolved.origin.port}";
+      };
+    in
+    {
+      service = serviceName;
+      upstreamScheme = resolved.origin.scheme;
+      upstreamPort = resolved.origin.port;
+      publicUrl = if public then resolved.publicUrl else null;
+      publicHost = if public then resolved.publicHost else null;
+      publicDomain = if public then resolved.primaryDomain else null;
+      endpoint = if public then null else endpoint;
+      inherit (resolved)
+        primaryDomain
+        subdomain
+        path
+        category
+        declarePublic
+        exposureMode
+        access
+        health
+        ;
+    };
 
   serviceCatalog =
-    policy:
+    policy: evalHostName:
     let
       hosts = policy.hosts or { };
       allServices = lib.concatLists (
@@ -206,7 +287,7 @@ rec {
     builtins.listToAttrs (
       map (entry: {
         name = entry.serviceName;
-        value = mkCatalogEntry entry.serviceName entry.resolved;
+        value = mkCatalogEntry evalHostName entry.serviceName entry.resolved;
       }) checked
     );
 }

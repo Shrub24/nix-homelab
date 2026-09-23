@@ -1,7 +1,7 @@
 # edge-proxy-ingress Specification
 
 ## Purpose
-TBD - created by archiving change phase1-caddy-edge-proxy. Update Purpose after archive.
+Define the edge ingress layer: how routed services are exposed under one primary domain with an explicit exposure mode, how certificates and DNS records are produced, and how each route stays owned by the service that declares it.
 
 ## Requirements
 
@@ -36,11 +36,19 @@ Ingress TLS certificates SHALL be issued using Cloudflare DNS challenge integrat
 - **THEN** certificates are requested/renewed through Cloudflare DNS-01 without HTTP challenge dependency
 
 ### Requirement: Route ownership is modular by host and service
-Ingress route declarations SHALL be composable per host and per service without hardcoding a single fixed topology.
+Ingress route declarations SHALL remain composable per host and service through canonical web policy, while deployment placement SHALL be controlled by explicit host selection of the discovered `edge` aspect. Selecting the aspect SHALL provide application enablement; the host SHALL retain only its explicit `edge` or `origin` role and genuine exceptions rather than importing the ingress implementation.
 
 #### Scenario: Different hosts expose different services
 - **WHEN** host role composition differs between nodes
-- **THEN** each host publishes only its declared route set while reusing common ingress module contracts
+- **THEN** each participating host selects the same discovered `edge` aspect with its explicit role
+- **AND** each host publishes only the route set resolved for that host from canonical policy
+- **AND** a host that does not select `edge` activates no ingress runtime
+- **AND** no host directly imports the edge application or proxy implementation
+
+#### Scenario: Edge placement conversion preserves routing
+- **WHEN** edge/origin composition moves from the evaluator-class application root to the discovered concern owner
+- **THEN** primary domain, ACME email, trusted proxy policy, Authenticated Origin Pulls, secret paths, and every rendered route remain unchanged
+- **AND** discovery alone does not expose any route
 
 ### Requirement: Sensitive services remain private-origin and access-gated by default
 Sensitive or administrative web services SHALL default to Cloudflare Access-gated public edge routing with private-origin upstream transport, while preserving explicit support for `tailscale-only` where required.
@@ -218,3 +226,44 @@ Moving the designated edge host SHALL preserve the public URL, Cloudflare Access
 - **WHEN** `la-admin-1` becomes the designated edge host
 - **THEN** all declared routes resolve through that host without duplicate route ownership
 - **AND** route-specific Cloudflare Access exceptions remain unchanged
+
+### Requirement: Routes SHALL declare how they are exposed
+
+Every route in canonical policy SHALL declare its `exposureMode`, the single axis describing how the service is exposed and whether it is published. No default SHALL apply, so an unlabelled route fails evaluation, and a route reachable only through a front rendered by its providing host SHALL declare `tailscale-serve`.
+
+#### Scenario: A route is served through its providing host
+
+- **WHEN** a route declares `tailscale-serve`
+- **THEN** the edge dials the provider's canonical private name on the route's port
+- **AND** it verifies the presented certificate against public roots
+
+#### Scenario: A served route keeps conflicting transport settings out
+
+- **WHEN** a route declaring `tailscale-serve` also sets an upstream TLS server name, an insecure flag, or a CA file
+- **THEN** policy evaluation fails closed with the conflicting fields named
+
+#### Scenario: A route without an exposure mode
+
+- **WHEN** a route declares no `exposureMode`
+- **THEN** policy evaluation fails closed, naming the route and the allowed values
+
+### Requirement: Providers SHALL render their own front for private-transport routes
+
+A host that provides a private-transport route SHALL render the front the edge dials, driven by resolved policy and owned by the ingress origin role, so that no service module depends on the private network's exposure mechanism.
+
+#### Scenario: The provider renders exactly one front
+
+- **WHEN** an origin-role host provides a route declaring a private transport
+- **THEN** it renders one front for that route on the route's declared port
+- **AND** the front dials the service's loopback socket on the same port
+
+#### Scenario: A host that does not provide the route renders nothing
+
+- **WHEN** a host does not provide the route, including the edge host that dials it
+- **THEN** no front is rendered for it
+
+#### Scenario: The front is reconciled, not assumed
+
+- **WHEN** the front's unit starts
+- **THEN** it waits for the private-network daemon and applies its configuration idempotently
+- **AND** when the unit stops it withdraws the configuration

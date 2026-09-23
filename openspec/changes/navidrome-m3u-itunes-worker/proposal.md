@@ -10,7 +10,7 @@ Core value: add the smallest reproducible playlist path from Navidrome to Engine
 - Ship a `playlist-sync` command on `home-forge`: fetch every Navidrome playlist as a `/music`-rooted M3U via the Subsonic API into the worker import dir (stale M3Us replaced, empties skipped), then start the import job.
 - Configure the worker jobs on `home-forge`:
   - `import@navidrome`: M3U import rooted at Navidrome's `/music` export prefix, chaining to the engine export via `onSuccess`.
-  - `export@engine`: direct-DB export into the Engine library database at `<engine-library>/Database2/m.db` (host `/srv/data/engine-dj/library/Database2/m.db`, guest `M:\Engine Library\Database2\m.db`) with `track_path_prefix=../library`, so tracks resolve relative to the Engine Library dir on `M:`.
+  - `export@engine`: direct-DB export into the Engine library database at `<musicStorageRoot>/Engine Library/Database2/m.db` (guest `M:\Engine Library\Database2\m.db`) with `track_path_prefix=../library`, so tracks resolve relative to the Engine Library dir on `M:`.
   - `export@itunes`: optional/manual sibling iTunes XML export (superseded by the engine-direct path; kept only as an operator fallback).
 - Bind the import and engine-export jobs to `dj-library-writers.target` so they are mutually exclusive with the running VM.
 - Keep retrieval and services manual; add no timer, watcher, or recurring automation. Credentials come from the Subsonic API (`navidrome_username`/`navidrome_password` secret), never direct Navidrome DB access.
@@ -29,5 +29,5 @@ Core value: add the smallest reproducible playlist path from Navidrome to Engine
 ## Impact
 
 - `flake.nix`, `flake.lock`, `hosts/home-forge/default.nix`, and `modules/applications/dj/engine-dj.nix`
-- Home-forge worker state under `/srv/data/traktor-m3u-sync` and the Engine library database under `/srv/data/engine-dj/library/Database2`
+- Home-forge worker state under `/srv/data/traktor-m3u-sync` and the Engine library database under `<musicStorageRoot>/Engine Library/Database2`
 - Engine DJ documentation and the affected OpenSpec specs

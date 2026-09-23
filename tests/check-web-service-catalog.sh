@@ -13,7 +13,10 @@ nix eval --impure --no-write-lock-file --expr '
     lib = flake.inputs.nixpkgs.lib;
     policy = import ./policy/web-services.nix;
     policyLib = import ./lib/policy.nix { inherit lib; };
-    catalog = policyLib.serviceCatalog policy;
+    # Data-level call: an edge-independent projection is checked here, so the
+    # catalog is resolved for a nominal host and only identity fields are
+    # asserted (dial fields are host-relative and asserted per host below).
+    catalog = policyLib.serviceCatalog policy "edge-invariant-nominal";
   in
   assert builtins.hasAttr "kanidm-admin" catalog;
   assert catalog."kanidm-admin".publicUrl == "https://id.shrublab.xyz";
@@ -37,23 +40,23 @@ nix eval --impure --no-write-lock-file --expr '
     lib = flake.inputs.nixpkgs.lib;
     policyLib = import ./lib/policy.nix { inherit lib; };
     dupPolicy = {
-      defaults = { primaryDomain = "example.com"; };
+      defaults = { primaryDomain = "example.com"; exposureMode = "tailscale-only"; };
       hosts = {
         a = {
           services.dup = {
             subdomain = "dup";
-            origin = { scheme = "http"; host = "127.0.0.1"; port = 1; };
+            origin = { scheme = "http"; provider = "a"; port = 1; };
           };
         };
         b = {
           services.dup = {
             subdomain = "dup";
-            origin = { scheme = "http"; host = "127.0.0.1"; port = 2; };
+            origin = { scheme = "http"; provider = "b"; port = 2; };
           };
         };
       };
     };
-    result = builtins.tryEval (builtins.deepSeq (policyLib.serviceCatalog dupPolicy) true);
+    result = builtins.tryEval (builtins.deepSeq (policyLib.serviceCatalog dupPolicy "dup-eval") true);
   in
   assert !result.success;
   true
@@ -61,18 +64,118 @@ nix eval --impure --no-write-lock-file --expr '
 echo "web-service catalog duplicate-key: PASS"
 
 # Minimal physical deployment boundary: edgeHost and deployOrder remain the
-# only central physical facts, and the default target is a real deploy node.
+# only central physical facts, and the edge host is a real deploy node. The
+# serial deploy order is independent of which host is the edge.
 nix eval --impure --no-write-lock-file --expr '
   let
     flake = builtins.getFlake (toString ./.);
     deploy = flake.deployHosts;
   in
-  assert deploy.edgeHost == "la-admin-1";
-  assert builtins.head deploy.deployOrder == deploy.edgeHost;
+  assert deploy.edgeHost == "oci-melb-1";
+  assert builtins.elem deploy.edgeHost deploy.deployOrder;
   assert builtins.hasAttr deploy.edgeHost deploy.nodes;
   assert builtins.attrNames deploy == [ "deployOrder" "edgeHost" "nodes" ];
   true
 ' > /dev/null
 echo "deploy default-target boundary: PASS"
+
+# Stage 8 task 3.2 (HIC-3): host-backed web routing references canonical host
+# identities. Every `hosts` table key must be a declared canonical host ID, and
+# every origin must name a canonical host ID as its `origin.provider`
+# the single tailnet suffix authority (policy/globals.nix).
+web_refs="$(nix eval --impure --raw --no-write-lock-file --expr '
+  let
+    flake = builtins.getFlake (toString ./.);
+    globals = import ./policy/globals.nix;
+    policy = import ./policy/web-services.nix;
+    hostsTable = policy.hosts or { };
+    origins = builtins.concatMap (
+      hostName:
+      builtins.map (svc: svc.origin.provider or null) (builtins.attrValues (hostsTable.${hostName}.services or { }))
+    ) (builtins.attrNames hostsTable);
+  in
+  builtins.toJSON {
+    suffix = globals.tailnet.suffix;
+    policyHostKeys = builtins.attrNames hostsTable;
+    canonicalHostKeys = builtins.attrNames flake.nixosConfigurations;
+    hostNames = builtins.mapAttrs (_: c: c.config.networking.hostName or null) flake.nixosConfigurations;
+    originProviders = builtins.filter (h: h != null) origins;
+  }
+')" || { echo "web routing references must evaluate" >&2; exit 1; }
+python3 - "$web_refs" <<'PYEOF'
+import json
+import sys
+
+got = json.loads(sys.argv[1])
+suffix = got["suffix"]
+canonical = set(got["canonicalHostKeys"])
+errors = []
+
+if not canonical:
+    errors.append("no canonical host IDs resolved")
+
+unknown_keys = sorted(set(got["policyHostKeys"]) - canonical)
+if unknown_keys:
+    errors.append(f"policy hosts keys are not canonical host IDs: {unknown_keys!r}")
+
+# Non-vacuity: the policy must actually carry placement IDs to check.
+placements = sorted({p for p in got["originProviders"] if p})
+if not placements:
+    errors.append("no origin provider placement found (this check would be vacuous)")
+
+for host_id in placements:
+    if host_id not in canonical:
+        errors.append(f"origin provider {host_id!r} is not a canonical host ID")
+        continue
+    if got["hostNames"].get(host_id) != host_id:
+        errors.append(
+            f"origin provider {host_id!r} disagrees with canonical host "
+            f"(networking.hostName {got['hostNames'].get(host_id)!r})"
+        )
+
+if errors:
+    print("; ".join(errors), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+echo "web routing canonical-host references: PASS"
+
+# The private service policy is the single source for the Niks3 write port:
+# the provider listens on it and every publisher dials it. This is the one
+# fleet-placement invariant that the retired internal-contracts module used to
+# prove generically; it stays as a concrete check rather than an abstraction.
+nix eval --impure --no-write-lock-file --json --expr '
+  let
+    flake = builtins.getFlake (toString ./.);
+    provider = flake.nixosConfigurations.oci-melb-1.config;
+    catalog = provider.repo.web.catalog."niks3-write";
+    lib = flake.inputs.nixpkgs.lib;
+  in
+  {
+    isPrivate = catalog.declarePublic == false && catalog.exposureMode == "tailscale-only";
+    noPublicIdentity = catalog.publicUrl == null && catalog.publicHost == null;
+    providerListensOnDeclaredPort = provider.services.niks3.httpAddr
+      == "0.0.0.0:${toString catalog.endpoint.port}";
+    # Placement-derived locality: the endpoint resolves loopback for the
+    # provider host evaluation (it used to round-trip through its tailnet
+    # name) and the provider FQDN for every other host.
+    colocatedLoopback = catalog.endpoint.host == "127.0.0.1";
+    remoteFqdn = flake.nixosConfigurations.la-admin-1.config.repo.web.catalog."niks3-write".endpoint.host
+      == "oci-melb-1.${(import ./policy/globals.nix).tailnet.suffix}";
+  }
+' | python3 -c '
+import json, sys
+got = json.load(sys.stdin)
+want = {
+    "isPrivate": True,
+    "noPublicIdentity": True,
+    "providerListensOnDeclaredPort": True,
+    "colocatedLoopback": True,
+    "remoteFqdn": True,
+}
+if got != want:
+    print(f"niks3 write-endpoint invariant: got {got!r} want {want!r}", file=sys.stderr)
+    sys.exit(1)
+'
+echo "private write-endpoint invariant: PASS"
 
 echo "check-web-service-catalog: PASS"

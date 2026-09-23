@@ -32,7 +32,7 @@
   - criteria: no timer/path unit automatically starts Traktor export or import; upstream units keep `wantedBy = []`; manual `systemctl start traktor-m3u-sync-export.service` / `systemctl start traktor-m3u-sync-import.service` remains the trigger model
   - verify: targeted eval confirms no Traktor M3U timers/path units are enabled and the export/import units have no automatic `wantedBy` activation
 
-- [ ] 2.5 Register Traktor manual units with centralized notification monitoring where appropriate.
+- [x] 2.5 Register Traktor manual units with centralized notification monitoring where appropriate.
   - refs: `hosts/oci-melb-1/default.nix`, `services.notification-daemon.monitor.services`
   - criteria: failed `traktor-m3u-sync-export.service` / `traktor-m3u-sync-import.service` units are visible through the existing notification-daemon monitoring path rather than bespoke notification logic
   - verify: targeted eval shows `traktor-m3u-sync-export` and `traktor-m3u-sync-import` appear in `services.notification-daemon.monitor.services`, or the implementation documents why registration is deferred

@@ -1,6 +1,10 @@
 # Delta Spec: Operations
 
-## ADDED Requirements
+## Purpose
+
+Define the operator workflows required to bring up, validate, and maintain fleet services alongside automated deployment.
+
+## Requirements
 
 ### Requirement: Operator workflows SHALL cover AudioMuse first-run bootstrap and plugin enablement
 Operations documentation and verification flows SHALL include the AudioMuseAI first-run workflow, Navidrome plugin enablement steps, and Symfonium validation required for similarity features.

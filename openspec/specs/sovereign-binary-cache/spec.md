@@ -1,7 +1,7 @@
 # sovereign-binary-cache Specification
 
 ## Purpose
-TBD - created by archiving change niks3-cache. Update Purpose after archive.
+Define the repository's own binary cache: where the niks3 server runs, how its objects are stored and read, the signing enforcement on the write path, and the retention and push credentials around it.
 
 ## Requirements
 
@@ -105,3 +105,49 @@ The post-deploy trigger SHALL be driven from a `system.activationScripts` snippe
 - **AND** the snippet SHALL start the unit with `systemctl start --no-block` when systemd is running
 - **AND** the unit script SHALL read the target path from `/run/niks3-post-deploy/target`, falling back to `readlink -f /run/current-system`
 - **AND** no `systemd.paths` unit SHALL watch `/run/current-system`
+
+### Requirement: Post-deploy cache push SHALL be composed by the backups aspect
+The post-deploy cache push SHALL be composed by the backups aspect for hosts that select it, without changing the activation trigger, the filtered closure push behavior, or the classified upstream post-build-hook suppression.
+
+#### Scenario: Host with backups enabled activates a new generation
+- **WHEN** a host selects the backups aspect and activates a new system generation
+- **THEN** the post-deploy push unit SHALL run after activation with the same trigger as before the ownership change
+- **AND** the pushed closure SHALL exclude paths signed only by the configured public cache keys
+
+#### Scenario: Upstream post-build-hook suppression is preserved
+- **WHEN** the niks3 upload client is evaluated under the backups aspect
+- **THEN** the automatic Nix post-build-hook remains disabled as the classified compatibility constraint of upstream `niks3-auto-upload`
+- **AND** the daemon/socket required by post-deploy upload remains available
+- **AND** no additional override or relocated suppression is introduced
+
+#### Scenario: Host-specific upload variants are preserved
+- **WHEN** a host that owns the cache server selects the backups aspect
+- **THEN** the host's niks3 token ownership override and loopback cache endpoint are preserved
+- **AND** upload-client defaults remain overridable per host
+
+#### Scenario: Post-deploy filter package is injected by the backups aspect
+- **WHEN** the post-deploy leaf is evaluated under the backups aspect
+- **THEN** the required `services.niks3-post-deploy.filterPackage` option is set per system by the aspect via `withSystem`
+- **AND** the leaf does not read `config.repo.packages`, so the aspect has no hidden `fleet-packages` dependency
+
+### Requirement: Private Niks3 writes SHALL use an internal transport contract
+
+Hosts publishing closures SHALL resolve the Niks3 private write endpoint from the canonical `niks3Write` internal contract. The contract SHALL remain distinct from the cache read/substituter identity.
+
+#### Scenario: Remote host publishes a closure
+
+- **WHEN** a non-cache host invokes the Niks3 upload client
+- **THEN** its server URL uses the provider hostname and port resolved from the internal write contract
+- **AND** it does not embed the current cache host name
+
+#### Scenario: Cache host publishes locally
+
+- **WHEN** the Niks3 provider host publishes its own closure
+- **THEN** it may use a provider-local loopback endpoint as an explicit transport optimization
+- **AND** remote publishers continue to use the resolved private contract
+
+#### Scenario: Consumer reads from the cache
+
+- **WHEN** a Nix consumer substitutes a closure
+- **THEN** it continues to use the canonical read/substituter policy
+- **AND** it does not route reads through the private write contract

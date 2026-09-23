@@ -53,7 +53,7 @@ creation_rules:
     key_groups:
       - age:
           - *owner_age
-          - *la_admin_1_age
+          - *oci_melb_1_age
   # Service scopes (standalone leaf services)
   - path_regex: ^secrets/services/notification-daemon\.ya?ml$
     key_groups:

@@ -1,6 +1,6 @@
 # State Restore Runbook
 
-Canonical restore path for host state backed up by `services.state-backups` (restic) on `la-admin-1` and `oci-melb-1`. All restores are staged first; restic output is never written directly into `/`.
+Canonical restore path for host state backed up by `services.state-backups` (restic) on `la-admin-1`, `oci-melb-1`, and `home-forge`. All restores are staged first; restic output is never written directly into `/`.
 
 ## 1. Hard safety rules
 
@@ -218,6 +218,7 @@ Restore by staging the path (operator workstation), then on the target host pres
 | `/srv/data/navidrome` | `navidrome.service`, `navidrome-scan.service` | `chown -R navidrome:navidrome` | library/quarantine present; scan completes |
 | `/srv/data/beets` | `beets-*.service`, `beets-*.timer`, `beets-*.path` | `chown -R beets:beets` | `beet info` resolves; runners start clean |
 | `/srv/storage/media/music/library`, `/srv/storage/media/music/quarantine` (excl. `.versions`) on `home-forge`; retained rollback copy at `/srv/media` on `oci-melb-1` | `syncthing.service`, `navidrome.service`, `podman-tagr.service`, `slskd.service`, `beets-*` units, `ffmpeg-preprocess.service` + inbox path units | keep group/ACL layout from the snapshot, then `sudo systemctl start media-permission-reconcile.service` to re-apply module ACLs | syncthing folder Healthy; navidrome reflects files |
+| `/srv/storage/media/music/Engine Library` (Engine library DB) on `home-forge` | `windows-vm-windows-dj.service`, `traktor-m3u-sync-import@navidrome.service`, `traktor-m3u-sync-export@engine.service` (writers bind `dj-library-writers.target`, which conflicts with the VM and the restic job) | `chown -R root:root`; the tmpfiles `z` rule re-converges `Engine Library/Database2` to `playlist-sync:music-ingest` 0770 at boot | `PRAGMA integrity_check` on `Database2/m.db` → ok; playlists resolve in Engine DJ |
 | `/srv/data/paperless`, `/srv/data/paperless/media`, `/srv/data/paperless/consume` | `paperless-*.service` | `chown -R paperless:paperless` | UI login; document count matches pre-restore |
 | `/srv/data/paperless-gpt-llm` (+ docling dir when enabled) | `podman-paperless-gpt-*.service` | `chown -R root:root`, mode 0750 | paperless-gpt API/status responds; tags route |
 | `/srv/data/karakeep` | `podman-karakeep-web.service`, `podman-karakeep-meilisearch.service`, `podman-karakeep-chrome.service`, `podman-network-karakeep-net.service` | `chown -R root:root`, mode 0750 | login works; meilisearch reindexes from the app DB |

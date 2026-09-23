@@ -22,7 +22,6 @@ bootstrap host target:
     echo "Port 22 is open on $TARGET."; \
     source scripts/resolve-host-config.sh "{{ host }}"; \
     ./deploy.sh \
-        --host-config "$HOST_CONFIG" \
         --target "{{ target }}" \
         --bootstrap-user "$BOOTSTRAP_USER" \
         --flake "$FLAKE" \
@@ -33,7 +32,7 @@ bootstrap host target:
 deploy host="la-admin-1" rollback="true" verbose="false":
     @HOST="{{ host }}"; ROLLBACK="{{ rollback }}"; VERBOSE="{{ verbose }}"; EXIT=0; \
     if [[ -z "$HOST" ]]; then echo "Error: host required (use --host <nixosConfiguration>)"; exit 1; fi; \
-    STRICT="$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' "path:.#deployHosts.nodes.\"$HOST\".strictSubstituteOnly")"; \
+    STRICT="$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' ".#deployHosts.nodes.\"$HOST\".strictSubstituteOnly")"; \
     ARGS=(--skip-checks); \
     NIX_ARGS=(); \
     [[ "$ROLLBACK" != "false" ]] || ARGS+=(--auto-rollback false); \
@@ -45,9 +44,9 @@ deploy host="la-admin-1" rollback="true" verbose="false":
     fi; \
     nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST" "${NIX_ARGS[@]}" || EXIT=$?; \
     if [ "$EXIT" -eq 0 ]; then \
-        printf 'deploy-rs succeeded for %s' "$HOST" | nix run .#notify -- info "Deploy $HOST" deploy system || true; \
+        printf 'deploy-rs succeeded for %s' "$HOST" | ssh "$HOST" notify send info "Deploy $HOST" --topic system || true; \
     else \
-        printf 'deploy-rs failed for %s (exit %d)' "$HOST" "$EXIT" | nix run .#notify -- warning "Deploy $HOST" deploy system || true; \
+        printf 'deploy-rs failed for %s (exit %d)' "$HOST" "$EXIT" | ssh "$HOST" notify send warning "Deploy $HOST" --topic system || true; \
     fi; \
     exit "$EXIT"
 
@@ -56,9 +55,9 @@ host host:
 
 _preflight host:
     @HOST="{{ host }}"; \
-    nix eval --no-write-lock-file --apply 'cfg: if cfg.services.openssh.enable then true else throw "openssh is disabled"' "path:.#nixosConfigurations.${HOST}.config" >/dev/null; \
-    nix eval --no-write-lock-file --apply 'cfg: let ports = cfg.networking.firewall.allowedTCPPorts or [ ]; in if builtins.elem 22 ports then true else throw "firewall does not allow tcp/22"' "path:.#nixosConfigurations.${HOST}.config" >/dev/null; \
-    nix eval --no-write-lock-file --apply 'cfg: let devKeys = cfg.users.users.dev.openssh.authorizedKeys.keys or [ ]; rootKeys = cfg.users.users.root.openssh.authorizedKeys.keys or [ ]; in if (builtins.length devKeys > 0) && (builtins.length rootKeys > 0) then true else throw "missing declarative dev/root SSH keys"' "path:.#nixosConfigurations.${HOST}.config" >/dev/null; \
+    nix eval --no-write-lock-file --apply 'cfg: if cfg.services.openssh.enable then true else throw "openssh is disabled"' ".#nixosConfigurations.${HOST}.config" >/dev/null; \
+    nix eval --no-write-lock-file --apply 'cfg: let ports = cfg.networking.firewall.allowedTCPPorts or [ ]; in if builtins.elem 22 ports then true else throw "firewall does not allow tcp/22"' ".#nixosConfigurations.${HOST}.config" >/dev/null; \
+    nix eval --no-write-lock-file --apply 'cfg: let devKeys = cfg.users.users.dev.openssh.authorizedKeys.keys or [ ]; rootKeys = cfg.users.users.root.openssh.authorizedKeys.keys or [ ]; in if (builtins.length devKeys > 0) && (builtins.length rootKeys > 0) then true else throw "missing declarative dev/root SSH keys"' ".#nixosConfigurations.${HOST}.config" >/dev/null; \
     echo "preflight PASS: ${HOST} (openssh, tcp/22, dev+root keys)"
 
 _activate host:

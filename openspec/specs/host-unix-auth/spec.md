@@ -1,8 +1,10 @@
 # host-unix-auth Specification
 
 ## Purpose
-TBD - created by archiving change kanidm-identity-migration. Update Purpose after archive.
+Define host-level UNIX authentication against the fleet identity provider: native Kanidm client and unixd integration on hosts that opt in after OIDC parity, with SSH and PAM policy kept explicit and host-safe.
+
 ## Requirements
+
 ### Requirement: Fleet hosts SHALL support Kanidm client and unixd integration
 Fleet hosts SHALL support Kanidm client and unixd integration through native nixpkgs client/unix modules after OIDC parity is established.
 
@@ -24,3 +26,19 @@ Kanidm-backed SSH and PAM login behavior SHALL be enabled only through explicit 
 - **THEN** that account is configured explicitly as a host-scoped exception rather than an implicit fleet-wide normal login path
 - **AND** its console login and sudo posture remains declarative and auditable
 
+### Requirement: Kanidm host auth SHALL be an independently selectable capability
+
+Kanidm-backed Unix, PAM, and SSH integration SHALL be provided by a `kanidm-host-auth` deployment aspect that hosts select explicitly, and it SHALL obtain the provider server URI from the intrinsic OIDC contract rather than requiring a projection selection or another host's configuration.
+
+#### Scenario: A host opts into Kanidm Unix integration
+
+- **WHEN** a host selects the `kanidm-host-auth` aspect
+- **THEN** `services.identity.hostAuth` wiring evaluates together with the host's declared SSH and PAM policy
+- **AND** the Kanidm client package resolves from the same release family as the provider's server package
+- **AND** the host does not select any projection aspect to make the server URI available
+
+#### Scenario: A host consumes OIDC without Kanidm Unix integration
+
+- **WHEN** a host runs an OIDC-consuming application and does not select `kanidm-host-auth`
+- **THEN** the application resolves its issuer and endpoint values from the canonical OIDC contract
+- **AND** no Kanidm client package, unixd integration, or PAM login policy is introduced by that consumption alone

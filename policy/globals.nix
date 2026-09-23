@@ -1,4 +1,14 @@
 {
+  # The fleet Tailscale tailnet DNS suffix is written once, here. Canonical
+  # host records set
+  # `tailscale.tailnetSuffix = globals.tailnet.suffix` and derive their
+  # `tailscale.fqdn` from it; the web policy composes host-backed FQDNs as
+  # `"${hostId}.${globals.tailnet.suffix}"` in policy/web-services.nix, so a
+  # renamed tailnet or changed host set can only disagree loudly, never drift.
+  tailnet = {
+    suffix = "tail0fe19b.ts.net";
+  };
+
   aiGateway = {
     aliases = {
       text = "shrublab-text";
@@ -13,19 +23,6 @@
     endpoint = "https://bef816e6776e8f13f5c03d2af70b036e.r2.cloudflarestorage.com";
     region = "auto";
     forcePathStyle = true;
-  };
-
-  applications = {
-    # Music has no global physical paths: storage roots are host-required
-    # bindings (see applications.music.dataRoot/.storageRoot) so a host cannot
-    # silently inherit a fleet-wide layout.
-    admin = {
-      dataRoot = "/srv/data";
-    };
-    edge-ingress = {
-      enable = false;
-      role = "none";
-    };
   };
 
   notifications = {

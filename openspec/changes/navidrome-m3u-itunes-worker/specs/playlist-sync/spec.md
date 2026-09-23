@@ -26,7 +26,7 @@ The fetcher SHALL accept both library-relative paths and absolute paths rooted a
 - **THEN** the entry is skipped with a diagnostic and the M3U is not corrupted
 
 ### Requirement: The import job SHALL chain to the engine direct-DB export
-The `import@navidrome` job SHALL consume the `/music`-rooted M3Us and chain to the `export@engine` job via `onSuccess`. The engine export SHALL publish playlists directly into the Engine library database at `<engine-library>/Database2/m.db` (host `/srv/data/engine-dj/library/Database2/m.db`, guest `M:\Engine Library\Database2\m.db`) with `track_path_prefix=../library`, so tracks resolve relative to the Engine Library dir on `M:`.
+The `import@navidrome` job SHALL consume the `/music`-rooted M3Us and chain to the `export@engine` job via `onSuccess`. The engine export SHALL publish playlists directly into the Engine library database at `<musicStorageRoot>/Engine Library/Database2/m.db` (guest `M:\Engine Library\Database2\m.db`) with `track_path_prefix=../library`, so tracks resolve relative to the Engine Library dir on `M:`.
 
 #### Scenario: Import chains to engine export
 - **WHEN** the import job succeeds

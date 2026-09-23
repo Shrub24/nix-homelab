@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Contract test for the Kanidm restore helper (modules/services/admin/kanidm.nix).
+# Contract test for the Kanidm restore helper (modules/identity/kanidm-runtime.nix).
 # Renders the exact writeShellScript body from the module source, exercises the
 # guard logic and the fail-closed offline verification gate with a stubbed
 # kanidmd, then runs a real restore/verify against a scratch database when the
@@ -12,7 +12,7 @@ cd "$ROOT"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-MOD=modules/services/admin/kanidm.nix
+MOD=modules/identity/kanidm-runtime.nix
 
 # --- source contract: operator-invoked only, never auto/timer started ---
 UNIT_BLOCK="$(sed -n '/systemd.services."kanidm-restore@"/,/};/p' "$MOD")"
@@ -55,7 +55,7 @@ render_script() {
   KANIDMD="$KANIDMD" SYSTL="${3:-systemctl}" CHOWN="${4:-chown}" RM="${RM_STUB:-rm}" python3 - "$MOD" "$1" <<'PYEOF'
 import os, re, sys
 src = open(sys.argv[1]).read()
-m = re.search(r'restoreScript = pkgs\.writeShellScript "kanidm-restore" \'\'\n(.*?)\'\';\nin', src, re.S)
+m = re.search(r'restoreScript = pkgs\.writeShellScript "kanidm-restore" \'\'\n(.*?)\'\';\n[ \t]*in\b', src, re.S)
 if not m:
     sys.exit("kanidm-restore: writeShellScript block not found in " + sys.argv[1])
 script = m.group(1)
@@ -343,7 +343,7 @@ mkdir -p "$WORK/backups"
 # DB is therefore seeded with a 1.10-line binary when one is available in the
 # store (same upgrade path la-admin-1 follows); otherwise the runtime section
 # skips (fail-closed stub coverage already ran above).
-KANIDMD_10="$(ls -d /nix/store/*-kanidm-with-secret-provisioning-1.10.*/bin/kanidmd 2>/dev/null | head -1)"
+KANIDMD_10="$(ls -d /nix/store/*-kanidm-with-secret-provisioning-1.10.*/bin/kanidmd 2>/dev/null | head -1 || true)"
 if [[ -z "$KANIDMD_10" ]]; then
   echo "SKIP kanidm-restore runtime: no 1.10-line kanidmd in store to seed the pre-upgrade scratch DB" >&2
   echo "kanidm-restore-contract: PASS (stub contract only)"

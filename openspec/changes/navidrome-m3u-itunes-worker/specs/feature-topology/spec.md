@@ -17,3 +17,13 @@ Leaf service modules SHALL own semantic secret registration, template assembly, 
 - **WHEN** home-forge evaluates the Navidrome playlist-sync worker
 - **THEN** it imports the upstream worker module and configures only its M3U import / engine export option surface
 - **AND** no repository-owned Traktor leaf, NML option, or Traktor collection state is restored
+
+#### Scenario: Application passes resolved OIDC env-file handoff to a leaf
+- **WHEN** a composed leaf service owns an OIDC template but expects a resolved env-file path input for runtime wiring
+- **THEN** the application composition layer passes the resolved `sops.templates.*.path` through the leaf's explicit contract surface
+- **AND** hosts do not own or duplicate that OIDC env-file wiring
+
+#### Scenario: Leaf secret contract cleanup is reviewed after regression fixes
+- **WHEN** a leaf service is revisited after the topology migration to close a regression or cleanup pass
+- **THEN** it continues to use the canonical helper-based secret contract surface where that pattern is already established in the repo
+- **AND** hosts only bind explicit contract inputs rather than reviving ad hoc secret-file wiring shapes

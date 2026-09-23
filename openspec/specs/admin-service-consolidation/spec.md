@@ -1,7 +1,7 @@
 # admin-service-consolidation Specification
 
 ## Purpose
-TBD - created by archiving change admin-module-consolidation-refactor. Update Purpose after archive.
+Define how admin-owned services are exposed and wired in this repository: each canonical module publishes a `services.admin.<name>` surface and owns the runtime and glue behind it, instead of relying on a generic passthrough namespace.
 ## Requirements
 ### Requirement: Admin-owned services SHALL expose canonical admin namespaces
 When a service is treated as admin-owned in this repository, its canonical reusable module SHALL expose configuration through `services.admin.<name>` and SHALL directly own the runtime wiring needed to configure the underlying NixOS or containerized service.

@@ -30,26 +30,6 @@
       message = "${feature}.enable is true but ${feature}.${label} is not set.";
     };
 
-  mkSimpleSecret =
-    {
-      sopsFile,
-      key,
-      path,
-      owner ? "root",
-      group ? "root",
-      mode ? "0400",
-    }:
-    {
-      inherit
-        sopsFile
-        key
-        path
-        owner
-        group
-        mode
-        ;
-    };
-
   mkSecretsFromMap =
     sopsFile: map:
     builtins.mapAttrs (_name: spec: {

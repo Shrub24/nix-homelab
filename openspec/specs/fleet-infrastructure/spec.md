@@ -7,23 +7,27 @@ Define the baseline infrastructure contracts for a modular NixOS homelab fleet, 
 ## Requirements
 
 ### Requirement: Host composition is host-centric and modular
-The repository SHALL organize host identity separately from reusable modules so hosts can add or remove feature stacks through explicit application/service enablement without reintroducing service ownership at the host layer.
+The repository SHALL construct fleet hosts from typed `nixos.configurations.<host>` records and SHALL organize host identity separately from reusable discovered aspects so hosts select every deployed product and platform capability explicitly without importing service, application, or provider implementation files.
 
 #### Scenario: A host is composed from shared modules
-- **WHEN** a host configuration is declared in `hosts/<host>/default.nix`
-- **THEN** it composes reusable modules rather than embedding provider/service logic inline
-- **AND** it enables composed workloads through canonical application or standalone service entrypoints instead of hidden import-only activation
+- **WHEN** a host configuration is declared under `modules/hosts/<host>/`
+- **THEN** a typed registry entry declares its system and explicit aspect composition
+- **AND** the flake materializes the same `nixosConfigurations.<host>` output expected by operator and CI workflows
+- **AND** the host record selects reusable aspects rather than embedding or directly importing provider or service implementation
+- **AND** workload selection remains explicit rather than arising from accidental import-tree discovery
 
 #### Scenario: Edge role is assigned to one host
 - **WHEN** only one host is configured as ingress edge
-- **THEN** other hosts can remain private-origin nodes with shared module composition patterns
+- **THEN** that host and private-origin hosts may co-select the discovered `edge` aspect with explicit role variants
+- **AND** other hosts remain free of edge runtime activation
 
 ### Requirement: First-host bootstrap is declarative and repeatable
-The first host SHALL be bootstrappable from repository state using `nixos-anywhere` and `disko`, and rebuildable from flake outputs.
+The first host SHALL be bootstrappable from repository state using `nixos-anywhere` and `disko`, and rebuildable from flake outputs whose host metadata is derived from the typed configuration registry.
 
 #### Scenario: Host bootstrap workflow is executed
-- **WHEN** operators run bootstrap/deploy workflows
+- **WHEN** operators run bootstrap or deploy workflows
 - **THEN** installation and post-install rebuilds derive from declarative flake/module state
+- **AND** existing host names and bootstrap-facing flake outputs remain compatible
 
 ### Requirement: Secret blast radius is path-scoped
 Secrets SHALL be split into topology-aligned application, standalone-service, and host-exception scopes with explicit path rules that do not grant implicit cross-host decryption.
@@ -87,11 +91,12 @@ The shared origin endpoint used as CNAME target for published service records SH
 - **THEN** OpenTofu plans a DNS record for the configured origin name/content/proxy posture
 
 ### Requirement: Fleet package baseline defaults to unstable
-Fleet host outputs SHALL consume the primary repository package baseline from `nixos-unstable` unless an explicit documented exception is introduced.
+Fleet host outputs SHALL consume the primary repository package baseline from `nixos-unstable` unless an explicit documented exception is introduced, independent of the system evaluating the flake.
 
 #### Scenario: Active host outputs are evaluated
-- **WHEN** `nixosConfigurations.oci-melb-1` and `nixosConfigurations.la-admin-1` are built from the flake
-- **THEN** both host outputs resolve packages from the primary unstable baseline input
+- **WHEN** `nixosConfigurations.oci-melb-1`, `nixosConfigurations.la-admin-1`, and `nixosConfigurations.home-forge` are evaluated
+- **THEN** each host resolves packages for its declared target system from the primary unstable baseline input
+- **AND** per-host checks do not force an evaluator to build another architecture locally
 
 ### Requirement: Recoverable hosts SHALL include host-scoped state backup architecture
 Fleet hosts that carry mutable service state SHALL support host-scoped declarative backup wiring as part of the recoverable baseline.
@@ -160,3 +165,221 @@ When an active host is replaced, the source host SHALL remain available as the r
 - **WHEN** public edge, identity, and admin roles move from DigitalOcean to LA
 - **THEN** the DigitalOcean host remains a rollback source until LA backup and recovery verification succeeds
 - **AND** its provider snapshot is retained according to the operator's recovery window
+
+### Requirement: Fleet hosts SHALL select foundation aspects explicitly
+Fleet hosts SHALL declare their foundation stack by selecting explicit NixOS foundation aspects—base server policy, shell tooling, networking, Tailscale, and notifications—rather than importing legacy profile bundles. Selecting a deployment aspect SHALL be its enablement; intrinsic implementation dependencies MAY be composed by their owner, independently placeable capabilities SHALL use explicit policy co-selection, and optional integration SHALL NOT force either capability.
+
+#### Scenario: Host declares its foundation stack
+- **WHEN** a host assembly is declared
+- **THEN** it lists the foundation deployment aspects it enables by name
+- **AND** it does not import the legacy `base-server`, `fleet-standard`, or `networking` profile bundles
+- **AND** the corresponding service, user, and firewall configuration is provided by the selected aspects rather than embedded in the host file
+- **AND** infrastructure support modules are classified separately from those deployment capabilities
+
+#### Scenario: Foundation conversion preserves evaluated behavior
+- **WHEN** source ownership is redistributed without changing the public foundation surface
+- **THEN** `nixosConfigurations.oci-melb-1`, `nixosConfigurations.la-admin-1`, and `nixosConfigurations.home-forge` evaluate with the same runtime services, users, firewall policy, secret paths/readership, deploy topology, and host outputs
+- **AND** any intentional architectural delta is classified explicitly before implementation
+- **AND** no `specialArgs`, generic compatibility bus, accidental activation, or new `mkForce` workaround is introduced
+
+### Requirement: Host machine facts SHALL be typed inputs to the base aspect
+Fleet hosts SHALL provide typed bootloader choice and `/build` tmpfs size facts consumed by the base foundation aspect, so shared base configuration does not rely on per-host boot overrides or `mkForce` conflicts.
+
+#### Scenario: Host declares its bootloader fact
+- **WHEN** a host declares a typed bootloader fact (GRUB or systemd-boot)
+- **THEN** the base aspect renders the corresponding bootloader configuration from the fact
+- **AND** the host assembly does not repeat a conflicting bootloader override
+
+#### Scenario: Host declares its /build size fact
+- **WHEN** a host declares its typed `/build` tmpfs size
+- **THEN** the base aspect renders the build mount with that size without a host-local `mkForce` override
+- **AND** the evaluated filesystem behavior matches the previously forced configuration
+
+### Requirement: Fleet hosts SHALL select operational aspects explicitly
+
+Fleet hosts SHALL declare their operational stack by selecting explicit NixOS operational aspects, including independent `state-backups`, `cache-publisher`, `builder-access`, and `observability-agent` capabilities. Selecting an operational aspect SHALL be its enablement, while intrinsic private implementations and required upstream modules MAY be composed only by that owning contributor.
+
+#### Scenario: Host declares its operational stack
+
+- **WHEN** a host requires mutable-state recovery and Nix closure publication
+- **THEN** it explicitly selects both `state-backups` and `cache-publisher`
+- **AND** it also selects builder-access and observability-agent according to host policy
+- **AND** it does not select or reference the removed combined `backups` aspect
+- **AND** no operational aspect silently enables another independently meaningful capability
+
+#### Scenario: Operational conversion preserves evaluated behavior
+
+- **WHEN** the combined backups aspect is decomposed without an intended runtime change
+- **THEN** `nixosConfigurations.oci-melb-1`, `nixosConfigurations.la-admin-1`, and `nixosConfigurations.home-forge` retain their existing backup units, timers, repositories, upload client, publication trigger, secret paths, monitoring behavior, and bootstrap gates
+- **AND** all three hosts explicitly select both `state-backups` and `cache-publisher`, and continue to select `builder-access` and `observability-agent`, including builder access on `home-forge`
+- **AND** the registry continues not to import the upstream Niks3 auto-upload module, while OCI retains the Niks3 server module import
+- **AND** no support module, generic composition bus, compatibility wrapper, or new `mkForce` workaround is introduced
+
+### Requirement: Deployment aspects and infrastructure support modules SHALL be classified separately
+The fleet composition model SHALL distinguish host-selected deployment capabilities from infrastructure support modules that provide typed repository data, package projections, or provenance to lower-level consumers.
+
+#### Scenario: Host composition is reviewed
+- **WHEN** a typed host registry record is inspected
+- **THEN** deployment-capability selections are distinguishable from support-module and upstream-module imports
+- **AND** support modules are not described as independently deployable capabilities
+- **AND** the classification does not change the resulting host configuration
+
+#### Scenario: Infrastructure support is selected where its data is required
+- **WHEN** a module carries typed repository data consumed by other modules rather than a deployable feature surface
+- **THEN** it is classified as an infrastructure-support module and selected or imported wherever its data is required
+- **AND** it is not described as an independently deployable edge or service capability
+
+#### Scenario: Web policy is selected on every repo.web consumer
+- **WHEN** a host requires `config.repo.web` for notification defaults or host policy
+- **THEN** `aspects.web-policy` appears in its typed registry record as an infrastructure-support selection
+- **AND** all three active hosts — `oci-melb-1`, `la-admin-1`, and `home-forge` — carry the selection because all three consume `config.repo.web`
+- **AND** the selection does not present web-policy as a deployable edge capability
+
+#### Scenario: A deployment aspect merges multiple source contributors
+- **WHEN** several top-level source contributors provide pieces of one coherent deployment capability
+- **THEN** they merge into a single host-selected deployment aspect without a central wrapper module
+- **AND** selecting the deployment aspect on a host enables all of its contributors' configuration
+- **AND** `cache-publisher` is the current multi-contributor example (`cache-publisher.nix` plus the `cache-publisher/{upload-client,post-deploy}.nix` siblings), each contributor nesting its own options/config directly in its `flake.modules.nixos.cache-publisher` definition
+
+#### Scenario: A projection is not carried by a deployment aspect
+- **WHEN** a module provides only derived, read-only contract data and deploys no runtime
+- **THEN** it is imported intrinsically by the participants that read it and is not published as a host-selected aspect
+- **AND** a capability is not bundled with a projection such that selecting the capability becomes a condition for reading the projection
+
+#### Scenario: Reclassification preserves evaluated behavior
+- **WHEN** source contributors are reclassified or relocated without changing the public deployment surface
+- **THEN** `nixosConfigurations.oci-melb-1`, `nixosConfigurations.la-admin-1`, and `nixosConfigurations.home-forge` evaluate with the same runtime services, secret paths/readership, deploy topology, endpoints, package set, and host outputs
+- **AND** no `specialArgs`, generic compatibility bus, accidental activation, or new `mkForce` workaround is introduced
+
+### Requirement: Aspect relationships SHALL reflect semantic ownership
+Relationships between deployment aspects SHALL be modeled as intrinsic composition, policy co-selection, or optional integration according to whether the capabilities have meaningful independent placement.
+
+#### Scenario: Dependency is intrinsic
+- **WHEN** a capability cannot provide its declared behavior without another implementation component and that component has no meaningful independent placement
+- **THEN** the owning aspect may compose the dependency directly
+- **AND** the relationship is documented at the ownership boundary
+
+#### Scenario: Fleet policy requires independently placeable capabilities together
+- **WHEN** two capabilities remain meaningful independently but fleet policy requires both on a host
+- **THEN** the host explicitly selects both
+- **AND** a named evaluation assertion may enforce the required contract
+
+#### Scenario: Integration is optional
+- **WHEN** either capability remains useful without the other
+- **THEN** integration activates only when both relevant contracts are available
+- **AND** neither capability silently selects the other
+
+### Requirement: Fleet hosts SHALL select deployed placement aspects explicitly
+Every deployed product and provider-specific capability SHALL be represented by a named discovered NixOS deployment aspect. Typed host records SHALL be the placement authority for those aspects during this stage, while host modules retain only machine facts, explicit product variants, and host-local exceptions.
+
+#### Scenario: OCI host placement is inspected
+- **WHEN** `oci-melb-1` is evaluated
+- **THEN** its typed record explicitly selects `oci`, `edge`, `cockpit`, `paperless`, `postgres`, `ai-gateway`, `karakeep`, `niks3-cache`, `phoenix`, and `kanidm-host-auth` in addition to its established foundation, operational, and support selections
+- **AND** its host module directly imports none of those implementations
+
+#### Scenario: LA host placement is inspected
+- **WHEN** `la-admin-1` is evaluated
+- **THEN** its typed record explicitly selects `edge`, `push-server`, `identity-provider`, `kanidm-host-auth`, `vaultwarden`, `gatus`, `beszel`, `homepage`, and `webhook` in addition to its established foundation, operational, and support selections
+- **AND** its host module directly imports none of those implementations
+
+#### Scenario: Home-forge placement is inspected
+- **WHEN** `home-forge` is evaluated
+- **THEN** its typed record explicitly selects `music`, `dj`, and `omniroute` in addition to its established foundation, operational, and support selections
+- **AND** its host module directly imports none of those implementations
+
+#### Scenario: Placement conversion preserves fleet behavior
+- **WHEN** current implementations move behind the discovered placement aspects
+- **THEN** all three host toplevels retain the same services, units, routes, secret paths/readership, permissions, packages, backup contracts, provider behavior, and deployment topology
+- **AND** no new transitive aspect selection, compatibility bus, or `mkForce` workaround is introduced
+
+### Requirement: Published provenance SHALL contain tracked fleet configuration only
+
+The repository SHALL publish its own source to `/etc/nixos-source` as the tracked configuration set, excluding every untracked working-directory artifact: VCS metadata, tool state, vendored or generated bulk, and plaintext credential files.
+
+#### Scenario: A deployed host inspects its published source
+
+- **WHEN** `/etc/nixos-source` is inspected on an active host
+- **THEN** it contains `flake.nix`, `modules/`, `policy/`, `secrets/`, `lib/`, `docs/`, and the OpenTofu configuration sources
+- **AND** it contains no untracked working-directory content: no `.git`, `.jj`, `.opencode`, `.hp-forge-esp-backup`, `.terraform`, `node_modules`, or `result` entry, and no untracked file inside `.qmd` or `.cortexkit`
+- **AND** the few tracked files that happen to sit in tool-state directories (for example `.qmd/index.yml`) are published, because tracking is the filtering authority
+
+#### Scenario: Credential material is not published
+
+- **WHEN** the published copy is enumerated
+- **THEN** `mTLS.key`, `secrets.auto.tfvars`, and `terraform.tfstate` entries are absent at any depth (none of them is tracked)
+- **AND** encrypted secret files under `secrets/` and the public Cloudflare origin-pull CA certificate under `certs/` remain present
+- **AND** the change does not alter any secret value, `.sops.yaml` rule, or credential file in the working tree
+
+### Requirement: Local flake references SHALL use the Git-tree form
+
+Operator entrypoints that resolve this repository's own flake SHALL use the Git-tree form `.#`, which resolves tracked content only. The `path:` form SHALL NOT be used for local evaluation, because it copies the working directory verbatim and publishes untracked artifacts.
+
+#### Scenario: An operator command evaluates the local configuration
+
+- **WHEN** a deploy, dry-activate, prebuild, or evaluation recipe resolves this repository's flake
+- **THEN** it resolves the tracked configuration set
+- **AND** the published `/etc/nixos-source` on the deployed host contains no untracked working-directory artifact
+
+#### Scenario: The bootstrap projection is inspected
+
+- **WHEN** `flake.bootstrap.nodes.<host>.flake` is read
+- **THEN** it carries the Git-tree form for that host
+- **AND** a reimage transfers the tracked source rather than the working directory
+
+#### Scenario: Revision provenance is available
+
+- **WHEN** the evaluated configuration is inspected on a host
+- **THEN** `system.configurationRevision` is non-null for tracked and dirty Git-tree evaluation
+- **AND** it is not the `null` value produced by `path:`-referenced flakes
+
+### Requirement: The Git index SHALL be complete for tracked files, and its integrity SHALL be checked
+
+The Git index supplies the content of a Git-tree flake reference. A tracked file that is missing from the index is therefore silently absent from evaluation and from the published source. The repository SHALL check index completeness as part of its standard checks and SHALL name the repair when the check fails.
+
+#### Scenario: The index is complete
+
+- **WHEN** the checks run on a healthy working copy
+- **THEN** every file tracked by the working-copy revision appears in the Git index
+- **AND** the index-integrity check passes without modifying anything
+
+#### Scenario: The index has diverged
+
+- **WHEN** a tracked file is missing from the Git index
+- **THEN** the index-integrity check fails
+- **AND** its message names the missing paths and the repair command
+- **AND** the repository guidance states that index-mutating Git commands are not used in this colocated repository
+
+### Requirement: Project policy SHALL survive tool regeneration
+
+Project-owned agent guidance SHALL live in repository documentation that is not regenerated by tooling. Guidance that exists only in OpenSpec-managed integration files is not durable, because the integration files are overwritten wholesale by the generator.
+
+#### Scenario: Agent guidance is reviewed
+
+- **WHEN** the repository's agent guidance is inspected
+- **THEN** the evaluation rule, the index precondition, and the delegation/apply discipline are documented in `AGENTS.md`
+- **AND** regenerating OpenSpec tool integrations does not remove them
+
+### Requirement: Canonical host identity SHALL have one typed authority
+
+Each fleet host SHALL be keyed by one stable canonical host ID whose typed record owns its target system, Tailscale identity, and deferred NixOS composition. Network hostname and derived private FQDNs SHALL originate from that record rather than independent literals.
+
+#### Scenario: Host identity is consumed across concerns
+
+- **WHEN** host composition, deployment metadata, web routing, or an internal service contract references a fleet host
+- **THEN** the reference resolves against the canonical host ID set
+- **AND** target system and Tailscale identity are not independently restated by those consumers
+
+#### Scenario: Metadata names an unknown host
+
+- **WHEN** deployment or host-backed routing metadata references an unknown canonical host ID
+- **THEN** validation fails with the referencing concern and host ID
+
+### Requirement: Host contributors SHALL register themselves through discovery
+
+Each host source contributor SHALL declare its own typed host record and deferred NixOS composition through recursive top-level discovery. Generic registry/materialization code SHALL not enumerate concrete host names.
+
+#### Scenario: A host is added
+
+- **WHEN** an operator adds a valid discovered host contributor
+- **THEN** the corresponding `nixosConfigurations.<host>` and eligible bootstrap projection are materialized without editing a central concrete-host table
+- **AND** workload placement remains explicit in that host's aspect selection

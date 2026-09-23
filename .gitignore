@@ -19,3 +19,8 @@ result
 .qmd/
 .hp-forge-esp-backup/
 .cortexkit/
+
+# Pix Agent
+.pi/
+.pi-lens/
+.qmd/

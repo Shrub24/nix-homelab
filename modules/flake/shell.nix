@@ -1,0 +1,138 @@
+# Shell foundation aspect: selecting it is its enablement. The interactive
+# implementation and its p10k data asset (./shell/p10k.zsh) are owned here.
+{ inputs, ... }:
+{
+  flake.modules.nixos.shell =
+    {
+      config,
+      lib,
+      pkgs,
+      ...
+    }:
+
+    let
+      weztermCfg = config.services.wezterm-mux;
+    in
+    {
+      imports = [ inputs.nix-index-database.nixosModules.nix-index ];
+
+      options.services.wezterm-mux = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Whether to run wezterm-mux-server (system-level persistent mux server).";
+        };
+        user = lib.mkOption {
+          type = lib.types.str;
+          default = "dev";
+          description = "User to run the mux server as.";
+        };
+      };
+
+      config = {
+        environment = {
+          systemPackages = [
+            pkgs.bat
+            pkgs.btop
+            pkgs.duf
+            pkgs.eza
+            pkgs.fd
+            pkgs.fzf
+            pkgs.jq
+            pkgs.lsof
+            pkgs.ncdu
+            pkgs.yq-go
+            pkgs.ripgrep
+            pkgs.zoxide
+            pkgs.zsh-autosuggestions
+            pkgs.zsh-powerlevel10k
+            pkgs.wezterm
+            pkgs.isd
+            pkgs.nix-du
+            pkgs.yazi
+            pkgs.fff
+          ];
+
+          # nixpkgs ships default `ls`/`ll`/`l` aliases via mkDefault; clear the
+          # global set with mkForce so root/rescue Bash stays stock.
+          shellAliases = lib.mkForce { };
+          etc."zsh/p10k.zsh".text = builtins.readFile ./shell/p10k.zsh;
+        };
+
+        programs = {
+          zsh.shellAliases = {
+            ls = "eza --group-directories-first";
+            ll = "eza -lh --group-directories-first";
+            la = "eza -lah --group-directories-first";
+            lt = "eza --tree --level=2";
+            cat = "bat --paging=never";
+            rg = "rg --smart-case --hidden --glob '!.git'";
+          };
+
+          nix-index-database.comma.enable = true;
+
+          mosh.enable = true;
+
+          zsh = {
+            enable = true;
+            enableCompletion = true;
+            autosuggestions.enable = true;
+            syntaxHighlighting.enable = true;
+
+            interactiveShellInit = ''
+              source ${pkgs.zsh-powerlevel10k}/share/zsh-powerlevel10k/powerlevel10k.zsh-theme
+
+              if command -v zoxide >/dev/null 2>&1; then
+                eval "$(zoxide init zsh)"
+              fi
+
+              if [ -f /etc/zsh/p10k.zsh ]; then
+                source /etc/zsh/p10k.zsh
+              fi
+            '';
+          };
+        };
+
+        # `deps = [ "users" ]` keeps this after home creation; otherwise the first
+        # dev login on a fresh boot hits zsh-newuser-install.
+        system.activationScripts.dev-zshrc = {
+          deps = [ "users" ];
+          text = ''
+            if [ -d /home/dev ]; then
+              if [ ! -e /home/dev/.zshrc ]; then
+                install -m 0644 -o dev -g users /dev/null /home/dev/.zshrc
+              fi
+
+              if ! grep -Fq '[ -f /etc/zsh/p10k.zsh ] && source /etc/zsh/p10k.zsh' /home/dev/.zshrc; then
+                printf '\n[ -f /etc/zsh/p10k.zsh ] && source /etc/zsh/p10k.zsh\n' >> /home/dev/.zshrc
+              fi
+
+              chown dev:users /home/dev/.zshrc
+              chmod 0644 /home/dev/.zshrc
+            fi
+          '';
+        };
+
+        systemd.tmpfiles.settings."wezterm" = lib.mkIf weztermCfg.enable {
+          "/home/${weztermCfg.user}/.local/share/wezterm".d = {
+            inherit (weztermCfg) user;
+            group = "users";
+            mode = "0755";
+          };
+        };
+
+        systemd.services.wezterm-mux-server = lib.mkIf weztermCfg.enable {
+          description = "WezTerm Mux Server";
+          after = [ "network.target" ];
+          wantedBy = [ "multi-user.target" ];
+          serviceConfig = {
+            User = weztermCfg.user;
+            ExecStart = "${pkgs.wezterm}/bin/wezterm-mux-server";
+            RuntimeDirectory = "wezterm-mux";
+            Restart = "on-failure";
+            RestartSec = 5;
+          };
+        };
+      };
+    };
+}

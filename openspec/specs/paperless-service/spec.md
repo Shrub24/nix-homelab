@@ -1,7 +1,7 @@
 # paperless-service Specification
 
 ## Purpose
-TBD - created by archiving change paperless-ngx-fleet-integration. Update Purpose after archive.
+Define the Paperless deployment: a native NixOS service with OIDC as its primary authentication path, shared PostgreSQL backing, notification on document consumption, and its data and media state under the host backup surface.
 
 ## Requirements
 
@@ -71,3 +71,19 @@ The Paperless route SHALL be declared in `policy/web-services.nix` as a public s
 - **WHEN** a browser navigates to the Paperless subdomain
 - **THEN** Caddy on `la-admin-1` proxies the request over Tailscale to `oci-melb-1`
 - **AND** the route requires valid OIDC session or redirects to Kanidm
+
+### Requirement: Paperless group seeding SHALL use the sealed service environment
+The OIDC group-seeding unit SHALL source `PAPERLESS_SECRET_KEY` from the same sealed SOPS environment file as the Paperless service, so its Django process starts without Paperless's insecure default key.
+
+#### Scenario: OIDC group seeding runs
+- **WHEN** the OIDC group-seeding unit runs after Paperless starts
+- **THEN** it receives `PAPERLESS_SECRET_KEY` from the same sealed environment file as the service
+- **AND** its Django process starts without using Paperless's insecure default key
+
+### Requirement: Paperless SHALL preserve duplicate rejection across the v3 upgrade
+Paperless SHALL reject duplicate documents during consumption, preserving the v2 default rather than accepting additional copies under the v3 default.
+
+#### Scenario: A duplicate document is consumed
+- **WHEN** a document matching an existing Paperless document is submitted for consumption
+- **THEN** Paperless rejects the duplicate
+- **AND** it does not add another document record

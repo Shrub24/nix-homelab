@@ -20,6 +20,7 @@ Canonical human-facing architecture and migration guidance lives under `docs/` (
 - **Migration**: Legacy `dev-vps` assumptions and stale documentation should be removed or archived coherently - avoid long-lived dual-mission drift.
 - **Storage**: The initial data model uses one persistent mount with predictable service subdirectories - avoid duplicate staging datasets early.
 - **Complexity**: Native NixOS services and simple rollout flow come before orchestration tooling - only add higher-complexity systems when real pressure exists.
+
 <!-- openspec:project-end -->
 
 <!-- openspec:stack-start source:research/STACK.md -->
@@ -53,14 +54,14 @@ Canonical human-facing architecture and migration guidance lives under `docs/` (
 
 ### Development Tools
 
-| Tool                          | Purpose                           | Notes                                                                                            |
-| ----------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `treefmt`                     | Format/repo-wide check for all languages | Runs `nixfmt`, `prettier`, `taplo`, `shfmt`, `ruff`, `tofu fmt` via `treefmt.toml`. Use `--fail-on-change` for CI. |
-| `just fmt` / `just fmt-check` | Shortcut for `treefmt` / `treefmt --fail-on-change` | Same as above via `just` recipes. |
-| `nix fmt`                     | Format Nix files only            | Stays as the dedicated Nix-only formatter backed by `nixfmt`. `treefmt` wraps it internally so both produce identical results on `.nix` files. |
-| `nix flake check`             | Validate flake outputs and checks | Run locally and in CI before applying host changes.                                              |
-| `deploy-rs` checks            | Deployment schema validation      | Wire `deploy-rs.lib.<system>.deployChecks` into `flake checks` once you introduce `deploy-rs`.   |
-| `nixos-rebuild --target-host` | First-host iteration tool         | Use this before introducing fleet-wide deployment commands; it keeps the early workflow obvious. |
+| Tool                          | Purpose                                             | Notes                                                                                                                                          |
+| ----------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `treefmt`                     | Format/repo-wide check for all languages            | Runs `nixfmt`, `prettier`, `taplo`, `shfmt`, `ruff`, `tofu fmt` via `treefmt.toml`. Use `--fail-on-change` for CI.                             |
+| `just fmt` / `just fmt-check` | Shortcut for `treefmt` / `treefmt --fail-on-change` | Same as above via `just` recipes.                                                                                                              |
+| `nix fmt`                     | Format Nix files only                               | Stays as the dedicated Nix-only formatter backed by `nixfmt`. `treefmt` wraps it internally so both produce identical results on `.nix` files. |
+| `nix flake check`             | Validate flake outputs and checks                   | Run locally and in CI before applying host changes.                                                                                            |
+| `deploy-rs` checks            | Deployment schema validation                        | Wire `deploy-rs.lib.<system>.deployChecks` into `flake checks` once you introduce `deploy-rs`.                                                 |
+| `nixos-rebuild --target-host` | First-host iteration tool                           | Use this before introducing fleet-wide deployment commands; it keeps the early workflow obvious.                                               |
 
 ## Installation
 
@@ -103,7 +104,7 @@ Canonical human-facing architecture and migration guidance lives under `docs/` (
 - Keep storage to GPT + EFI + `/` + one data mount, with Navidrome reading directly from the Syncthing path.
 - Introduce `deploy-rs` and wire its checks into `flake check`.
 - Keep `.sops.yaml` path-scoped by host so new machines do not inherit decryption access.
-- Split host roles with modules/profiles, but keep provider quirks isolated under host or provider modules.
+- Split host roles into explicitly selected foundation aspects (`flake.modules.nixos` `base`/`shell`/`networking`/`tailscale`/`notify`) plus direct feature-leaf imports, but keep provider quirks isolated under host or provider modules.
 
 ## Version Compatibility
 
@@ -144,13 +145,20 @@ Canonical human-facing architecture and migration guidance lives under `docs/` (
 - <https://github.com/syncthing/syncthing/releases/tag/v2.0.15> - verified current release line.
 - <https://raw.githubusercontent.com/syncthing/syncthing/main/README.md> - verified project goals and security/data-loss posture.
 - <https://github.com/navidrome/navidrome/releases/tag/v0.60.3> - verified current release line.
+
 <!-- openspec:stack-end -->
 
 <!-- openspec:conventions-start source:CONVENTIONS.md -->
 
 ## Conventions
 
-Conventions not yet established. Will populate as patterns emerge during development.
+Repository conventions are maintained in `CONVENTIONS.md`; the durable rules an agent needs most are summarized here.
+
+- **Flake reference form:** local evaluation and operator entrypoints use the Git-tree form `.#`. `path:` is reserved for the three cases where it is strictly better: evaluation of a copied tree with no Git repository (the contract tests), evaluation that must see freshly generated files that are not tracked yet (the nvfetcher refresh validation), and explicit path resolution that does not evaluate host configuration (`scripts/export-web-services-policy.sh`). See `## Project Policy` below for the index precondition that comes with `.#`. The flake entrypoint itself is generated: input declarations live under `modules/` and are rendered by `flake-file`, with nix-fleet owning the pins the repositories share.
+- **Namespaces:** `applications.<name>` for composition roots, `services.<name>` and `services.<domain>.<name>` for leaf services, `fleet.<name>` for fleet-wide options, `nixos.hosts.<id>` for canonical host records, and `repo.web.*` for resolved web policy.
+- **Naming:** kebab-case files and directories, camelCase flake outputs, dot-separated Nix option namespaces, kebab-case host IDs and secret file names.
+- **Ownership:** services and applications own their own `sops.secrets`, `sops.templates`, assertions, and runtime wiring; hosts provide host-scoped secret paths and enables, never internal secret wiring.
+- **Secret rule:** never decrypt or edit secrets manually; that work belongs to the operator.
 
 NEVER TRY TO DECRYPT OR EDIT SECRETS MANUALLY ALWAYS LEAVE IT TO THE USER
 
@@ -160,7 +168,15 @@ NEVER TRY TO DECRYPT OR EDIT SECRETS MANUALLY ALWAYS LEAVE IT TO THE USER
 
 ## Architecture
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
+Host-centric NixOS fleet infrastructure composed with flake-parts and `denful/import-tree` discovery over `modules/`.
+
+- **Hosts** are discovered contributors: `modules/hosts/<host>/default.nix` declares one typed `nixos.hosts.<id>` record (target system, Tailscale identity, explicit aspect selection, reimage facts). `modules/flake/host-registry.nix` validates those records and materializes `nixosConfigurations`; host-private composition and hardware facts stay underscore-prefixed beside the record (`_nixos.nix`, `_disko-*.nix`, `_cockpit-auth.nix`, `_admin-runtime.nix`).
+- **Aspects are the deployment surface:** a discovered concern contributor publishes `flake.modules.nixos.<aspect>` from its domain directory (`modules/identity/`, `modules/notifications/`, `modules/cache/`, `modules/backups/`, `modules/music/`, `modules/admin/`, `modules/apps/`, `modules/ai/`, `modules/observability/`, `modules/web/`, `modules/containers/`, `modules/oci/`, `modules/database/`, `modules/contracts/`), while `modules/flake/` keeps materialization and the fleet baseline. Selection is enablement: host records select aspects, and no host imports an implementation directly.
+- **One import boundary remains:** the import-tree filter excludes exactly `[ "services" ]`, the unconverted leaf backlog; every other root is discovered.
+- **Private service endpoints are policy, not a second registry:** a private service is declared once in `policy/web-services.nix` (`tailscale-only`, `declarePublic = false`) and reaches consumers as `repo.web.catalog.<id>.endpoint`, with no manufactured public URL; public services expose their public identity and never their origin host.
+- **Metadata references canonical host IDs:** deploy metadata (`lib/deploy/hosts.nix` with `modules/flake/deploy.nix`) and web policy (`policy/web-services.nix` with `modules/web/web-policy.nix`) validate every host reference and fail closed on unknown names.
+
+The current model is D-056 in `docs/decisions.md`; the full layer and data-flow description is `ARCHITECTURE.md`, `STRUCTURE.md`, and `docs/architecture.md`.
 
 <!-- openspec:architecture-end -->
 
@@ -179,6 +195,57 @@ Do not make direct repo edits outside established workflows unless the user expl
 
 <!-- openspec:workflow-end -->
 <!-- openspec:profile-end -->
+
+## Project Policy
+
+Project-owned rules that must survive tool regeneration. They live here rather than in the OpenSpec-managed integration files (`.pi/`, `.github/prompts`, `.github/skills`, `.opencode/`), which `openspec update` rewrites wholesale:
+
+### Flake Reference Form
+
+- Local evaluation uses the Git-tree form `.#`: the `justfile` recipes, the workflow files, `scripts/resolve-host-config.sh`, and the documented cutover command all resolve this repository as `.#` or `.#<output>`.
+- That form copies tracked content only, so `environment.etc."nixos-source"` publishes the fleet configuration (~5.5 MB) instead of the whole working directory (440 MB, including `.git`, `.terraform` provider binaries, editor caches, and the plaintext `mTLS.key`, `secrets.auto.tfvars`, and `terraform.tfstate` files). It also populates `system.configurationRevision`, which is `null` for `path:`-referenced flakes.
+- `path:` remains correct in three places, and they are the only ones: (a) contract tests that evaluate a copied tree whose `make_copy` excludes `.git`/`.jj`, so `.#` cannot resolve there, or that evaluate the working tree while injecting untracked fixtures; (b) `.github/workflows/nvfetcher-refresh.yml`, which validates a tree whose regenerated sources may be untracked; (c) `scripts/export-web-services-policy.sh`, which resolves the tree with an explicit path because it exports policy data rather than evaluating host configuration.
+- Tracking is the single filtering authority. Do not re-add a Nix-side exclusion list (`lib.fileset`, `cleanSourceWith`, `filterSource`) to work around untracked files — track them instead.
+
+### Generated `flake.nix`
+
+`flake.nix` is a build artifact of the module tree, generated by `flake-file` and committed so `nix build`, `nixos-rebuild` and `nix flake check` work without a generation step.
+
+- Inputs are declared in the tree: `modules/flake/inputs.nix` owns the shared baseline and the fleet-owned dependencies; a contributor may declare the input its own capability needs. Regenerate with `nix run .#write-flake` after changing a declaration, and never hand-edit the file — it carries a do-not-edit header.
+- Freshness is gated: `just checks all` and CI build `checks.<system>.check-flake-file`, which fails with a diff when the committed file drifts from the declarations. `nix flake check --no-build` alone only evaluates that check.
+- nix-fleet owns the pins both repositories share (`nixpkgs`, `flake-parts`, `import-tree`, `sops-nix`, `niks3`). This repository declares them as follows aliases (`follows = "nix-fleet/<input>"`, with `url = lib.mkForce ""` where the dendritic preset defaults a URL, because an input may not carry both), so one nix-fleet revision moves the shared baseline everywhere. Aligning the lock with nix-fleet's baseline is `nix flake lock --update-input nix-fleet`; Renovate bumps the nix-fleet revision and the fleet-owned inputs.
+- Local development against a sibling nix-fleet checkout uses `just dev nf-eval <host>`, `just dev nf-build <host>` and `just dev nf-check` (`NIX_FLEET=<path>` overrides the default). The local checkout contributes its code and its locked shared baseline; `--override-input` is per invocation, so the committed lock is not touched.
+
+### Shared Aspects from nix-fleet
+
+nix-fleet owns the fleet's shared aspect mechanisms; this repository consumes them through one local convention contributor per aspect.
+
+- The contributor publishes our aspect name, imports `inputs.nix-fleet.modules.nixos.<aspect>`, and supplies the fleet's conventions (conventional secret paths, `policy/globals.nix` values, host-facing bindings). Host records keep selecting the same aspect name; they never learn a mechanism moved.
+- A shared realization that is constructed per consumer is imported from **our** evaluation, never from nix-fleet's output: nix-fleet's pre-realized `modules.nixos.fleet-builders` is a throwing shim, and its feature module closes over nix-fleet's own inventory while it is published as a pre-evaluated value (TD-31). `modules/flake/builder-access.nix` shows the current consumption shape.
+- Canonical fleet facts — machine identity, builder participation, named builder sets — are nix-fleet's inventory and are derived here, never restated (D-066): host records read `config.fleet.hosts.<id>`, and the scaffold contract fails on any local `fleet.hosts`/`fleet.builders`/`fleet.builderSets` declaration.
+- Do not copy a shared module's body back in or re-declare its options locally. If a shared module needs a fleet-specific seam, add the option upstream in nix-fleet and bind it here.
+- Aspect names are ours: an upstream file name does not force a rename here (`cache-publisher` consumes nix-fleet's `niks3-publisher`).
+- Verify a swap on structured observables per host — option values, `sops.secrets` entries, systemd unit wiring and ordering — never on derivation equality, because the published source set changes whenever a file is added or removed.
+- Deletions that the swap makes dead (a superseded package, a private contributor) belong in the same change.
+
+### Git Index Precondition
+
+`.#` reads the Git index. Colocated jj keeps it in sync (a file is staged when jj first tracks it), but an external index command destroys that guarantee — a single `git reset` removed 19 tracked entries during Stage 8, after which evaluation silently used a partial tree.
+
+- Do not run index-mutating Git commands in this repository (`git reset`, `git checkout`, `git stash`). Use jj operations; jj is the version-control interface.
+- If `tests/check-flake-source-tracking.sh` fails, run `git add -A` once and re-run the check.
+- A newly created file must reach the index before `.#` can see it: the Git-tree copy contains only indexed files, so an unstaged new module evaluates as if it did not exist. Any `jj` command stages files jj has just started tracking (`jj status` is the cheapest), which is why the failure looks like a missing-file error rather than a dirty-tree warning.
+
+### Delegation and Apply Workflow
+
+OpenSpec implementation work is dispatched one task at a time:
+
+- The parent session owns the task loop and the expensive gates (`just checks all`, `nix flake check`, the scaffold contract); a dispatched child does not run them as its closeout.
+- One task per writer dispatch, through a retained writer lineage for the same working directory — "one writer per cwd" means one lineage, not one uninterrupted run.
+- Focused validation after each task, then a fresh bounded read-only review at each stable checkpoint; resolve accepted findings before mutating overlapping files.
+- Rotate a lineage once its context is large instead of resuming it, and hand the replacement the written report rather than the accumulated conversation.
+- Do not set hard tool budgets on mutation-capable children — a budget blocks read and search tools mid-task. Bound them with a narrow task and a time limit instead.
+- Report a failed child run as a failure with its run id and observed error, then verify the artifacts it left behind instead of assuming success or failure.
 
 ## Code Search
 

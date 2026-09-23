@@ -75,8 +75,8 @@ fi
 # service accounts. The template is plain-text source, so this is
 # ciphertext-safe.
 if awk -F'"' '
-  /^auth-users:/ { u = 1; next }
-  /^auth-tokens:/ { u = 0 }
+  /^auth-users:|^auth_users:/ { u = 1; next }
+  /^auth-tokens:|^auth_tokens:/ { u = 0 }
   u && /^  - "/ {
     n = split($2, f, ":")
     if (n != 3 || length(f[1]) == 0 || length(f[2]) == 0 || length(f[3]) == 0) {

@@ -136,6 +136,10 @@ let
 
   hosts = config.nixos.hosts;
   hostKeys = builtins.attrNames hosts;
+  # nix-fleet's canonical inventory, when the fleet feature is part of this
+  # evaluation (it always is in the real tree; the isolated registry harness
+  # declares synthetic hosts and imports nothing else).
+  canonicalHosts = (config.fleet or { }).hosts or { };
   declaredIds = map (key: hosts.${key}.hostId) hostKeys;
   countId = id: length (filter (x: x == id) declaredIds);
   tailscaleHostnames = filter (name: name != null) (
@@ -160,6 +164,16 @@ let
     ) (filter (name: countTailscale name > 1) tailscaleHostnames)
     ++ map (key: "host-registry: host '${key}' is missing required system or tailscale.hostname") (
       filter (key: hosts.${key}.system == null || hosts.${key}.tailscale.hostname == null) hostKeys
+    )
+    # Join-key rule (nix-fleet hosts contract): the canonical ID is the registry
+    # key everywhere, so a host record may only exist for an ID the canonical
+    # inventory declares. Enforced whenever that inventory is present; deriving
+    # identity from a record that is not there otherwise fails with a bare
+    # missing-attribute error.
+    ++ optionals (canonicalHosts != { }) (
+      map (key: "host-registry: host '${key}' has no canonical record in nix-fleet's fleet inventory") (
+        filter (key: !(canonicalHosts ? ${key})) hostKeys
+      )
     );
 in
 {

@@ -1,5 +1,5 @@
-# Host entry point: the fleet-registry machine identity plus the canonical typed
-# record (deferred NixOS composition, reimage facts) that derives from it. The
+# Host entry point: the canonical typed record (deferred NixOS composition,
+# reimage facts) whose identity derives from nix-fleet's fleet inventory. The
 # NixOS composition stays host-private in `_nixos.nix` and its `_disko-*.nix` /
 # `_cockpit-auth.nix` siblings, so a host assembly can never be selected as a
 # public aspect.
@@ -13,17 +13,9 @@ let
   identity = config.fleet.hosts.oci-melb-1;
 in
 {
-  # Machine identity for the fleet registry (nix-fleet's hosts contract): who
-  # this host is, not what it runs. The host key was read from the host's own
-  # /etc/ssh/ssh_host_ed25519_key.pub
-  # (SHA256:OKw68XDI4NwWHHuoauvjBsTdwaUCrDrPKbIFKEY+SXE).
-  fleet.hosts.oci-melb-1 = {
-    system = "aarch64-linux";
-    tailscale.hostname = "oci-melb-1";
-    hostNames = [ "oci-melb-1" ];
-    publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC8NW1V+x+tvbwzPMEcGRlK2V1XXAuDgdJ2dUQssiWaC root@oci-melb-1";
-  };
-
+  # Canonical machine identity (target system, Tailscale hostname, host key)
+  # lives in nix-fleet's fleet inventory; this record derives from it and
+  # declares only what is ours — composition, disks, reimage facts.
   nixos.hosts.oci-melb-1 = {
     system = identity.system;
 

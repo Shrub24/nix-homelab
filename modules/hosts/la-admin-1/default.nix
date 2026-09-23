@@ -1,5 +1,5 @@
-# Host entry point: the fleet-registry machine identity plus the canonical typed
-# record (deferred NixOS composition, deploy facts) that derives from it. The
+# Host entry point: the canonical typed record (deferred NixOS composition,
+# deploy facts) whose identity derives from nix-fleet's fleet inventory. The
 # NixOS composition stays host-private in `_nixos.nix` and its `_admin-runtime.nix`
 # sibling, so a host assembly can never be selected as a public aspect.
 {
@@ -12,17 +12,9 @@ let
   identity = config.fleet.hosts.la-admin-1;
 in
 {
-  # Machine identity for the fleet registry (nix-fleet's hosts contract): who
-  # this host is, not what it runs. The host key was read from the host's own
-  # /etc/ssh/ssh_host_ed25519_key.pub
-  # (SHA256:g71ri368dh+EkeJgXrHmMsrxlkwHI2T9G8rFD+G6fWw).
-  fleet.hosts.la-admin-1 = {
-    system = "x86_64-linux";
-    tailscale.hostname = "la-admin-1";
-    hostNames = [ "la-admin-1" ];
-    publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINNXbGpZyizRCUVdjz35hFTmoWLgM8TPwGbQjCvrrcER root@nixos";
-  };
-
+  # Canonical machine identity (target system, Tailscale hostname, host key)
+  # lives in nix-fleet's fleet inventory; this record derives from it and
+  # declares only what is ours — composition, admin runtime, deploy facts.
   nixos.hosts.la-admin-1 = {
     system = identity.system;
 

@@ -1392,7 +1392,7 @@ References:
 
 ## D-065: Machine identity and build capacity live in the fleet registry; the realization is consumer-constructed
 
-**Status:** Accepted
+**Status:** Superseded by D-066 for registry ownership — the facts moved upstream into nix-fleet's inventory; the scheduling-off decision and the beszel-agent consequence stand
 
 **Context:**
 nix-fleet replaced its `services.builder-access.hosts` trust module with a typed fleet registry (`fleet.hosts` / `fleet.builders` / `fleet.builderSets`) plus a NixOS realization constructed from that registry, and its hosts contract asks a consumer's own host registry to derive identity — system, tailscale hostname, host key — from it rather than restating it. This repository held the same facts twice (the host records, and an SSH-trust binding naming one external builder) and declared no host keys at all, so nothing could dial a fleet host as a builder.
@@ -1415,3 +1415,31 @@ References:
 - `modules/flake/builder-access.nix`, `modules/hosts/*/default.nix`, `modules/flake/observability-agent.nix`
 - `tests/check-dendritic-scaffold-contract.sh`, `CONVENTIONS.md`, `AGENTS.md` (shared aspects)
 - `docs/decisions.md` D-056 (canonical host records), D-061 (shared aspects and convention contributors)
+
+## D-066: nix-fleet owns the canonical fleet inventory; this repository derives from it
+
+**Status:** Accepted
+
+**Context:**
+D-065 made this repository's host records the machine-identity SSOT and had nix-fleet render trust from that registry. nix-fleet then moved the facts themselves upstream: `modules/fleet/inventory.nix` now declares the canonical `fleet.hosts` (target system, Tailscale hostname, host names, host public key), `fleet.builders` and `fleet.builderSets` — including this fleet's three hosts — and publishes the whole surface as one flake-level module (`flakeModules.fleet`) with the realization at `config.fleet.realization`. Its contracts are explicit: a canonical fact is declared in nix-fleet and consumers derive, never restate; consumer additions are additive and may not shadow canonical IDs.
+
+**Decision:**
+
+1. This repository declares no machine identity, builder participation or builder set. The host contributors drop their `fleet.hosts.<id>` records (host keys included) and keep only the derivation — `system` and `tailscale.hostname` come from `config.fleet.hosts.<id>` — plus what is ours: composition, disks, bootstrap metadata, and the tailnet suffix authority.
+2. The host registry enforces the join-key rule with a named error: a `nixos.hosts.<id>` record with no canonical `fleet.hosts.<id>` entry fails as `host-registry: host '<id>' has no canonical record in nix-fleet's fleet inventory` instead of a bare missing-attribute error.
+3. `modules/flake/builder-access.nix` consumes the canonical inventory and publishes our aspect as the realization constructed in this evaluation. The scaffold contract ratchets the boundary by failing on any local `fleet.hosts` / `fleet.builders` / `fleet.builderSets` declaration.
+4. Host keys move upstream: nix-fleet binds them in its inventory once harvested, and until then trust renders only for records carrying a key (today the external `nixbuild` builder). A builder backed by a keyless host fails closed upstream when scheduled, so trust never implies reachability.
+5. **Interim (TD-31):** `flakeModules.fleet` is published as a pre-evaluated module value, so importing it binds the provider's own evaluation — measured, not assumed: in this repository's evaluation `config.fleet.*` stays empty while the feature's CI bundles are byte-identical to nix-fleet's own drvs and `config.fleet.realization` renders nix-fleet's inventory (`builder-fixture-external`, `builder-nixbuild`, `host-fixture-host`). Until nix-fleet publishes the feature as a module function that imports its inventory, the contributor imports the canonical schema and inventory files and constructs the realization from `lib/fleet-realization.nix` with our merged config.
+
+**Consequences:**
+
+- The canonical facts have one authority. A host's system, Tailscale hostname, host key and build profile change in nix-fleet's inventory, and this repository picks them up on its next pin bump.
+- Trust is currently thinner than the inventory: only `builder-nixbuild` renders a known-hosts entry until the three host keys are harvested upstream. The scaffold probe asserts exactly that set, and its end-to-end key check pins the external builder's canonical key.
+- `packages.ci` / `packages.<set>` are absent from this repository's outputs until the CI adoption (TD-30) installs them from the fixed feature; the interim deliberately does not import the feature, so no fixture-bound package can leak into our namespace.
+- The aspect name stays `builder-access`: aspect names are per-repository, so our contributor keeps publishing it and host records keep selecting it unchanged.
+
+References:
+
+- `modules/flake/builder-access.nix`, `modules/hosts/*/default.nix`, `modules/flake/host-registry.nix`
+- nix-fleet `docs/contracts/hosts.md`, `docs/contracts/builders.md`
+- `docs/decisions.md` D-060 (generated flake and follows aliases), D-065 (the previous, now superseded, registry ownership)

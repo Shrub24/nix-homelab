@@ -183,11 +183,15 @@ done
 # `write-flake`/`write-inputs`/`write-lock` are flake-file's generator tooling
 # (D-060): the packages that render the generated flake.nix. The fleet's CI
 # builder bundles (`packages.<set>`, rendered from the canonical builder sets)
-# arrive with the CI adoption (TD-30).
+# arrive with the fleet feature import; the CI adoption itself is TD-30.
+# `fixture` is nix-fleet's own fixture builder set, not ours: the published
+# feature is still a pre-evaluated value, so its perSystem closes over the
+# provider's config. The pin records that; it drops when the feature is
+# published as a function.
 for system in x86_64-linux aarch64-linux; do
   pkgs="$(ne --raw --apply 'p: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames p))' "path:.#packages.${system}")" ||
     fail "packages.${system} does not evaluate"
-  if [ "$pkgs" != '["deploy-rs","host-la-admin-1","host-oci-melb-1","niks3","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
+  if [ "$pkgs" != '["ci","deploy-rs","fixture","host-la-admin-1","host-oci-melb-1","niks3","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
     fail "packages.${system} keys drifted (host-home-forge must stay absent): $pkgs"
   fi
 done
@@ -866,12 +870,17 @@ if grep -qE '_backups\b|niks3' modules/backups/state-backups.nix; then
   fail "state-backups aspect must own no Niks3 upload/publication surface"
 fi
 grep -q 'inputs.nix-fleet.modules.nixos.niks3-publisher' modules/cache/cache-publisher.nix || fail "cache-publisher must consume the shared nix-fleet publisher"
-# D-066: nix-fleet's inventory is the authority for canonical fleet facts;
-# this contributor consumes it and declares no inventory of its own. TD-31
-# tracks the interim consumption shape until the feature is published to
-# consumers (see modules/flake/builder-access.nix).
-grep -q 'modules/fleet/inventory.nix' modules/flake/builder-access.nix || fail "builder-access contributor must consume nix-fleet's canonical inventory"
-grep -q 'fleet-realization.nix' modules/flake/builder-access.nix || fail "builder-access aspect must import the realization constructed in this evaluation"
+# D-066: nix-fleet's inventory is the authority for canonical fleet facts; this
+# contributor declares no inventory of its own. It imports the published feature
+# for the schema, inventory, validation and CI bundles, but constructs the
+# realization itself: `config.fleet.realization` closes over nix-fleet's own
+# config while the feature is still published as a pre-evaluated value —
+# measured, it made every host trust the fixture hosts. The trust assertions
+# below are the ratchet for that: they must name the fleet and the external
+# builder, nothing else.
+grep -q 'imports = \[ inputs.nix-fleet.flakeModules.fleet \]' modules/flake/builder-access.nix || fail "builder-access contributor must import the published fleet feature"
+grep -q 'fleet-realization.nix' modules/flake/builder-access.nix || fail "builder-access aspect must construct the realization in this evaluation"
+grep -q 'config.fleet)' modules/flake/builder-access.nix || fail "the realization must bind this evaluation's merged fleet config"
 if grep -RnE '^[[:space:]]*fleet\.(hosts|builders|builderSets)\.[a-z0-9-]+[[:space:]]*=' modules/; then
   fail "canonical fleet facts live in nix-fleet's inventory (D-066): derive from config.fleet, never restate"
 fi
@@ -966,11 +975,10 @@ if not got["beszelHost"].endswith(f"/secrets/hosts/{host}/system.yaml"):
     errs.append(f"beszelHost: {got['beszelHost']!r} not the conventional host secret path")
 if not any(c.endswith("restic-backups-state.service") for c in got["onFailure"]):
     errs.append(f"onFailure: missing the notify aspect handler for restic-backups-state ({got['onFailure']!r})")
-# Trust renders for inventory hosts with a bound key plus external builders
-# carrying their own; the fleet hosts' keys bind upstream after harvest, so
-# until then only the canonical external builder is trusted (D-066).
-if got["knownHosts"] != ["builder-nixbuild"]:
-    errs.append(f"knownHosts: {got['knownHosts']!r}, want the canonical external builder only")
+# Trust renders for every inventory record carrying a key: the three fleet
+# hosts (bound upstream, D-066) plus the external builder with its own key.
+if got["knownHosts"] != ["builder-nixbuild", "host-home-forge", "host-la-admin-1", "host-oci-melb-1"]:
+    errs.append(f"knownHosts: {got['knownHosts']!r}, want the fleet hosts plus the external builder")
 if got["buildMachines"] != 0:
     errs.append(f"buildMachines: {got['buildMachines']!r} entries; scheduling must stay off (CI builds)")
 if not got["beszelTokenAbsent"]:
@@ -981,19 +989,25 @@ if errs:
 PYEOF
 }
 
-probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenAbsent":true,"knownHosts":["builder-nixbuild"],"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-prune":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
-probe_ops la-admin-1 "$(printf '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenAbsent":true,"knownHosts":["builder-nixbuild"],"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}' "$web_suffix")"
-probe_ops home-forge "$(printf '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenAbsent":true,"knownHosts":["builder-nixbuild"],"buildMachines":0,"monitor":{"beets-duplicates":{"failure":true,"success":false},"beets-inbox":{"failure":true,"success":false},"beets-reconcile":{"failure":true,"success":false},"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-omniroute":{"failure":true,"success":true},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}' "$web_suffix")"
+probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenAbsent":true,"knownHosts":["builder-nixbuild","host-home-forge","host-la-admin-1","host-oci-melb-1"],"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-prune":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
+probe_ops la-admin-1 "$(printf '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenAbsent":true,"knownHosts":["builder-nixbuild","host-home-forge","host-la-admin-1","host-oci-melb-1"],"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}' "$web_suffix")"
+probe_ops home-forge "$(printf '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelEnable":true,"beszelAgent":true,"beszelKeySops":"common.yaml","beszelTokenAbsent":true,"knownHosts":["builder-nixbuild","host-home-forge","host-la-admin-1","host-oci-melb-1"],"buildMachines":0,"monitor":{"beets-duplicates":{"failure":true,"success":false},"beets-inbox":{"failure":true,"success":false},"beets-reconcile":{"failure":true,"success":false},"beszel-agent":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-omniroute":{"failure":true,"success":true},"restic-backups-state":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}' "$web_suffix")"
 
 # The canonical inventory's host keys are the trust half of the builder
-# contract; check the one bound key (the external builder — the only record
-# carrying its own key until the fleet hosts are harvested) end to end rather
-# than trusting the rendered name alone.
+# contract; check the rendered values end to end rather than trusting the
+# entry names alone.
 registry_key="$(ne --raw --apply 'c: c.programs.ssh.knownHosts."builder-nixbuild".publicKey' path:.#nixosConfigurations.oci-melb-1.config 2>/dev/null)"
 case "$registry_key" in
   'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPIQCZc54poJ8vqawd8TraNryQeJnvH1eLpIDgbiqymM'*) ;;
   *) fail "fleet inventory: builder-nixbuild known-hosts entry is '${registry_key}'" ;;
 esac
+for host in home-forge la-admin-1 oci-melb-1; do
+  host_key="$(ne --raw --apply "c: c.programs.ssh.knownHosts.\"host-${host}\".publicKey" path:.#nixosConfigurations.oci-melb-1.config 2>/dev/null)"
+  case "$host_key" in
+    'ssh-ed25519 '*) ;;
+    *) fail "fleet inventory: host-${host} known-hosts entry is '${host_key}'" ;;
+  esac
+done
 
 # 7i. Negative mutation checks (OPS-4, OPS-11, OPS-3/OPS-8 bootstrap gates).
 # Each runs against a throwaway copy so the working tree is never modified.

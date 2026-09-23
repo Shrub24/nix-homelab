@@ -14,8 +14,11 @@
   "identity/kanidm" = [ "la-admin-1" ];
   "identity/provisioning.json" = [ "la-admin-1" ];
 
+  "services/degoog" = [ "home-forge" ];
+  "services/hindsight" = [ "home-forge" ];
   "services/karakeep-pod" = [ "oci-melb-1" ];
-  "services/bifrost-gateway" = [ "oci-melb-1" ];
+  "services/langfuse" = [ "oci-melb-1" ];
+  "services/bifrost" = [ "oci-melb-1" ];
   "services/omniroute" = [ "home-forge" ];
   "services/ntfy" = [ "la-admin-1" ];
   "services/ntfy-firebase-key.json" = [ "la-admin-1" ];

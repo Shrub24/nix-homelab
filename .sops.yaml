@@ -87,6 +87,21 @@ creation_rules:
       - age:
           - *owner_age
           - *home_forge_age
+  - path_regex: ^secrets/services/degoog\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *home_forge_age
+  - path_regex: ^secrets/services/hindsight\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *home_forge_age
+  - path_regex: ^secrets/services/langfuse\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
   - path_regex: ^secrets/services/paperless\.ya?ml$
     key_groups:
       - age:

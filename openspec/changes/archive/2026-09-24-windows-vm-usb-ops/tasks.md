@@ -5,4 +5,4 @@
 
 ## 2. Validation
 
-- [ ] 2.1 Run `just --dry-run ops::usb-attach 21c4 0809`, `just --dry-run ops::usb-detach 21c4 0809`, `treefmt --fail-on-change`, and `openspec validate --strict windows-vm-usb-ops`.
+- [x] 2.1 Run `just --dry-run ops::usb-attach 21c4 0809`, `just --dry-run ops::usb-detach 21c4 0809`, `treefmt --fail-on-change`, and `openspec validate --strict windows-vm-usb-ops`.

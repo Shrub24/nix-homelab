@@ -33,10 +33,10 @@ creation_rules:
     key_groups:
       - age:
           - *owner_age
-  # === New topology-aligned secret buckets ===
-
   # Application scopes
   - path_regex: ^secrets/applications/music\.ya?ml$
+    # === New topology-aligned secret buckets ===
+
     key_groups:
       - age:
           - *owner_age
@@ -77,11 +77,12 @@ creation_rules:
       - age:
           - *owner_age
           - *oci_melb_1_age
-  - path_regex: ^secrets/services/bifrost-gateway\.ya?ml$
+  - path_regex: ^secrets/services/bifrost\.ya?ml$
     key_groups:
       - age:
           - *owner_age
           - *oci_melb_1_age
+          - *home_forge_age
   - path_regex: ^secrets/services/omniroute\.ya?ml$
     key_groups:
       - age:
@@ -102,6 +103,28 @@ creation_rules:
       - age:
           - *owner_age
           - *oci_melb_1_age
+          # home-forge now hosts Langfuse; OCI is retained as a reader only
+          # for the cutover window, until source retirement.
+          - *home_forge_age
+  - path_regex: ^secrets/services/latitude\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
+          # home-forge now hosts Latitude; OCI is retained as a reader only
+          # for the cutover window, until source retirement.
+          - *home_forge_age
+  # Collector fan-out credential for Latitude's OTLP ingest: the only host
+  # that dials it is the colocated one (D-076). Langfuse's credential lives
+  # in its own service file — the pair its first-run init seeds.
+  - path_regex: ^secrets/services/telemetry\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
+          # home-forge is the colocated dialer after the backend move; OCI is
+          # retained as a reader only for the cutover window.
+          - *home_forge_age
   - path_regex: ^secrets/services/paperless\.ya?ml$
     key_groups:
       - age:
@@ -155,6 +178,12 @@ creation_rules:
     key_groups:
       - age:
           - *owner_age
+          - *la_admin_1_age
+  - path_regex: ^secrets/hosts/home-forge/oidc\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *home_forge_age
           - *la_admin_1_age
   # Firebase service key
   - path_regex: ^secrets/services/ntfy-firebase-key\.json$

@@ -604,7 +604,7 @@ Rationale:
 
 ## D-035: GitHub Actions uses nixbuild.net as the canonical CI build plane
 
-Status: Accepted
+Status: Superseded by D-082 — the CI build plane is the fleet's own machines, reached through nix-fleet's build-account, `ci` profile and reusable build workflow, and `.#checks` is what CI builds
 
 Decision:
 
@@ -1221,6 +1221,7 @@ Supersedes/updates:
 
 - supersedes the `postgres-shared-access` requirements written around the LiteLLM consumer, which is retired
 - the runbook namespace moved from `services.postgres-shared` to `services.postgres`, and `docs/runbooks/postgres-consumer-migration.md` covers moving a database between clusters
+- revised by D-069: consumer roles, databases, and ownership are converged by the substrate's own provisioning unit rather than nixpkgs' `ensureDatabases`/`ensureUsers`, which could act on the previous generation's registrations
 
 ## D-059: The OIDC contract is intrinsic; capability, contract, and security binding are separate concerns
 
@@ -1418,7 +1419,7 @@ References:
 
 ## D-066: nix-fleet owns the canonical fleet inventory; this repository derives from it
 
-**Status:** Accepted
+**Status:** Superseded by D-068 for the consumption shape — nix-fleet v2 deleted the cross-class realization and publishes facts plus pure projections; the inventory-ownership decision stands
 
 **Context:**
 D-065 made this repository's host records the machine-identity SSOT and had nix-fleet render trust from that registry. nix-fleet then moved the facts themselves upstream: `modules/fleet/inventory.nix` now declares the canonical `fleet.hosts` (target system, Tailscale hostname, host names, host public key), `fleet.builders` and `fleet.builderSets` — including this fleet's three hosts — and publishes the whole surface as one flake-level module (`flakeModules.fleet`) with the realization at `config.fleet.realization`. Its contracts are explicit: a canonical fact is declared in nix-fleet and consumers derive, never restate; consumer additions are additive and may not shadow canonical IDs.
@@ -1480,3 +1481,1170 @@ in, one dead provider key out); the karakeep and paperless-gpt consumers change 
 each; docs-mcp on home-forge is untouched; oci-melb-1's bridge firewall drops the stale `4533`
 openings (operator-confirmed unused; the navidrome catalog route points at home-forge); `5030` on
 `podman0` has no identifiable consumer and stays until the operator confirms it dead.
+
+## D-068: nix-fleet v2 publishes facts and projections; the fleet projects trust and leaves scheduling to CI
+
+**Status:** Accepted
+
+**Context:**
+
+nix-fleet restructured its fleet contract after D-066. `fleet.builders` and `fleet.builderSets`
+became a capability on the machine record (`fleet.hosts.<id>.capabilities.nixBuilder`), external
+resources got their own namespace (`fleet.externalBuilders`), and named sets became
+`fleet.buildProfiles` with per-member overrides, because scheduling parameters belong to the
+relationship between workload and builder. The cross-class realization was deleted outright: the
+feature publishes facts plus pure projections (`flake.lib.buildProfile` → `resolveHosts`,
+`resolveBuildProfile`, `machinesFile`, `knownHosts`, `sshConfig`, `buildMachines`), and a consumer's
+own flake-level module closes over its `config.fleet`. The v1 surfaces are gone or throwing shims
+(`config.fleet.realization`, `services.fleet-builders.activeSet`,
+`modules.nixos.{fleet-builders,builder-access}`), and the CI bundles became `packages.<profile>`.
+
+Two smaller upstream changes ride the same pin: the `nh-gc` aspect is renamed `nix-gc` and gained a
+selectable implementation, and the Beszel agent's credential is reclassified — its `KEY` is the
+hub's public key, so the module takes it as an option and registers no sops secret.
+
+**Decision:**
+
+1. Pin nix-fleet to v2 and consume the documented shape: `modules/flake/builder-access.nix` imports
+   `inputs.nix-fleet.flakeModules.fleet` and closes over this evaluation's `config.fleet`, projecting
+   trust with `inputs.nix-fleet.lib.buildProfile` (`resolveHosts` → `knownHosts`/`sshConfig`).
+   Nothing is restated — the trust selection is derived from the build capability, so a host joins
+   the trust set by declaring the capability upstream.
+2. Scheduling stays off: no profile is resolved, so no host gets `nix.buildMachines` and no dispatch
+   account is selected. CI is the build path (TD-30), and the build capability already exists as
+   inventory facts the CI bundles render.
+3. Trust is thinner than the inventory by construction — the projection renders exactly the
+   selection, so only hosts offering build capability are known hosts. A non-builder workstation is
+   identity, not a dial target.
+4. The Beszel agent holds no secret: `services.beszel-agent.key` binds from `policy/globals.nix`
+   (`beszel.hubKey`), the sops registration and the enrollment gate are gone, and the fleet-wide
+   `beszel/key` entry in `secrets/common.yaml` retires with them. The bound value was verified
+   against the live fleet first: the deployed agent's rendered environment carries exactly that key.
+5. Telegram delivery is off (`services.notify.telegram.enable = false`): ntfy is the fleet's push
+   path, and the topic map stays bound so re-enabling it is one line.
+
+**Consequences:**
+
+- The evaluation is now consumer-shaped: `packages.ci` and `packages.arm-expensive` render this
+  repository's hosts (`ssh-ng://nixbuild@home-forge …`) and `checks.fleet-render` validates our
+  config. The v1 closure leak is gone.
+- One upstream leak remains: `packages.fixture` still arrives from nix-fleet's own fixture profile
+  and renders `fixture-host`/`builder.invalid`. The scaffold pins it as measured and it is reported
+  upstream.
+- Scheduling is not free: it needs the dispatch account (`modules.nixos.build-account`) on builder
+  hosts and an authorized coordinator key before any profile can be selected. That is TD-30's work,
+  not a fleet fact.
+- The Beszel change removes a secret and a bootstrap gate from three host files; the encrypted
+  `beszel: key:` entry is inert and is the operator's to drop on the next re-encryption.
+
+**References:**
+
+- `modules/flake/builder-access.nix`, `modules/flake/observability-agent.nix`,
+  `modules/notifications/notify.nix`, `policy/globals.nix`
+- nix-fleet `docs/contracts/builders.md`, `docs/contracts/hosts.md`, `lib/build-profile.nix`
+- `docs/decisions.md` D-066 (superseded), D-060 (generated flake and follows aliases)
+
+## D-069: The PostgreSQL substrate converges consumer roles, databases, and ownership itself
+
+**Status:** Accepted
+
+**Context:**
+
+A generation that registers a credentialled consumer for the first time (langfuse on
+`oci-melb-1`) failed to activate: `postgresql-provision.service` reported
+`services.postgres.consumers.langfuse: role 'langfuse' does not exist`, and deploy-rs rolled back.
+The role and database were created 19 s later, during the rollback's own unit restart.
+
+The executed artifacts show why. Roles and databases were created by nixpkgs'
+`postgresql-setup.service`, which systemd started from the definition it already had loaded: the
+script that ran (`/nix/store/j04dd7…-unit-script-postgresql-setup-start`) is the *previous*
+generation's and has no mention of langfuse, while the generation's own script
+(`/nix/store/lnbc…`) contains that consumer's `CREATE USER`, `ALTER ROLE … LOGIN` and
+`ALTER DATABASE … OWNER TO`. `postgresql-provision.service` was new in that generation, so systemd
+read it from the new `/etc` and ran the new script — ordered after a setup unit that had just
+recreated the previous role set, and it correctly reported that the role was missing.
+
+**Decision:**
+
+Consumer state is converged by the substrate's own unit, not by `postgresql-setup.service`:
+`services.postgresql.ensureDatabases`/`ensureUsers` are not set, and
+`systemd.services.postgresql-provision` creates each registered role, creates its database, sets
+database ownership, enables login for `scram` consumers, applies the SOPS-held password, and runs
+the registration's `setupSQL`. nixpkgs keeps the cluster: `initdb`, `pg_hba`, settings, and the
+extension packages composed from the same registry.
+
+The unit executes a fixed trampoline (`exec /etc/postgres/provision.sh`), so its own content never
+varies with the consumer set and a stale in-memory definition cannot provision a stale set; the
+script itself is rendered per generation under `/etc` (current by the time any unit starts) and
+`restartTriggers` restarts the unit whenever it changes.
+
+**Consequences:**
+
+- Registering a consumer no longer depends on nixpkgs' setup unit being reloaded first, which is
+  what the consumers already assume: langfuse's containers `require`/`after`
+  `postgresql-provision.service`.
+- Provisioning is idempotent and self-healing across rollbacks — create-if-missing plus named
+  failures — instead of failing on state another unit was supposed to have created.
+- The substrate owns creation semantics (plain `CREATE ROLE` / `CREATE DATABASE`, then
+  `ALTER DATABASE … OWNER TO`), so role and database shape is ours to keep in step with the
+  registry.
+- The provisioning ordering contract (`requires`/`after` `postgresql-setup.service`, `partOf`
+  `postgresql.target`, `postgres` user) is unchanged, and so is the scaffold's probe of it.
+
+**References:**
+
+- `modules/database/postgres.nix`, `modules/database/postgres/_consumer.nix`
+- `tests/check-dendritic-scaffold-contract.sh` (provisioning-ordering block)
+- Evidence: `/nix/store/j04dd7…-unit-script-postgresql-setup-start` (previous generation, no
+  langfuse) vs `/nix/store/lnbc…-unit-script-postgresql-setup-start` (that generation, with it)
+- `docs/decisions.md` D-058 (the consumer registry), D-059 (hindsight, the first consumer)
+
+## D-070: The OCI media mount is repurposed as the fleet's heavy-app storage mount
+
+**Status:** Accepted
+
+**Context:**
+
+The music application moved entirely to `home-forge` (D-033-era migration), leaving
+`oci-melb-1`'s `/srv/media` filesystem (sda6, ~75G, only 22G used) holding nothing but a
+rollback copy of the music library that no oci component referenced: no unit, config, or
+restic include named it, the syncthing unit no longer exists in oci's generation, and
+home-forge's device list no longer pairs oci. Meanwhile `oci-melb-1` gains heavy-app
+workloads (the Latitude observability stack, ClickHouse data growth) whose stores belong
+outside the 8.2G-free root and the `/srv/data` partition that already holds the 6.1G
+postgres cluster.
+
+**Decision:**
+
+- Delete the rollback copy (verified: home-forge's active library 29G > copy 22G; wipe ran
+  only after confirming no syncthing agent, container, unit, or open handle existed that
+  could propagate the deletion).
+- Relabel sda6 `srv-media` → `srv-storage` and mount it at `/srv/storage`, matching
+  home-forge's existing convention (same label, same mountpoint) — no repartition, no data
+  movement, no provider-side config.
+- `modules/hosts/oci-melb-1/_disko-single-disk-split.nix` declares the new end state
+  (partition key `storage`, label `srv-storage`, mountpoint `/srv/storage`) so a reimage
+  reproduces it.
+- Heavy-app bulk state (Latitude's `fs` storage driver, later ClickHouse data if it moves
+  off root) lands under `/srv/storage/<service>`; `/srv/data` remains the
+  mutable-service-state mount (`/srv/data/<service>`).
+- The `/srv/media` references in historical decision records (D-019/D-020/D-022/D-024/…)
+  stay as written; they describe the state at the time and are superseded here.
+
+**Consequences:**
+
+- `oci-melb-1` gains ~73G of declared heavy-app storage; `/srv/media` ceases to exist
+  fleet-wide (home-forge never had it — its media already lives under
+  `/srv/storage/media/music`).
+- oci's restic scope shrinks by the deleted copy (it was never in a registration; the
+  historical media-root backup clauses are retired).
+- Rollback insurance for the music library is now solely home-forge's own backups — the
+  second on-disk copy is gone by design.
+
+**References:**
+
+- `modules/hosts/oci-melb-1/_disko-single-disk-split.nix`, `modules/hosts/home-forge/_disko-two-disk.nix`
+  (the `srv-storage` / `/srv/storage` convention it matches)
+- `ARCHITECTURE.md` (storage cross-cutting note, media ingest flow paths),
+  `docs/architecture.md` (baseline, media/data flow, backup scope)
+
+## D-071: The observability gauntlet resolves to Latitude beside langfuse
+
+**Status:** Accepted
+
+**Context:**
+
+Three rivals were weighed against the operator's actual criteria — cost and cache
+visibility, provider/model behaviour, failure tracing, loop detection, and improving the
+coding agent's own telemetry rather than prompts inside an app. OpenLIT was deployed but
+never fed (no exporter was ever pointed at it, and its ClickHouse user existed only in its
+container environment with no matching server-side fragment); Laminar was researched to a
+deployable plan and parked; Latitude V2 turned out to be the agent-failure triage console
+those criteria describe — signals, flaggers, percentile cohorts, custom JavaScript
+detectors — with prompt management removed upstream.
+
+**Decision:**
+
+- Delete the `openlit` aspect untried: module, web route, image pin, host selection and
+  scaffold pins. Its ClickHouse database is dropped host-side during the deploy.
+- Add `modules/observability/latitude.nix` as a single-file contributor selected on
+  `oci-melb-1` beside langfuse — the trial is those two, not three.
+- Co-tenant every dependency that has a native equivalent: one PostgreSQL consumer
+  (database `latitude`, role `latitude`, pgvector, BYPASSRLS plus CREATEDB in `setupSQL`),
+  ClickHouse in a dedicated `latitude` database behind its own `users.d` fragment, and two
+  native Redis instances (cache, plus an append-only no-eviction BullMQ queue). Temporal and
+  the six application images are containers; object storage is the `fs` driver on
+  `/srv/storage/latitude` instead of a bundled SeaweedFS.
+- Gate the UI behind Cloudflare Access and leave the API origin Access-free, because the
+  browser and the web container both call the API across origins and a challenge on that
+  path breaks magic-link sign-in. Ingest gets no route at all: a tailnet-only machine
+  endpoint the exporters dial.
+- Seed the `costDashboard`, `agentScore` and `customBehaviors` feature-flag rows, since
+  cost visibility is the first criterion and upstream has no supported self-host switch.
+- Leave generation, embedding and reranking providers unset: core observability works
+  without credentials, and since Latitude hard-codes 2048-dimensional embeddings, a 2048-dim
+  source must exist before semantic search is configured at all.
+
+**Consequences:**
+
+- `oci-melb-1` declares 13 containers (was 8) plus two Redis instances and the `latitude`
+  ClickHouse database — roughly 4–5 GiB of new memory demand against 19 GiB available.
+- The consumer registration, ClickHouse fragment, rendered environment and the three
+  Latitude oneshots activate only once `secrets/services/latitude.yaml` exists; until then
+  the aspect evaluates with its containers declared and no secret-dependent wiring, which is
+  the fleet's two-step sops bootstrap.
+- The `oci-melb-1` `postgresConsumers` scaffold pin still reads
+  `["langfuse","paperless"]` and gains `latitude` in the change that adds the encrypted
+  secret.
+- The cluster stays on `wal_level=replica` (upstream's bundled compose runs `logical`, but
+  its bring-your-own checklist requires only pgvector and a schema-create admin); if a
+  migration rejects it, the fix is a substrate config line plus a cluster restart.
+- langfuse keeps its route, its OIDC client and its ClickHouse ownership: nothing here
+  depends on the trial's outcome, and Laminar remains a parked phase-two candidate.
+
+**References:**
+
+- `modules/observability/latitude.nix`, `modules/database/postgres/_consumer.nix`
+- `policy/web-services.nix` (`latitude`, `latitude-api`, `latitude-ingest`), `policy/oci-images.nix`
+- `research/{latitude,laminar,openlit}-selfhost-eval.md`
+- `secrets/.templates/services/latitude.yaml.j2`, `.sops.yaml`
+
+## D-072: Cross-fleet service endpoints derive from nix-fleet's service inventory
+
+**Status:** Accepted
+
+**Context:**
+
+nix-fleet now owns the coordinates of the services that cross repositories or hosts —
+`lib/service-inventory.nix` declares each endpoint's host ID, scheme, port and base path,
+and publishes it as `lib.serviceEndpoints.canonicalServices` for plain-data policy files
+and `resolveEndpoint config.fleet` for flake-level code (`docs/contracts/services.md`).
+Until this change homelab restated those coordinates: the provider host ID and port of the
+`ntfy-admin`, `bifrost` and `niks3-write` routes were literals in `policy/web-services.nix`,
+and four provider modules carried their listen port as a literal option default.
+
+**Decision:**
+
+- `policy/web-services.nix` takes `canonicalServices` as its argument and derives the three
+  canonical routes' whole `origin` through a `canonicalOrigin` helper that fails closed with
+  named `web-services:` errors. The file stays plain data — it holds no flake reference —
+  and subdomain, exposure mode, access policy and health settings stay local.
+- `omniroute.port`, `hindsight.apiPort` and `docs-mcp.port` close over the resolved record in
+  their own contributor, so each default *is* the canonical value. `bifrost.port` is defined
+  by its aspect owner (`modules/ai/bifrost.nix`) instead, because the options leaf sits one
+  level deeper than the scaffold contract lets a flake argument reach; the option itself
+  carries no default. `docs-mcp`'s `embedding.baseUrl` defaults to the resolved
+  bifrost/embeddings URL, and the `home-forge` fragment no longer states it.
+- Every consumer of the policy passes the records in: the web-policy aspect, the export
+  script, and both web contract tests.
+
+**Consequences:**
+
+- No canonical port literal remains in the tree: `20128`, `6280`, `8888`, `7411`, `2586`
+  and `5751` appear only in nix-fleet's inventory. A provider move is one upstream edit plus
+  a relock — the route, the module default and the exported policy follow.
+- The policy file is no longer a bare attribute set: the parameter is a set pattern, so a
+  consumer that omits the argument fails at evaluation instead of reading an empty map.
+- Route grouping is unchanged: every route still lives under the one topology-owning host
+  key, while `origin.provider` now follows the record. Every derived value equals the literal
+  it replaced, so the delta in the regenerated `generated/policy/web-services.json` comes
+  only from the other work riding this change (the latitude routes, `search`'s `allow_users`
+  policy, langfuse's OIDC flag).
+
+**References:**
+
+- `policy/web-services.nix`, `modules/web/web-policy.nix`, `lib/policy.nix`
+- `modules/ai/omniroute.nix`, `modules/ai/bifrost/service.nix`,
+  `modules/knowledge/{hindsight,docs-mcp}.nix`
+- `modules/hosts/home-forge/_nixos.nix`, `scripts/export-web-services-policy.sh`
+- nix-fleet `docs/contracts/services.md`, `lib/service-endpoints.nix`,
+  `lib/service-inventory.nix`
+
+## D-073: In-fleet notification publishes dial the ntfy endpoint, not the public hostname
+
+**Status:** Accepted
+
+**Context:**
+
+`just deploy` runs `notify send` on the target host. la-admin-1's daemon posted to its
+loopback listener and worked; oci-melb-1 and home-forge built their URL from the catalog's
+`publicUrl` (`https://ntfy.shrublab.xyz`), so every publish crossed Cloudflare — which
+answers the daemon's `Python-urllib` client with error 1010 (browser-signature ban) and a
+403, and would also have to satisfy the Access policy. Server, ACLs, tokens and the network
+path were all healthy (the same request with a curl User-Agent returns 200), so the fault
+was entirely the transport choice.
+
+**Decision:**
+
+- `lib/policy.nix` emits the machine `endpoint` for published services too; previously only
+  a private service carried one. Its host stays locality-derived: loopback when the
+  evaluating host serves the service, the provider's tailnet name otherwise.
+- `notify.ntfy.serverUrl` derives from `repo.web.catalog."ntfy-admin".endpoint.url`, and
+  la-admin-1's explicit loopback override is deleted — it derives the same value now.
+- The scaffold contract compares every host's `serverUrl` against the catalog endpoint and
+  drops the now-dead `ntfyOverride` control flag.
+
+**Consequences:**
+
+- Machine publishes stay on the tailnet. `publicUrl` remains for phones and public clients,
+  and nothing about the edge, the Access policies or the public hostname changes.
+- A provider move stays one policy edit: the endpoint follows, consumers do not.
+- `endpoint` is now non-null on every catalog entry, so a consumer must not read null as
+  "private" — privacy is `declarePublic` + `exposureMode`, or the null `publicUrl`.
+
+**References:**
+
+- `lib/policy.nix` (`mkCatalogEntry`, `endpointHost`), `modules/notifications/notify.nix`
+- `modules/hosts/la-admin-1/_nixos.nix`, `tests/check-dendritic-scaffold-contract.sh`
+- `docs/decisions.md` D-072 (the canonical endpoint records this dial resolves through)
+
+## D-074: The observability store is a placement aspect on home-forge, fed by an interim node exporter
+
+**Status:** Accepted
+
+**Context:**
+
+The fleet had no metrics or logs store: Beszel reports host health to its own hub, and
+traces reach Latitude and Langfuse, but nothing answers "what did this host do last
+week". A collector contract is being built fleet-side (nix-fleet), so the store had to be
+deployable before it, without pre-empting it.
+
+Placement follows the disks, measured live: home-forge has 775 GB free on `/` and 838 GB on
+`/srv/storage`, while oci-melb-1 has 54 GB free on `/srv/storage` after the container store
+moved there (D-070) — and that host had just been through root-filesystem exhaustion. The
+store also stays off the host already carrying PostgreSQL, ClickHouse, Redis, Temporal and
+the LLM stack.
+
+nixpkgs ships native modules for all four services (`services.victoriametrics`,
+`services.victorialogs`, `services.victoriatraces`, `services.grafana`), so nothing here is
+a container or a pinned digest, and no new secret is required.
+
+**Decision:**
+
+- `modules/observability/victoria.nix` publishes the `victoria` placement aspect: no enable
+gate, selected by one host record (home-forge).
+- Four native services: VictoriaMetrics in single-node mode, VictoriaLogs, VictoriaTraces,
+  and Grafana with provisioned datasources (both Victoria datasource plugins are in
+  nixpkgs; traces use the built-in Jaeger datasource against VictoriaTraces'
+  Jaeger-compatible `/select/jaeger` API).
+- Ports come from the web policy, never the module: `victoriametrics`, `victorialogs` and
+  `victoriatraces` are private `tailscale-only` endpoints with no ingress route, and
+  `grafana` is a published, Access-gated `tailscale-upstream` route (D-072).
+- The store endpoints carry no auth yet — the tailnet is the perimeter the foundation
+  aspect already trusts. Grafana's interactive gate is Cloudflare Access, so it serves
+  read-only anonymous viewers and is given the documented pre-26.05 non-secret key, which
+  NixOS 26.05 now requires explicitly.
+- Producers are deliberately out of scope: the interim producer is one node exporter per
+  host, enabled by the `observability-agent` aspect and scraped over the tailnet by the
+  store's own `promscrape` job, alongside the store's self-metrics. The fleet collector
+  contract supersedes that seam.
+- Data stays in the modules' `StateDirectory` under `/var/lib` on the host's root
+  filesystem — these units run as dynamic users under `ProtectSystem=full` — with retention
+  as the volume control (12 months metrics, 30 days logs and traces). Relocating to a bulk
+  mount is a bind mount in front of that directory, not a new storage-path flag.
+
+**Consequences:**
+
+- Metrics, logs and traces have one durable store and one dashboard front end with no new
+  secret, no container image and no custom packaging; the scrape list is a host-owned
+  interim seam until the collector contract derives it.
+- The OTLP stream gains a third destination with explicit retention, which is the neutral
+  arm for the tracing A/B (Latitude and Langfuse remain the app-native ones).
+- Grafana holds no secret material: it becomes a sops-managed deployment the day it grows
+  local users, API keys or OIDC.
+- A later move of the store is a policy edit plus re-selection, because the ports were never
+  restated in the module.
+
+**References:**
+
+- `modules/observability/victoria.nix`, `modules/flake/observability-agent.nix`
+- `policy/web-services.nix` (the four route declarations),
+  `modules/hosts/home-forge/{default,_nixos}.nix`
+- `tests/check-dendritic-scaffold-contract.sh`, `docs/decisions.md` D-070 (storage
+  placement), D-072 (port derivation)
+
+## D-075: The observability producers run nix-fleet's telemetry contract, with our conventions on top
+
+**Status:** Accepted
+
+**Context:**
+
+D-074 deployed the store with an interim producer: the `observability-agent` aspect enabled
+one node exporter per host and the store scraped them by tailnet name from a host-owned
+list. That seam had the store reaching into every host, it carried no logs and no traces,
+and it was explicitly temporary — nix-fleet was building a host-local collector contract to
+replace it.
+
+That contract is published (nix-fleet `06f50853`, green in CI). `services.telemetry`
+declares, per host, the OTLP receiver, Prometheus scrape sources, journald shipping, the
+named destinations and the per-signal pipeline fanout, realized by an otel-collector
+provider and a Vector journald provider. Its aspects are realizations of that mechanism —
+`telemetry` plus `node-exporter` — and, like every shared mechanism (D-061), they are
+consumed here through convention contributors of ours rather than selected from nix-fleet
+directly, because nix-fleet's aspects are not merged into our flake's module namespace.
+
+**Decision:**
+
+- `modules/flake/telemetry.nix` publishes our `telemetry` aspect: it imports nix-fleet's
+  module and supplies the fleet's conventions — the store is named as both the metrics
+  destination (VictoriaMetrics remote-write) and the traces destination (VictoriaTraces
+  OTLP), and journald ships to VictoriaLogs. Every URL derives from the store's catalog
+  entry (`repo.web.catalog.<id>.endpoint.url`), so the colocated/remote difference (loopback
+  on the store host, tailnet FQDN elsewhere) follows from the endpoint projection instead
+  of a second rule (D-073); `services.otel-collector.exporterExtra` sets VictoriaTraces'
+  signal-specific `traces_endpoint`, because VTraces rejects the exporter's default
+  `/v1/traces` append.
+- `modules/flake/node-exporter.nix` publishes the `node-exporter` aspect. The mechanism is
+  entirely nix-fleet's — loopback listener, local scrape registration, its own failure
+  notification — so the contributor supplies only the convention it cannot do without: the
+  scrape target's identity. Without it the target carries just the loopback address, and
+  three hosts' node metrics arrive as one series per metric, overwriting each other in the
+  store; the label is `instance = <host>.<tailnet suffix>:<port>`, which keeps the naming
+  the dashboards and alerts already address.
+  - revised by D-081: the scrape identity is nix-fleet's own default
+    (`instance = <hostName>:<port>`), verified distinct per host by a live store probe, so
+    this contributor binds no convention of its own.
+- All three hosts select both aspects. `oci-melb-1` additionally binds the OTLP receiver
+  (`services.telemetry.otlp.host = "0.0.0.0"`) as the fleet's gateway for producers outside
+  the fleet; the wildcard is deliberate and bounded by the host firewall, which publishes
+  only 22/80/443 and trusts `lo`/`tailscale0`.
+- The collector's internal Prometheus reader is switched off
+  (`services.opentelemetry-collector.settings.service.telemetry.metrics.level = "none"`):
+  its default `127.0.0.1:8888` is the port nix-fleet's own service inventory assigns to
+  `hindsight/api` on home-forge, where the host-networked container holds it and the
+  collector died at startup with `bind: address already in use`. Nothing consumes those
+  self-metrics. (The same bind failure appeared once on oci-melb-1, whose holder was never
+  identified; the level setting removes the listener everywhere.)
+- The interim seam is deleted: `services.prometheus.exporters.node.enable` (so
+  `observability-agent` is the Beszel agent mechanism alone again), the store's `node`
+  scrape job with its `scrapeTargets` and `nodeExporterPort` options, and the
+  scrape-topology list in home-forge's host fragment. The store keeps only its own
+  `victoria` self-scrape job.
+
+**Consequences:**
+
+- Metrics stop being pulled host-to-host: each host pushes its own, so the store needs no
+  reachability into another host and a producer's absence shows up as a gap rather than a
+  failed scrape of someone else's exporter.
+- Journald shipping is bounded, not lossless: the journald source defaults to the current
+  boot and journald rotates at 300M/7d, so each reboot leaves never-shipped prior-boot
+  entries behind, while the 512 MiB disk buffer protects records already read.
+- Every producer host now runs a collector and Vector as well; both are nix-fleet
+  mechanisms with their own failure notifications, so a wedged producer is reported by the
+  same path as any other unit.
+- The gateway on `oci-melb-1` is the credential-free OTLP endpoint an off-fleet producer
+  pushes to, and the place the Latitude and Langfuse fan-out legs land once their project
+  keys exist.
+- A backend move is one contributor edit: no consumer restates a store URL or port.
+
+**References:**
+
+- `modules/flake/{telemetry,node-exporter}.nix`, `modules/observability/victoria.nix`,
+  `modules/flake/observability-agent.nix`
+- `modules/hosts/*/default.nix` (aspect selection), `modules/hosts/oci-melb-1/_nixos.nix`
+  (the gateway bind)
+- nix-fleet `modules/telemetry/**` and its `docs/contracts/telemetry.md`; `docs/decisions.md`
+  D-061 (convention contributors), D-073 (catalog endpoints), D-074 (the store)
+
+## D-076: Bifrost's routing rules are the fleet's model authority, and the file must be its source of truth
+
+**Status:** Accepted
+
+**Context:**
+
+The fleet's model names (`shrublab-text`, `-fallback`, `-image`, `-embedding`) are sent by
+hindsight, paperless-gpt and karakeep. Every one of them failed with a 403 from
+`provider: opencode` — bifrost's built-in Zen entry — regardless of what
+`policy/bifrost-config.json` declared, including after the alias map was corrected and the
+provider's base URL and session header were verified with a direct call that returned 200.
+
+Two properties of bifrost's config model explain it. Routing rules are not read from the
+file on every start: they live in the config store (`config.db`, tables `routing_rules` and
+`routing_targets`), and the store's rows were all `enabled = 0`, so a request matching no
+rule fell through to model resolution and landed on the built-in provider. The file's
+`governance` section only becomes authoritative when the top-level `source_of_truth` is set
+to `config.json`; the default (`split`) keeps database rows. Separately, key-level `aliases`
+take a bare provider-specific model id, not a `provider/model` string, so the qualified
+values silently failed to resolve.
+
+**Decision:**
+
+- `policy/bifrost-config.json` sets `source_of_truth: "config.json"`, so the sections the
+  file declares — `providers` and `governance.routing_rules` — are authoritative at startup.
+- The routing rules are the single mapping authority and every rule is explicitly
+  `enabled`: `shrublab-text` → `opencode-go/deepseek-v4-pro`, `shrublab-fallback` →
+  `opencode-go/deepseek-v4-flash`, `shrublab-image` → `opencode-go/qwen3.8-flash`, with the
+  same three rules' fallbacks staying inside `opencode-go`, and the previously store-only
+  `embedding` rule (`shrublab-embedding` → `voyage/voyage-4`) written into the file so
+  becoming authoritative does not drop the embedding path.
+- The alias blocks are deleted. They were redundant with the rules and, in openrouter's
+  case, actively harmful — its `shrublab-image` alias pointed at the expired key.
+- `modules/ai/bifrost/service.nix` derives a unit property from the config content
+  (`X-Bifrost-Config-Hash`), because `restartTriggers` on the source path did not restart
+  the container when only the rendered config changed: a deploy re-rendered the file while
+  the container kept serving the previous generation.
+
+**Consequences:**
+
+- Fleet model names resolve only through our provider; the built-in `opencode` provider row
+  remains in the store but is no longer selected, and no rule or fallback reaches a provider
+  we do not intend.
+- A config edit now takes effect on the next activation without touching the store by hand;
+  the file must keep every rule the fleet depends on, since the file's rules replace the
+  store's.
+- The same store-wins behaviour applies to `plugins`: the seeded `config_plugins` row is not
+  re-read from the file on later starts (observed when the otel plugin's config changed), so
+  changing a plugin's config requires dropping that row before restart.
+- Verification is against the store and the wire, not the file: rule rows must read
+  `enabled = 1` after startup, and the four fleet model names must answer 200.
+
+**References:**
+
+- `policy/bifrost-config.json`, `modules/ai/bifrost/service.nix`
+- `docs/decisions.md` D-062 (the gateway), D-067 (file-driven mode)
+- bifrost schema (`source_of_truth`, `routing_rule`, key-level `aliases`)
+
+## D-077: A container is recreated when its environment changes, not when its unit happens to change
+
+**Status:** Accepted
+
+**Context:**
+
+`virtualisation.oci-containers` generates the container's start script with a *stable*
+env-file path — `/run/secrets/rendered/<name>` for a sops template, `/run/secrets/<name>`
+for a secret consumed directly — and that file's content never appears in the unit
+definition. A changed environment therefore left the unit byte-identical, systemd did not
+restart it, and the running container kept the variables it had been created with. The
+generated script is `podman run --replace` behind a `podman rm -f` pre-start, so a restart
+is sufficient once it happens; nothing was making it happen.
+
+This was not theoretical. A deploy that added `AUTH_CUSTOM_ID_TOKEN_SIGNED_RESPONSE_ALG`
+for Langfuse's Kanidm OIDC reported success and activated the new generation while
+`langfuse-web` kept serving the environment it had been created with eight hours earlier
+(oci-melb-1, 2026-10-01), so the fix sat inert until the container was recreated by hand.
+Bifrost escaped the same fate only because D-076 had already given it a config-content
+hash. `restartTriggers = [ environmentFile ]` — present on `omniroute` and `hindsight` —
+cannot help: the path is constant, only what it points at changes, so the trigger never
+fires.
+
+**Decision:**
+
+- `modules/containers/container-env.nix` publishes the `container-env` aspect, selected by
+every host that runs containers. For each container with env files it derives an
+`X-Container-Env-Revision` unit property from the env-file paths, every sops template's
+content, and the ciphertext of each sops file whose secrets that template interpolates, so
+the unit differs exactly when the environment would.
+- The secret half is reachable because sops-nix renders
+`${config.sops.placeholder.<name>}` as `<SOPS:sha256(<secret name>):PLACEHOLDER>`: the
+marker maps a template back to its secrets, and each secret to its `sopsFile`. Values are
+decrypted at activation and are never reachable from evaluation, so the ciphertext is the
+only eval-time trace of a rotated value.
+- Coverage is the contributor's job, not the service module's: a new container needs no
+wiring. The per-module `mkEnvRevision` helper that preceded this decision was deleted with
+it. Bifrost keeps its own `X-Bifrost-Config-Hash` for the *file* its renderer writes,
+which is a different input from the environment.
+
+**Consequences:**
+
+- A container whose environment file changes restarts on the next activation. On the first
+deployment of this aspect every env-file container restarts once — the one-time cost of
+the property appearing.
+- Rotating a secret value recreates the container as well, because re-encryption changes
+the sops file's ciphertext.
+- The revision is derived from configuration, not from the rendered file, so an env file
+produced outside sops (and therefore absent from `environmentFiles`) stays uncovered.
+
+**References:**
+
+- `modules/containers/container-env.nix`, `modules/ai/bifrost/service.nix`,
+  `modules/observability/langfuse/service.nix`
+- `docs/decisions.md` D-076 (the config-content hash this generalizes)
+
+## D-078: Bifrost runs from nix-fleet's dynamic build, and this repository declares the plugins
+
+**Status:** Accepted
+
+**Context:**
+
+Bifrost loads request filters as native Go plugins. Go's `plugin.Open` requires the host
+binary and the plugin to come from the same module graph and toolchain — the loader
+compares package hashes — which in turn requires a dynamically linked binary. Every
+published Bifrost artifact is static: the Alpine and UBI images and the sampled Linux
+release binaries were all `ET_EXEC` with no interpreter (verified 2026-10-03), and upstream
+declined adding a dynamic image to OSS CI (maximhq/bifrost#2586). The gateway we ran,
+`docker.io/maximhq/bifrost:v1.5.0-prerelease8`, was one of them.
+
+The pressure that forced the question was a consumer defect with no consumer-side fix:
+docs-mcp's embedding client hardcodes `encoding_format: "float"`, Voyage's embeddings API
+rejects that field with a 400, and docs-mcp exposes no setting to omit it. A gateway-side
+normalizer is the only place that repairs it once for every consumer, and the plugin
+interface is the supported extension point for it.
+
+**Decision:**
+
+- The gateway runs natively from `inputs.nix-fleet.packages.<system>.bifrost` — the
+dynamically linked build — with its plugin from the same nix-fleet revision, because only
+one revision can guarantee the matching Go package hashes. nix-fleet owns the build
+(`pkgs/bifrost/`, `pkgs/bifrost/plugins/`); this repository declares the plugin
+registration and never mirrors the normalization logic.
+- `modules/ai/bifrost/service.nix` owns the effective configuration: the repo-owned
+`policy/bifrost-config.json` plus the plugin entry. It hashes the document's *inputs* — the
+config file's digest and the plugin path — rather than the rendered file. Hashing the
+rendered file would realise everything it references, including a plugin build for the
+evaluating host's architecture, so `nix eval` of a host config would stop being
+architecture-independent (found by the contract check, not by reasoning).
+- The runtime is a native systemd unit under a dedicated `bifrost` account with
+`ProtectSystem=strict` and only its app directory writable. The state directory's
+ownership moved off the container era's shared uid 1000, which was the human admin.
+- The unit carries two content-derived revisions: one over the configuration inputs and one
+over the secrets file's ciphertext. Both paths are stable and systemd cannot see content,
+which is exactly the failure D-077 describes for containers — a native unit has the same
+blind spot, so it gets the same treatment in its own unit rather than through the
+`container-env` aspect.
+- `policy/bifrost-config.json` moved to the 2.2.5 shape. The admin account is declared as
+`auth_config` with env indirection, because 2.2.5 no longer reads
+`BIFROST_ADMIN_USERNAME`/`BIFROST_ADMIN_PASSWORD`. `custom_provider_config` is dropped from
+`deepseek` and `opencode-go`: 2.2.5 treats both as standard providers and rejects the block
+("cannot be created on standard providers"), while its built-in base URLs already match
+ours. `voyage` stays a custom provider, which is what it is. `source_of_truth:
+"config.json"` (D-076) is unchanged, as is the otel plugin's flat configuration and its
+`disable_content_logging: true`.
+- The OCI image pin is deleted with the container, so Renovate stops tracking it and no
+unused reference remains.
+
+**Consequences:**
+
+- A configuration or credential change recreates the gateway process by changing its unit,
+so the stale-environment class of failure no longer applies to this service.
+- The first deployment of a given architecture pays for the Go build (the plugin needs the
+same toolchain and vendor graph as the binary). The container's image digest pin no longer
+exists, so the pinned revision moves with the nix-fleet input and is reviewed as a flake
+update rather than a Renovate digest bump.
+- The config store the running 1.5.x gateway created is replaced rather than migrated as an
+operator step; the file owns providers and routing rules (D-076), so nothing
+authoritative is lost, and the verification is the running process (`plugin status:
+voyage-normalizer - active`) plus live alias calls — never the config file's contents,
+which D-076 already showed can sit inert.
+- Importing `modules/ai/bifrost/service.nix` now requires `repo.packages` on the host, and a
+host that selects `bifrost` on an architecture where nix-fleet publishes no build fails at
+build time rather than at request time.
+
+**References:**
+
+- `modules/ai/bifrost/default.nix`, `modules/ai/bifrost/service.nix`,
+  `policy/bifrost-config.json`, `modules/flake/fleet-packages.nix`,
+  `modules/flake/packages.nix`, `tests/check-bifrost-gateway-contract.sh`,
+  `docs/runbooks/state-restore.md`
+- `docs/decisions.md` D-076 (the file as routing authority), D-077 (content-derived unit
+  revisions for stable paths)
+- nix-fleet: `pkgs/bifrost/default.nix`, `pkgs/bifrost/plugins/voyage/main.go`,
+  `tests/bifrost/voyage_check.py`; maximhq/bifrost#2586 (dynamic images declined)
+
+## D-079: The Bifrost gateway mechanism moves to nix-fleet; this repository keeps its policy
+
+**Status:** Accepted
+
+**Context:**
+
+D-078 made the gateway native: the runtime came from
+`inputs.nix-fleet.packages.<system>.bifrost` with its Voyage plugin, and
+`modules/ai/bifrost/service.nix` built everything around it — the service
+account, the `config.json` render unit, the unit lifecycle, the failure
+registration, the state directory. None of that was this repository's policy. It
+is what any consumer of Bifrost has to do to run it at all, and the ABI that
+makes the plugin loadable — binary and plugin from one revision, one toolchain —
+is nix-fleet's invariant to keep rather than ours to restate.
+
+nix-fleet now publishes `flake.modules.nixos.bifrost`, which carries exactly that
+mechanism: the package, the `bifrost` account, the application directory, the
+startup-configuration install with the config store disabled, the unit lifecycle,
+and the `bifrost.failure` notification registration. Its contract
+(`docs/contracts/bifrost.md`) draws the line this decision follows — the fleet
+owns the mechanism; the consumer owns providers, credentials, exposure, backups
+and telemetry policy, and keeps the secret-rotation restart wiring, because
+rewriting a file at a stable path does not change a systemd unit.
+
+**Decision:**
+
+- `modules/ai/bifrost.nix` imports `inputs.nix-fleet.modules.nixos.bifrost`.
+Import is deployment, so there is no `services.bifrost.enable`; the aspect owner
+keeps only the canonical listen port, still resolved from nix-fleet's service
+inventory.
+- `modules/ai/bifrost/service.nix` keeps policy and gives up mechanism. Gone:
+the `package` override, the `bifrost` user and group, the `bifrost-config` render
+unit, the `bifrost` unit body, our own `renderedConfig` and `renderedConfigFile`
+options, the `services.notify.events.bifrost` registration, and the tmpfiles
+rules for the application directory. Kept: the settings document, the plugin
+registrations, the SOPS-rendered environment file, the container-facing ingress
+rule, the backup registration, the secret-rotation restart, and the URLs
+consumers dial.
+- Plugin registration moves out of `policy/bifrost-config.json` into
+`services.bifrost.plugins.*`, that member's only owner — the fleet module refuses
+a `plugins` member under `settings`. Both entries move: the built-in `otel`
+exporter, whose configuration is telemetry policy, and the native
+`voyage-normalizer`, whose path only the module can resolve from the fleet
+package. The rendered list keeps the order the running gateway already had.
+- `dataDir` becomes the application directory itself, `/srv/data/bifrost/app`,
+which is what the fleet contract means by it. The module supplies this fleet's
+path instead of the host, which now binds only its secret file. The fleet module
+installs `config.json` from the rendered document before every start and names
+that document in `restartTriggers`, so a settings or plugin edit recreates the
+process without a render unit of ours ordering in front of it.
+- Secret rotation stays here: the unit takes the encrypted secret file as a
+second `restartTriggers` entry, the half the fleet deliberately leaves open. This
+is D-077's blind spot in a native unit — `container-env` does not reach it,
+because that contributor covers `virtualisation.oci-containers`.
+- No ownership migration moves with it. The contract puts that on the consumer;
+the live directory is already `bifrost`-owned, and
+`docs/runbooks/state-restore.md` carries the ownership step for a restore, as it
+does for every other native service.
+
+**Consequences:**
+
+- The gateway becomes one mechanism with one implementation, so a future consumer
+inherits it instead of copying this repository's unit, and the ABI invariant
+D-078 depends on becomes the fleet's to preserve.
+- `tests/check-bifrost-gateway-contract.sh` stops pinning the unit body we used to
+own and starts pinning the fleet assumptions this repository now relies on:
+`dataDir` is the application directory, the startup configuration is installed
+into it, and both the rendered document and the encrypted secret file are restart
+triggers.
+- Relocking nix-fleet from `5950fcbb` to `dc29c326` moved the shared baseline:
+`nixpkgs` `c59305ba` → `a7868a72` and `sops-nix` `5efb5a6f` → `dcd241ba`. `degoog`
+is a mutable ref and was held at `e4e110b9` again, so the bump stays scoped to
+nix-fleet's own graph.
+
+**References:**
+
+- `modules/ai/bifrost.nix`, `modules/ai/bifrost/service.nix`,
+  `policy/bifrost-config.json`, `modules/flake/fleet-packages.nix`,
+  `modules/hosts/oci-melb-1/_nixos.nix`,
+  `tests/check-bifrost-gateway-contract.sh`, `docs/runbooks/state-restore.md`
+- `docs/decisions.md` D-078 (the native runtime and the plugin ABI), D-077
+  (content-derived unit revisions for stable paths)
+- nix-fleet: `modules/ai/bifrost.nix`, `docs/contracts/bifrost.md`
+
+## D-080: ClickHouse comes from its own nixpkgs pin, because unstable's does not link
+
+**Status:** Accepted
+
+**Context:**
+
+The Langfuse stack runs a native ClickHouse server
+(`modules/observability/langfuse/service.nix`), and moving that stack to
+home-forge put the package on the deployment path. It does not build there.
+
+The derivation this baseline evaluates —
+`/nix/store/x1c3z55sf98m90c7142yn3lcvvqgx46p-clickhouse-26.8.7.19-lts.drv`,
+output `4fm10mf5jkywa2yhxyiv84afnaszc0sw-clickhouse-26.8.7.19-lts` — is the one
+Hydra builds for `nixpkgs:staging-next:clickhouse.x86_64-linux`, and that build
+**fails** (build 346560573, `buildstatus: 1`) at the final link:
+
+```
+ld.lld: error: undefined symbol:
+>>> referenced by stripped.o:(.text._RNvXsq_…aho_corasick…3fmt…) in archive rust/workspace/lib_ch_rust_prql.a
+clang++: error: linker command failed with exit code 1
+```
+
+The undefined symbol carries no name and the archive member is `stripped.o`:
+nixpkgs runs ClickHouse's own `cmake/strip_rust_symbols.sh`, and its derivation
+notes that `llvmPackages.bintools` is "required by cmake/strip_rust_symbols.sh to
+match the LLVM toolchain, otherwise it corrupts .eh_frame in the Rust
+staticlibs". Under LLVM 21.1.8 the stripped Rust staticlibs no longer resolve.
+That is a packaging defect, not a cache gap: output and `.drv` are published
+nowhere (cache.nixos.org, numtide's mirror, nix-community cachix and the fleet's
+niks3 all answer 404), and because the derivation is identical our own build
+would fail the same way after ~17k compile steps. `rustSupport = false` is not a
+way out: it only drops `rustc`/`cargo` from the derivation's inputs, ClickHouse's
+CMake does its own Rust detection, and that variant is uncached too.
+
+The fleet does not have to repair that build. The revision this repository used
+before the nix-fleet v2 relock — nixpkgs `44a91898…` — evaluates the *same
+version* to `/nix/store/1rb0ambr…-clickhouse-26.8.7.19-lts`, which Hydra built
+successfully and published: it answers 200 on cache.nixos.org and on the fleet
+cache, and it is already realised on home-forge.
+
+**Decision:**
+
+ClickHouse comes from its own nixpkgs pin. `nixpkgs-clickhouse` (`44a91898…`) is
+declared in `modules/flake/inputs.nix`, `modules/flake/fleet-packages.nix`
+projects it as `repo.packages.clickhouse`, and both ClickHouse call sites read
+that projection: the Langfuse module binds `services.clickhouse.package`, and the
+Latitude database-init client takes its `clickhouse-client` from the same
+projection. Both mattered — the host package set's client kept the broken
+derivation in the system closure on its own, and the closure is what a deploy
+builds. The pin is a frozen revision rather than a tracked channel, so the
+workaround cannot drift, and Renovate is told to leave it alone. Every other
+package keeps coming from the shared baseline through nix-fleet.
+
+**Consequences:**
+
+- The package set gains exactly one more nixpkgs node — the lock gained
+`nixpkgs-clickhouse` and moved nothing else — and the two call sites above are
+its only consumers.
+- The server runs one nixpkgs generation behind the rest of its host. ClickHouse
+is a self-contained C++ service with no NixOS coupling beyond
+`services.clickhouse.package`, so the deviation stays inside that closure.
+- `tests/check-dendritic-scaffold-contract.sh` pins all three wiring points by
+grep — the frozen revision in `inputs.nix`, the projection in `fleet-packages.nix`,
+the binding in the Langfuse module — and exposes `clickhouseVersion` in the
+placement probe, because both candidates carry the identical version string and a
+version assertion alone would not catch a dropped pin. Comparing the bound
+package against the host's own was the sharper check and is not reachable:
+`config.nixpkgs.pkgs` carries no package attributes and `config._module` is not
+readable from a configuration, so the wiring greps are the available form.
+- Debt: the input exists only while the shared baseline's ClickHouse fails to
+link. Remove the input, the projection, the module binding and the test
+observable together once `pkgs.clickhouse` substitutes from a cache again.
+aarch64 is untested for the pinned revision: Langfuse is placed on x86_64 only
+today, and an aarch64 placement would need that revision's ClickHouse cached or
+built.
+
+**References:**
+
+- `modules/flake/inputs.nix`, `modules/flake/fleet-packages.nix`,
+  `modules/observability/langfuse/service.nix`, `modules/observability/latitude.nix`,
+  `tests/check-dendritic-scaffold-contract.sh`, `renovate.json`
+- Hydra build <https://hydra.nixos.org/build/346560573> (job
+  `nixpkgs:staging-next:clickhouse.x86_64-linux`, failed), and its raw log
+  `https://hydra.nixos.org/log/x1c3z55sf98m90c7142yn3lcvvqgx46p-clickhouse-26.8.7.19-lts.drv`
+- `docs/decisions.md` D-074 (the observability store on home-forge, which moved
+  this stack); the failing revision entered the baseline with the nix-fleet relock
+  to `5950fcbb`, carried by the `voyage-embedding-compatibility` change
+
+## D-081: The node exporter's scrape identity is nix-fleet's, not a fleet convention
+
+**Status:** Accepted
+
+**Context:**
+
+D-075 gave `modules/flake/node-exporter.nix` the one convention the aspect could not supply
+on its own: the scrape target's `instance` label, spelled `<host>.<tailnet suffix>:<port>`.
+Without a label the generated target carried only the loopback address, and three hosts'
+node metrics would have arrived in the store as one series per metric, overwriting each
+other.
+
+nix-fleet has since made that label its own default — `dc29c326`, published before our
+previous pin — `<hostName>:<port>` as a plain `mkDefault`, with the instruction to keep our
+override until a live store-side probe confirmed the new spelling was distinct per host.
+What was outstanding was the probe, not the default.
+
+**Decision:**
+
+- Our override is deleted; `modules/flake/node-exporter.nix` now imports nix-fleet's
+  mechanism and publishes our aspect name over it, binding no convention.
+- The identity is accepted on evidence rather than on the default's shape. Before the swap
+  VictoriaMetrics held exactly three node series, one per host, and the three hosts render
+  distinct values after it: `oci-melb-1:9100`, `la-admin-1:9100`, `home-forge:9100`.
+  Distinctness rests on canonical host IDs being unique, which the host registry already
+  fails closed on — the same reason the FQDN spelling was never load-bearing for identity.
+- Only the label's *value* changes, and nothing here consumes it: this repository declares
+  no VictoriaMetrics alerting or recording rules, queries node metrics nowhere, and reaches
+  `instance` in Grafana only as a template variable.
+
+**Consequences:**
+
+- A saved Grafana dashboard variable or filter pinned to the old FQDN value does not
+  repopulate by itself and has to be re-picked; that is the one place a stale value hides.
+- Old FQDN series stay queryable until staleness, so `sum by (instance)` on a node metric
+  briefly reports six series per host before settling to three. Transient, not corruption.
+- Uniqueness now depends on an upstream default instead of on our binding. That is the
+  intended division — the value is upstream's to name — and it means a change to that
+  default upstream reaches the store without a change here.
+- Debt: nothing here asserts the three hosts render distinct values. nix-fleet asserts its
+  half — its fixture proves the default tracks both hostname and a non-default port, and
+  that a consumer override wins — while the consumer-side distinctness is ours to state,
+  because only this repository knows the host list. Eval-time distinctness is the property
+  that prevents the collision; the store cannot be queried from the contract test.
+
+**References:**
+
+- `modules/flake/node-exporter.nix`, `modules/flake/telemetry.nix`
+- nix-fleet `modules/observability/node-exporter.nix` (`dc29c326`) and
+  `lib/telemetry-contract.nix`
+- `docs/decisions.md` D-075 (the telemetry contract and the convention it introduced)
+
+## D-082: The CI build plane is nix-fleet's builder contract, and `.#checks` is what CI builds
+
+**Status:** Accepted; trusted-users fix pinned, builder activation pending
+
+**Context:**
+
+D-035 made nixbuild.net the canonical CI build plane at a time when the fleet had no
+builder inventory of its own: CI authenticated to a third-party remote builder with an
+attenuated token, remote-built host toplevels against `ssh-ng://eu.nixbuild.net`, and the
+deploy workflows prebuilt profiles through the same route.
+
+Since then nix-fleet became the canonical declaration of who the fleet's machines are and
+what build capacity each contributes (D-066), and it now publishes the build plane that
+inventory implies: a builder account, the canonical CI coordinator key
+(`fleet.ci.sshPublicKey`), named build profiles with per-host job counts, the reusable
+`build-push-cache` workflow, and the bundles that workflow installs. This repository had
+adopted only the inbound half — `builder-access` renders SSH trust from the same inventory
+(D-065, D-068) — so the hosts were reachable as builders while CI still built through
+nixbuild.net, and our deploy path prebuilt through it as well.
+
+A live dispatch exposed a missing permission in the adopted contract: run 37673821886
+at `6bc11d04` passed all three SSH preflights, but the ARM `vmagent` guard rejected an
+unsigned input. Repeating the identical tiny ARM derivation through OCI showed the cause:
+`nixbuild` failed copying the input with “lacks a signature by a trusted key”, while root
+succeeded. The Nix daemon's signature policy was unchanged; the dispatch account itself
+needs trusted-user authority for ssh-ng's store operation.
+
+**Decision:**
+
+- The fleet's own machines are the build plane. `build-account` is selected on all three
+  hosts through the convention contributor `modules/flake/build-account.nix`, which binds
+  `fleet.ci.sshPublicKey` as the account's only authorized key. ssh-ng dispatch also
+  requires the account name in `nix.settings.trusted-users`; the selected nix-fleet
+  aspect owns that name-derived binding, now pinned at `33dea5c5` (the fix itself landed at `44bf4f71`) and evaluated on all
+  three hosts. Do not duplicate it here. This is effectively root-level Nix authority
+  despite no sudo, so access must remain constrained by the coordinator key and host
+  SSH/Tailscale admission policy. Host activation remains pending.
+- CI builds the nix-standard `.#checks` target rather than a bespoke aggregate. One caller
+  job adopts nix-fleet's reusable `build-push-cache` workflow, pinned to the same commit as
+  the flake input, with `systems` selecting both architectures, `builder_attr: ci`, and
+  `targets: .#checks`.
+- The deploy surface is standardised to that target instead of drifting from it.
+  `modules/flake/deploy.nix` publishes each host's activatable profile as
+  `checks.<system>.host-<host>` on the system that builds it, and the `packages.host-*`
+  mirror publishes the same derivations unfiltered for cross-system prebuilds. The mirror
+  previously omitted home-forge, which is why `just prebuild-local` could not resolve it.
+- Host scheduling stays opt-in and off. Upstream installs the profile's rendered machines
+  file for CI and leaves `nix.buildMachines` to a separate projection; nothing here
+  populates it, so the fleet's machines accept CI's build jobs without dispatching builds
+  to each other.
+- Publication belongs to the build job and activation to the deploy job. `deploy-host.yml`
+  stops prebuilding through nixbuild.net and instead verifies the exact profile it is about
+  to activate is substitutable — `nix build --option max-jobs 0 --option builders ""` — so a
+  cache miss fails loudly in CI rather than becoming a silent host-side compile. The build
+  coordinator key is a build credential and never becomes a deployment key; the deployment
+  path keeps its own tailnet identity and host-key verification.
+
+**Consequences:**
+
+- The three hosts are builders now, so the CI coordinator key is an inbound authorization on
+  every host: rotating it is one upstream value plus the GitHub secret, not a per-host edit.
+  The dispatch account is a trusted Nix user because ssh-ng requires that authority;
+  treat compromise of its key or admission path as root-equivalent on each builder. This
+  does not change cache signatures, `require-sigs`, cache keys, or publication authorization.
+- The workflow's inputs are the contract's, and they carry meaning: `runner_system` defaults
+  to aarch64, `systems` to both, `builder_attr` to `ci`, and `targets` is a single flake
+  selection. One coordinator job therefore covers both architectures through the fleet's own
+  builders, and a foreign-architecture target cannot fall back to the coordinator's store.
+- A green workflow is not acceptance. The evidence that separates "CI built it" from "CI
+  found it cached" is an uncached build on each architecture followed by signature-checked
+  substitution, so main-push builds stay off until a manual dispatch has produced that.
+- The wiring gate moves to the build job. `nix flake check --no-build` is gone from CI:
+  evaluating the flake realises degoog's bun2nix import-from-derivation, whose
+  `runCommandLocal` step sets `allowSubstitutes = false`, so an evaluation-only gate cannot
+  pass on a cold store. Building `.#checks` is the same gate with a builder available.
+- `.github/actions/setup-nixbuild` is deleted with the path it served;
+  `nixbuild/nix-quick-install-action` stays only as a Nix installer.
+- Leftover, recorded rather than hidden: `trusted-substituters` still names
+  `ssh-ng://eu.nixbuild.net`, because nix-fleet's `nix-baseline` carries it. Nothing here
+  consumes it — `substituters` never included it — and it is upstream's default, not restated
+  locally, so removing it is an upstream question.
+- Deploy topology flags are unchanged: `remoteBuild` and `strictSubstituteOnly` in
+  `lib/deploy/hosts.nix` still describe per-host deploy behaviour for operator runs, while
+  the CI path passes `--remote-build` and so only activates.
+
+**References:**
+
+- `modules/flake/build-account.nix`, `modules/flake/deploy.nix`, `modules/flake/packages.nix`
+- `.github/workflows/{ci,deploy,deploy-host}.yml`, `tests/check-build-account-contract.sh`
+- `openspec/changes/adopt-fleet-ci-builders/`
+- `docs/decisions.md` D-035 (superseded), D-065, D-066, D-068
+- `docs/plan.md` TD-30 (the debt this closes)
+
+
+## D-083: AI telemetry reaches the LLM backends by an explicitly selected route, and that route is routing-only
+
+**Status:** Accepted; gateway-side routing and Bifrost enrollment are live, producer enrollment remains selective, and authenticated admission is pending. Revised by D-084 for trace views and D-086 for three-signal routing and log provenance.
+
+**Context:** The collector gateway on `home-forge` derived its trace fan-out from destination presence: every trace arriving on the general OTLP ingress was exported to VictoriaTraces *and* to Langfuse and Latitude. The LLM-observability backends therefore received the whole fleet's telemetry — infrastructure, node, Bifrost and diagnostic-probe spans — and Latitude reported sessions containing no LLM call, which is the visible form of that mixing. There was also no way for a producer to select an AI-only stream, because the general ingress was the only ingress. nix-fleet published a named-route contract (`services.telemetry.routes.<route>`, main `fb5ac7e3`) that admits signals independently and gives each signal its own destination declaration.
+
+**Decision:** Both the general route and the independently addressed `routes.ai` listener carry traces, metrics and logs, with per-signal destinations declared explicitly: VictoriaTraces, VictoriaMetrics and VictoriaLogs for the general route; the AI route additionally names Langfuse and Latitude for traces. AI producers select that listener instead of the general one. The isolation is **routing only**: a route listener carries no authentication, enrolment or credential, so no consumer document, comment or claim may describe the AI lane as authenticated or access-controlled. Authenticated admission stays deferred to a separate upstream change. Enrolment of a producer resolves the ingress coordinate from nix-fleet's canonical service inventory rather than a literal host and port.
+
+**Alternatives considered:**
+
+- **Filtering by span attribute on the general ingress** — rejected: an attribute is caller-supplied and would be used as a routing selector, and it filters spans rather than producers, which would break complete sessions.
+- **A second collector service** — unnecessary: one collector runs multiple named receivers and pipelines, and the route-scoped instances already give each destination its own queue, WAL and retry scope.
+- **Enrolling Bifrost immediately with a literal gateway address** — rejected: it would restate a physical coordinate that the service inventory owns (D-063, D-064); enrolment follows the published `ai-otlp` record.
+
+**Consequences:**
+
+- General and AI telemetry are separate streams with separate delivery state; a backend a route does not name simply receives nothing from that route. VictoriaLogs receives OTLP application logs on both routes, while journald continues through Vector.
+- Destination-scoped exporter policy — each backend's credential, required headers, and Latitude's `compression = "none"` — applies unchanged to route exporters, so a route names destinations and never restates a backend contract.
+- Consuming the pin also required the lane migration: the bare `telemetry` aspect is now vocabulary plus this repository's fleet policy, each host composes the lanes for the signals it ships, and collector-scoped policy (`services.otel-collector.exporterExtra`, the collector's own metrics level) moved into the OTLP lane because that option only exists where a collector realization is composed. This supersedes D-075's aspect shape (`telemetry` plus `node-exporter` as the realizations) and D-074's gateway placement on `oci-melb-1` — the gateway moved with the store to `home-forge`.
+- Two adjacent upstream moves landed in the same revision and are absorbed rather than worked around. The `services.nix-gc` fleet namespace is retired and the notify registrations name the units the aspect owns (`nh-clean`, `fast-nix-gc`, `fast-nix-optimise`) instead of the aspect, so our schedule override is dropped — upstream's defaults are daily `nh clean` with `--keep 3 --keep-since 7d --keep-one --no-gc`, hourly `fast-nix-gc` with a one-day `keepRecent`, and weekly `fast-nix-optimise`. They also prune stale roots, so restating a weaker schedule would have silently disabled that; `--keep 3` keeps the previous generation, so a deploy-rs rollback target survives a collection. The contract additionally requires journald shipping to name a unit allowlist or license the whole journal, and `includeAll = true` preserves existing behaviour: an empty allowlist previously shipped the entire journal, so the assertion made an existing choice explicit rather than changing it.
+- The route listener binds the tailnet address and is reached by tailnet grants alone; a peer able to reach it can publish to both backends. That is no weaker than the general ingress it replaces, which reached the same backends, and closing it is the deferred admission change.
+
+**References:**
+
+- `modules/flake/telemetry.nix`, `modules/hosts/home-forge/_nixos.nix`
+- `openspec/changes/telemetry-ai-route-isolation/`
+- nix-fleet `docs/contracts/telemetry.md`, `docs/contracts/observability.md`, `modules/telemetry/lanes.nix`, `lib/telemetry-contract.nix`, `lib/telemetry-otel-collector-common.nix` at `fb5ac7e3`
+- `docs/decisions.md` D-074 (the fan-out legs this narrows), D-075 (the telemetry contract), D-081 (the node exporter's scrape identity), D-086 (log redaction and route provenance)
+
+
+## D-084: One AI route reads differently per destination, and the trace store's copy is lean
+
+**Status:** Accepted; landed, awaiting the gateway deploy
+
+**Context:** The routing-only AI lane (D-083) delivered every span intact to all three destinations. That put the operational trace store in possession of every prompt, completion and tool payload the lane carried — the fleet's long-retention trace store holds no use for that content — while the deployed Latitude (0.3.118) reads span attributes only and renders a session's messages from the deprecated `gen_ai.prompt`/`gen_ai.completion` pair, so its view of a session showed the spans and not the prompts. A route is one input audience, so a destination could not be given a different reading of the same span: every pipeline consuming the route receiver sees every span arriving on its listener. nix-fleet published the output-view recipe for exactly this (`examples/telemetry-output-views.nix` with the reusable `flake.lib.telemetryOutputViews.compositionFailures` guard, main `25d65d0e`).
+
+**Decision:** The AI route carries one output view per destination, all consuming the same route receiver. Langfuse keeps the generated rich pipeline, because it parses a session; D-088 maps its vendor keys from canonical carriers. VictoriaTraces receives a lean view: the content carriers the analysis backends parse — the canonical message fields, tool arguments and results, the legacy `gen_ai.prompt`/`completion` pair, the generic `input.value`/`output.value` conventions and their numbered families — are deleted from the span, and content-bearing span events (the GenAI families and the SDK exception event) are dropped, while status, error attributes and timing survive. Latitude receives a version-scoped bridge that lifts the canonical carriers off the inference event onto the span for its deprecated parser, gated so it never mixes carrier families inside one span. The generated route pipeline is force-replaced rather than extended, because a member left in it while a view also exports it would be assigned two output paths. The composition, its branch processors and the expected views are declared in the fleet telemetry contributor and activated by the presence of the `ai` route; the expectation is published as read-only internal data and checked against the effective settings by nix-fleet's guard, with a mutant proving the guard is not vacuous.
+
+**Alternatives considered:**
+
+- **Give the route's store leg its own destination name** (what nix-fleet's example does, with `store` beside `general`) — rejected: it duplicates the canonical endpoint and the destination-scoped exporter policy for a backend that is already reachable as one destination, and the route-scoped instance is already separate in queue, WAL and retry scope. Upstream confirmed the guard's uniqueness check needs scoping rather than the consumer needing an alias.
+- **Apply the guard to a route-only subset** — rejected: it would skip the general-declaration comparison the guard already performs correctly, and it reads the guard's data as something other than the effective configuration.
+- **Keep the store leg rich** — rejected: it retains user payloads in the long-retention store for no analytical purpose, and expands the payload-retention surface beyond the backends that parse it.
+- **Strip by allow list instead of deny list** — rejected: an allow list would silently drop instrumentation this fleet has not seen yet, which is a worse failure than retaining a carrier until it is listed.
+
+**Consequences:**
+
+- A prompt or completion is no longer recoverable from VictoriaTraces once the collector has forwarded it; debugging with payloads means querying Langfuse or Latitude, on their retention.
+- The deny list is honest about its own coverage: a producer whose carriers are not listed reaches the store intact until it is added, so Hindsight's carriers are a binding task in the AI-route change rather than an assumed one.
+- The bridge assumes one inference event per span; a span carrying two would overwrite the same carrier. It is version-scoped, so a Latitude upgrade that reads canonical attributes makes the view removable rather than permanent.
+- Two of nix-fleet's guard checks are over-broad for a host that runs a general route and a route at once, or that admits more than traces: destination uniqueness keys on backend name globally, and coverage counts instances the trace views cannot own. Both are reported upstream and reported by our contract test as deviations rather than worked around by aliasing; the test still fails on any other guard finding. The guard gained an exact exporter-membership assertion at `33dea5c5` — each view pipeline must export exactly its route-scoped members — which no override can satisfy, and that half is adopted; the two checks above are unchanged there, because scoping them is nix-fleet's side of the fix (their confirmation is recorded above).
+- No span is dropped from any destination, so the views are payload shaping and not an audience boundary. Nothing in this decision changes the admission position recorded in D-083.
+
+**References:**
+
+- `modules/flake/telemetry.nix`, `tests/check-telemetry-view-composition.sh`, `.just/checks.just`
+- `openspec/changes/telemetry-ai-route-isolation/` (tasks 3.4, 3.5, 3.6, 6.4)
+- nix-fleet `examples/telemetry-output-views.nix`, `modules/telemetry/output-view-checks.nix` at `33dea5c5` (the recipe first landed at `25d65d0e`; `33dea5c5` adds the exporter-membership assertion)
+- `docs/decisions.md` D-083 (the route this shapes), D-074 (the store's retention)
+
+## D-085: Host observability arrives by adoption, and an adopted contract is pinned by effective value
+
+**Status:** Accepted; landed and verified live on all three hosts
+
+**Context:** The fleet's host telemetry was complete in shape and incomplete in substance. Every host ran the node exporter and both telemetry lanes, but the exporter collected no unit state, so a crashed or flapping unit appeared only in the journal; nothing scraped the Tailscale daemon's own metrics, so tailnet health was invisible from the fleet's metrics plane; no telemetry carried an identity that joins to the canonical host record, so a series named its scrape target rather than the host that deploy metadata and web policy reference; and journal shipping left `trace_id`/`span_id` values as they arrived, so a record could not be correlated with its trace. All four are nix-fleet contract surfaces. Upstream published them in `telemetry-host-observability`, and its first published revision (`aa162629`) was withdrawn: the systemd collector contribution was defined with `mkDefault`, so a consumer's own `enabledCollectors` list *replaced* it instead of extending it — upstream's own frozen-host repro yielded only the consumer's collector and no `AF_UNIX` — and their gates passed on that revision because the composition case was absent from them. The fix (an additive `mkAfter [ "systemd" ]` contribution) is forward-only and published at `a48a1dcf`.
+
+**Decision:** The fleet adopts the contract as published and states none of it locally: no `enabledCollectors`, no scrape registration, no identity option, no journal override. Every effect arrives through an aspect the fleet already selects (`node-exporter`, `tailscale`, `telemetry-metrics`, `telemetry-logs`), so the adoption is a pin move and an assertion about effective values. The assertion is the substance of the decision, and it is written as values rather than flags: the configured collector set and its disabled counterpart, the rendered exporter unit (the systemd invocation, the `AF_UNIX` allowance the public system DBus API needs, and the ordinary static account that runs it), the registered Tailscale scrape source and the job it produces, that job's canonical host label, the resolved `hostName`, the deliberately null `environment`, the unset journal host label and the journal correlation default. The pin set carries one mutation: on a throwaway copy, a host that declares its own `enabledCollectors` list must still receive the contributed collector and keep the systemd invocation. That mutation is the part that fails on the withdrawn revision's defect class, and it is the reason the contract test does not simply reuse upstream's verdict — the position that missed the defect is the position a consumer would be trusting. Verification of the running feature is outcome-based for the same reason: collector success plus unit-state series for the systemd leg, and a daemon-specific series for the Tailscale leg, because with the client fallback disabled a failed lookup can still answer a successful status with a page body instead of metrics. No consumer privilege is granted: the collector uses the public system DBus API on its existing account, and the Tailscale endpoint is served by the daemon-owned local API proxy before the browser session gate, so the scraper needs no group and no widening.
+
+**Alternatives considered:**
+
+- **Bind the systemd collector locally to be safe** — rejected: a local copy of a contribution upstream owns becomes a second authority that silently wins, the failure mode D-066 and D-068 removed from the fleet.
+- **Pin the contract's declaration instead of its effective values** — rejected: the withdrawn revision declared the collector and still lost it, so a declaration check certifies exactly the defect it should catch; and a collector list can be correct while the rendered unit has lost the flag or the address-family allowance.
+- **Check the systemd flag rather than the collector's outcome** — rejected: the flag proves intent, not collection; unit-state series prove the feature.
+- **Check that the Tailscale endpoint answers** — rejected: a successful status can carry a page instead of metrics, which would certify a broken scrape as healthy.
+- **Fill the environment label to complete the upstream contract** — rejected: the fleet has no environment dimension, and a filled value would be a second naming authority beside the canonical host IDs.
+- **Override the journal correlation default** — rejected: the default is narrow, preserves messages and metadata, and has a documented opt-out; restating it locally would be a contract default with no fleet-specific reason.
+
+**Consequences:**
+
+- Unit state and tailnet health become queryable in the fleet's metrics store; a unit that fails and restarts is visible as a series rather than only as a journal line.
+- Series and journal records join to the canonical host IDs, so retention, dashboards and alerting can key on the same identifier the fleet inventory uses. New label values create new series; there is no historical rewrite and no queue or WAL identity change, so producers keep their endpoints and buffered state across the deploy.
+- The pin set now owns this adoption's regression surface. A future upstream change to these values reports as a failed check on the next pin bump, to be re-derived against the published contract rather than silenced.
+- The fleet depends on an upstream contribution staying additive. The consumer-side mutation holds that dependency; a regression to enumerating replacement fails the gate rather than quietly removing a collector at deploy time.
+- Nothing here is gated or admitted: the two producers are additive telemetry sources, and the routing separation that governs AI telemetry remains D-083/D-084.
+
+**Verified live (2026-10-09):** The three hosts took the pin in the order `home-forge` (126 → 127), `la-admin-1` (64 → 65), `oci-melb-1` (326 → 327), each with magic rollback confirmed and the telemetry units restarted; no failed units anywhere. The generation comparison showed the pin moved nothing else — only the notify file's renamed render, the provenance copy, and those units (plus `oci-melb-1`'s `caddy.service.d/overrides.conf`, whose one difference is its reload-trigger store path). Both legs report from the running feature: `node_scrape_collector_success{collector="systemd"} = 1` with 1340 / 920 / 1095 unit-state series for `home-forge` / `la-admin-1` / `oci-melb-1`, and `up{job="tailscale"} = 1` with 27 / 26 / 26 daemon series. Every scraped series carries its canonical host ID as `host`, and none carries an environment label. The journal probe behaved as the contract documents: an uppercase message carrier and its lowercase twin normalized to one lowercase trace id, a valid span was promoted only beside a valid trace, an invalid carrier promoted nothing, a message carrying its own `host_name` and `_SYSTEMD_UNIT` overrode neither identity nor a unit field, and an uncorrelated record shipped unchanged with no trace id — messages preserved throughout. The store is not instantaneous, so a verification has to poll: a single query about a minute after a deploy reported `oci-melb-1` missing from both legs entirely.
+
+**References:**
+
+- `tests/check-dendritic-scaffold-contract.sh` (section 7n-4, the effective-value pins and the collector-composition mutation)
+- `flake.lock` (nix-fleet `a48a1dcfaa0116e85d148e2c7b3f61636f7b0ec4`), `.github/workflows/ci.yml` (caller reference)
+- `openspec/changes/telemetry-host-observability/`
+- nix-fleet `telemetry-host-observability` at `a48a1dcf` (withdrawn intermediate `aa162629`)
+- `docs/decisions.md` D-081 (the exporter's scrape identity is nix-fleet's), D-083 and D-084 (the AI routing this leaves untouched)
+
+## D-086: OTLP logs use allowlisted fields and route provenance comes from the receiver
+
+**Status:** Accepted; Collector 0.155.0 transformation and VictoriaLogs 1.53.0 storage verified with a local, non-deployed probe. The expanded composition guard still awaits the corrected multi-signal helper; no deployment.
+
+**Context:** Extending the gateway's AI lane beyond traces means OTLP application logs and metrics also cross the same receiver boundary. The logs may contain arbitrary producer attributes, including content-bearing data and a caller-supplied `telemetry.route`; VictoriaLogs flattens resource and record attributes into searchable fields, so a record-level route value could collide with the intended route provenance. Journald remains a separate Vector path and is not part of the OTLP route.
+
+**Decision:** The general and AI OTLP routes both send logs to VictoriaLogs, but only the AI listener sets resource `telemetry.route="ai"`. Before export, log-record attributes are cleared except a derived `trace_flags` field, and instrumentation-scope attributes are cleared; only resource `host.name`, `service.name`, `deployment.environment.name` and the receiver-selected route marker are retained. Collector transformations leave the OTLP body, event and observed timestamps, severity, correlation IDs and native flags untouched. VictoriaLogs stores event timestamp as `_time`, using observed timestamp only when event time is absent; it does not persist both timestamps independently. Since VictoriaLogs does not otherwise serialize native `log.flags`, the Collector projects it into the sole allowlisted record field `trace_flags`. The AI branch deletes a producer-supplied record `telemetry.route` before setting the resource marker; general branches remove producer-supplied route values from resource, span and datapoint attributes, so the label cannot claim a receiver the record did not use. The marker means only that the data entered via the named AI route; it is not producer identity, AI classification, admission, or authentication.
+
+**Alternatives considered:**
+
+- **Keep all OTLP log attributes and rely on VictoriaLogs indexing policy** — rejected: payloads would cross the retention boundary before indexing, and field collisions could misstate route provenance.
+- **Store the marker on each log record/datapoint/span** — rejected: resource scope represents the receiver path consistently across records and maps to backend resource-derived fields; producer-level values are removed before it is set.
+- **Drop the body or correlation fields with attributes** — rejected: these are first-class OTLP log fields, not attributes; the required body and trace-correlation fields are preserved explicitly.
+
+**Consequences:**
+
+- A local, non-deployed Collector 0.155.0 probe against VictoriaLogs 1.53.0 verified the rendered fields: the general row was unmarked; the AI row had `telemetry.route=ai`, canonical host/service identity, body, severity, trace/span IDs and `trace_flags=1`; arbitrary resource, record and scope attributes were absent, including producer-supplied route collisions. An observed-time-only probe populated `_time`; when both OTLP timestamps were present, event time won. VictoriaLogs exposes one `_time`, not both timestamp values independently.
+- Logs and metrics now have explicit general and AI-route output pipelines alongside the existing per-destination trace views. This does not add authentication or admission control to the AI listener.
+
+**References:**
+
+- `modules/flake/telemetry.nix`, `modules/hosts/home-forge/_nixos.nix`, `tests/check-telemetry-view-composition.sh`
+- `openspec/changes/telemetry-ai-route-isolation/`
+- nix-fleet `modules/telemetry/output-view-checks.nix` (the reported multi-signal helper changes are not yet present in the shared checkout)
+- Collector 0.155.0 transform processor; VictoriaLogs 1.53.0 `app/vlinsert/opentelemetry/pb.go`
+
+## D-087: A co-located consumer dials the host-local endpoint, and the gateway is placed where its consumers run
+
+**Status:** Accepted; evaluated and pinned by contract tests, not deployed. home-forge cannot activate until the operator re-encrypts the service-scope secret file for its age recipient.
+
+**Context:** nix-fleet now publishes `lib.localEndpoint` and a `services.bifrost.localEndpoint` derived from the gateway's own listener (`649554fc0`). Placement in the web policy names the *provider* host, so the catalog's machine-to-machine endpoint resolves to the provider's tailnet name on every other host — which means a consumer running beside a gateway would cross the tailnet for a socket on its own machine, and the home host's inference path would depend on the public-cloud host being up. The fleet's two gateway dial sites are Latitude (which renders its dial into an environment file) and Hindsight (whose LLM base URL was the catalog route). PostgreSQL has its own host-local read (`services.postgres.localEndpoint`).
+
+**Decision:** The `bifrost` aspect is selected on `home-forge` as well as `oci-melb-1`. The two are identically configured replicas — one configuration document, one package, one plugin definition, the canonical port from the service inventory on both — with independent process, state and service account; no gateway dials another and neither falls back to the other. A host that runs the gateway dials its own listener: consumers prefer `services.bifrost.localEndpoint.url` and fall back to the canonical route otherwise, probing `options` rather than `config` because that option exists only where the aspect is imported. The version prefix is the consumer's to append, since the local record is a bare origin. Both consumers can reach loopback (Latitude's containers share the host network namespace, Hindsight's container is host-networked). The ingress route keeps its canonical `bifrost/embeddings` origin: that is the edge dialing the provider's tailnet socket, a different decision from local consumption. PostgreSQL keeps its own port-only endpoint instead of adopting the shared helper.
+
+**Alternatives considered:**
+
+- **Keep one central gateway and let home-forge dial it over the tailnet** — rejected: the hop sits on the inference path of every home consumer and couples their availability to the cloud host, for a lightweight local proxy that shares no state with its peer.
+- **Separate provider keys per gateway host** — deferred: per-host keys would improve attribution and revocation, but both instances draw on the same provider accounts and quota, so isolation would be nominal until a provider supports per-key attribution; the split is an operator key-management task, not a module change.
+- **Adopt nix-fleet's `localEndpoint` for PostgreSQL** — rejected: the helper exists for HTTP(S) services and refuses any other scheme, so its `url` would misstate a database endpoint, and the socket-based consumers (`auth = "peer"`) are not a URL at all. The port-only record stays, with the reason recorded beside it.
+- **Read `localEndpoint` unconditionally in the consumers** — rejected: the aspect is independently placeable, and an unconditional read would turn a placement change into an option-missing evaluation error instead of a remote dial.
+- **Extend the catalog's loopback rule to cover the second instance** — rejected: that rule keys on the policy's declared provider, which names `oci-melb-1`; it cannot know a second replica exists, and teaching it about replicas would put deployment topology back into the route policy.
+
+**Consequences:**
+
+- Evaluated on the three hosts: home-forge renders port 7411 with `localEndpoint = http://127.0.0.1:7411`, Latitude `LAT_CUSTOM_AI_BASE_URL=http://127.0.0.1:7411/v1`, Hindsight `HINDSIGHT_API_LLM_BASE_URL=http://127.0.0.1:7411/v1`; oci-melb-1 is unchanged (7411, spans on the AI lane); la-admin-1 has no `services.bifrost` namespace.
+- The gateway contract test now runs on both hosts and asserts the local endpoint against the port the unit actually binds, plus the two co-located dials, so a placement or port drift fails by name. The authority stays upstream: the endpoint and the listener are built from one value, so they cannot diverge.
+- Blast radius: the provider credentials now rest on two hosts, and one service-scope file is shared, so a compromise of either host reaches the same keys and a rotation is a single file for both instances. Widening that readership is an explicit `sops updatekeys` step, recorded in the scope fixture and the secret-scope check.
+- The fallback branch is not exercised by current placement — both consumers are selected only where the gateway now runs. It is there for a placement change, and evaluation covers it only once such a placement exists.
+- The listener surface doubles with the placement: the gateway takes no client credential (consumers pass a placeholder), so each instance is an unauthenticated OpenAI-compatible endpoint reachable from the tailnet on its host. That posture is unchanged per host, but it now exists on two, and admission control on either listener remains an open upstream question rather than something this change introduces or resolves.
+- The `bifrost` secret file is service-scoped and shared, so home-forge's activation depends on the operator adding its recipient to that file first; a deploy before that step fails at decryption rather than silently running without credentials.
+
+**References:**
+
+- `modules/hosts/home-forge/default.nix`, `modules/hosts/home-forge/_nixos.nix`
+- `modules/observability/latitude.nix`, `modules/knowledge/hindsight.nix`, `modules/database/postgres/_consumer.nix`
+- `.sops.yaml`, `tests/fixtures/secret-scope.nix`, `tests/check-bifrost-gateway-contract.sh`, `tests/check-dendritic-scaffold-contract.sh`
+- nix-fleet `649554fc0`: `lib/local-endpoint.nix`, `docs/contracts/bifrost.md`, `docs/contracts/services.md`
+
+## D-088: The Langfuse leg receives vendor keys mapped from canonical carriers, and the duplicates it does not read are pruned
+
+**Status:** Accepted; implemented in `modules/flake/telemetry.nix` and verified by a local Collector 0.155.0 run through the rendered route pipelines. Revises the Langfuse half of D-084. Not deployed.
+
+**Context:** The producer (pi-otel) emits canonical `gen_ai.*` and `pi.*` attributes together with Langfuse- and Latitude-specific keys carrying the same content. The mapping document (pi-otel `docs/attribute-mapping.md`) fixes which vendor keys a collector transform can rebuild from canonical fields, and which it cannot: JSON wrapping and span-kind knowledge need a Lua processor, and the Collector's OTTL functions neither escape nor encode JSON.
+
+**Decision:** The AI route's rich leg maps the rebuildable Langfuse keys from canonical carriers, without overwriting any key the exporter already wrote. It copies `langfuse.trace.name`, the Langfuse observation output of an LLM span and the observation input and output of a tool span, and the eight `pi.*` metadata fields as `langfuse.trace.metadata.*`, cut to 256 characters. It appends the four `prefix:value` trace tags, each guarded by its attribute and a 200-character limit. It removes the canonical duplicates Langfuse reads through its vendor keys, only where those keys are present. The Latitude leg takes `latitude.capture.name` from the root span name and drops the `langfuse.*` keys, and the VictoriaTraces leg drops the raw `pi.user_prompt` along with the other content carriers. Rows that need JSON encoding or span-kind knowledge stay exporter-emitted, as the mapping document requires.
+
+**Alternatives considered:**
+
+- **Build the JSON-encoded keys in a Lua processor** — rejected for now: it moves the producer's business logic into the collector, which the mapping document excludes, and the rows it would cover are a small share of the duplication.
+- **Remove the exporter's vendor keys at the source** — rejected: the rows that need JSON encoding would then vanish from Langfuse and Latitude, so the source keeps them until a collector can rebuild each one.
+
+**Consequences:**
+
+- The Langfuse leg loses the canonical duplicates it reads through its own keys; a Langfuse-side read of `gen_ai.*` content is no longer exercised. The pruning is safe only if Langfuse reads the vendor keys in its events-only mode, and that is taken from the mapping document, not yet proven on the deployed backend.
+- Canonical-key copies never overwrite an exporter value, so a producer that already writes a vendor key is unaffected.
+- The probe covered the copy, pruning and tag paths; it did not exercise the 200-character tag guard or the 256-character cut on a non-ASCII value, and it does not prove the composition on the deployed Collector.
+
+## D-089: Delta metrics are made cumulative on the local OTLP metrics pipeline, after identity enrichment
+
+**Status:** Accepted; adopted by bumping nix-fleet to `e5d74415`, which carries the upstream implementation (`lib/telemetry-otel-collector-common.nix`, `modules/telemetry/otel-collector.nix`, `docs/contracts/telemetry.md`). Evaluated on home-forge; not deployed.
+
+**Context:** Pi's OTLP metrics are delta by default. The `prometheusremotewrite` exporter translates only cumulative sums and histograms, so every Pi series was dropped at translation and never reached the store. The failure was silent at the unit's info level.
+
+**Decision:** The local OTLP metrics pipeline runs `deltatocumulative` with an explicit `max_stale = "5m"`, placed after `resource/telemetry-identity` so the stream identity it tracks is stable. Traces, the ingress and named-route metrics pipelines, and the scrape pipeline do not carry it. The processor is a no-op for cumulative streams. Pi's temporality preference is not changed on any host.
+
+**Alternatives considered:**
+
+- **Set `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative` in the producer** — rejected: it changes every consumer and breaks the per-run counter model of short-lived Pi child processes.
+- **An OTTL or Lua transform** — rejected: temporality is the only defect, so a transform adds a second mechanism for no gain.
+
+**Consequences:**
+
+- The change covers Pi without any gateway edit: Pi exports to its host's loopback producer endpoint (`services.telemetry.otlp.httpUrl`), so its delta metrics are converted on the producer's own host, before the remote write that used to drop them. Only a producer that publishes deltas directly to the gateway ingress or to a named route is still dropped at the exporter; no fleet producer does that today, and the upstream contract records the case as open pending a decision with the gateway owner.
+- The processor reaches a host when that host is switched, not when the pin moves. A host whose running collector predates the change keeps dropping Pi series until it is activated.
+- A delta stream silent for longer than five minutes restarts from zero. That is intended for per-run Pi counters.

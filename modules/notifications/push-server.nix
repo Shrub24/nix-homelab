@@ -26,10 +26,7 @@ let
     "oci-melb-1" = "write-only";
     "la-admin-1" = "write-only";
     "home-forge" = "write-only";
-    # Principals outside this repo's host registry (dotfiles machines, CLIs).
-    # Not validated against nixos.hosts: a ntfy publisher is a credential
-    # holder, not a deployed NixOS configuration.
-    "shrub" = "read-write";
+    "legion" = "read-write";
     "spectre" = "read-write";
   };
 

@@ -1,7 +1,9 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set no-cd
 
-sync host="la-admin-1":
+# The host is the edge host from lib/deploy/hosts.nix; the scripts resolve it
+# themselves when no argument is given.
+sync host="":
   @./scripts/export-web-services-policy.sh {{host}}
   @./tests/check-web-services-policy.sh {{host}}
 

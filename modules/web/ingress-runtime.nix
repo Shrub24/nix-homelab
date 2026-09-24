@@ -65,6 +65,8 @@ _: {
             else
               "";
         in
+        # {client_ip} comes from Caddy's trusted-proxy chain, so origins see the real
+        # client instead of whatever X-Forwarded-For a client supplied.
         if route.path == "/" then
           ''
             # ${name} (${route.exposureMode})
@@ -74,7 +76,7 @@ _: {
               reverse_proxy ${route.upstream} {
                 header_up Host ${route.upstreamHostHeader}
                 header_up X-Forwarded-Proto {scheme}
-                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-For {client_ip}
                 ${upstreamTransport}
               }
             }
@@ -89,7 +91,7 @@ _: {
               reverse_proxy ${route.upstream} {
                 header_up Host ${route.upstreamHostHeader}
                 header_up X-Forwarded-Proto {scheme}
-                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-For {client_ip}
                 ${upstreamTransport}
               }
             }
@@ -105,7 +107,7 @@ _: {
               reverse_proxy ${route.upstream} {
                 header_up Host ${route.upstreamHostHeader}
                 header_up X-Forwarded-Proto {scheme}
-                header_up X-Forwarded-For {remote_host}
+                header_up X-Forwarded-For {client_ip}
                 ${upstreamTransport}
               }
             }

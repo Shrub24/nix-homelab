@@ -4,13 +4,10 @@
   ...
 }:
 let
-  # `href` is the published URL (the browser reaches it through the edge);
-  # widget APIs are internal, so the dashboard declares its own targets from
-  # the fleet's single tailnet-suffix authority.
+  # `href` is the published URL; widget APIs are internal, dialled by MagicDNS name.
   requireRoute = name: policyServices.${name};
   serviceHref = name: (requireRoute name).publicUrl;
-  globals = import ../../../policy/globals.nix;
-  internalUrl = hostId: port: "http://${hostId}.${globals.tailnet.suffix}:${toString port}";
+  internalUrl = hostId: port: "http://${hostId}:${toString port}";
 in
 {
   settings = {
@@ -101,6 +98,14 @@ in
               type = "gatus";
               url = internalUrl "la-admin-1" 8087;
             };
+          };
+        }
+        {
+          Grafana = {
+            icon = "grafana";
+            description = "Fleet metrics, logs and traces";
+            href = serviceHref "grafana";
+            siteMonitor = serviceHref "grafana";
           };
         }
         {

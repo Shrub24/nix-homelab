@@ -84,16 +84,16 @@
           };
         };
 
-        media = {
+        storage = {
           size = "100%";
           content = {
             type = "filesystem";
             format = "ext4";
             extraArgs = [
               "-L"
-              "srv-media"
+              "srv-storage"
             ];
-            mountpoint = "/srv/media";
+            mountpoint = "/srv/storage";
             mountOptions = [
               "nofail"
               "x-systemd.device-timeout=10s"

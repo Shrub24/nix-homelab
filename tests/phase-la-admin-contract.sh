@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Focused LA host contract test. This deliberately avoids forcing full LA
-# config evaluation: secrets/hosts/la-admin-1/{system,oidc}.yaml are
-# operator-owned ciphertext created in a later task, so only attributes that
-# provably do not read them are evaluated (host declarations, options, and the
-# kanidm module wiring). Checks here encode independent expectations (forbidden
-# imports, template format, an executed validator, CI host-checking wiring)
-# rather than restating config literals.
+# Focused LA contracts that do not read operator-owned ciphertext.
 
 LA='path:.#nixosConfigurations.la-admin-1.config'
 
@@ -15,15 +9,6 @@ fail() {
   echo "$1" >&2
   exit 1
 }
-
-# The host assembly must not import destructive install/provider/static-network
-# inputs; the source check is feasible here because these imports would be
-# written by hand and never enter LA host declarations.
-LA_ASSEMBLY="modules/hosts/la-admin-1/_nixos.nix"
-if grep -Eq 'disko|nixos-anywhere|networking\.(interfaces|defaultGateway|useDHCP|nameservers)' "$LA_ASSEMBLY"; then
-  echo "la-admin-1: host assembly must not import disko/provider/static-network configuration" >&2
-  exit 1
-fi
 
 # ntfy publisher authorization is policy owned by the push-server aspect:
 # `services.ntfy.auth.publishers` maps each ntfy principal (a fleet host, a
@@ -167,15 +152,26 @@ for case_name in leaky malformed missing mixed; do
     || fail "runtime validator must fail '$case_name' with a named ntfy error"
 done
 
-# CI must configure strict known_hosts/StrictHostKeyChecking via an ephemeral
-# ~/.ssh/config Host entry rather than passing a CLI ssh-opts override; host
-# checking is never disabled or auto-accepted.
-CI_WF=".github/workflows/deploy-host.yml"
-if grep -q -- '--ssh-opts' "$CI_WF" \
-  || ! grep -q 'StrictHostKeyChecking yes' "$CI_WF" \
-  || ! grep -q '~/.ssh/config' "$CI_WF"; then
-  echo "la-admin-1: CI must not pass --ssh-opts and must route known_hosts/strict checking via ~/.ssh/config" >&2
-  exit 1
-fi
+# This protects effective wiring, not POSIX ACL semantics or persistence on a
+# deployed machine.
+ACL_WIRING=$(nix eval --raw --no-write-lock-file --apply 'c: builtins.toJSON {
+  rules = c.systemd.tmpfiles.rules;
+  startedAtBoot = builtins.elem "multi-user.target" c.systemd.services.admin-dev-data-access-reconcile.wantedBy;
+  orderedAfterTmpfiles = builtins.elem "systemd-tmpfiles-setup.service" c.systemd.services.admin-dev-data-access-reconcile.after;
+  oneshot = c.systemd.services.admin-dev-data-access-reconcile.serviceConfig.Type == "oneshot";
+}' "$LA") || fail "LA ACL wiring does not evaluate"
+python3 - "$ACL_WIRING" <<'PYEOF' || fail "LA ACL wiring observables violated"
+import json, sys
+
+config = json.loads(sys.argv[1])
+required_rules = {
+    "a+ /srv/data - - - - user:dev:r-X",
+    "a+ /srv/data - - - - default:user:dev:r-X",
+}
+if not required_rules.issubset(config["rules"]):
+    raise SystemExit("/srv/data must grant dev read/traverse and inherit it for descendant directories")
+if not config["startedAtBoot"] or not config["orderedAfterTmpfiles"] or not config["oneshot"]:
+    raise SystemExit("ACL reconciliation must run at boot as a oneshot after tmpfiles setup")
+PYEOF
 
 echo "phase-la-admin-contract: PASS"

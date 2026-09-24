@@ -41,5 +41,15 @@
     # declares treefmt-nix — so one nix-fleet revision moves them too.
     traktor-m3u-sync.inputs.flake-parts.follows = "flake-parts";
     traktor-m3u-sync.inputs.treefmt-nix.follows = "nix-fleet/treefmt-nix";
+
+    # clickhouse comes from its own pinned nixpkgs rather than this host's.
+    # nixos-unstable's clickhouse does not link at this baseline: ClickHouse's
+    # own cmake/strip_rust_symbols.sh leaves the Rust staticlibs unresolvable
+    # under LLVM 21, so the derivation Hydra builds fails (undefined symbols in
+    # rust/workspace/lib_ch_rust_prql.a; Hydra build 346560573) and the package
+    # is published nowhere. This revision's derivation is the same clickhouse
+    # version, is what the fleet cache already carries, and substitutes.
+    # Debt: drop this input when unstable's clickhouse links again (D-080).
+    nixpkgs-clickhouse.url = "github:NixOS/nixpkgs/44a91898084f46797b5fac650c7e8c9ac38c43d4";
   };
 }

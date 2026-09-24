@@ -241,6 +241,10 @@ _: {
                 image = cfg.meilisearchImage;
                 extraOptions = [
                   "--network=${cfg.networkName}"
+                  # This container mounts the pod's shared environment file, which
+                  # carries the inference gateway URL even though Meilisearch reads
+                  # none of it; the entry keeps every variable in that file resolvable.
+                  "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
                 ];
                 environment = {
                   MEILI_NO_ANALYTICS = "true";
@@ -273,6 +277,10 @@ _: {
                 image = cfg.webImage;
                 extraOptions = [
                   "--network=${cfg.networkName}"
+                  # The inference gateway is a native service on this host, so the
+                  # container dials the fleet's service address rather than a
+                  # container gateway it does not share.
+                  "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
                 ];
                 ports = [
                   "${cfg.listenAddress}:${toString cfg.port}:3000"

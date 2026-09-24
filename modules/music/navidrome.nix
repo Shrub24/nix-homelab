@@ -11,6 +11,13 @@ _: {
     let
       cfg = config.services.navidrome;
 
+      # Navidrome plugins are Extism wasm modules: nixpkgs builds them for
+      # wasm32-unknown-wasip1 through the wasi32 cross set (release-cross.nix
+      # marks the whole plugin set that way). Asking the host package set for one
+      # links `-buildmode=c-shared` against the host instead, which the current
+      # toolchain cannot link at all.
+      audiomuseaiPlugin = pkgs.pkgsCross.wasi32.navidromePlugins.audiomuseai;
+
       # AudioMuse plugin configuration after the binary is installed:
       #   - Navidrome Admin → Plugins → audiomuse.ai: enable, set API URL, key
       #   - AudioMuse first-run setup wizard (web UI on :8000)
@@ -64,7 +71,7 @@ _: {
         services.navidrome = {
           openFirewall = false;
           # Cache-preserving AudioMuseAI plugin integration: we deliberately do NOT
-          # use `services.navidrome.plugins = [ pkgs.navidromePlugins.audiomuseai ]`
+          # use `services.navidrome.plugins = [ pkgs.pkgsCross.wasi32.navidromePlugins.audiomuseai ]`
           # because that bakes the plugin derivation into the Navidrome build and
           # loses the stock cache-substitutable Navidrome. Instead we declaratively
           # symlink the packaged WASM `.ndp` into ${dataDir}/plugins via tmpfiles and
@@ -110,7 +117,7 @@ _: {
           };
 
         # AudioMuseAI plugin directory + packaged WASM `.ndp` symlink (cache-preserving).
-        # The plugin file is provided by pkgs.navidromePlugins.audiomuseai; symlinking
+        # The plugin file is provided by pkgs.pkgsCross.wasi32.navidromePlugins.audiomuseai; symlinking
         # into ${cfg.dataDir}/plugins avoids embedding it in the Navidrome derivation so
         # stock cache-substitutable Navidrome is retained.
         systemd.tmpfiles.settings.navidromeDirs."${cfg.dataDir}/plugins" = {
@@ -122,7 +129,7 @@ _: {
         };
         systemd.tmpfiles.settings.navidromeDirs."${cfg.dataDir}/plugins/audiomuseai.ndp" = {
           "L+" = {
-            argument = "${pkgs.navidromePlugins.audiomuseai}/share/audiomuseai.ndp";
+            argument = "${audiomuseaiPlugin}/share/audiomuseai.ndp";
           };
         };
 

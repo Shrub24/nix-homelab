@@ -1,10 +1,11 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set no-cd
 
-# No `nix flake check` here: CI owns that wiring gate, and the LA toplevel
-# needs operator ciphertext that does not exist before task 3.3. The generated
-# flake.nix is the exception: building its check is cheap and does not touch a
-# host configuration.
+# The local battery: the repository's own contract tests plus the generated
+# flake.nix freshness check. The full wiring gate is CI's build job, which builds
+# `.#checks` with the fleet's builders available — an evaluation-only
+# `nix flake check --no-build` cannot pass on a cold store, because evaluating the
+# flake realises degoog's unsubstitutable bun2nix import-from-derivation (D-082).
 all:
   @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).check-flake-file"
   @./tests/check-secret-scope.sh
@@ -22,6 +23,10 @@ all:
   @./tests/kanidm-restore-contract.sh
   @./tests/check-shell-account-contract.sh
   @./tests/check-backup-surface-contract.sh
+  @./tests/check-bifrost-gateway-contract.sh oci-melb-1
+  @./tests/check-bifrost-gateway-contract.sh home-forge
+  @./tests/check-build-account-contract.sh
+  @./tests/check-telemetry-view-composition.sh
 
 test-secrets:
   @./tests/check-secret-scope.sh
@@ -55,3 +60,13 @@ test-shell-account-contract:
 
 test-backup-surface:
   @./tests/check-backup-surface-contract.sh
+
+test-bifrost-gateway:
+  @./tests/check-bifrost-gateway-contract.sh oci-melb-1
+  @./tests/check-bifrost-gateway-contract.sh home-forge
+
+test-build-account:
+  @./tests/check-build-account-contract.sh
+
+test-telemetry-views:
+  @./tests/check-telemetry-view-composition.sh

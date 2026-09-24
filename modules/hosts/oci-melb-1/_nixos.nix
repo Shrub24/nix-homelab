@@ -10,7 +10,6 @@
 }:
 let
   hasHostSecrets = builtins.pathExists ../../../secrets/hosts/oci-melb-1/system.yaml;
-  globals = import ../../../policy/globals.nix;
 in
 {
   imports = [
@@ -67,15 +66,8 @@ in
       secretFiles.host = ../../../secrets/services/paperless.yaml;
       secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
       oidc.enable = config.repo.web.catalog.paperless.access.oidc.enabled;
-      paperless-gpt = {
-        docling.enable = false;
-        instances.llm = {
-          enable = true;
-          environment.LLM_MODEL = globals.bifrost.aliases.text;
-          environment.VISION_LLM_MODEL = globals.bifrost.aliases.image;
-        };
-        instances.docling.enable = false;
-      };
+      # paperless-gpt is off pending re-evaluation: the stack's LLM/vision routing
+      # and its OCR split have to be settled before it earns a generation again.
     };
 
     journald.settings.Journal = {
@@ -94,11 +86,9 @@ in
       pamAllowedLoginGroups = [ "admins" ];
     };
 
-    bifrost = {
-      dataDir = "/srv/data/bifrost";
-      configFile = globals.bifrost.configFile;
-      secretFiles.host = ../../../secrets/services/bifrost.yaml;
-    };
+    # The aspect owns the state path and the settings document; the host binds
+    # only the host-scoped secret file.
+    bifrost.secretFiles.host = ../../../secrets/services/bifrost.yaml;
 
     karakeep-pod = {
       oidc = {
@@ -110,10 +100,6 @@ in
       storage.s3.enable = true;
       secretFiles.host = ../../../secrets/services/karakeep-pod.yaml;
       secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
-    };
-
-    langfuse = {
-      secretFiles.host = ../../../secrets/services/langfuse.yaml;
     };
 
     tailscale.debugMtu = 1200;

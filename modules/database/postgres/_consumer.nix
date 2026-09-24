@@ -37,6 +37,10 @@
 
     localEndpoint = lib.mkOption {
       readOnly = true;
+      # Deliberately not nix-fleet's `lib.localEndpoint` shape: that helper exists
+      # for HTTP(S) services and throws on any other scheme, so its `url` would be
+      # a lie for a database port. A consumer here composes its own DSN from the
+      # port, and the Unix-socket consumers (`auth = "peer"`) are not a URL at all.
       type = lib.types.nullOr (
         lib.types.submodule {
           options.port = lib.mkOption {
@@ -111,7 +115,29 @@
                 "100.64.0.0/10"
                 "fd7a:115c:a1e0::/48"
               ];
-              description = "CIDR ranges allowed to authenticate as this role with password authentication.";
+              description = ''
+                Source ranges allowed to authenticate as this role with password
+                authentication: a bridged container arrives as its bridge address, a
+                dialer in the host network namespace as the service address.
+              '';
+            };
+            extraDatabases = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              example = [
+                "temporal"
+                "temporal_visibility"
+                "postgres"
+              ];
+              description = ''
+                Additional databases this role may authenticate to over host
+                authentication, beyond the one it owns — for a workload that
+                provisions satellite databases itself (Temporal's auto-setup
+                creates and then connects to its own databases, and first
+                connects to `postgres` to create them). Per-database allow rows
+                are emitted before the role's catch-all `reject`, so anything
+                outside this set stays unreachable.
+              '';
             };
             extensions = lib.mkOption {
               type = lib.types.functionTo (lib.types.listOf lib.types.package);

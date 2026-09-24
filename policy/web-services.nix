@@ -9,9 +9,14 @@
 # loops back when colocated with its provider. Moving the edge or a workload
 # therefore changes placement here — never a consumer's config — and
 # identity (public URLs, OIDC endpoints, TLS server names) stays literal and
-# stable, separate from transport. Plain nix attribute set on purpose: three
-# consumers read this file as data (web-policy aspect,
-# scripts/export-web-services-policy.sh, tests/check-web-service-catalog.sh).
+# stable, separate from transport. Provider placement and transport for a route
+# that mirrors a canonical cross-fleet service come from nix-fleet's service
+# inventory (`lib/service-inventory.nix`), threaded in as the `canonicalServices`
+# argument: the record declares host, scheme and port once, and the route keeps
+# only its own subdomain, exposure, access and health policy. The file stays
+# plain data — it takes no flake reference of its own — and four consumers read
+# it as data (the web-policy aspect, scripts/export-web-services-policy.sh,
+# tests/check-web-service-catalog.sh, tests/check-web-services-policy.sh).
 #
 # Every route declares its `exposureMode`, the one axis describing how the
 # service is exposed: `tailscale-upstream` (published; the edge dials the
@@ -20,8 +25,33 @@
 # dials), or `tailscale-only` (not published; machine-to-machine endpoint only),
 # with `direct` reserved for an edge-local loopback upstream. No default applies
 # — an unlabelled route fails evaluation.
+{ canonicalServices }:
 let
   globals = import ./globals.nix;
+
+  # A route whose provider is a canonical cross-fleet service derives its whole
+  # origin from that record, so the provider host ID and port are declared once
+  # (nix-fleet's service inventory) and cannot drift from the provider's own
+  # listener. Named errors keep a missing service, endpoint or route from
+  # degrading into an attribute-error message.
+  canonicalOrigin =
+    service: endpoint:
+    let
+      record =
+        canonicalServices.${service}
+          or (throw "web-services: nix-fleet declares no canonical service '${service}'");
+      endpointRecord =
+        record.endpoints.${endpoint}
+          or (throw "web-services: canonical service '${service}' has no endpoint '${endpoint}'");
+      tailnet =
+        endpointRecord.tailnet
+          or (throw "web-services: canonical service '${service}' endpoint '${endpoint}' has no tailnet route");
+    in
+    {
+      provider = tailnet.host;
+      scheme = tailnet.scheme or "http";
+      inherit (tailnet) port;
+    };
 in
 {
   defaults = {
@@ -171,11 +201,9 @@ in
         ntfy-admin = {
           subdomain = "ntfy";
           exposureMode = "tailscale-upstream";
-          origin = {
-            scheme = "http";
-            provider = "la-admin-1";
-            port = 2586;
-          };
+          # Provider and transport are the canonical ntfy record's; the route
+          # keeps only its own exposure, access and health policy.
+          origin = canonicalOrigin "ntfy" "api";
           category = "admin";
           health.path = "/v1/health";
           access.requireCloudflareAccess = false;
@@ -221,6 +249,10 @@ in
           exposureMode = "tailscale-upstream";
           category = "app";
           access.requireCloudflareAccess = true;
+          access.policies = [
+            "allow_admins"
+            "allow_users"
+          ];
           cloudflare = {
             proxied = true;
             authenticatedOriginPulls = true;
@@ -310,11 +342,14 @@ in
           subdomain = "langfuse";
           origin = {
             scheme = "http";
-            provider = "oci-melb-1";
-            port = 3000;
+            provider = "home-forge";
+            # 3030, not 3000: Grafana owns 3000 on home-forge.
+            port = 3030;
           };
           exposureMode = "tailscale-upstream";
           category = "admin";
+          # Both gates: Cloudflare Access at the edge, langfuse's own OIDC in the app.
+          access.oidc.enabled = true;
           access.requireCloudflareAccess = true;
           cloudflare = {
             proxied = true;
@@ -322,13 +357,50 @@ in
           };
         };
 
-        bifrost = {
-          subdomain = "bifrost";
+        latitude = {
+          subdomain = "latitude";
           origin = {
             scheme = "http";
-            provider = "oci-melb-1";
-            port = 7411;
+            provider = "home-forge";
+            port = 3110;
           };
+          exposureMode = "tailscale-upstream";
+          category = "admin";
+          # The app's own gate is a magic-link sign-in; generic OIDC is an
+          # enterprise-flagged path upstream, so Access carries the outer wall.
+          access.requireCloudflareAccess = true;
+          cloudflare = {
+            proxied = true;
+            authenticatedOriginPulls = true;
+          };
+          health.path = "/";
+        };
+
+        latitude-api = {
+          subdomain = "latitude-api";
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 3001;
+          };
+          exposureMode = "tailscale-upstream";
+          category = "admin";
+          # Deliberately no interactive gate: the browser calls this origin
+          # directly (the web app does not proxy the API) and so does the web
+          # container, so an Access challenge here breaks sign-in. Latitude's own
+          # auth authorizes every route on it.
+          access.requireCloudflareAccess = false;
+          cloudflare = {
+            proxied = true;
+            authenticatedOriginPulls = true;
+          };
+          health.path = "/health";
+        };
+
+        bifrost = {
+          subdomain = "bifrost";
+          # Provider and transport are the canonical bifrost/embeddings record's.
+          origin = canonicalOrigin "bifrost" "embeddings";
           exposureMode = "tailscale-only";
           declarePublic = false;
           category = "admin";
@@ -342,15 +414,86 @@ in
         # declaration, so the port cannot drift.
         niks3-write = {
           subdomain = null;
-          origin = {
-            scheme = "http";
-            provider = "oci-melb-1";
-            port = 5751;
-          };
+          # Provider and transport are the canonical niks3-write record's.
+          origin = canonicalOrigin "niks3-write" "api";
           exposureMode = "tailscale-only";
           declarePublic = false;
           category = "infra";
           health.path = "/";
+        };
+
+        # Latitude's OTLP/HTTP ingest is the same kind of endpoint for the other
+        # telemetry direction: machine exporters dial it, so it has no ingress
+        # route and cannot sit behind an interactive gate. The aspect reads this
+        # declaration for LAT_INGEST_URL, so the port cannot drift.
+        latitude-ingest = {
+          subdomain = null;
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 3002;
+          };
+          exposureMode = "tailscale-only";
+          declarePublic = false;
+          category = "admin";
+          health.path = "/health";
+        };
+
+        # The fleet's observability store, placed on the host with the disks for
+        # it. The three ingest endpoints are private machine routes — a
+        # collector dials them over the tailnet and no ingress route exists —
+        # while Grafana is the human front end and stays behind Access on the
+        # public edge. The store aspect reads these declarations for its
+        # listeners, so a port is stated once.
+        victoriametrics = {
+          subdomain = null;
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 8428;
+          };
+          exposureMode = "tailscale-only";
+          declarePublic = false;
+          category = "infra";
+          health.path = "/health";
+        };
+
+        victorialogs = {
+          subdomain = null;
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 9428;
+          };
+          exposureMode = "tailscale-only";
+          declarePublic = false;
+          category = "infra";
+          health.path = "/health";
+        };
+
+        victoriatraces = {
+          subdomain = null;
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 10428;
+          };
+          exposureMode = "tailscale-only";
+          declarePublic = false;
+          category = "infra";
+          health.path = "/health";
+        };
+
+        grafana = {
+          subdomain = "grafana";
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 3000;
+          };
+          exposureMode = "tailscale-upstream";
+          category = "admin";
+          health.path = "/api/health";
         };
       };
     };

@@ -1,7 +1,13 @@
 {
   "$schema": "https://www.getbifrost.ai/schema",
   "version": 2,
+  "source_of_truth": "config.json",
   "encryption_key": "env.BIFROST_ENCRYPTION_KEY",
+  "auth_config": {
+    "is_enabled": true,
+    "admin_username": "env.BIFROST_ADMIN_USERNAME",
+    "admin_password": "env.BIFROST_ADMIN_PASSWORD"
+  },
   "client": {
     "enable_logging": true,
     "disable_content_logging": true,
@@ -14,19 +20,38 @@
           "name": "gemini-primary",
           "value": "env.GEMINI_API_KEY",
           "weight": 1,
-          "models": ["*"]
+          "models": [
+            "*"
+          ]
+        }
+      ]
+    },
+    "voyage": {
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "list_models": false,
+          "embedding": true
+        },
+        "request_path_overrides": {
+          "embedding": "https://api.voyageai.com/v1/embeddings"
+        }
+      },
+      "network_config": {
+        "base_url": "https://api.voyageai.com/v1"
+      },
+      "keys": [
+        {
+          "name": "voyage-primary",
+          "value": "env.VOYAGE_API_KEY",
+          "weight": 1,
+          "models": [
+            "voyage-4"
+          ]
         }
       ]
     },
     "deepseek": {
-      "custom_provider_config": {
-        "base_provider_type": "openai",
-        "allowed_requests": {
-          "list_models": true,
-          "chat_completion": true,
-          "chat_completion_stream": true
-        }
-      },
       "network_config": {
         "base_url": "https://api.deepseek.com"
       },
@@ -35,28 +60,36 @@
           "name": "deepseek-primary",
           "value": "env.DEEPSEEK_API_KEY",
           "weight": 1,
-          "models": ["*"]
+          "models": [
+            "*"
+          ]
         }
       ]
     },
     "opencode-go": {
-      "custom_provider_config": {
-        "base_provider_type": "openai",
-        "allowed_requests": {
-          "list_models": true,
-          "chat_completion": true,
-          "chat_completion_stream": true
-        }
-      },
       "network_config": {
-        "base_url": "https://opencode.ai/zen/go/v1"
+        "base_url": "https://opencode.ai/zen/go",
+        "extra_headers": {
+          "x-opencode-session": "shrublab-fleet"
+        },
+        "max_retries": 3
       },
       "keys": [
         {
           "name": "opencode-go-primary",
           "value": "env.OPENCODE_API_KEY",
           "weight": 1,
-          "models": ["*"]
+          "models": [
+            "*"
+          ]
+        },
+        {
+          "name": "opencode-go-secondary",
+          "value": "env.OPENCODE_API_KEY_2",
+          "weight": 1,
+          "models": [
+            "*"
+          ]
         }
       ]
     },
@@ -66,7 +99,9 @@
           "name": "openrouter-primary",
           "value": "env.OPENROUTER_API_KEY",
           "weight": 1,
-          "models": ["*"]
+          "models": [
+            "*"
+          ]
         }
       ]
     }
@@ -74,16 +109,36 @@
   "governance": {
     "routing_rules": [
       {
+        "id": "embedding",
+        "name": "embedding",
+        "enabled": true,
+        "priority": 30,
+        "scope": "global",
+        "cel_expression": "model == 'shrublab-embedding'",
+        "targets": [
+          {
+            "provider": "voyage",
+            "model": "voyage-4",
+            "weight": 1.0
+          }
+        ]
+      },
+      {
         "id": "summariser",
         "name": "summariser",
+        "enabled": true,
         "priority": 10,
         "scope": "global",
         "cel_expression": "model == 'shrublab-text'",
-        "fallbacks": ["opencode-go/mimo-v2.5"],
+        "fallbacks": [
+          "opencode-go/mimo-v2.6-flash",
+          "deepseek/deepseek-chat",
+          "gemini/gemini-flash-latest"
+        ],
         "targets": [
           {
-            "provider": "openrouter",
-            "model": "xiaomi/mimo-v2.5",
+            "provider": "opencode-go",
+            "model": "deepseek-v4.1-flash",
             "weight": 1.0
           }
         ]
@@ -91,28 +146,18 @@
       {
         "id": "image",
         "name": "image",
+        "enabled": true,
         "priority": 20,
         "scope": "global",
         "cel_expression": "model == 'shrublab-image'",
-        "fallbacks": ["moonshotai/kimi-k2.6:free", "qwen/qwen3.5-flash-02-23"],
+        "fallbacks": [
+          "opencode-go/deepseek-v4.1-flash",
+          "gemini/gemini-flash-latest"
+        ],
         "targets": [
           {
-            "provider": "openrouter",
-            "model": "xiaomi/mimo-v2.5",
-            "weight": 1.0
-          }
-        ]
-      },
-      {
-        "id": "embedding",
-        "name": "embedding",
-        "cel_expression": "model == 'shrublab-embedding'",
-        "priority": 30,
-        "scope": "global",
-        "targets": [
-          {
-            "provider": "openrouter",
-            "model": "qwen/qwen3-embedding-8b",
+            "provider": "opencode-go",
+            "model": "mimo-v2.6-flash",
             "weight": 1.0
           }
         ]
@@ -120,14 +165,19 @@
       {
         "id": "budget",
         "name": "budget",
+        "enabled": true,
         "priority": 40,
         "scope": "global",
         "cel_expression": "model == 'shrublab-fallback'",
-        "fallbacks": ["deepseek/deepseek-v4-flash"],
+        "fallbacks": [
+          "opencode-go/mimo-v2.6-flash",
+          "deepseek/deepseek-chat",
+          "gemini/gemini-flash-latest"
+        ],
         "targets": [
           {
             "provider": "opencode-go",
-            "model": "deepseek-v4-flash",
+            "model": "deepseek-v4.1-flash",
             "weight": 1.0
           }
         ]

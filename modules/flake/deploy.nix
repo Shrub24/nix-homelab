@@ -57,7 +57,21 @@ in
 
   perSystem =
     { system, ... }:
+    let
+      # The buildable deploy surface: every host's activation profile is a check
+      # on the system that builds it, so CI's standard `.#checks` target covers
+      # the whole deploy surface and needs no bespoke aggregate (FB-4). The
+      # `packages.host-*` mirror publishes the same derivations unfiltered, for
+      # cross-system prebuilds.
+      profileChecks =
+        lib.mapAttrs' (name: node: lib.nameValuePair "host-${name}" node.profiles.system.path)
+          (
+            lib.filterAttrs (
+              name: _: top.config.flake.deployHosts.nodes.${name}.system == system
+            ) top.config.flake.deploy.nodes
+          );
+    in
     {
-      checks = inputs.deploy-rs.lib.${system}.deployChecks top.config.flake.deploy;
+      checks = inputs.deploy-rs.lib.${system}.deployChecks top.config.flake.deploy // profileChecks;
     };
 }

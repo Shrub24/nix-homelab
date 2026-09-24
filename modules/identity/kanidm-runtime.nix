@@ -447,6 +447,12 @@ _: {
 
         environment.systemPackages = [ kanidmPackages.client ];
 
+        # The restore helper is a build output, and the restore contract executes
+        # it with substituted paths: exposing it under the conventional build
+        # namespace lets a cold store build it instead of assuming the evaluated
+        # path already exists.
+        system.build.kanidm-restore = restoreScript;
+
         systemd = {
           services = {
             kanidm = {

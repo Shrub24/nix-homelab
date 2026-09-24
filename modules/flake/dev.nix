@@ -25,7 +25,10 @@
           pkgs.lefthook
           pkgs.deploy-rs
         ]
-        ++ [ config.packages.niks3 ];
+        ++ [
+          config.packages.niks3
+          config.packages.sops-bootstrap
+        ];
         shellHook = ''
           unset PYTHONPATH
         '';

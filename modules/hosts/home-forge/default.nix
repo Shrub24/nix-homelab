@@ -39,6 +39,9 @@ in
         aspects.music
         aspects.omniroute
         aspects.postgres
+        # The fleet's model gateway, placed here as well as on oci-melb-1 so
+        # this host's inference consumers dial loopback instead of the tailnet.
+        aspects.bifrost
         # Knowledge domain (search, agent memory, documentation index).
         aspects.degoog
         aspects.hindsight
@@ -52,7 +55,23 @@ in
         aspects.state-backups
         aspects.cache-publisher
         aspects.builder-access
+        aspects.build-account
         aspects.observability-agent
+        # Telemetry: the contract's vocabulary plus our fleet policy, then the
+        # signals this host ships. It is the gateway for admitted OTLP signals,
+        # so it also composes the OTLP lane.
+        aspects.telemetry
+        aspects.telemetry-metrics
+        aspects.telemetry-logs
+        aspects.telemetry-otlp
+        aspects.node-exporter
+        aspects.container-env
+        # Observability store: VictoriaMetrics/VictoriaLogs/VictoriaTraces
+        # plus Grafana, placed on the host with the disks for it.
+        aspects.victoria
+        # LLM observability backends, colocated with the telemetry stores.
+        aspects.langfuse
+        aspects.latitude
       ];
 
       fragments = [ ./_nixos.nix ];

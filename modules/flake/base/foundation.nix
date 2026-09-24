@@ -24,9 +24,6 @@
       hostSystemSecret = ../../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
       hasHostSecrets = builtins.pathExists hostSystemSecret;
 
-      globals = import ../../../policy/globals.nix;
-      nixPolicy = globals.services.nix or { };
-
       foundation = config.fleet.foundation;
       hostIdentity = config.fleet.hostIdentity;
 
@@ -39,7 +36,10 @@
       ];
     in
     {
-      imports = [ inputs.nix-fleet.modules.nixos.nh-gc ];
+      imports = [
+        inputs.nix-fleet.modules.nixos.nix-baseline
+        inputs.nix-fleet.modules.nixos.nix-gc
+      ];
 
       options = {
         fleet.foundation = {
@@ -76,27 +76,30 @@
       };
 
       config = {
+        # The fleet's nix-baseline owns the package, daemon priority, connection
+        # tuning and the substitution catalog; the cache list lives there, not here.
         nix.settings = {
-          experimental-features = [
-            "nix-command"
-            "flakes"
-          ];
-          auto-optimise-store = true;
           trusted-users = [
             "root"
             "dev"
           ];
-          substituters = lib.mkAfter (nixPolicy.substituters or [ ]);
-          trusted-substituters = lib.mkAfter (nixPolicy.trustedSubstituters or [ ]);
-          trusted-public-keys = lib.mkAfter (nixPolicy.trustedPublicKeys or [ ]);
           max-jobs = 2;
           cores = 0;
-          max-substitution-jobs = 8;
-          http-connections = 64;
-          download-buffer-size = 268435456;
         };
 
         time.timeZone = "UTC";
+
+        # A container that cannot start crashes on a multi-second cycle, which never
+        # trips systemd's default limit (5 starts / 10s) — and the unit then blocks
+        # the activation's start job for its whole duration. Five restarts an hour is
+        # the budget: a persistent failure fails the unit instead of looping.
+        systemd.services = lib.mapAttrs' (
+          name: _:
+          lib.nameValuePair "podman-${name}" {
+            startLimitIntervalSec = 3600;
+            startLimitBurst = 5;
+          }
+        ) config.virtualisation.oci-containers.containers;
 
         services.openssh = {
           enable = true;
@@ -202,14 +205,12 @@
         '';
 
         # Scheduled store garbage collection is a shared capability now: nix-fleet
-        # owns the `nh-clean` unit, its timer and its failure registration (the
-        # aspect registers the event itself), so this fleet-wide leaf only selects
-        # it. The schedule and retention are our policy.
-        services.nh-gc = {
-          enable = true;
-          dates = "daily";
-          extraArgs = "--keep 3";
-        };
+        # owns the units, their timers and their failure registrations (the aspect
+        # registers the events itself), and it owns the defaults too — nh prunes
+        # stale roots, the fast collector reclaims unconditionally, and the
+        # optimise run is a safety net. We state no override: restating a weaker
+        # schedule here would silently disable upstream's root pruning
+        # (`--keep-since`/`--keep-one`).
 
         fleet.hostIdentity.sshPrivateKeyFile = lib.mkIf hasHostSecrets hostSystemSecret;
 

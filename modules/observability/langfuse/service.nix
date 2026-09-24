@@ -16,8 +16,8 @@
     {
       config,
       lib,
-      pkgs,
       options,
+      pkgs,
       ...
     }:
     let
@@ -26,25 +26,63 @@
 
       hasSecretFile = cfg.secretFiles.host != null && builtins.pathExists cfg.secretFiles.host;
 
+      oidcClient = config.services.identity.oidc.clients.langfuse or null;
+
+      # NextAuth builds redirects from this, so it must be the public route.
+      publicUrl = config.repo.web.catalog.langfuse.publicUrl or null;
+
+      # Hoisted: a nested ''-string here would defeat the template's indent stripping.
+      oidcEnv = lib.optionalString cfg.oidc.enable ''
+        AUTH_CUSTOM_CLIENT_ID=${cfg.oidc.clientId}
+        AUTH_CUSTOM_CLIENT_SECRET=${config.sops.placeholder.langfuse_oidc_client_secret}
+        AUTH_CUSTOM_ISSUER=${cfg.oidc.issuerUrl}
+        AUTH_CUSTOM_NAME=${cfg.oidc.providerName}
+        AUTH_CUSTOM_SCOPE=${cfg.oidc.scope}
+        AUTH_CUSTOM_ID_TOKEN_SIGNED_RESPONSE_ALG=${cfg.oidc.idTokenSignedResponseAlg}
+      '';
+
       # The cluster this host runs, when it runs one; probed through `options`
       # because reading an undeclared option path raises NixOS' "did you mean"
       # error rather than returning null.
       hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
       localPostgres = if hasLocalCluster then config.services.postgres.localEndpoint else null;
 
-      # Dedicated bridge (container-networking class A′): the worker must reach
-      # ClickHouse, Redis, and PostgreSQL, which all widen their accept surface to
-      # the bridge gateway. The subnet is reserved outside netavark's auto pool so
-      # a future user-defined network cannot collide with it.
-      bridgeGateway = "10.89.30.1";
+      # Stateful roles bind loopback + the service address. The worker keeps its own
+      # bridge and dials the service name; web shares the host netns (it listens).
+      loopback = "127.0.0.1";
+      serviceNetwork = (import ../../../policy/globals.nix).serviceNetwork;
+      serviceAddress = serviceNetwork.address;
+      serviceHost = serviceNetwork.hostName;
+      containerSourceCIDR = serviceNetwork.containerSourceCIDR;
+      netHelpers = import ../../../lib/networking.nix { inherit lib; };
 
       # Langfuse reaches ClickHouse over HTTP (8123) for queries and the native
       # protocol (9000) for migrations.
-      clickhouseUrl = "http://${bridgeGateway}:8123";
-      clickhouseMigrationUrl = "clickhouse://${bridgeGateway}:9000";
+      clickhouseUrl = "http://${serviceHost}:8123";
+      clickhouseMigrationUrl = "clickhouse://${serviceHost}:9000";
+
+      # Footgun (ClickHouse >= 26.8): include_from is read per separately-loaded
+      # configuration file, so the users fragment needs its own. The fragment also
+      # doubles as the unit's restart trigger (ClickHouse does not watch users.d).
+      clickhouseUsers = lib.optionalString hasSecretFile ''
+        <clickhouse>
+          <include_from>${config.sops.templates."langfuse-clickhouse-substitutions".path}</include_from>
+          <users>
+            <langfuse>
+              <profile>default</profile>
+              <quota>default</quota>
+              <networks><ip>127.0.0.1</ip><ip>::1</ip><ip>${serviceAddress}</ip><ip>${containerSourceCIDR}</ip></networks>
+              <password_sha256_hex incl="langfuse_ch_password" optional="false"/>
+            </langfuse>
+          </users>
+        </clickhouse>
+      '';
     in
     {
-      imports = [ ../../database/postgres/_consumer.nix ];
+      imports = [
+        ../../database/postgres/_consumer.nix
+        ../../identity/_oidc.nix
+      ];
 
       options.services.langfuse = {
         enable = lib.mkEnableOption "Langfuse LLM observability";
@@ -69,20 +107,14 @@
 
         port = lib.mkOption {
           type = lib.types.port;
-          default = 3000;
-          description = "Host port the web container serves the UI and the OTLP ingestion endpoint on.";
+          default = config.repo.web.catalog.langfuse.endpoint.port;
+          description = "Host port the web container serves the UI and the OTLP ingestion endpoint on; the web-policy langfuse origin declares it once.";
         };
 
         networkName = lib.mkOption {
           type = lib.types.str;
           default = "langfuse0";
-          description = "User-defined podman network the worker joins.";
-        };
-
-        networkSubnet = lib.mkOption {
-          type = lib.types.str;
-          default = "10.89.30.0/24";
-          description = "Reserved bridge subnet for the langfuse network (outside netavark's auto pool).";
+          description = "Podman network the worker joins (the web role shares the host network namespace).";
         };
 
         buckets = {
@@ -104,6 +136,50 @@
         };
 
         secretFiles.host = secretHelpers.mkSecretFileOption "langfuse-host-secrets";
+
+        secretFiles.oidc = secretHelpers.mkSecretFileOption "langfuse-oidc-secrets";
+
+        oidc = {
+          enable = lib.mkEnableOption "OIDC login for Langfuse";
+
+          clientId = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = if oidcClient == null then null else oidcClient.clientId;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.langfuse.clientId";
+            description = "Canonical OIDC client ID, defaulted from the canonical client record.";
+          };
+
+          issuerUrl = lib.mkOption {
+            type = lib.types.str;
+            default = if oidcClient == null then "" else oidcClient.issuerUrl;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.langfuse.issuerUrl";
+            description = "OIDC issuer URL (AUTH_CUSTOM_ISSUER), defaulted from the canonical client record.";
+          };
+
+          providerName = lib.mkOption {
+            type = lib.types.str;
+            default = "Kanidm";
+            description = "Display name for the OIDC provider button (AUTH_CUSTOM_NAME).";
+          };
+
+          scope = lib.mkOption {
+            type = lib.types.str;
+            default = "openid email profile";
+            description = "OIDC scope string (AUTH_CUSTOM_SCOPE).";
+          };
+
+          idTokenSignedResponseAlg = lib.mkOption {
+            type = lib.types.str;
+            default = "ES256";
+            description = ''
+              Expected id_token signature algorithm
+              (AUTH_CUSTOM_ID_TOKEN_SIGNED_RESPONSE_ALG). Kanidm signs ES256, while
+              openid-client defaults the client to RS256 and rejects the token at
+              its algorithm check -- before any JWKS fetch -- so leaving this unset
+              fails every callback as OAUTH_CALLBACK_ERROR.
+            '';
+          };
+        };
 
         s3 = {
           endpoint = lib.mkOption {
@@ -132,16 +208,34 @@
             assertion = !cfg.enable || localPostgres != null;
             message = "services.langfuse.enable is true but this host runs no PostgreSQL cluster (select the postgres aspect and declare services.postgres.instances.<name>).";
           }
+          {
+            assertion = !cfg.oidc.enable || oidcClient != null;
+            message = "services.langfuse.oidc: canonical OIDC client 'langfuse' is missing from services.identity.oidc.clients; check systems.oauth2.langfuse in policy/identity.json and the host's kanidm-admin web-policy route.";
+          }
+          {
+            assertion = !cfg.oidc.enable || cfg.oidc.clientId != null;
+            message = "services.langfuse.oidc.clientId must be set when OIDC is enabled.";
+          }
+          {
+            assertion = !cfg.oidc.enable || cfg.oidc.issuerUrl != "";
+            message = "services.langfuse.oidc.issuerUrl must be set when OIDC is enabled.";
+          }
+          (secretHelpers.mkRequiredSecretAssertion {
+            enable = cfg.oidc.enable;
+            file = cfg.secretFiles.oidc;
+            feature = "services.langfuse.oidc";
+            label = "secretFiles.oidc";
+          })
         ];
 
         # Self-registration (D-058): the database, role, and credential this service
         # needs, declared next to the service that uses them. The provider reads the
         # same file and key to provision the role, so the password has one
         # authoritative source. The worker reaches the database over the bridge, so
-        # the role accepts the bridge range; the web container reaches it on the
-        # host network namespace, so loopback stays accepted too. No extensions:
-        # upstream's compose installs none and Prisma manages the schema. Gated
-        # on the secret file existing (the two-step sops bootstrap binds the
+        # the role accepts the bridge range; the web container shares the host
+        # network namespace, so it arrives as the service address itself. No
+        # extensions: upstream's compose installs none and Prisma manages the schema.
+        # Gated on the secret file existing (the two-step sops bootstrap binds the
         # path before the operator encrypts anything), matching hindsight.
         services.postgres.consumers.langfuse = lib.mkIf (localPostgres != null && hasSecretFile) {
           database = "langfuse";
@@ -154,53 +248,52 @@
           allowedCIDRs = [
             "127.0.0.1/32"
             "::1/128"
-            cfg.networkSubnet
+            serviceAddress
+            containerSourceCIDR
           ];
         };
 
         # ClickHouse: declarative server and user configuration. The application
         # user's password reaches the server without entering the Nix store: the
-        # server loads substitutions from a sops-rendered runtime file (include_from),
-        # and the user fragment references the substitution by name (incl). ClickHouse
+        # server loads substitutions from a sops-rendered runtime file via the
+        # user fragment's own include_from — never a global config.d
+        # registration: a second substitution file shadows the first's
+        # variables during incl resolution and auth parses as empty (observed
+        # against latitude's fragment), and the user fragment references the
+        # substitution by name (incl). ClickHouse
         # stores password_sha256_hex, so the substitution file carries the SHA-256
         # digest of the same plaintext the containers authenticate with.
         services.clickhouse = {
           enable = true;
+          # Pinned away from this host's nixpkgs: unstable's clickhouse does not
+          # link at the current baseline, and the pinned revision's derivation is
+          # the same version and substitutes (D-080).
+          package = config.repo.packages.clickhouse;
           serverConfig = {
             listen_host = [
-              "127.0.0.1"
-              bridgeGateway
+              loopback
+              serviceAddress
             ];
             http_port = 8123;
             tcp_port = 9000;
-          }
-          // (lib.optionalAttrs hasSecretFile {
-            include_from = config.sops.templates."langfuse-clickhouse-substitutions".path;
-          });
+          };
           usersConfig = { };
-          extraUsersConfig =
-            if hasSecretFile then
-              ''
-                <clickhouse>
-                  <users>
-                    <langfuse>
-                      <profile>default</profile>
-                      <quota>default</quota>
-                      <networks><ip>127.0.0.1</ip><ip>${cfg.networkSubnet}</ip></networks>
-                      <password_sha256_hex incl="langfuse_ch_password" optional="false"/>
-                    </langfuse>
-                  </users>
-                </clickhouse>
-              ''
-            else
-              "";
+          extraUsersConfig = clickhouseUsers;
         };
+        systemd.services.clickhouse.restartTriggers = lib.optional hasSecretFile clickhouseUsers;
+        # Footgun: sops-install-secrets can leave /run/secrets/rendered
+        # untraversable for non-root readers (0750 root:root observed in a live
+        # deploy); clickhouse's loadConfiguration is the only such reader here.
+        # NixOS has no /bin — reference the store path, or the ExecStartPre
+        # itself fails the unit (observed: "Unable to locate executable
+        # '/bin/chmod'").
+        systemd.services.clickhouse.serviceConfig.ExecStartPre =
+          lib.optional hasSecretFile "+${pkgs.coreutils}/bin/chmod 0755 /run/secrets/rendered";
 
-        # Redis: queue + cache only, no durable state by design, so persistence
-        # stays off and the server binds loopback plus the bridge gateway.
+        # Queue + cache only: no persistence, loopback + service address.
         services.redis.servers.langfuse = {
           enable = true;
-          bind = null; # bind 0.0.0.0; access is gated by requirePass and firewall
+          bind = "${loopback} ${serviceAddress}";
           port = 6379;
           # The secret file is absent during the two-step bootstrap window; the
           # fail-closed assertion blocks any deploy in that state, so the
@@ -210,17 +303,25 @@
           appendOnly = false;
         };
 
+        # svc0 exists only once systemd-networkd has applied it — an ordering no unit
+        # dependency can express — so a start that races the address retries.
+        systemd.services.clickhouse.serviceConfig = {
+          Restart = "on-failure";
+          RestartSec = 5;
+        };
+        systemd.services."redis-langfuse".serviceConfig = {
+          Restart = "on-failure";
+          RestartSec = 5;
+        };
+
         sops.templates."langfuse.environment" = lib.mkIf hasSecretFile {
           owner = "root";
           group = "root";
           mode = "0400";
           content = ''
             # --- authoritative metadata (PostgreSQL substrate) ---
-            # The bridge gateway routes to the host from both containers: the web
-            # container sits on the host network namespace (gateway routes like any
-            # other address) and the worker sits on the bridge itself, so one
-            # connection string serves both.
-            DATABASE_URL=postgresql://langfuse:${config.sops.placeholder.langfuse_postgres_password}@${bridgeGateway}:${toString localPostgres.port}/langfuse
+            # One name for both containers (worker: across its bridge; web: host netns).
+            DATABASE_URL=postgresql://langfuse:${config.sops.placeholder.langfuse_postgres_password}@${serviceHost}:${toString localPostgres.port}/langfuse
 
             # --- ClickHouse (traces/observations/scores) ---
             CLICKHOUSE_URL=${clickhouseUrl}
@@ -229,8 +330,8 @@
             CLICKHOUSE_PASSWORD=${config.sops.placeholder.langfuse_clickhouse_password}
             CLICKHOUSE_CLUSTER_ENABLED=false
 
-            # --- Redis (ingestion queue; the worker joins the bridge) ---
-            REDIS_HOST=${bridgeGateway}
+            # --- Redis (ingestion queue) ---
+            REDIS_HOST=${serviceHost}
             REDIS_PORT=6379
             REDIS_AUTH=${config.sops.placeholder.langfuse_redis_password}
 
@@ -262,10 +363,23 @@
             ENCRYPTION_KEY=${config.sops.placeholder.langfuse_encryption_key}
             SALT=${config.sops.placeholder.langfuse_salt}
             NEXTAUTH_SECRET=${config.sops.placeholder.langfuse_nextauth_secret}
-            NEXTAUTH_URL=http://127.0.0.1:${toString cfg.port}
+            NEXTAUTH_URL=${if publicUrl != null then publicUrl else "http://127.0.0.1:${toString cfg.port}"}
             TELEMETRY_ENABLED=false
 
+            # --- OIDC (Kanidm): provider block only when enabled; secret via sops ---
+            ${oidcEnv}
+
             # --- first-run bootstrap (operator rotates after first login) ---
+            # The full seed set: LANGFUSE_INIT_ORG_ID gates the whole block —
+            # without it upstream logs a warning and silently ignores the user
+            # seed, which is how this instance started with no org, project or
+            # keys. Idempotent upstream: resources are created only if absent.
+            LANGFUSE_INIT_ORG_ID=shrublab
+            LANGFUSE_INIT_ORG_NAME=Shrublab
+            LANGFUSE_INIT_PROJECT_ID=shrublab
+            LANGFUSE_INIT_PROJECT_NAME=Shrublab
+            LANGFUSE_INIT_PROJECT_PUBLIC_KEY=${config.sops.placeholder.langfuse_otel_public_key}
+            LANGFUSE_INIT_PROJECT_SECRET_KEY=${config.sops.placeholder.langfuse_otel_secret_key}
             LANGFUSE_INIT_USER_EMAIL=${config.sops.placeholder.langfuse_initial_admin_email}
             LANGFUSE_INIT_USER_PASSWORD=${config.sops.placeholder.langfuse_initial_admin_password}
           '';
@@ -320,7 +434,23 @@
               key = "initial_admin/password";
               path = "/run/secrets/langfuse.initial_admin_password";
             };
+            langfuse_otel_public_key = {
+              key = "otel/public_key";
+              path = "/run/secrets/langfuse.otel_public_key";
+            };
+            langfuse_otel_secret_key = {
+              key = "otel/secret_key";
+              path = "/run/secrets/langfuse.otel_secret_key";
+            };
           }
+          // lib.optionalAttrs cfg.oidc.enable (
+            secretHelpers.mkSecretsFromMap cfg.secretFiles.oidc {
+              langfuse_oidc_client_secret = {
+                key = "langfuse/client_secret";
+                path = "/run/secrets/langfuse.oidc_client_secret";
+              };
+            }
+          )
         );
 
         # The ClickHouse password substitution: a sops-rendered XML substitutions
@@ -340,6 +470,13 @@
           '';
         };
 
+        # The org/project/user seed (LANGFUSE_INIT_*) reads sops placeholders in
+        # the environment template, so a langfuse restart re-runs upstream's
+        # idempotent first-run init after a rotation.
+        systemd.services.podman-langfuse-web.restartTriggers =
+          lib.optional hasSecretFile
+            config.sops.templates."langfuse.environment".path;
+
         virtualisation.podman.enable = true;
 
         systemd.services."podman-network-${cfg.networkName}" = {
@@ -349,7 +486,7 @@
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
-            ExecStart = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network exists ${cfg.networkName} || ${pkgs.podman}/bin/podman network create --interface-name=langfuse0 --subnet=${cfg.networkSubnet} ${cfg.networkName}'";
+            ExecStart = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network exists ${cfg.networkName} || ${pkgs.podman}/bin/podman network create ${cfg.networkName}'";
             ExecStop = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network rm -f ${cfg.networkName} || true'";
           };
         };
@@ -368,13 +505,18 @@
           environmentFiles = lib.optionals hasSecretFile [
             config.sops.templates."langfuse.environment".path
           ];
-          extraOptions = [ "--network=host" ];
-          # No `ports`: host networking shares the host's own listener.
+          extraOptions = [
+            "--network=host"
+            "--add-host=${serviceHost}:${serviceAddress}"
+          ];
+          # No `ports`: host networking shares the host's own listener. The add-host
+          # entry lets the web role dial native services by the same stable name the
+          # worker uses, whatever namespace it runs in.
         };
 
-        # langfuse-worker: drains the Redis queue into ClickHouse. No inbound
-        # ports; it reaches ClickHouse, Redis, and PostgreSQL over the bridge
-        # gateway.
+        # langfuse-worker: drains the Redis queue into ClickHouse. No inbound ports;
+        # it keeps its own bridge, so it stays off the host network namespace, and
+        # reaches the native stateful roles through the host's service address.
         virtualisation.oci-containers.containers.langfuse-worker = {
           autoStart = true;
           image = cfg.workerImage;
@@ -383,6 +525,7 @@
           ];
           extraOptions = [
             "--network=${cfg.networkName}"
+            "--add-host=${serviceHost}:${serviceAddress}"
           ];
           dependsOn = [ "langfuse-web" ];
         };
@@ -419,10 +562,34 @@
                 "postgresql.service"
                 "postgresql-provision.service"
               ];
-              requires = [ "podman-network-${cfg.networkName}.service" ];
+              requires = [
+                "podman-network-${cfg.networkName}.service"
+                "postgresql-provision.service"
+              ];
             };
           };
         };
+
+        # The stateful roles are reachable from the host itself (loopback) and from
+        # containers through the service address; these are the only grants, scoped to
+        # the Podman pool rather than to a bridge interface.
+        networking.firewall.extraCommands = lib.mkIf cfg.enable (
+          lib.concatStringsSep "\n" [
+            (netHelpers.mkServiceIngressRule {
+              sourceCIDR = containerSourceCIDR;
+              address = serviceAddress;
+              ports = [
+                8123
+                9000
+              ];
+            })
+            (netHelpers.mkServiceIngressRule {
+              sourceCIDR = containerSourceCIDR;
+              address = serviceAddress;
+              ports = [ 6379 ];
+            })
+          ]
+        );
 
         # No state-backups registration: the aspect owns no local durable state.
         # ClickHouse traces are regenerable under retention (design D9), Redis holds

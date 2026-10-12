@@ -212,14 +212,15 @@ rec {
       }) provided
     );
 
-  # Cross-host catalog projection. Public services expose their published
-  # identity (public URL/host, access, health) and the published upstream
-  # *shape* (scheme + port) — never a dial address, so a consumer can
-  # configure its own listen address and dial its published port without
-  # depending on which physical host serves the route. A private service's
-  # machine-to-machine `endpoint` *is* derived: its host resolves against the
-  # evaluating host (loopback when colocated with the provider), so a
-  # provider move stays a placement edit here and never a consumer edit.
+  # Cross-host catalog projection. Every service carries the published upstream
+  # *shape* (scheme + port) so a consumer can configure its own listen address,
+  # and a machine-to-machine `endpoint` whose host resolves against the
+  # evaluating host: loopback when that host serves the service, the provider's
+  # tailnet name otherwise. In-fleet clients dial that endpoint, never the public
+  # hostname — crossing the edge would hit the Access gate and Cloudflare's
+  # browser-signature rule. A public service additionally exposes its published
+  # identity (public URL/host, access, health); a private one leaves those null.
+  # A provider move stays a placement edit here and never a consumer edit.
   isPublicService =
     resolved: (resolved.declarePublic or false) && resolved.exposureMode != "tailscale-only";
 
@@ -242,7 +243,7 @@ rec {
       publicUrl = if public then resolved.publicUrl else null;
       publicHost = if public then resolved.publicHost else null;
       publicDomain = if public then resolved.primaryDomain else null;
-      endpoint = if public then null else endpoint;
+      inherit endpoint;
       inherit (resolved)
         primaryDomain
         subdomain

@@ -1,0 +1,5 @@
+# Task 1.1 review correction
+
+Current scaffold contract has no satellite-database evidence. Production invariant is in `modules/database/postgres.nix`: when a consumer's `setupSQL` contains CREATEDB but `extraDatabases` is empty, assertion message identifies `services.postgres.consumers.<name>` and fails closed. `modules/observability/latitude.nix` declares `temporal` and `temporal_visibility` (plus postgres) as extra databases. No test-side exact-literal matches were found in tests/.
+
+Required follow-through: add an evaluated negative fixture to scaffold mutation section using an existing copy helper, set a uniquely named consumer to CREATEDB and empty extraDatabases, then call `expect_eval_fail` with the expected registration-specific assertion substring; ensure generic eval failure is insufficient. Also probe effective pg_hba rows on home-forge for latitude valid databases and ensure they occur before the role catch-all reject. Correct stale ownership comment near former line 1130 to say evaluated behavior, not removed scanner ownership. Validation intended: focused Nix evaluations plus bash -n only.

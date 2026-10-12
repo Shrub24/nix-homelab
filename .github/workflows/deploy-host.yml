@@ -6,8 +6,6 @@ on:
         required: true
         type: string
     secrets:
-      NIXBUILD_TOKEN:
-        required: true
       TS_OAUTH_CLIENT_ID:
         required: true
       TS_AUDIENCE:
@@ -15,20 +13,19 @@ on:
 jobs:
   deploy-host:
     runs-on: ubuntu-latest
-    environment: ci
     permissions:
       contents: read
       id-token: write
     env:
-      NIXBUILD_STORE: ssh-ng://eu.nixbuild.net
       DEPLOY_HOST: ${{ inputs.host }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-      - name: Setup nixbuild
-        uses: ./.github/actions/setup-nixbuild
-        with:
-          nixbuild_token: ${{ secrets.NIXBUILD_TOKEN }}
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v35
+      # Deployment joins the tailnet with its own identity. The build
+      # coordinator key is a build credential and never becomes a deployment
+      # key; this path authorizes activation, not building.
       - name: Join Tailscale tailnet
         uses: tailscale/github-action@v4
         with:
@@ -55,15 +52,35 @@ jobs:
             echo "::warning::No hostKeyFingerprint declared for $DEPLOY_HOST; deploying with normal SSH host-key verification"
             echo "known_hosts=" >> "$GITHUB_OUTPUT"
           fi
-      - name: Prebuild ${{ inputs.host }} deploy profile
+      # Publication belongs to the build job. A deployment verifies the exact
+      # profile it will activate is already in the cache instead of compiling it
+      # here: with no local jobs and no builders, a cache miss fails loudly
+      # rather than turning into a silent host-side build.
+      - name: Verify the ${{ inputs.host }} profile is cached
         run: |
+          set -euo pipefail
+          # A fresh runner's substituter set is not the fleet's, so read the host's
+          # own catalog out of its evaluation rather than restating it here: the
+          # catalog is nix-fleet's baseline, and the host is the authority on it.
+          CATALOG="$(nix eval --json --no-write-lock-file --apply '
+            c: {
+              substituters = builtins.concatStringsSep " " c.nix.settings.substituters;
+              keys = builtins.concatStringsSep " " c.nix.settings.trusted-public-keys;
+            }' ".#nixosConfigurations.\"$DEPLOY_HOST\".config")"
+          # Evaluation is allowed to realise what it cannot substitute — degoog's
+          # bundle evaluates through a bun2nix import-from-derivation whose
+          # generator is `runCommandLocal`, so no cache can carry it and a cold
+          # runner builds that one step. The profile itself is what must be
+          # signed-substituted, so the build below has no local jobs and no
+          # builders: a cache miss fails here instead of compiling on the runner.
+          PROFILE_DRV="$(nix eval --raw --no-write-lock-file ".#deploy.nodes.\"$DEPLOY_HOST\".profiles.system.path.drvPath")"
           nix build \
             --no-link \
-            --no-write-lock-file \
-            --print-build-logs \
-            --eval-store auto \
-            --store "$NIXBUILD_STORE" \
-            ".#deploy.nodes.\"$DEPLOY_HOST\".profiles.system.path"
+            --option max-jobs 0 \
+            --option builders "" \
+            --option substituters "$(jq -r .substituters <<<"$CATALOG")" \
+            --option trusted-public-keys "$(jq -r .keys <<<"$CATALOG")" \
+            "$PROFILE_DRV"
       - name: Resolve host deploy policy
         id: policy
         run: |

@@ -7,7 +7,12 @@ top: {
     }:
     let
       policyLib = import ../../lib/policy.nix { inherit lib; };
-      webServicesPolicy = import ../../policy/web-services.nix;
+
+      # The policy file is plain data: the canonical cross-fleet service records
+      # are nix-fleet's, threaded in rather than restated here.
+      webServicesPolicy = import ../../policy/web-services.nix {
+        canonicalServices = top.inputs.nix-fleet.lib.serviceEndpoints.canonicalServices;
+      };
 
       # Every host-backed reference in the web data — the policy host keys and
       # each route's `origin.provider` placement — must name a declared

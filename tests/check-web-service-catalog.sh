@@ -11,7 +11,9 @@ nix eval --impure --no-write-lock-file --expr '
   let
     flake = builtins.getFlake (toString ./.);
     lib = flake.inputs.nixpkgs.lib;
-    policy = import ./policy/web-services.nix;
+    policy = import ./policy/web-services.nix {
+      canonicalServices = flake.inputs.nix-fleet.lib.serviceEndpoints.canonicalServices;
+    };
     policyLib = import ./lib/policy.nix { inherit lib; };
     # Data-level call: an edge-independent projection is checked here, so the
     # catalog is resolved for a nominal host and only identity fields are
@@ -87,7 +89,9 @@ web_refs="$(nix eval --impure --raw --no-write-lock-file --expr '
   let
     flake = builtins.getFlake (toString ./.);
     globals = import ./policy/globals.nix;
-    policy = import ./policy/web-services.nix;
+    policy = import ./policy/web-services.nix {
+      canonicalServices = flake.inputs.nix-fleet.lib.serviceEndpoints.canonicalServices;
+    };
     hostsTable = policy.hosts or { };
     origins = builtins.concatMap (
       hostName:

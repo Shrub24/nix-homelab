@@ -8,7 +8,9 @@ nix eval --impure --json --no-write-lock-file --expr '
   let
     flake = builtins.getFlake (toString ./.);
     lib = flake.inputs.nixpkgs.lib;
-    policy = import ./policy/web-services.nix;
+    policy = import ./policy/web-services.nix {
+      canonicalServices = flake.inputs.nix-fleet.lib.serviceEndpoints.canonicalServices;
+    };
     policyLib = import ./lib/policy.nix { inherit lib; };
   in
   policyLib.exportHostPolicy policy "'"${HOST}"'"

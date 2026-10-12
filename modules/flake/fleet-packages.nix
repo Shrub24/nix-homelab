@@ -23,7 +23,15 @@
       };
 
       config.repo.packages = {
-        inherit (inputs.nix-fleet.packages.${pkgs.stdenv.hostPlatform.system}) notify;
+        inherit (inputs.nix-fleet.packages.${pkgs.stdenv.hostPlatform.system})
+          notify
+          bifrost-voyage-plugin
+          ;
+
+        # ClickHouse comes from its own nixpkgs pin, not this host's: unstable's
+        # clickhouse does not link at the current baseline, and this revision's
+        # derivation is the same version and cache-substitutable (D-080).
+        clickhouse = inputs.nixpkgs-clickhouse.legacyPackages.${pkgs.stdenv.hostPlatform.system}.clickhouse;
       };
     };
 }

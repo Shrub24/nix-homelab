@@ -10,7 +10,6 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    environment: ci
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -29,12 +28,6 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
-      - name: Setup nixbuild
-        uses: ./.github/actions/setup-nixbuild
-        with:
-          nixbuild_token: ${{ secrets.NIXBUILD_TOKEN }}
-      - name: Validate flake wiring
-        run: nix flake check --no-build --no-write-lock-file --refresh .#
       - name: Summarize deployment validation
         run: |
           {
@@ -45,7 +38,7 @@ jobs:
             echo "- Ref: ${{ github.ref }}"
             echo "- Full deploys are manual-only via workflow_dispatch"
             echo "- Serial deploy order: la-admin-1 -> oci-melb-1"
-            echo "- Host prebuilds run inside the reusable deploy-host workflow"
+            echo "- Builds come from the ci build job; each host verifies its profile is cached before activation"
             echo "- Manual workflow_dispatch may deploy from any selected branch ref"
           } >> "$GITHUB_STEP_SUMMARY"
   deploy-la-admin-1:

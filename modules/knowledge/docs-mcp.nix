@@ -1,10 +1,173 @@
-# AI domain knowledge: docs-mcp, the grounded documentation index on
-# home-forge. The aspect owner supplies the enablement that selection means;
-# the options and runtime body live in the sibling contributor
-# ./docs-mcp/service.nix, which publishes the same aspect name.
+# docs-mcp: grounded documentation index (container, tailnet-only).
 {
-  flake.modules.nixos.docs-mcp = {
-    # Selecting the deployment aspect is the only enablement.
-    services.docs-mcp.enable = true;
-  };
+  config,
+  inputs,
+  ...
+}:
+let
+  resolver = inputs.nix-fleet.lib.serviceEndpoints.resolveEndpoint config.fleet;
+
+  # The MCP port and the embeddings origin are canonical cross-fleet records
+  # (nix-fleet's service inventory), resolved here so both defaults ARE those
+  # values instead of copies a provider move would leave behind.
+  canonicalPort =
+    (resolver {
+      service = "docs-mcp";
+      endpoint = "mcp";
+      via = "tailnet";
+    }).port;
+  canonicalEmbeddingBaseUrl =
+    (resolver {
+      service = "bifrost";
+      endpoint = "embeddings";
+      via = "tailnet";
+    }).url;
+in
+{
+  flake.modules.nixos.docs-mcp =
+    {
+      config,
+      lib,
+      options,
+      pkgs,
+      ...
+    }:
+    let
+      cfg = config.services.docs-mcp;
+      globals = import ../../policy/globals.nix;
+      exportDir = "${config.services.state-backups.stagingRoot}/docs-mcp";
+
+      # The gateway is a cross-host service: the canonical record names the
+      # provider host, so a co-located consumer would cross the tailnet for a
+      # socket on its own machine. A host that runs the aspect publishes its
+      # listener as `localEndpoint`, probed through `options` because the option
+      # exists only where the aspect is imported; this container shares the host
+      # network namespace, so loopback reaches it. The local record is a bare
+      # origin while the canonical route already carries /v1.
+      hasLocalBifrost = lib.hasAttrByPath [ "services" "bifrost" "localEndpoint" ] options;
+      defaultEmbeddingBaseUrl =
+        if hasLocalBifrost then
+          "${config.services.bifrost.localEndpoint.url}/v1"
+        else
+          canonicalEmbeddingBaseUrl;
+    in
+    {
+      options.services.docs-mcp = {
+        enable = lib.mkEnableOption "docs-mcp-server (grounded documentation index)";
+
+        image = lib.mkOption {
+          type = lib.types.str;
+          default = config.repo.ociImages.docsMcpServer;
+          description = "docs-mcp-server image reference (tag + digest).";
+        };
+
+        dataDir = lib.mkOption {
+          type = lib.types.str;
+          default = "/srv/data/docs-mcp";
+          description = "Host directory holding the document store and the rendered config.";
+        };
+
+        port = lib.mkOption {
+          type = lib.types.port;
+          default = canonicalPort;
+          description = "Port for MCP, the web interface, and the API (single-port unified mode; nix-fleet's canonical docs-mcp/mcp record).";
+        };
+
+        telemetry = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = "Whether the server reports usage telemetry to PostHog.";
+        };
+
+        embedding = {
+          baseUrl = lib.mkOption {
+            type = lib.types.str;
+            default = defaultEmbeddingBaseUrl;
+            description = "OpenAI-compatible embeddings endpoint; defaults to this host's `services.bifrost.localEndpoint` when the gateway runs here, else the canonical bifrost/embeddings record (a host may point it at another gateway).";
+          };
+
+          model = lib.mkOption {
+            type = lib.types.str;
+            default = globals.bifrost.aliases.embedding;
+            description = "Model name sent to the embeddings endpoint; it must match the name recorded in the store.";
+          };
+        };
+      };
+
+      config = lib.mkMerge [
+        # Selection is enablement.
+        { services.docs-mcp.enable = true; }
+
+        (lib.mkIf cfg.enable {
+          virtualisation = {
+            podman.enable = true;
+
+            oci-containers.containers.docs-mcp = {
+              autoStart = true;
+              inherit (cfg) image;
+              # Host networking, no port publish: a publish bypasses the firewall on
+              # every interface, while a host socket is filtered by it (tailnet-only
+              # via the foundation aspect's `tailscale0` trust).
+              extraOptions = [ "--network=host" ];
+              # Unified mode: one process serves both the MCP endpoint and the web
+              # dashboard, so `--protocol http` pins the transport (the `auto` default
+              # picks stdio when there is no TTY) while the dashboard stays reachable at
+              # the root of the same port. The standalone `mcp` subcommand serves the
+              # protocol only, which 404s every non-MCP path.
+              cmd = [
+                "server"
+                "--protocol"
+                "http"
+              ];
+              environment = {
+                DOCS_MCP_PROTOCOL = "http";
+                DOCS_MCP_STORE_PATH = "/data";
+                DOCS_MCP_TELEMETRY = lib.boolToString cfg.telemetry;
+                DOCS_MCP_EMBEDDING_MODEL = cfg.embedding.model;
+                OPENAI_API_BASE = cfg.embedding.baseUrl;
+                # The gateway takes no client credential; this is the placeholder
+                # its other consumers pass.
+                OPENAI_API_KEY = "bifrost-local";
+              };
+              volumes = [
+                "${cfg.dataDir}/data:/data"
+                "${cfg.dataDir}/config:/config"
+              ];
+            };
+          };
+
+          systemd = {
+            tmpfiles.rules = [
+              "d ${cfg.dataDir} 0755 root root - -"
+              "z ${cfg.dataDir} 0755 root root - -"
+              # uid/gid 1000 is the unprivileged `node` user the image runs as.
+              "d ${cfg.dataDir}/data 0755 1000 1000 - -"
+              "z ${cfg.dataDir}/data 0755 1000 1000 - -"
+              "d ${cfg.dataDir}/config 0755 1000 1000 - -"
+              "z ${cfg.dataDir}/config 0755 1000 1000 - -"
+            ];
+
+            services."podman-docs-mcp" = {
+              wants = [ "network-online.target" ];
+              after = [ "network-online.target" ];
+              unitConfig.RequiresMountsFor = [ cfg.dataDir ];
+            };
+          };
+
+          # SQLite cannot be copied coherently while being written, so the store is
+          # exported through sqlite3's backup API; the config copies as it stands.
+          services.state-backups.services.docs-mcp = {
+            enable = true;
+            mode = "export";
+            paths = [ "${cfg.dataDir}/config" ];
+            exportPaths = [ "${exportDir}/documents.db" ];
+            prepareCommands = [
+              "${pkgs.coreutils}/bin/mkdir -p ${exportDir}"
+              "${pkgs.sqlite}/bin/sqlite3 ${cfg.dataDir}/data/documents.db ${lib.escapeShellArg ".backup ${exportDir}/documents.db"}"
+            ];
+            cleanupCommands = [ "${pkgs.coreutils}/bin/rm -rf ${exportDir}" ];
+          };
+        })
+      ];
+    };
 }

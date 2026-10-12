@@ -45,14 +45,35 @@
           "users": ["openid", "profile", "email", "groups_name"]
         }
       },
+      "langfuse": {
+        "enable": true,
+        "displayName": "Langfuse",
+        "secretKeyPrefix": "langfuse",
+        "routeKey": "langfuse",
+        "callbackPath": "/api/auth/callback/custom",
+        "scopeMaps": {
+          "service-admins": ["openid", "profile", "email"],
+          "users": ["openid", "profile", "email"]
+        }
+      },
+      "grafana": {
+        "enable": true,
+        "displayName": "Grafana",
+        "secretKeyPrefix": "grafana",
+        "routeKey": "grafana",
+        "callbackPath": "/login/generic_oauth",
+        "scopeMaps": {
+          "admins": ["openid", "profile", "email", "groups_name"]
+        }
+      },
       "cloudflare-access": {
         "enable": true,
         "displayName": "Cloudflare Access",
         "secretKeyPrefix": "cloudflare-access",
         "originUrl": "https://shrublab.cloudflareaccess.com/cdn-cgi/access/callback",
         "scopeMaps": {
-          "admins": ["openid", "profile", "email"],
-          "users": ["openid", "profile", "email"]
+          "admins": ["openid", "profile", "email", "groups_name"],
+          "users": ["openid", "profile", "email", "groups_name"]
         }
       }
     }

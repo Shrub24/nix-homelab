@@ -2,7 +2,23 @@
 # secret bootstrap — the service and its notification registration activate only
 # once `secrets/services/omniroute.yaml` exists.
 
-_: {
+{
+  config,
+  inputs,
+  ...
+}:
+let
+  # Provider port: the canonical cross-fleet record's (nix-fleet's service
+  # inventory), resolved here so the default IS that value instead of a copy a
+  # provider move would leave behind.
+  canonicalPort =
+    (inputs.nix-fleet.lib.serviceEndpoints.resolveEndpoint config.fleet {
+      service = "omniroute";
+      endpoint = "api";
+      via = "tailnet";
+    }).port;
+in
+{
   flake.modules.nixos.omniroute =
     {
       lib,
@@ -51,8 +67,8 @@ _: {
 
         port = lib.mkOption {
           type = lib.types.port;
-          default = 20128;
-          description = "Host and container port for the dashboard/API.";
+          default = canonicalPort;
+          description = "Host and container port for the dashboard/API (nix-fleet's canonical omniroute/api record).";
         };
 
         networkName = lib.mkOption {
@@ -219,13 +235,6 @@ _: {
                     cfg.dataDir
                     appDir
                   ];
-                  # Crash-loop budget: slow the systemd-driven restart to 15s and cap it at
-                  # 5 failures/hour so a persistent crash fails the unit (and alerts via
-                  # the notify aspect's OnFailure handler) instead of looping silently for
-                  # hours. The default 3-in-10s limit never trips because crash intervals
-                  # exceed the window.
-                  StartLimitIntervalSec = 3600;
-                  StartLimitBurst = 5;
                 };
                 serviceConfig.RestartSec = "15s";
                 restartTriggers = [ environmentFile ];

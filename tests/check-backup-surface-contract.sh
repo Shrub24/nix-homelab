@@ -7,9 +7,11 @@ set -euo pipefail
 #     (relative include path, empty snapshot, leading-dash snapshot, --decode
 #     invalid base64, and decoded hostile values) through a local render that
 #     exits before touching secrets or restic
-#   - the static safety shape of the helper's real restic invocation
-#     (end-of-options, root-only staging dir, stdout discipline) that cannot be
-#     exercised without restic
+#   - the helper's successful staging path, executed with scratch paths and
+#     stubs at the filesystem/restic boundary: the staging parent is repaired
+#     root-owned 0700, restic runs with end-of-options before the snapshot, its
+#     own stdout is redirected to stderr, and stdout carries only the created
+#     0700 destination directory
 #   - the `just backups restore-stage` recipe transport through a stub ssh:
 #     hostile host/user/local-command values are rejected or base64-transported
 #     with no local command execution
@@ -27,41 +29,8 @@ LA='path:.#nixosConfigurations.la-admin-1.config'
 # be chosen.
 
 HELPER_TEXT="$(nix eval --no-write-lock-file --raw "$LA.services.state-backups.restoreStagePackage.text")"
-# Static contract: diagnostics go to stderr, exactly one stdout echo of the
-# destination path; snapshot validated against empty/leading-dash; include path
-# absolute and without ".."; parent repaired root-owned 0700; restic invoked
-# with end-of-options before the snapshot and its own stdout redirected.
-case "$HELPER_TEXT" in
-  *"usage: state-restore-stage [--decode <snapshot-b64> <include-path-b64>] <snapshot> <absolute-include-path>"*) ;;
-  *) echo "backup-surface: state-restore-stage must expose --decode plus snapshot + include path" >&2; exit 1 ;;
-esac
-case "$HELPER_TEXT" in
-  *"snapshot must not be empty"*) ;;
-  *) echo "backup-surface: state-restore-stage must reject empty snapshots" >&2; exit 1 ;;
-esac
-case "$HELPER_TEXT" in
-  *"must not start with '-'"*) ;;
-  *) echo "backup-surface: state-restore-stage must reject leading-dash snapshots" >&2; exit 1 ;;
-esac
-case "$HELPER_TEXT" in
-  *"must be absolute"*) ;;
-  *) echo "backup-surface: state-restore-stage must reject relative include paths" >&2; exit 1 ;;
-esac
-case "$HELPER_TEXT" in
-  *"install -d -m 0700 -o root -g root /var/tmp/state-restore"*) ;;
-  *) echo "backup-surface: state-restore-stage must repair the staging parent root-owned 0700" >&2; exit 1 ;;
-esac
-case "$HELPER_TEXT" in
-  *"restore --target \"\$dest\" --include \"\$include_path\" -- \"\$snapshot\""*) ;;
-  *) echo "backup-surface: state-restore-stage must pass end-of-options before the snapshot" >&2; exit 1 ;;
-esac
-case "$HELPER_TEXT" in
-  *" 1>&2"*"echo \"\$dest\""*) ;;
-  *) echo "backup-surface: state-restore-stage must redirect restic stdout to stderr and print only the destination path" >&2; exit 1 ;;
-esac
-
-# Execute the helper's validation paths (LA text: x86_64 store paths run on
-# this machine). All of these must exit before touching secrets or restic.
+# Execute the helper's validation paths. All of these must exit before
+# touching secrets or restic.
 HELPER_FILE="$(mktemp)"
 printf '%s\n' "$HELPER_TEXT" > "$HELPER_FILE"
 chmod +x "$HELPER_FILE"
@@ -119,6 +88,114 @@ set -e
 [ -z "$OUT" ] || { echo "backup-surface: env-check failure must print nothing to stdout" >&2; exit 1; }
 grep -q "missing restic environment file" "$ERR" || { echo "backup-surface: decoded valid args must reach the env-file check" >&2; exit 1; }
 rm -f "$HELPER_FILE" "$ERR"
+
+# ── Executed success path: staging mode, redirection, stdout discipline ───
+# The evaluated helper text is copied with explicit, fail-loud substitutions:
+# scratch staging parent and env file, and stubs for the filesystem/restic
+# boundaries. Nothing here touches the production staging path, /run/secrets,
+# or a restic repository.
+RESTIC_ENV_PRODUCTION="$(nix eval --no-write-lock-file --raw "$LA.sops.templates.\"state-backups.env\".path")"
+STAGING_ROOT="$(mktemp -d)"
+STAGING_PARENT="$STAGING_ROOT/state-restore"
+SUCCESS_RUN="$(mktemp -d)"
+STUBDIR="$SUCCESS_RUN/stub"
+mkdir -p "$STUBDIR" "$SUCCESS_RUN/argv"
+
+cat > "$STUBDIR/install" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$STUB_LOG/install.argv"
+mkdir -p -m 0700 -- "${@: -1}"
+EOF
+cat > "$STUBDIR/restic" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$STUB_LOG/restic.argv"
+echo "restic: restore progress on stdout"
+EOF
+chmod +x "$STUBDIR/install" "$STUBDIR/restic"
+printf 'SCRATCH_ENV=1\n' > "$SUCCESS_RUN/state-backups.env"
+
+SUCCESS_HELPER="$SUCCESS_RUN/state-restore-stage"
+STUBDIR="$STUBDIR" STUB_LOG="$SUCCESS_RUN/argv" STAGING_PARENT="$STAGING_PARENT" \
+  RESTIC_ENV_PRODUCTION="$RESTIC_ENV_PRODUCTION" SCRATCH_ENV_FILE="$SUCCESS_RUN/state-backups.env" \
+  python3 - "$HELPER_TEXT" "$SUCCESS_HELPER" <<'PYEOF'
+import os, pathlib, re, shutil, sys
+
+src = sys.argv[1]
+for old, new in (
+    ("/var/tmp/state-restore", os.environ["STAGING_PARENT"]),
+    (os.environ["RESTIC_ENV_PRODUCTION"], os.environ["SCRATCH_ENV_FILE"]),
+):
+    if old not in src:
+        raise SystemExit(f"state-restore-stage substitution anchor missing: {old}")
+    src = src.replace(old, new)
+for command, replacement in (
+    ("install", os.path.join(os.environ["STUBDIR"], "install")),
+    ("restic", os.path.join(os.environ["STUBDIR"], "restic")),
+    ("rm", shutil.which("rm")),
+    ("mktemp", shutil.which("mktemp")),
+    ("base64", shutil.which("base64")),
+):
+    if not replacement:
+        raise SystemExit(f"required command unavailable for helper substitution: {command}")
+    src, count = re.subn(rf"/nix/store/[a-z0-9]{{32}}-[^/\s]+/bin/{command}", replacement, src)
+    if count == 0:
+        raise SystemExit(f"state-restore-stage command anchor missing: {command}")
+for unsafe in ("/var/tmp/state-restore", os.environ["RESTIC_ENV_PRODUCTION"]):
+    if unsafe in src:
+        raise SystemExit(f"unsafe production path remains after substitution: {unsafe}")
+pathlib.Path(sys.argv[2]).write_text(src)
+PYEOF
+chmod +x "$SUCCESS_HELPER"
+bash -n "$SUCCESS_HELPER"
+
+set +e
+SUCCESS_OUT="$(STUB_LOG="$SUCCESS_RUN/argv" "$SUCCESS_HELPER" latest /srv/data/pg 2>"$SUCCESS_RUN/stderr")"
+SUCCESS_RC=$?
+set -e
+if [ "$SUCCESS_RC" -ne 0 ]; then
+  echo "backup-surface: successful restore staging must exit 0, got $SUCCESS_RC" >&2
+  cat "$SUCCESS_RUN/stderr" >&2 || true
+  exit 1
+fi
+case "$SUCCESS_OUT" in
+  *$'\n'*) echo "backup-surface: staging must print exactly one line on stdout" >&2; exit 1 ;;
+esac
+case "$SUCCESS_OUT" in
+  "$STAGING_PARENT"/restore.*) ;;
+  *) echo "backup-surface: staging must create its destination under the staging parent, got '$SUCCESS_OUT'" >&2; exit 1 ;;
+esac
+[ -d "$SUCCESS_OUT" ] || { echo "backup-surface: staging must print an existing destination directory" >&2; exit 1; }
+[ "$(stat -c %a "$SUCCESS_OUT")" = "700" ] || { echo "backup-surface: the staging destination must be 0700" >&2; exit 1; }
+grep -qF 'restic: restore progress on stdout' "$SUCCESS_RUN/stderr" || { echo "backup-surface: restic's own stdout must be redirected to stderr" >&2; exit 1; }
+
+python3 - "$SUCCESS_RUN" "$SUCCESS_OUT" "$STAGING_PARENT" <<'PYEOF' || { echo "backup-surface: executed staging invocation shape violated" >&2; exit 1; }
+import os, sys
+
+run, dest, staging = sys.argv[1], sys.argv[2], sys.argv[3]
+install = open(os.path.join(run, "argv", "install.argv")).read().split()
+restic = open(os.path.join(run, "argv", "restic.argv")).read().split()
+errs = []
+if install != ["-d", "-m", "0700", "-o", "root", "-g", "root", staging]:
+    errs.append(f"staging parent not repaired root-owned 0700: {install!r}")
+# The helper's own -o config options may precede the subcommand (they come from
+# the module's extraOptions), but nothing else may: the destination is the one
+# the helper created and end-of-options keeps the snapshot from being parsed as
+# a flag.
+expected = ["restore", "--target", dest, "--include", "/srv/data/pg", "--", "latest"]
+prefix = restic[: -len(expected)]
+if restic[-len(expected) :] != expected:
+    errs.append(f"restic invocation shape changed: {restic!r}")
+else:
+    option_pairs = len(prefix) % 2 == 0 and all(
+        prefix[i] == "-o" for i in range(0, len(prefix), 2)
+    )
+    if not option_pairs:
+        errs.append(f"only -o config options may precede the restore subcommand: {restic!r}")
+if errs:
+    print("\n".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+rm -rf "$SUCCESS_RUN" "$STAGING_ROOT"
 
 # ── Just recipe: hostile-argument transport safety ────────────────────────
 # Execute the recipe with hostile values through a stub ssh: prove no local
@@ -185,17 +262,5 @@ set -e
 case "$OUTPUT2" in
   *ARG*) echo "backup-surface: ssh must not be called for a hostile host" >&2; printf '%s\n' "$OUTPUT2" >&2; exit 1 ;;
 esac
-
-# The just recipe source keeps the static transport shape and no-cd.
-BACKUPS_JUST=".just/backups.just"
-if ! grep -q '^restore-stage ' "$BACKUPS_JUST" \
-  || ! grep -q -- '--decode' "$BACKUPS_JUST" \
-  || ! grep -q 'base64 -w0' "$BACKUPS_JUST" \
-  || ! grep -q 'set no-cd' "$BACKUPS_JUST" \
-  || ! grep -q 'SNAP64' "$BACKUPS_JUST" \
-  || ! grep -q 'INC64' "$BACKUPS_JUST"; then
-  echo "backup-surface: just restore-stage recipe must base64-transport args in a static remote command" >&2
-  exit 1
-fi
 
 echo "check-backup-surface-contract: PASS"

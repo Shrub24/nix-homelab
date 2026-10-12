@@ -51,7 +51,9 @@ expected = {
     "oauth2ClientSecrets": [
         "kanidm_oauth2_beszel_basic_secret",
         "kanidm_oauth2_cloudflare-access_basic_secret",
+        "kanidm_oauth2_grafana_basic_secret",
         "kanidm_oauth2_karakeep_basic_secret",
+        "kanidm_oauth2_langfuse_basic_secret",
         "kanidm_oauth2_paperless_basic_secret",
         # The Termix client stays provisioned while its aspect is deselected:
         # re-selecting the aspect must not require a policy or secret edit.
@@ -149,9 +151,9 @@ expected = {
     "homepageLeafAbsent": True,
     "webhookServiceEnable": False,
     "webhookLeafAbsent": True,
-    # Five provider-owned client secrets: beszel, cloudflare-access,
-    # karakeep, paperless, termix (Quantum retired 2026-09-21).
-    "oauth2SecretCount": 5,
+    # Seven provider-owned client secrets: beszel, cloudflare-access, grafana,
+    # karakeep, langfuse, paperless, termix (Quantum retired 2026-09-21).
+    "oauth2SecretCount": 7,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
 if errs:
@@ -1117,22 +1119,24 @@ PYEOF
 # pin in §5.2 covers la-admin-1 exactly-once across all selections; oci and
 # forge need the same duplicate-selection protection that the scaffold's 7b
 # exact-set assertions cannot give (they apply sort -u). Placement sets mirror
-# the 7b expectations: oci nine, forge three.
+# the 7b expectations: oci eight placements, forge twelve.
 python3 - <<'PYEOF' || fail "host-record selection pins drifted"
 pins = {
     "modules/hosts/oci-melb-1/default.nix": [
         "oci", "ingress", "cockpit", "paperless", "postgres",
-        "bifrost", "karakeep", "niks3-cache", "langfuse",
+        "bifrost", "karakeep", "niks3-cache",
     ],
     "modules/hosts/home-forge/default.nix": [
-        "dj", "music", "omniroute",
+        "bifrost", "degoog", "dj", "docs-mcp", "hindsight", "langfuse",
+        "latitude", "music", "omniroute", "postgres", "telemetry-otlp", "victoria",
     ],
 }
 shared = [
     "provenance", "oci-images", "fleet-packages", "web-policy",
     "base", "shell", "networking", "tailscale", "notify",
-    "state-backups", "cache-publisher",
-    "builder-access", "observability-agent",
+    "state-backups", "cache-publisher", "container-env",
+    "builder-access", "build-account", "observability-agent", "node-exporter",
+    "telemetry", "telemetry-metrics", "telemetry-logs",
 ]
 for path, placement in pins.items():
     body = open(path).read()
@@ -1199,9 +1203,9 @@ expected = {
     "kanidmProvisionEnable": True,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
-if got.get("provisionClientKeys") != ["beszel", "cloudflare-access", "karakeep", "paperless", "termix"]:
+if got.get("provisionClientKeys") != ["beszel", "cloudflare-access", "grafana", "karakeep", "langfuse", "paperless", "termix"]:
     errs.append(f"provisionClientKeys: got {got.get('provisionClientKeys')!r}")
-if got.get("oauth2SecretSourceKeys") != ["beszel", "cloudflare-access", "karakeep", "paperless", "termix"]:
+if got.get("oauth2SecretSourceKeys") != ["beszel", "cloudflare-access", "grafana", "karakeep", "langfuse", "paperless", "termix"]:
     errs.append(f"oauth2SecretSourceKeys: got {got.get('oauth2SecretSourceKeys')!r}")
 if errs:
     print("; ".join(errs), file=sys.stderr)
@@ -1289,7 +1293,7 @@ expected = {
     "kanidmProvisionEnable": False,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
-if got.get("clientKeys") != ["beszel", "cloudflare-access", "karakeep", "paperless", "termix"]:
+if got.get("clientKeys") != ["beszel", "cloudflare-access", "grafana", "karakeep", "langfuse", "paperless", "termix"]:
     errs.append(f"clientKeys: got {got.get('clientKeys')!r}")
 beszel = got.get("beszel") or {}
 for field, want in {

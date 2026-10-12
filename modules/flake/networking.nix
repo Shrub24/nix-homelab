@@ -10,6 +10,7 @@ _: {
     }:
     let
       cfg = config.fleet.networking;
+      globals = import ../../policy/globals.nix;
       # The addressed, routed interface: the uplink when unbridged, otherwise the
       # bridge (member uplink carries no addressing).
       addressed = if cfg.bridge != null then cfg.bridge.name else cfg.uplink.interface;
@@ -84,47 +85,80 @@ _: {
         systemd.network = {
           enable = true;
 
-          # Exact-match units only: unbridged uplink or bridged member + addressed
-          # bridge. Virtual/overlay interfaces (Podman, tailscale0, veth, libvirt)
-          # are unmanaged by construction.
-          networks = lib.mkIf (cfg.uplink.interface != null) (
+          # Exact-match units only; Podman, tailscale0, veth and libvirt stay
+          # unmanaged by construction.
+          networks = lib.mkMerge [
             {
-              ${addressed} = {
-                matchConfig.Name = addressed;
-                networkConfig = {
-                  DHCP = "ipv4";
-                }
-                // lib.optionalAttrs (cfg.uplink.ipv6AcceptRA != null) {
-                  IPv6AcceptRA = cfg.uplink.ipv6AcceptRA;
+              # Exists from boot, independent of any Podman network.
+              ${globals.serviceNetwork.interface} = {
+                matchConfig.Name = globals.serviceNetwork.interface;
+                address = [
+                  "${globals.serviceNetwork.address}/${toString globals.serviceNetwork.prefixLength}"
+                ];
+                linkConfig.RequiredForOnline = false;
+              };
+            }
+            (lib.mkIf (cfg.uplink.interface != null) (
+              {
+                ${addressed} = {
+                  matchConfig.Name = addressed;
+                  networkConfig = {
+                    DHCP = "ipv4";
+                  }
+                  // lib.optionalAttrs (cfg.uplink.ipv6AcceptRA != null) {
+                    IPv6AcceptRA = cfg.uplink.ipv6AcceptRA;
+                  };
+                  dhcpV4Config.ClientIdentifier = "mac";
+                  linkConfig.RequiredForOnline = "routable";
                 };
-                dhcpV4Config.ClientIdentifier = "mac";
-                linkConfig.RequiredForOnline = "routable";
-              };
-            }
-            // lib.optionalAttrs (cfg.bridge != null) {
-              # Bridge member: no addressing, enslaved to the bridge.
-              ${cfg.uplink.interface} = {
-                matchConfig.Name = cfg.uplink.interface;
-                networkConfig.Bridge = cfg.bridge.name;
-                linkConfig.RequiredForOnline = "enslaved";
-              };
-            }
-          );
-
-          netdevs = lib.mkIf (cfg.bridge != null) {
-            ${cfg.bridge.name} = {
-              netdevConfig = {
-                Name = cfg.bridge.name;
-                Kind = "bridge";
               }
-              // lib.optionalAttrs (cfg.bridge.macAddress != null) {
-                MACAddress = cfg.bridge.macAddress;
+              // lib.optionalAttrs (cfg.bridge != null) {
+                # Bridge member: no addressing, enslaved to the bridge.
+                ${cfg.uplink.interface} = {
+                  matchConfig.Name = cfg.uplink.interface;
+                  networkConfig.Bridge = cfg.bridge.name;
+                  linkConfig.RequiredForOnline = "enslaved";
+                };
+              }
+            ))
+          ];
+
+          netdevs = lib.mkMerge [
+            {
+              ${globals.serviceNetwork.interface} = {
+                netdevConfig = {
+                  Name = globals.serviceNetwork.interface;
+                  Kind = "dummy";
+                };
               };
-            };
-          };
+            }
+            (lib.mkIf (cfg.bridge != null) {
+              ${cfg.bridge.name} = {
+                netdevConfig = {
+                  Name = cfg.bridge.name;
+                  Kind = "bridge";
+                }
+                // lib.optionalAttrs (cfg.bridge.macAddress != null) {
+                  MACAddress = cfg.bridge.macAddress;
+                };
+              };
+            })
+          ];
         };
         networking.useDHCP = lib.mkDefault false;
         networking.dhcpcd.enable = lib.mkDefault false;
+
+        # The same name resolves on the host, so host-side dialers use it too.
+        networking.hosts = {
+          "${globals.serviceNetwork.address}" = [ globals.serviceNetwork.hostName ];
+        };
+
+        # Containers resolve the tailnet's short names. This is the only DNS
+        # default worth adding: `dns_servers` would override podman's per-network
+        # resolver and break container-to-container names.
+        virtualisation.containers.containersConf.settings.containers.dns_searches = [
+          globals.tailnet.suffix
+        ];
 
         # nixos-facter's detected-DHCP module force-enables networking.useDHCP on
         # hosts with a facter report, colliding with the aspect's ownership. The

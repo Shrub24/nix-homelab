@@ -12,114 +12,55 @@ concurrency:
   cancel-in-progress: true
 permissions:
   contents: read
-  id-token: write
 jobs:
+  # Fast, builder-free gates: formatting, the repository contract tests, and the
+  # generated flake.nix freshness check. Everything that has to build a
+  # derivation belongs to the build job, which has the fleet's builders.
   validate:
     runs-on: ubuntu-latest
-    environment: ci
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Derive build metadata
-        id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-          ref_slug="${GITHUB_REF_NAME//\//-}"
-          short_sha="${GITHUB_SHA::12}"
-          version="$(git describe --tags --dirty --always 2>/dev/null || true)"
-          if [[ -z "$version" ]]; then
-            version="${ref_slug}+${short_sha}"
-          fi
-          echo "ref_slug=$ref_slug" >> "$GITHUB_OUTPUT"
-          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Install Nix for local validation
         uses: nixbuild/nix-quick-install-action@v35
-      - name: Show build metadata
-        run: |
-          echo "version=${{ steps.meta.outputs.version }}"
-          echo "ref_slug=${{ steps.meta.outputs.ref_slug }}"
-          echo "short_sha=${{ steps.meta.outputs.short_sha }}"
       - name: Check cross-language formatting
         run: nix develop --command treefmt --fail-on-change
       - name: Run standard checks
         run: nix develop --command just checks all
-      - name: Validate flake wiring
-        run: nix flake check --no-build --no-write-lock-file --refresh .#
-      - name: Check generated flake.nix is current
-        run: nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).check-flake-file"
-  build-hosts:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
+  # The build plane is nix-fleet's reusable coordinator: one job builds the
+  # standard `.#checks` target for both systems, distributing to the fleet's
+  # builders from the rendered `ci` profile (no builder coordinates live here)
+  # and publishing through niks3 from both the builders and this runner.
+  #
+  # Deliberately no `nix flake check --no-build` anywhere in this workflow:
+  # evaluating the flake realises degoog's bun2nix import-from-derivation, and
+  # `runCommandLocal` makes that step unsubstitutable, so an evaluation-only
+  # gate cannot pass on a cold store. The build job builds `.#checks`, which is
+  # the same wiring gate with a builder available.
+  build:
+    # Validation gates the build: a failing contract or formatting check must not
+    # reach a privileged publication run.
     needs: validate
-    environment: ci
-    strategy:
-      fail-fast: true
-      matrix:
-        host:
-          - la-admin-1
-          - oci-melb-1
-    env:
-      NIXBUILD_STORE: ssh-ng://eu.nixbuild.net
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-      - name: Setup nixbuild
-        uses: ./.github/actions/setup-nixbuild
-        with:
-          nixbuild_token: ${{ secrets.NIXBUILD_TOKEN }}
-      - name: Remote-build ${{ matrix.host }} deploy profile
-        run: |
-          nix build \
-            --no-link \
-            --no-write-lock-file \
-            --print-build-logs \
-            --eval-store auto \
-            --store "$NIXBUILD_STORE" \
-            .#deploy.nodes.${{ matrix.host }}.profiles.system.path
-      - name: Summarize validation
-        run: |
-          {
-            echo "## CI validation"
-            echo "- Host: ${{ matrix.host }}"
-            echo "- Build store: $NIXBUILD_STORE"
-            echo "- OpenTofu CI: intentionally deferred in this change"
-          } >> "$GITHUB_STEP_SUMMARY"
-  # home-forge is a deploy-rs node, but it is excluded from the ordered fleet
-  # serial deploy chain (deployOrder / deploy.yml). CI still evaluates/builds it
-  # directly via its nixosConfiguration to catch regressions; operator deploys
-  # target it individually via `just deploy home-forge` (deploy-rs).
-  build-home-forge:
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
-    needs: validate
-    environment: ci
-    env:
-      NIXBUILD_STORE: ssh-ng://eu.nixbuild.net
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-      - name: Setup nixbuild
-        uses: ./.github/actions/setup-nixbuild
-        with:
-          nixbuild_token: ${{ secrets.NIXBUILD_TOKEN }}
-      - name: Remote-build home-forge toplevel (x86_64)
-        run: |
-          nix build \
-            --no-link \
-            --no-write-lock-file \
-            --print-build-logs \
-            --eval-store auto \
-            --store "$NIXBUILD_STORE" \
-            .#nixosConfigurations.home-forge.config.system.build.toplevel
-      - name: Summarize validation
-        run: |
-          {
-            echo "## home-forge (deploy-rs node, outside serial chain) build"
-            echo "- Architecture: x86_64-linux"
-            echo "- Deployable via deploy-rs: 'just deploy home-forge'; not part of the ordered fleet/CI serial deploy chain"
-            echo "- Build store: $NIXBUILD_STORE"
-          } >> "$GITHUB_STEP_SUMMARY"
+    # Manual and main-only, first: a real uncached build on each architecture has
+    # to succeed before main-push builds are enabled, and the cache's OIDC claims
+    # are main-scoped, so a branch dispatch must not reach publication at all.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    # Pinned to the same commit as the flake input: an older revision lacks the
+    # metadata artifact the caller renders. nix-fleet's `v1` tag predates the
+    # unified recipe, so the ref moves to a tag once one is cut at or after this
+    # commit — always together with the flake pin.
+    uses: Shrub24/nix-fleet/.github/workflows/build-push-cache.yml@e5d7441563f88cfecab703827c6186cadd62c9a9
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      # x86_64 coordinator: most of the fleet's build work is x86_64, and a
+      # foreign-architecture target cannot fall back to the runner's own store.
+      runner_system: x86_64-linux
+      systems: x86_64-linux aarch64-linux
+      builder_attr: ci
+      targets: .#checks
+    secrets:
+      BUILDER_SSH_KEY: ${{ secrets.FLEET_BUILDER_SSH_KEY }}

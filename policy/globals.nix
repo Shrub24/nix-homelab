@@ -9,14 +9,40 @@
     suffix = "tail0fe19b.ts.net";
   };
 
+  # The host's stable, container-facing service address: a NixOS-owned dummy
+  # interface that exists from boot, independent of every Podman network. A
+  # container cannot reach a native host service over the bridge it sits on — the
+  # host owns that bridge but is not a member of it — so every native service a
+  # container must reach binds this address, and containers dial the stable name
+  # below. The address is advertised nowhere: containers reach it through their own
+  # bridge gateway, and neither the tailnet nor the provider network routes it.
+  serviceNetwork = {
+    interface = "svc0";
+    address = "10.255.0.1";
+    prefixLength = 32;
+    # Dial this instead of `host.containers.internal`, which resolves to whichever
+    # gateway the container's own network happens to have.
+    hostName = "host.services.internal";
+    # Supernet every Podman network is drawn from; scopes both the ingress rule and
+    # the service-level ACLs, so only container traffic reaches the service address.
+    containerSourceCIDR = "10.89.0.0/16";
+  };
+
+  # Beszel's agent credential is the hub's SSH public key: every agent accepts
+  # the hub's connection only against it, and the matching private half never
+  # leaves the hub's data directory. Public data, delivered as plain
+  # configuration — no sops, no per-host secret, no bootstrap gate.
+  beszel = {
+    hubKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILETioYsZkau/yIH2LocWZP3d7z0nZAKIMb2POQNEhst";
+  };
+
   bifrost = {
     aliases = {
       text = "shrublab-text";
       image = "shrublab-image";
-      embedding = "shrublab-embedding";
+      embedding = "voyage/voyage-4";
       fallback = "shrublab-fallback";
     };
-    configFile = ./bifrost-config.json;
   };
 
   s3 = {
@@ -40,28 +66,6 @@
   };
 
   services = {
-    nix = {
-      substituters = [
-        "https://nix-community.cachix.org"
-        "https://cache.numtide.com"
-        "https://cache.shrublab.xyz"
-        # "https://build-cache.shrublab.xyz" # dormant: expected to return
-      ];
-      trustedSubstituters = [
-        "https://nix-community.cachix.org"
-        "https://cache.shrublab.xyz"
-        "https://cache.numtide.com"
-        "ssh-ng://eu.nixbuild.net"
-      ];
-      trustedPublicKeys = [
-        "nix-cache-1:FW0bJll9BP5ch0mHI+bXOImcD0RKLrH117WfQC+CU4A="
-        "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-        "nixbuild.net/HWWKWC-1:dnSfpPDHQN/U9wexkK6r3GTaYrwqNwKS70SNGXistKg="
-        "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
-        # "nix-build-cache-1:cSuMcBA2kLuq+mWBrlxgK7Ij///iZelC/uzBZA8KVFg=" # dormant
-      ];
-    };
-
     karakeep-pod = {
       dataDir = "/srv/data/karakeep";
       port = 3010;

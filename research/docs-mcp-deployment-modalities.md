@@ -1,7 +1,6 @@
 # docs-mcp-server deployment modalities
 
-Status: decided and implemented in `modules/knowledge/docs-mcp.nix` +
-`modules/knowledge/_docs-mcp/default.nix`. Recorded here because the choice was between a pure-Nix
+Status: decided and implemented in `modules/knowledge/docs-mcp.nix`. Recorded here because the choice was between a pure-Nix
 build and a container, and the reasons are not visible from the module alone.
 
 ## Options considered

@@ -49,7 +49,16 @@ in
         aspects.state-backups
         aspects.cache-publisher
         aspects.builder-access
+        aspects.build-account
         aspects.observability-agent
+        # Telemetry: the contract's vocabulary plus our fleet policy, then the
+        # signals this host ships — metrics and logs; OTLP is admitted by the
+        # gateway host, not here.
+        aspects.telemetry
+        aspects.telemetry-metrics
+        aspects.telemetry-logs
+        aspects.node-exporter
+        aspects.container-env
       ];
 
       fragments = [ ./_nixos.nix ];

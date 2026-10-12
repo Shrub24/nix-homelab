@@ -11,7 +11,6 @@ _: {
     let
       cfg = config.services.admin.termix;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
-      globals = import ../../policy/globals.nix;
     in
     {
       options.services.admin.termix = {
@@ -165,10 +164,6 @@ _: {
             };
             ports = [
               "0.0.0.0:8083:8080"
-            ];
-            extraOptions = [
-              "--dns-search=${globals.tailnet.suffix}"
-              "--dns=100.100.100.100"
             ];
             volumes = [
               "${cfg.dataDir}/data:/app/data"

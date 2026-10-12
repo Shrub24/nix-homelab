@@ -159,6 +159,7 @@ _: {
           mode = "export";
           paths = [ cfg.dataDir ];
           exportPaths = [ cfg.backup.exportFile ];
+          cleanupCommands = [ "${pkgs.coreutils}/bin/rm -f ${cfg.backup.exportFile}" ];
           prepareCommands = [
             ''
               rm -f ${cfg.backup.exportFile}

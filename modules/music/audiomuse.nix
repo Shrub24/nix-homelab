@@ -13,6 +13,7 @@ _: {
     let
       cfg = config.services.audiomuse;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      serviceNetwork = (import ../../policy/globals.nix).serviceNetwork;
 
       # One credential, one source: the role password lives in secretFiles.db.
       # This service reads it to authenticate and the co-located cluster reads the
@@ -103,15 +104,11 @@ _: {
           description = "Optional Navidrome base URL presented to AudioMuseAI during initial setup.";
         };
 
-        # AudioMuse's PostgreSQL database is the cluster on this host, reached
-        # over the podman bridge (tailnet-only + SCRAM when it is remote). The
-        # host is a leaf contract input so an operator can point at a database
-        # that lives elsewhere; a deployment without a local cluster must set
-        # it, and `applications.music` names that requirement. Redis/temp stay
-        # local.
+        # Defaults to this host's cluster over the service address; a deployment
+        # without one sets it (`applications.music` requires it).
         postgresHost = lib.mkOption {
           type = lib.types.str;
-          default = "host.containers.internal";
+          default = serviceNetwork.hostName;
           description = "PostgreSQL hostname/address for the AudioMuse database.";
         };
 
@@ -267,7 +264,10 @@ _: {
         virtualisation.oci-containers.containers.audiomuse-worker = {
           autoStart = true;
           inherit (cfg) image;
-          extraOptions = [ "--network=${cfg.networkName}" ];
+          extraOptions = [
+            "--network=${cfg.networkName}"
+            "--add-host=${serviceNetwork.hostName}:${serviceNetwork.address}"
+          ];
           environment = {
             SERVICE_TYPE = "worker";
             TEMP_DIR = "/app/temp_audio";
@@ -279,7 +279,10 @@ _: {
         virtualisation.oci-containers.containers.audiomuse-web = {
           autoStart = true;
           inherit (cfg) image;
-          extraOptions = [ "--network=${cfg.networkName}" ];
+          extraOptions = [
+            "--network=${cfg.networkName}"
+            "--add-host=${serviceNetwork.hostName}:${serviceNetwork.address}"
+          ];
           ports = [ "${cfg.listenAddress}:${toString cfg.port}:8000" ];
           environment = {
             SERVICE_TYPE = "flask";

@@ -34,12 +34,28 @@
         # of this: the public substituter serves narinfo/nar from R2 behind
         # Cloudflare, and niks3's own read proxy is not on that path — binding a
         # provider gates the API, where write implies read for tokens only.
-        # Branch-only subjects keep refs/pull/* out of the cache.
+        # Claims, not the subject. GitHub mints `sub` either in the name-only
+        # form or in an immutable owner-ID/repository-ID form, and the choice
+        # follows the repository's age rather than ours — repos created on or
+        # after 2026-07-15 default to immutable, which nix-fleet (created
+        # 2026-09-21) does, so the former `repo:Shrub24/*` subject pattern
+        # stopped matching it. Bound claims read the same in both forms: niks3
+        # ANDs the listed claims and ORs the patterns inside each one, so naming
+        # the owner ID, the calling repositories, the branch and the one workflow
+        # that mints a pushing token is stronger than pattern-matching `sub`.
         oidc.providers.github = {
           issuer = "https://token.actions.githubusercontent.com";
           audience = "https://cache.shrublab.xyz";
-          boundClaims.repository_owner = [ "Shrub24" ];
-          boundSubject = [ "repo:Shrub24/*:ref:refs/heads/*" ];
+          boundClaims = {
+            repository_owner_id = [ "20262061" ];
+            repository = [
+              "Shrub24/nix-fleet"
+              "Shrub24/nix-homelab"
+              "Shrub24/nix-dotfiles"
+            ];
+            ref = [ "refs/heads/main" ];
+            job_workflow_ref = [ "Shrub24/nix-fleet/.github/workflows/build-push-cache.yml@*" ];
+          };
           scopes = [ "write" ];
         };
         # The listen port is the private service policy's declaration, shared

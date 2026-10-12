@@ -257,7 +257,7 @@ _: {
               PAPERLESS_REDIRECT_LOGIN_TO_SSO = true;
               PAPERLESS_DISABLE_REGULAR_LOGIN = true;
               PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS = true;
-              PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS_CLAIM = "groups_name";
+              PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS_CLAIM = "groups";
             };
           };
 

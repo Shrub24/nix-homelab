@@ -33,8 +33,9 @@ _: {
       # declaration is checked before the value is read.
       hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
       localPostgres = if hasLocalCluster then config.services.postgres.localEndpoint else null;
+      serviceNetwork = (import ../../policy/globals.nix).serviceNetwork;
       audiomusePostgres = {
-        host = "host.containers.internal";
+        host = serviceNetwork.hostName;
         port = if localPostgres != null then localPostgres.port else 5432;
       };
 

@@ -45,8 +45,9 @@
       secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
       secretFiles.hostSystem = ../../../secrets/hosts/la-admin-1/system.yaml;
       ntfy = {
+        # No server URL override: the catalog endpoint already resolves loopback
+        # here, because this host serves ntfy.
         enable = true;
-        serverUrl = "http://127.0.0.1:2586";
       };
     };
 

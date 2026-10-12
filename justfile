@@ -72,16 +72,13 @@ _build host="la-admin-1":
 nh-clean host="oci-melb-1":
     @ssh "{{ host }}" "nh clean all --keep 3"
 
-prebuild-remote host="oci-melb-1":
-    @nix build \
-        --no-link \
-        --no-write-lock-file \
-        --print-build-logs \
-        --eval-store auto \
-        --store "ssh-ng://eu.nixbuild.net" \
-        ".#host-{{ host }}"
-
-# Build a host config locally, then push the full closure to cache.
+# The operator path for a one-off prebuild or a pre-deploy verification:
+# publishing needs no explicit step (this workstation's Nix post-build hook
+# uploads every build to the fleet cache), and a host profile exists only for
+# its own system, so this reaches the workstation's architecture — the build
+# plane for both is CI, nix-fleet's coordinator over the fleet's builders.
+#
+# Prebuild a host's activatable profile locally.
 prebuild-local host="la-admin-1":
     @BUILD_DIR=$(mktemp -d); trap 'rm -rf "$BUILD_DIR"' EXIT; \
     nix build \
@@ -89,9 +86,7 @@ prebuild-local host="la-admin-1":
         --no-write-lock-file \
         --print-build-logs \
         ".#host-{{ host }}"; \
-    RESULT=$(readlink -f "$BUILD_DIR/result"); \
-    OUT_PATHS=$(nix run .#nix-path-filter -- "$RESULT" | tr '\n' ' ') \
-    niks3-hook send --socket=/run/user/1000/niks3-upload-to-cache.sock
+    echo "built $(readlink -f "$BUILD_DIR/result")"
 
 # Cross-cutting repo orchestration
 mod ops '.just/ops.just'

@@ -29,6 +29,7 @@ locals {
   policy_resources_by_name = {
     allow_admins   = cloudflare_zero_trust_access_policy.allow_admins.id
     allow_approved = cloudflare_zero_trust_access_policy.allow_approved.id
+    allow_users    = try(cloudflare_zero_trust_access_policy.allow_users[0].id, null)
   }
 
   firewall_allowed_countries_expression = length(var.firewall_allowed_countries) > 0 ? format(
@@ -179,6 +180,31 @@ resource "cloudflare_zero_trust_access_policy" "allow_approved" {
   }]
 
   session_duration = var.temp_access_session_duration
+}
+
+resource "cloudflare_zero_trust_access_policy" "allow_users" {
+  count = length(cloudflare_zero_trust_access_identity_provider.main) > 0 ? 1 : 0
+
+  account_id = var.cloudflare_account_id
+  name       = "allow_users"
+  decision   = "allow"
+
+  # Membership lives in Kanidm (the groups SSOT): the cloudflare-access client's
+  # scope-maps release group NAMES into the `groups` claim (Kanidm scope
+  # groups_name), and this rule matches the `users` group's name in that claim.
+  # Fail-closed: if the claim is absent the rule matches nobody and the route
+  # falls back to allow_admins only.
+  include = [
+    {
+      oidc = {
+        claim_name           = "groups"
+        claim_value          = "users"
+        identity_provider_id = cloudflare_zero_trust_access_identity_provider.main[0].id
+      }
+    }
+  ]
+
+  session_duration = var.access_session_duration
 }
 
 # ---------------------------------------------------------------------------

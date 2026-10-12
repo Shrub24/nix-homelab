@@ -132,8 +132,10 @@ in
       # Consumers register themselves from their own modules.
     };
 
-    # The cache server runs locally, so uploads go to the loopback endpoint.
-    niks3-publisher.serverUrl = "http://127.0.0.1:5751";
+    # The cache server runs locally; the catalog endpoint is the colocated
+    # loopback dial for it (host and port come from nix-fleet's canonical
+    # niks3-write record, never restated here).
+    niks3-publisher.serverUrl = config.repo.web.catalog."niks3-write".endpoint.url;
 
     notify = {
       secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
@@ -167,6 +169,19 @@ in
       pkgs.xz
       pkgs.icu
     ];
+  };
+
+  # Container image storage belongs on the heavy-app partition: the 20G root
+  # filled to 100% under /var/lib/containers and killed a pull mid-deploy.
+  # Footgun: podman 5.8.6 refuses a relocated graphroot — its database
+  # static-dir check still demands the default path, so a storage.conf
+  # graphroot hard-fails every invocation with "database configuration
+  # mismatch" (reproduced from a clean state). The bind mount keeps podman on
+  # its default config while the bytes live on /srv/storage.
+  fileSystems."/var/lib/containers" = {
+    device = "/srv/storage/containers";
+    fsType = "none";
+    options = [ "bind" ];
   };
 
   system.stateVersion = "25.11";

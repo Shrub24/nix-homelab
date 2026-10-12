@@ -1,3 +1,16 @@
+# Validation only. Building checks against the fleet's builders is a separate
+# path with its own workflow (fleet-build.yml), which calls this one first so a
+# failing contract still gates a privileged publication run. Nothing here can
+# build fleet outputs on any event.
+#
+# The two derivations this job does build are its own tooling, not fleet
+# outputs: the formatter check, and the flake.nix freshness comparator (both
+# seconds, neither compiling a host closure). A whole-flake
+# `nix flake check --no-build` gate cannot be added here — evaluating this flake
+# realises degoog's unsubstitutable bun2nix import-from-derivation, so an
+# evaluation-only gate cannot pass on a cold store (D-082) — so the comparator
+# carries the evaluation coverage and the dispatched build carries the wiring
+# gate.
 name: ci
 on:
   pull_request:
@@ -7,15 +20,15 @@ on:
     branches-ignore:
       - main
   workflow_dispatch:
+  # Callable by fleet-build.yml, so validation gates the build without the
+  # steps being written twice.
+  workflow_call:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 permissions:
   contents: read
 jobs:
-  # Fast, builder-free gates: formatting, the repository contract tests, and the
-  # generated flake.nix freshness check. Everything that has to build a
-  # derivation belongs to the build job, which has the fleet's builders.
   validate:
     runs-on: ubuntu-latest
     steps:
@@ -29,38 +42,3 @@ jobs:
         run: nix develop --command treefmt --fail-on-change
       - name: Run standard checks
         run: nix develop --command just checks all
-  # The build plane is nix-fleet's reusable coordinator: one job builds the
-  # standard `.#checks` target for both systems, distributing to the fleet's
-  # builders from the rendered `ci` profile (no builder coordinates live here)
-  # and publishing through niks3 from both the builders and this runner.
-  #
-  # Deliberately no `nix flake check --no-build` anywhere in this workflow:
-  # evaluating the flake realises degoog's bun2nix import-from-derivation, and
-  # `runCommandLocal` makes that step unsubstitutable, so an evaluation-only
-  # gate cannot pass on a cold store. The build job builds `.#checks`, which is
-  # the same wiring gate with a builder available.
-  build:
-    # Validation gates the build: a failing contract or formatting check must not
-    # reach a privileged publication run.
-    needs: validate
-    # Manual and main-only, first: a real uncached build on each architecture has
-    # to succeed before main-push builds are enabled, and the cache's OIDC claims
-    # are main-scoped, so a branch dispatch must not reach publication at all.
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
-    # Pinned to the same commit as the flake input: an older revision lacks the
-    # metadata artifact the caller renders. nix-fleet's `v1` tag predates the
-    # unified recipe, so the ref moves to a tag once one is cut at or after this
-    # commit — always together with the flake pin.
-    uses: Shrub24/nix-fleet/.github/workflows/build-push-cache.yml@e5d7441563f88cfecab703827c6186cadd62c9a9
-    permissions:
-      contents: read
-      id-token: write
-    with:
-      # x86_64 coordinator: most of the fleet's build work is x86_64, and a
-      # foreign-architecture target cannot fall back to the runner's own store.
-      runner_system: x86_64-linux
-      systems: x86_64-linux aarch64-linux
-      builder_attr: ci
-      targets: .#checks
-    secrets:
-      BUILDER_SSH_KEY: ${{ secrets.FLEET_BUILDER_SSH_KEY }}

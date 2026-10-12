@@ -41,11 +41,4 @@ includes = ["*.tf", "*.tfvars"]
 options = ["fmt"]
 
 # SSOT — treefmt.toml is the canonical exclusion source.
-excludes = [
-  "secrets/**",
-  "generated/**",
-  "pkgs/_sources/generated.*",
-  "pkgs/_sources/generated/**",
-  "flake.lock",
-  ".terraform.lock.hcl",
-]
+excludes = ["secrets/**", "generated/**", "flake.lock", ".terraform.lock.hcl"]

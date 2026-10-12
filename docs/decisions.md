@@ -2648,3 +2648,26 @@ needs trusted-user authority for ssh-ng's store operation.
 - The change covers Pi without any gateway edit: Pi exports to its host's loopback producer endpoint (`services.telemetry.otlp.httpUrl`), so its delta metrics are converted on the producer's own host, before the remote write that used to drop them. Only a producer that publishes deltas directly to the gateway ingress or to a named route is still dropped at the exporter; no fleet producer does that today, and the upstream contract records the case as open pending a decision with the gateway owner.
 - The processor reaches a host when that host is switched, not when the pin moves. A host whose running collector predates the change keeps dropping Pi series until it is activated.
 - A delta stream silent for longer than five minutes restarts from zero. That is intended for per-run Pi counters.
+
+## D-090: Routine CI is validation-only, and package pins move through nix-fleet's package-updates contract
+
+**Status:** Accepted; adopted while the nix-fleet pin already equalled upstream `main` (`e5d74415`). Nothing deployed.
+
+**Context:** nix-fleet's current CI contract keeps routine push and pull-request validation evaluation-only and puts building checks against the fleet's configured builders in a separate, manually dispatched path. Its package-update contract replaced nvfetcher with one native interface: a published flake module over `nix-update`, with each repository registering the package outputs it owns. This repository still carried the older shape of both — the fleet build as a job inside `ci.yml`, and nvfetcher scaffolding (`nvfetcher.toml`, `pkgs/_sources/`, a weekly refresh workflow, a `just deps` recipe) that owned no source at all.
+
+**Decision:** The fleet build moves to `.github/workflows/fleet-build.yml`, dispatched by hand and only on `main`, calling `ci.yml` as a reusable workflow so validation still gates a privileged publication. `ci.yml` keeps validation and can no longer build fleet outputs on any event; it still builds its own two sandboxed tools (the formatter check and the `flake.nix` freshness comparator), as nix-fleet's validate job builds its formatter check. `modules/flake/package-updates.nix` imports nix-fleet's package-updates module and registers `windows-dj-setup`, the only package this repository owns; that package gains a `passthru.updateScript` refreshing its two coupled pins (WinFsp and Mesa) through `pkgs/windows-dj-setup/update.py`, and a `passthru.checkUpdate` reporting the newest stable WinFsp version, which is also the package's `version` carrier. nvfetcher is removed outright — config, generated directory, refresh workflow, `just deps` recipe and its import, and the treefmt exclusions — and the scheduled refresh becomes the contract's workflow, evaluating the registered package's derivation rather than a whole-flake check.
+
+**Alternatives considered:**
+
+- **Keep the build job in `ci.yml` behind a dispatch condition** (nix-fleet's own arrangement) — rejected: it makes "routine CI does not build" a property of one condition rather than of the file's shape; this path has already been mis-scoped once, which is why a branch-dispatch guard exists at all.
+- **Adopt the contract's whole-flake evaluation gate verbatim** — rejected: evaluation alone cannot pass on a cold store here, because evaluating this flake realises degoog's unsubstitutable bun2nix import-from-derivation (D-082).
+- **Drop the `flake.nix` freshness comparator from validation** — rejected: it is a real PR-time gate and costs seconds.
+- **Leave the nvfetcher scaffolding dormant** — rejected: it would leave two canonical updaters for one dependency class while owning no source, and keep a `just` module, a scheduled workflow and two treefmt exclusion lines alive to serve nothing.
+- **Register no package** — rejected: the batch refuses an empty selection, and the pins would keep drifting by hand.
+- **Use nix-update's standard discovery for `windows-dj-setup`** — rejected: the derivation has no single `src` and two upstream repositories, so the package owns its release discovery.
+
+**Consequences:**
+
+- A pull request can no longer reach the fleet build at all, and a branch dispatch is refused by the workflow's own main-only condition as well.
+- Two stale canonical specs are corrected in the same change: `dependency-source-management` (nvfetcher → the package-updates contract) and `nixbuild-build-plane` (nixbuild.net, and a substitution-only framing → the fleet's own builders and substituters). The latter's file name no longer describes its content; renaming a main spec is left to a separate change rather than taken silently here.
+- Nothing is deployed and no host or secret changes. The DJ VM's setup media content is unchanged; only how its pins are refreshed.

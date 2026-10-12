@@ -306,25 +306,26 @@ Write path:
 Ownership model:
 
 - **Renovate** owns flake input updates (`flake.lock` via the `nix` manager) and OCI image reference updates (`policy/oci-images.nix` via a custom regex manager matching tag+digest form).
-- **nvfetcher** owns non-flake upstream source metadata for custom package derivations (version, hash, source URL). Generated outputs land in `pkgs/_sources/generated.nix`, configured from `nvfetcher.toml` at the repo root.
+- **The package-updates batch** owns locally authored packages. `modules/flake/package-updates.nix` imports nix-fleet's published package-updates module and registers the `packages.<system>` outputs this repository owns — today `windows-dj-setup` only, since every other entry is input-derived, a deploy profile, or nix-fleet's own CI helper. The batch runs the evaluating repository's `nix-update` through its update-script path, so release discovery and coupled-pin handling live with the package (`passthru.updateScript`) and a cheap release check does too (`passthru.checkUpdate`).
 - OCI image refs are centralized in `policy/oci-images.nix` and consumed by service modules as projections.
-- Non-flake package source metadata is consumed by package code from `pkgs/_sources/generated.nix` (nvfetcher-generated; no wrapper needed).
+- A package that wants a cheap `--check` declares `passthru.checkUpdate`, a program printing the newest stable release; a package whose discovery is not nix-update's default declares `passthru.updateScript`. `pkgs/windows-dj-setup/` declares both.
 
 Automation boundaries:
 
 - Renovate runs on a schedule and opens PRs for flake input and OCI image updates.
-- `nvfetcher-refresh` (GitHub Actions, `.github/workflows/nvfetcher-refresh.yml`) runs weekly and on manual dispatch, regenerates `pkgs/_sources/generated.nix`, and opens or updates a PR when changes are detected.
-- Neither tool pushes dependency updates directly to `main`.
+- `package-updates-refresh` (GitHub Actions, `.github/workflows/package-updates-refresh.yml`) runs weekly and on manual dispatch, runs the batch, evaluates the refreshed tree, and opens or updates one PR. Refresh is not acceptance: the `ci` workflow's validate gate decides on that PR.
+- No path pushes dependency updates directly to `main`, and neither writes `flake.lock` outside Renovate.
 
 Operator commands:
 
-- `just deps refresh` — regenerate nvfetcher-managed source metadata locally.
+- `nix run .#update` — one fzf list over flake inputs and registered package updates, applying only what is accepted.
+- `nix run .#update-packages` — the scriptable batch; `-- --check` reports newer releases without fetching or editing anything, and named packages limit the run.
 
-Adding a new non-flake upstream source:
+Adding a new locally owned package:
 
-1. Add a `[[package]]` section to `nvfetcher.toml` with the source name, fetcher, and version query.
-2. Run `just deps refresh` to regenerate `pkgs/_sources/generated.nix`.
-3. Import the generated metadata from `pkgs/_sources/generated.nix` in the consuming derivation.
+1. Add it under `pkgs/<name>/` and publish it from `modules/flake/packages.nix`.
+2. Register its output name in `modules/flake/package-updates.nix`.
+3. Declare `passthru.updateScript` when its release discovery is not nix-update's default, and `passthru.checkUpdate` when a cheap `--check` should work; `pkgs/windows-dj-setup/` is the in-tree example of both.
 
 Adding a new OCI image:
 
@@ -422,7 +423,8 @@ Fleet tooling posture:
   - the deploy path never builds: `deploy-host.yml` verifies the exact profile it is about to activate is substitutable (`--option max-jobs 0 --option builders ""`) and then activates with `--remote-build`, so a cache miss fails loudly in CI instead of compiling on the host
   - deploy auth relies on Tailscale SSH policy for the `dev` user rather than a repository-stored CI deploy private key, and the build coordinator key is never a deployment key
   - CI-specific SSH relaxations for deploy-rs are passed inline as workflow command options rather than through a generated SSH config file
-  - there is no evaluation-only flake gate in CI: evaluating the flake realises degoog's bun2nix import-from-derivation (`runCommandLocal`, so unsubstitutable) and cannot pass on a cold runner — building `.#checks` is the same wiring gate with a builder available
+  - routine validation and the build path are separate files: `ci.yml` validates (formatting, the contract tests, the generated `flake.nix` freshness comparator) and builds no fleet output, while `fleet-build.yml` is hand-dispatched on `main`, runs that validation first through a reusable call, and then builds `.#checks`
+  - there is no whole-flake evaluation-only gate in CI: evaluating the flake realises degoog's bun2nix import-from-derivation (`runCommandLocal`, so unsubstitutable) and cannot pass on a cold runner — the freshness comparator covers the changed surface, and building `.#checks` in the dispatched build is the same wiring gate with a builder available
 - Host-side Nix consumption remains substitute-only:
   - hosts inherit one shared substitute/trust baseline through the `base` foundation aspect (`modules/flake/base/foundation.nix`), which is nix-fleet's `nix-baseline`; the catalog is upstream's and is not restated in `policy/globals.nix`
   - `substituters` resolves to `https://cache.nixos.org/`, `https://nix-community.cachix.org`, `https://cache.numtide.com` and the fleet's own `https://cache.shrublab.xyz`, while `trusted-substituters` additionally carries nix-fleet's `ssh-ng://eu.nixbuild.net` default, which nothing here consumes

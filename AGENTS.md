@@ -154,7 +154,7 @@ Canonical human-facing architecture and migration guidance lives under `docs/` (
 
 Repository conventions are maintained in `CONVENTIONS.md`; the durable rules an agent needs most are summarized here.
 
-- **Flake reference form:** local evaluation and operator entrypoints use the Git-tree form `.#`. `path:` is reserved for the three cases where it is strictly better: evaluation of a copied tree with no Git repository (the contract tests), evaluation that must see freshly generated files that are not tracked yet (the nvfetcher refresh validation), and explicit path resolution that does not evaluate host configuration (`scripts/export-web-services-policy.sh`). See `## Project Policy` below for the index precondition that comes with `.#`. The flake entrypoint itself is generated: input declarations live under `modules/` and are rendered by `flake-file`, with nix-fleet owning the pins the repositories share.
+- **Flake reference form:** local evaluation and operator entrypoints use the Git-tree form `.#`. `path:` is reserved for the three cases where it is strictly better: evaluation of a copied tree with no Git repository (the contract tests), evaluation that must see freshly written files that are not tracked yet (the package-updates refresh workflow), and explicit path resolution that does not evaluate host configuration (`scripts/export-web-services-policy.sh`). See `## Project Policy` below for the index precondition that comes with `.#`. The flake entrypoint itself is generated: input declarations live under `modules/` and are rendered by `flake-file`, with nix-fleet owning the pins the repositories share.
 - **Namespaces:** `applications.<name>` for composition roots, `services.<name>` and `services.<domain>.<name>` for leaf services, `fleet.<name>` for fleet-wide options, `nixos.hosts.<id>` for canonical host records, and `repo.web.*` for resolved web policy.
 - **Naming:** kebab-case files and directories, camelCase flake outputs, dot-separated Nix option namespaces, kebab-case host IDs and secret file names.
 - **Ownership:** services and applications own their own `sops.secrets`, `sops.templates`, assertions, and runtime wiring; hosts provide host-scoped secret paths and enables, never internal secret wiring.
@@ -204,7 +204,7 @@ Project-owned rules that must survive tool regeneration. They live here rather t
 
 - Local evaluation uses the Git-tree form `.#`: the `justfile` recipes, the workflow files, `scripts/resolve-host-config.sh`, and the documented cutover command all resolve this repository as `.#` or `.#<output>`.
 - That form copies tracked content only, so `environment.etc."nixos-source"` publishes the fleet configuration (~5.5 MB) instead of the whole working directory (440 MB, including `.git`, `.terraform` provider binaries, editor caches, and the plaintext `mTLS.key`, `secrets.auto.tfvars`, and `terraform.tfstate` files). It also populates `system.configurationRevision`, which is `null` for `path:`-referenced flakes.
-- `path:` remains correct in three places, and they are the only ones: (a) contract tests that evaluate a copied tree whose `make_copy` excludes `.git`/`.jj`, so `.#` cannot resolve there, or that evaluate the working tree while injecting untracked fixtures; (b) `.github/workflows/nvfetcher-refresh.yml`, which validates a tree whose regenerated sources may be untracked; (c) `scripts/export-web-services-policy.sh`, which resolves the tree with an explicit path because it exports policy data rather than evaluating host configuration.
+- `path:` remains correct in three places, and they are the only ones: (a) contract tests that evaluate a copied tree whose `make_copy` excludes `.git`/`.jj`, so `.#` cannot resolve there, or that evaluate the working tree while injecting untracked fixtures; (b) `.github/workflows/package-updates-refresh.yml`, which evaluates a tree a package updater may have just written untracked files into; (c) `scripts/export-web-services-policy.sh`, which resolves the tree with an explicit path because it exports policy data rather than evaluating host configuration.
 - Tracking is the single filtering authority. Do not re-add a Nix-side exclusion list (`lib.fileset`, `cleanSourceWith`, `filterSource`) to work around untracked files — track them instead.
 
 ### Generated `flake.nix`
@@ -281,7 +281,7 @@ Use `nix fmt` for Nix-only formatting (backed by `nixfmt`; `treefmt` wraps it in
 - **Check only:** `treefmt --fail-on-change`
 - **Nix only:** `nix fmt`
 
-Exclusion SSOT lives in `treefmt.toml` — all managed paths (`secrets/**`, `generated/**`, `pkgs/_sources/generated.*`, `flake.lock`) are defined there.
+Exclusion SSOT lives in `treefmt.toml` — all managed paths (`secrets/**`, `generated/**`, `flake.lock`) are defined there.
 
 ## Jujutsu Workflow
 

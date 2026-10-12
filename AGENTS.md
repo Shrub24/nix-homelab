@@ -222,7 +222,7 @@ nix-fleet owns the fleet's shared aspect mechanisms; this repository consumes th
 
 - The contributor publishes our aspect name, imports `inputs.nix-fleet.modules.nixos.<aspect>`, and supplies the fleet's conventions (conventional secret paths, `policy/globals.nix` values, host-facing bindings). Host records keep selecting the same aspect name; they never learn a mechanism moved.
 - A shared realization that is constructed per consumer is imported from **our** evaluation, never from nix-fleet's output: nix-fleet's pre-realized `modules.nixos.fleet-builders` is a throwing shim, and its feature module closes over nix-fleet's own inventory while it is published as a pre-evaluated value (TD-31). `modules/flake/builder-access.nix` shows the current consumption shape.
-- Canonical fleet facts — machine identity, builder participation, named builder sets — are nix-fleet's inventory and are derived here, never restated (D-066): host records read `config.fleet.hosts.<id>`, and the scaffold contract fails on any local `fleet.hosts`/`fleet.builders`/`fleet.builderSets` declaration.
+- Canonical fleet facts — machine identity, build capability, external build resources, named build profiles — are nix-fleet's inventory and are derived here, never restated (D-066): host records read `config.fleet.hosts.<id>`, and the scaffold contract fails on any local `fleet.hosts`/`fleet.externalBuilders`/`fleet.buildProfiles` declaration. The published feature carries facts plus pure projections, not a NixOS module: `modules/flake/builder-access.nix` closes over this evaluation's `config.fleet` and projects trust through `inputs.nix-fleet.lib.buildProfile` (D-068).
 - Do not copy a shared module's body back in or re-declare its options locally. If a shared module needs a fleet-specific seam, add the option upstream in nix-fleet and bind it here.
 - Aspect names are ours: an upstream file name does not force a rename here (`cache-publisher` consumes nix-fleet's `niks3-publisher`).
 - Verify a swap on structured observables per host — option values, `sops.secrets` entries, systemd unit wiring and ordering — never on derivation equality, because the published source set changes whenever a file is added or removed.
@@ -232,6 +232,11 @@ nix-fleet owns the fleet's shared aspect mechanisms; this repository consumes th
 
 `.#` reads the Git index. Colocated jj keeps it in sync (a file is staged when jj first tracks it), but an external index command destroys that guarantee — a single `git reset` removed 19 tracked entries during Stage 8, after which evaluation silently used a partial tree.
 
+- jj stages a file when it *first* tracks it; it does not refresh the index entry of an
+  already-tracked file you have since edited. Run `git add -A` after editing tracked files,
+  before anything that resolves `.#` (a deploy, a remote build, a host evaluation), and
+  verify with `git show :<path> | grep …`. Symptom when forgotten: the deploy builds the
+  previous content of the files you edited.
 - Do not run index-mutating Git commands in this repository (`git reset`, `git checkout`, `git stash`). Use jj operations; jj is the version-control interface.
 - If `tests/check-flake-source-tracking.sh` fails, run `git add -A` once and re-run the check.
 - A newly created file must reach the index before `.#` can see it: the Git-tree copy contains only indexed files, so an unstaged new module evaluates as if it did not exist. Any `jj` command stages files jj has just started tracking (`jj status` is the cheapest), which is why the failure looks like a missing-file error rather than a dirty-tree warning.

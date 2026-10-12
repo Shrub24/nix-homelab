@@ -68,7 +68,7 @@ Local evaluation of this repository uses the Git-tree flake form `.#`. `path:` r
 
 nix-fleet publishes the fleet's shared aspects (`tailscale`, `beszel-agent`, `nh-gc`, `niks3-cache`, `niks3-publisher`, `notify`, `podman-prune`) in its own `flake.modules.nixos` namespace, and the canonical fleet facts (machine identity, builder participation, named builder sets) in its fleet inventory. This repository cannot select the aspects directly — an input repository's aspects do not enter our namespace — so each consumed aspect keeps a local contributor under its domain directory that publishes our aspect name, imports the shared module, and supplies the fleet's conventions.
 
-Canonical facts are nix-fleet's and are derived here, never restated (D-066): `nixos.hosts.<id>` reads `system` and `tailscale.hostname` from `config.fleet.hosts.<id>`, a host key binds in nix-fleet's inventory once harvested, and a build profile is an inventory fact rather than a local declaration. `modules/flake/builder-access.nix` consumes the inventory and publishes the aspect as the **evaluation-local realization** — the mechanism built inside this evaluation with the merged fleet config closed over. nix-fleet's published pre-realized module is a throwing shim for exactly that reason: a module constructed in nix-fleet's evaluation binds nix-fleet's own inventory. `flakeModules.fleet` composes the schema, the canonical inventory, the validation and the CI bundles, and exposes the realization at `config.fleet.realization`; the contributor is those two imports.
+Canonical facts are nix-fleet's and are derived here, never restated (D-066): `nixos.hosts.<id>` reads `system` and `tailscale.hostname` from `config.fleet.hosts.<id>`, a host key binds in nix-fleet's inventory once harvested, and build capability is an inventory fact rather than a local declaration. The published fleet feature carries facts and pure projections — no NixOS module, no cross-class realization (D-068): `modules/flake/builder-access.nix` imports `inputs.nix-fleet.flakeModules.fleet`, closes over this evaluation's `config.fleet`, and projects trust with `inputs.nix-fleet.lib.buildProfile` (`resolveHosts` → `knownHosts`/`sshConfig`). Scheduling stays off, so no host gets `nix.buildMachines` and no dispatch account is selected.
 
 - The shared module owns the mechanism: service wiring, option declarations, fail-closed assertions, secret registration, unit ordering.
 - The local contributor owns the fleet's conventions and policy: conventional secret paths (`secrets/hosts/<host>/system.yaml`), the values policy/globals.nix holds, and the host-facing bindings that keep host records unchanged. A host record never learns that the mechanism moved.
@@ -97,6 +97,16 @@ A capability that serves more than one service exposes a typed registry and prov
 - Applications and services own their `sops.secrets`, `sops.templates`, assertions, and runtime wiring for their own secret contracts.
 - Leaf modules expose explicit contract inputs (`secretFiles.*`, `secretKeys.*`) rather than requiring callers to mutate raw `sops.secrets.<name>` internals.
 - Hosts only provide host-scoped secret file paths and feature enables; they do not assemble internal secret templates.
+
+### Secret Templates
+
+A new secret starts from its template under `secrets/.templates/`, which is also where its provenance is written down. `just secrets bootstrap <target>` renders the template and encrypts the result; the mechanism is nix-fleet's `sops-bootstrap`, while the tree, the creation rules and who may read a file stay here.
+
+- `<target>.j2` renders as Jinja, a bare `<target>` is encrypted verbatim, and exactly one form may exist per secret.
+- Generated values use `secrets.token_hex(n)`. A derived value hashes the variable the template already set, never a second draw.
+- External values are named `{{ environ.BOOTSTRAP_<KEY_PATH> | default('PLACEHOLDER') }}` — upper-snake of the document's key path, so the name says where the value lands and an ambient variable cannot be captured silently. The default is deliberate: bootstrap automates generation and never fails for a credential only the operator can obtain.
+- `PLACEHOLDER` marks a value still owed. Fill it on the ciphertext — `printf '"<value>"' | sops set --value-stdin <file> '["a"]["b"]'` (the value is JSON-encoded and the flags precede the index), `sops set --value-file`, or `sops edit` — and list what is owed with `sops -d <file> | grep -n PLACEHOLDER`.
+- No angle-bracket placeholder survives anywhere, comments included: the guard reads the rendered document, and a YAML comment is part of it.
 
 ### Namespace Canonical Forms
 

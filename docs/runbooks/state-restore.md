@@ -222,13 +222,13 @@ Restore by staging the path (operator workstation), then on the target host pres
 | `/srv/data/paperless`, `/srv/data/paperless/media`, `/srv/data/paperless/consume` | `paperless-*.service` | `chown -R paperless:paperless` | UI login; document count matches pre-restore |
 | `/srv/data/paperless-gpt-llm` (+ docling dir when enabled) | `podman-paperless-gpt-*.service` | `chown -R root:root`, mode 0750 | paperless-gpt API/status responds; tags route |
 | `/srv/data/karakeep` | `podman-karakeep-web.service`, `podman-karakeep-meilisearch.service`, `podman-karakeep-chrome.service`, `podman-network-karakeep-net.service` | `chown -R root:root`, mode 0750 | login works; meilisearch reindexes from the app DB |
-| `/srv/data/bifrost/app` (logs/cache/vector excluded) | `podman-bifrost.service`, `bifrost-config.service` | `chown -R 1000:1000` | `/v1/models` responds |
+| `/srv/data/bifrost/app` (logs/cache/vector excluded) on `oci-melb-1` and `home-forge` | `bifrost.service` | `chown -R bifrost:bifrost` | `/v1/models` responds |
 | `/srv/data/phoenix` | `podman-phoenix.service`, `phoenix-prune.service`, `phoenix-prune.timer` | `chown -R root:root` | UI loads; spans queryable |
 | `/srv/data/tagr` (+ export `/srv/data/state-backups/tagr/tagr.sqlite3`) | `podman-tagr.service` | `chown -R root:music-ingest`, mode 2770 (tmpfiles `z` rule re-converges this) | prefer the SQLite export; `PRAGMA integrity_check` → ok; login works |
 
 Notes:
 
-- Bifrost: `bifrost-config.service` regenerates `config.json` from repo input and deletes `config.db` at start — restore the app data first, then start it; do not expect `config.db` to survive.
+- Bifrost: the service installs `config.json` from repo input — the providers, the routing rules and the plugin registrations — before every start, so restore the app data first, then start the service. The config store (`config.db`) is not deleted; providers and routing rules are file-owned (`source_of_truth`). The application directory is `/srv/data/bifrost/app` and the `bifrost` account must own it, because that account both reads the configuration and writes the state.
 - Karakeep: object assets in its external R2 bucket are NOT in restic; restore them from R2/their external authority separately (external recovery dependency, no replication/versioning claimed).
 - Paperless data also lives in the shared PostgreSQL cluster — restore PostgreSQL (section 5) as part of a Paperless restore.
 

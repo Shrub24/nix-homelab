@@ -86,6 +86,10 @@ Fleet direction:
 - active host and module code uses primary `nixpkgs` pinned to `nixos-unstable`
 - stable fallback inputs are introduced only as explicit, documented exceptions
 
+## Telemetry Routing and Privacy
+
+`home-forge` is the OTLP gateway. Its general and explicitly selected `ai` routes carry traces, metrics and logs to their operational stores; only the AI trace route also names Langfuse and Latitude. Route listeners provide routing separation, not authentication or admission control. The AI route sets resource `telemetry.route="ai"` as fixed receiver provenance, removing producer-supplied values before setting it; general signal pipelines remove the same reserved key and do not set a marker. OTLP logs on both routes are default-deny: retain resource host/service/environment identity and, on the AI route, the fixed marker; drop record attributes except the derived `trace_flags` field and drop scope attributes. Preserve body, severity and trace/span IDs. VictoriaLogs stores the event timestamp as `_time`, using observed time only as fallback rather than storing both timestamps independently. Journald continues through Vector, independently of OTLP application logs. See D-083 and D-086.
+
 ## Logical Repository Shape (Target)
 
 The exact file tree can evolve, but the intended shape is:
@@ -99,7 +103,7 @@ The exact file tree can evolve, but the intended shape is:
 - `modules/<domain>/<name>.nix` for standalone leaf service modules outside a domain subtree (e.g. `modules/flake/tailscale.nix`, `modules/cache/niks3-cache.nix`)
 - `modules/music/windows-vm.nix` for the reusable declarative Windows VM layer (libvirt instances, attachment to the host-owned always-on bridge, loopback SPICE, virtiofs shares)
 - `modules/music/dj-engine.nix` for the DJ engine implementation (Engine DJ library hosting on a Windows VM; see `docs/runbooks/engine-dj-guest-setup.md`), a sibling contributor of the discovered `dj` aspect
-- concern-owned contributors for the published `flake.modules.nixos.<aspect>` records, located in their domain directory since Stage 8 (D-056) — foundation `modules/flake/{shell,networking,tailscale}.nix` and the two-contributor `base` (`modules/flake/base/{foundation,host-recovery}.nix`); notifications `modules/notifications/{notify,push-server}.nix`; operational `modules/backups/state-backups.nix` (declaration surface `modules/backups/state-backups/_consumer.nix`), `modules/cache/cache-publisher.nix`, and `modules/flake/{builder-access,observability-agent}.nix`; application/identity `modules/music/{music,dj}.nix` and the `kanidm-host-auth` capability (`modules/identity/kanidm-host-auth.nix`, the Kanidm Unix/PAM/SSH integration; D-059 renamed it from `identity-client`) with the intrinsic OIDC contract it reads (`modules/identity/_oidc.nix`); the fleet contract `modules/contracts/internal.nix`; placement `modules/oci/oci.nix`, `modules/web/ingress.nix`, `modules/admin/{cockpit,termix,vaultwarden,homepage,gatus,beszel,webhook}.nix`, `modules/identity/identity-provider.nix`, `modules/cache/niks3-cache.nix`, `modules/database/postgres.nix`, and `modules/observability/{beszel,gatus,phoenix,langfuse}.nix`, `modules/ai/{bifrost,omniroute}.nix`, `modules/knowledge/{degoog,hindsight,docs-mcp}.nix`` (each owning its capability's top-level enablement; `admin-hub` was removed and its members split into individual aspects by D-054) — plus the infrastructure support quartet `provenance`, `oci-images`, `fleet-packages`, `web-policy` in `modules/flake/`; four of the contributors above consume a shared nix-fleet mechanism through one local convention contributor each (`tailscale`, `observability-agent` → `beszel-agent`, `niks3-cache`), while `builder-access` consumes nix-fleet's canonical fleet inventory (`fleet.hosts` / `fleet.builders` / `fleet.builderSets`) and publishes the evaluation-local realization, so the mechanism and the facts live upstream and this repository keeps the fleet's secret paths, policy values, and host-facing option names (D-061, D-065, D-066), with sibling contributors beside their owner (`modules/flake/base/host-recovery.nix`, `modules/music/{dj-engine,windows-vm}.nix`, `modules/web/{ingress,ingress-origin-exposure}.nix`) and `_` left for value-imported helpers and declaration-only contracts (`modules/flake/shell/p10k.zsh`, `modules/music/_beets/runners.nix`, `modules/admin/homepage/_data.nix`, `modules/backups/state-backups/_consumer.nix`, `modules/database/postgres/_consumer.nix`, `modules/identity/_oidc.nix`, `modules/identity/_kanidm-packages.nix`). The Stage 6 music leaves converted with the rest of the service tree: they are now discovered contributors under `modules/music/`
+- concern-owned contributors for the published `flake.modules.nixos.<aspect>` records, located in their domain directory since Stage 8 (D-056) — foundation `modules/flake/{shell,networking,tailscale}.nix` and the two-contributor `base` (`modules/flake/base/{foundation,host-recovery}.nix`); notifications `modules/notifications/{notify,push-server}.nix`; operational `modules/backups/state-backups.nix` (declaration surface `modules/backups/state-backups/_consumer.nix`), `modules/cache/cache-publisher.nix`, and `modules/flake/{builder-access,observability-agent}.nix`; application/identity `modules/music/{music,dj}.nix` and the `kanidm-host-auth` capability (`modules/identity/kanidm-host-auth.nix`, the Kanidm Unix/PAM/SSH integration; D-059 renamed it from `identity-client`) with the intrinsic OIDC contract it reads (`modules/identity/_oidc.nix`); the fleet contract `modules/contracts/internal.nix`; placement `modules/oci/oci.nix`, `modules/web/ingress.nix`, `modules/admin/{cockpit,termix,vaultwarden,homepage,gatus,beszel,webhook}.nix`, `modules/identity/identity-provider.nix`, `modules/cache/niks3-cache.nix`, `modules/database/postgres.nix`, and `modules/observability/{beszel,gatus,phoenix,langfuse,latitude}.nix`, `modules/ai/{bifrost,omniroute}.nix`, `modules/knowledge/{degoog,hindsight,docs-mcp}.nix`` (each owning its capability's top-level enablement; `admin-hub` was removed and its members split into individual aspects by D-054) — plus the infrastructure support quartet `provenance`, `oci-images`, `fleet-packages`, `web-policy` in `modules/flake/`; five of the contributors above consume a shared nix-fleet mechanism through one local convention contributor each (`tailscale`, `bifrost` → the gateway service, `observability-agent` → `beszel-agent`, `niks3-cache`, `cache-publisher`), while `builder-access` projects trust from nix-fleet's canonical fleet inventory (`fleet.hosts` with `capabilities.nixBuilder`, `fleet.externalBuilders`, `fleet.buildProfiles`) by closing over this evaluation's `config.fleet`, so the mechanism and the facts live upstream and this repository keeps the fleet's secret paths, policy values, and host-facing option names (D-061, D-066, D-068), with sibling contributors beside their owner (`modules/flake/base/host-recovery.nix`, `modules/music/{dj-engine,windows-vm}.nix`, `modules/web/{ingress,ingress-origin-exposure}.nix`) and `_` left for value-imported helpers and declaration-only contracts (`modules/flake/shell/p10k.zsh`, `modules/music/_beets/runners.nix`, `modules/admin/homepage/_data.nix`, `modules/backups/state-backups/_consumer.nix`, `modules/database/postgres/_consumer.nix`, `modules/identity/_oidc.nix`, `modules/identity/_kanidm-packages.nix`). The Stage 6 music leaves converted with the rest of the service tree: they are now discovered contributors under `modules/music/`
 - `modules/flake/base/foundation.nix` for shared baseline NixOS policy, users, and the typed `fleet.foundation.bootLoader` / `fleet.foundation.buildTmpfsSize` host facts
 - `modules/flake/shell.nix` for the shell baseline (zsh/p10k, wezterm, nix-index comma) with the prompt theme at `modules/flake/shell/p10k.zsh`
 - `modules/flake/networking.nix` for the native networkd contract rendered from `fleet.networking` host facts
@@ -135,7 +139,7 @@ Application scope:
 
 Standalone service scope:
 
-- file: `secrets/services/<name>.yaml` (e.g. `secrets/services/karakeep-pod.yaml`, `secrets/services/bifrost-gateway.yaml`)
+- file: `secrets/services/<name>.yaml` (e.g. `secrets/services/karakeep-pod.yaml`, `secrets/services/bifrost.yaml`)
 - contains values consumed by a single leaf service not part of a composed application stack
 
 Host exception scope:
@@ -190,19 +194,19 @@ Current decision:
 
 - one dedicated Nix store filesystem mounted at `/nix` on `oci-melb-1`
 - one persistent service-state mount on the host (`/srv/data`)
-- one dedicated media filesystem mounted at `/srv/media`
+- one dedicated heavy-app storage filesystem mounted at `/srv/storage` (repurposed from the retired media mount; D-070)
 - service state organized under subdirectories on `/srv/data`
 
 Recovered `oci-melb-1` single-disk baseline:
 
-- the OCI boot volume now carries the EFI system partition plus labeled ext4 filesystems for `/`, `/srv/data`, `/nix`, and `/srv/media`
+- the OCI boot volume now carries the EFI system partition plus labeled ext4 filesystems for `/`, `/srv/data`, `/nix`, and `/srv/storage`
 - `modules/hosts/oci-melb-1/_disko-single-disk-split.nix` is the canonical declarative boundary for that recovered host shape
 - host-specific sizing stays in `modules/hosts/oci-melb-1/_nixos.nix`, while the partition/mount contract remains declarative in the host-local layout
 
 Current media/data flow (music application on `home-forge`):
 
-- the complete music application (Navidrome, AudioMuse compute, Syncthing, slskd/Beets/Tagr ingest services) runs on `home-forge`; `oci-melb-1` disables `applications.music`, retains the shared PostgreSQL cluster (AudioMuse database + backup), and keeps its copied `/srv/media` tree and prior music service state on disk only as rollback insurance
-- LA edge routes `music` (Navidrome), `slskd`, `tagr`, and `search` (degoog, Cloudflare Access required) to `home-forge` over Tailscale upstreams (`policy/web-services.nix`)
+- the complete music application (Navidrome, AudioMuse compute, Syncthing, slskd/Beets/Tagr ingest services) runs on `home-forge`; `oci-melb-1` disables `applications.music`, retains the shared PostgreSQL cluster (AudioMuse database + backup), and its `/srv/media` rollback copy of the music library was deleted when the mount was repurposed (D-070) — home-forge's active library (29G) exceeded the copy (22G) and no oci component referenced it
+- LA edge routes `music` (Navidrome), `slskd`, `tagr`, `search` (degoog, Cloudflare Access required) and `grafana` (the Victoria store's front end, Cloudflare Access required) to `home-forge` over Tailscale upstreams (`policy/web-services.nix`)
 - `home-forge` selects the music application root via `musicStorageRoot` in `modules/hosts/home-forge/default.nix`: `storageRoot=/srv/storage/media/music` with `library/`, `playlists/`, `inbox/`, `quarantine/`, and `.versions/` beneath it; `/srv/data` remains the service-state mount (`/srv/data/syncthing/config`, `/srv/data/navidrome`, `/srv/data/tagr`, `/srv/data/audiomuse`, `/srv/data/beets`)
 - `applications.music` requires explicit `storageRoot`/`dataRoot` host bindings with no fleet defaults (`policy/globals.nix` carries no music paths); the discovered `modules/music/music.nix` aspect (selected only on `home-forge`) owns composition and injects the derived paths into the music contributors `modules/music/{beets,ingest,storage}.nix`, with the storage contributor owning creation of the shared roots and layout directories under `storageRoot`; lower-level service modules may add ACLs, marker files, or service-specific subdirectories, but do not redefine those shared root directory ownership contracts
 - Navidrome's MusicFolder and Syncthing's `library` folder use `library/`; Engine DJ's `M:` share maps the whole music root through virtiofs (guest sees `M:\library`, `M:\playlists`, `M:\Engine Library`, `M:\inbox`, `M:\quarantine`). `M:\Engine Library` is a real directory on the share (host `<storageRoot>/Engine Library`) — there is no separate Engine share, mount tag, or guest junction; the operator points the Windows Music known-folder directly at `M:` so Engine resolves `Music\Engine Library` to `M:\Engine Library` (see D-044, D-046, and `docs/runbooks/engine-dj-guest-setup.md`). The DJ aspect derives `sharePath`/`musicStorageRoot` from the `applications.music.contract.storageRoot` contract value (host literals removed in Stage 6); worker adoption of `contract.libraryDir`/`contract.playlistsDir` in the Engine export job paths is deferred (D-052)
@@ -231,7 +235,7 @@ Future evolution:
 Current baseline:
 
 - mutable service state is backed up with NixOS-native `services.restic.backups`
-- backup scope is state-first: `/srv/data` subtrees and generated recovery artifacts are in scope, and media-root coverage (`/srv/storage/media/music` on `home-forge`, `/srv/media` on `oci-melb-1`) is controlled by host backup policy
+- backup scope is state-first: `/srv/data` subtrees and generated recovery artifacts are in scope, and media-root coverage (`/srv/storage/media/music` on `home-forge`) is controlled by host backup policy
 - each host writes to its own dedicated Cloudflare R2 bucket using host-scoped credentials and a host-unique restic password
 - non-secret transport defaults (`endpoint`, `region`, path-style behavior) stay canonical in `policy/globals.nix`
 - restic repositories are host-scoped: `shrublab-backup-la-admin-1`, `shrublab-backup-oci-melb-1`, and `shrublab-backup-home-forge`; the decommissioned host's repository was retained as migration recovery evidence
@@ -252,7 +256,7 @@ Current export-first services:
 
 Current live-state services:
 
-- Syncthing, Navidrome, Beets state, Termix, Beszel hub, Karakeep, Bifrost non-log app state, Phoenix, Paperless local state/media/consume, paperless-gpt instances, and music library/quarantine excluding `.versions` (`/srv/storage/media/music` on `home-forge`, retained rollback copy under `/srv/media` on `oci-melb-1`) — the music application now runs on `home-forge`, so the listed OCI music-state entries describe retained rollback copies; home-forge has active music-state backup contracts for Navidrome, Syncthing, Beets, Tagr, and media
+- Syncthing, Navidrome, Beets state, Termix, Beszel hub, Karakeep, Bifrost non-log app state, Phoenix, Paperless local state/media/consume, paperless-gpt instances, and music library/quarantine excluding `.versions` (`/srv/storage/media/music` on `home-forge`) — home-forge has active music-state backup contracts for Navidrome, Syncthing, Beets, Tagr, and media; `oci-melb-1`'s retired rollback copy was deleted with D-070
 - Beszel hub coverage uses the real DynamicUser path `/var/lib/private/beszel-hub`, never the compatibility symlink `/var/lib/beszel-hub`
 - AudioMuse — Postgres-only backup scope (durable app state); Redis queue/cache and temp audio working files are excluded from canonical backup scope per spec
 - optional Cockpit loopback TLS material (`/var/lib/cockpit-loopback-tls`) when enabled
@@ -285,12 +289,13 @@ niks3 (Mic92/niks3) is the fleet sovereign Nix binary cache, running on `oci-mel
 Read path:
 
 - Consumers read directly from `s3://nix-cache?...` — no HTTP endpoint, no credentials needed (bucket is public-read)
-- Substituter priority: `nixbuild.net` first, sovereign S3 second, `cache.nixos.org` third
-- Both hosts and CI can consume the cache as a standard Nix S3 substituter via `policy/globals.nix`
+- Substituters come from nix-fleet's `nix-baseline`, not from `policy/globals.nix` (the former block there was dead): `https://cache.nixos.org/`, `https://nix-community.cachix.org`, `https://cache.numtide.com`, `https://cache.shrublab.xyz`
+- `trusted-substituters` additionally carries nix-fleet's default `ssh-ng://eu.nixbuild.net`, which nothing here consumes — `substituters` never includes it (D-082)
 
 Write path:
 
 - Only hosts push, post-deploy, via `modules/cache/cache-publisher/post-deploy.nix` (composed by the `cache-publisher` aspect; the activation-triggered `niks3-hook send` reuses the upstream `niks3-auto-upload` daemon/socket while the automatic Nix post-build-hook stays suppressed by the classified `nix.settings.post-build-hook = lib.mkForce ""`)
+- CI also pushes: the build job's builders and its coordinator publish what they realize through the same cache using short-lived GitHub OIDC credentials, a separate authorization path from the host-scoped tokens (D-082)
 - Pushers authenticate with host-scoped API tokens to the niks3 server (`http://127.0.0.1:5751` local, or `http://oci-melb-1:5751` over Tailscale)
 - Server signs NARs with its Ed25519 key (stored in `secrets/services/niks3.yaml`, only on `oci-melb-1`)
 - Consumers trust the public key from `policy/globals.nix`
@@ -348,8 +353,9 @@ Current model:
 - Approved gated public services are exposed through edge policy (Cloudflare Access where required) with private-origin upstream preference
 - `exposureMode` is declared on every route and is the single axis describing how it is exposed: `tailscale-upstream` (published; the edge dials the origin's tailnet-bound socket), `tailscale-serve` (published; the providing host renders the front the edge dials), `tailscale-only` (not published); `direct` stays reserved for an edge-local loopback upstream, unused today because every origin is an absolute tailnet FQDN
 - ntfy notification dispatch is public-route based: LA's ntfy listener binds loopback (`127.0.0.1:2586`), local LA publishers post over that loopback origin, and cross-host publishers (e.g. `oci-melb-1`) post to the Cloudflare-backed public `https://ntfy.shrublab.xyz` route; the notification daemon sets an explicit `User-Agent` on its ntfy HTTP requests so Cloudflare Browser Integrity Check does not block them, and its server URL derives from the policy catalog
-- Bifrost baseline mode is file-driven and host-local on `oci-melb-1`; `config_store`, UI-managed config mutation, and other runtime-mutated control-plane state are intentionally out of baseline scope
-- Repo-owned AI gateway aliases (`shrublab-text`, `shrublab-image`, `shrublab-embedding`, `shrublab-fallback`) sit behind one host-local OpenAI-compatible endpoint for downstream consumers such as Karakeep
+- Bifrost placement is policy, not one host: the `bifrost` aspect is selected on `oci-melb-1` and `home-forge`, which run identically configured replicas (one configuration document, the canonical port, independent application directory and service account); a consumer on either host dials that host's `services.bifrost.localEndpoint` rather than the canonical route (D-087)
+- Bifrost is file-driven: `source_of_truth` is `config.json` and the repo-owned `policy/bifrost-config.json` is installed before every start; the `config_store` (SQLite in the application directory) is enabled for governance routing and dashboard authentication, which is what keeps that admin surface authenticated (D-076)
+- Repo-owned AI gateway aliases (`shrublab-text`, `shrublab-image`, `voyage/voyage-4` for embeddings, `shrublab-fallback`) sit behind the host-local OpenAI-compatible endpoint of whichever gateway host a consumer runs on
 
 Recovery posture:
 
@@ -405,24 +411,21 @@ Fleet tooling posture:
 - keep `nixos-anywhere` for bootstrap and break-glass flows; use `deploy-rs` for regular host updates
 - GitHub Actions is the canonical hosted validation and deploy automation surface:
   - lightweight validation runs on PRs to `main` and pushes to non-`main`
-  - exact deploy-profile remote-build validation is reserved for manual `workflow_dispatch` runs
+  - the build plane is the fleet's own machines, declared once in nix-fleet: `build-account` is selected on every host and authorizes only the canonical CI coordinator key (`fleet.ci.sshPublicKey`). ssh-ng also requires the account name in `nix.settings.trusted-users`, an effectively root-level Nix privilege despite no sudo; the selected upstream aspect owns this binding, now pinned at `33dea5c5` (the fix itself landed at `44bf4f71`) and evaluated on all three hosts. Do not duplicate it locally; protect it with the coordinator key and existing SSH/Tailscale admission controls. Host activation remains pending.
+  - CI adopts nix-fleet's reusable `build-push-cache` workflow, pinned to the same commit as the flake input: one coordinator job builds the standard `.#checks` target with `systems` selecting both architectures and `builder_attr: ci`, publishing through the niks3 cache from the builders and from the coordinator
+  - the deploy surface is published as `checks.<system>.host-<host>` (with `packages.host-*` mirroring the same derivations unfiltered), so CI's target and the deploy profiles cannot drift
+  - host-side scheduling is deliberately off (`nix.buildMachines` is unpopulated): the fleet's machines receive CI's build jobs without dispatching builds to each other
+  - an empty `builder_attr` disables remote builders, leaving the coordinator to build locally: the local-only case for a fleet that has not provisioned its builders, and the reason builder coordinates never appear in the caller
+  - first-dispatch prerequisites: every builder host must have activated a generation carrying the `nixbuild` account, and the repository must hold the canonical coordinator key (`FLEET_BUILDER_SSH_KEY`, confirmed against the expected fingerprint out of band). The dispatch is main-only, and main-push publication stays off until one manual dispatch has produced an uncached build on each architecture
   - full deploys are manual-only via `workflow_dispatch`, with validation first and serial deploy order (`la-admin-1` before `oci-melb-1`)
   - CI joins the tailnet temporarily with `tailscale/github-action@v4` and reaches hosts over Tailscale-only addresses
-  - the top-level deploy workflow keeps shared validation and explicit ordering logic, while the reusable per-host deploy workflow owns host prebuild + deploy steps
-  - deploy workflow structure keeps shared nixbuild and per-host deploy logic in reusable GitHub Actions surfaces rather than duplicating job steps for each host
-  - deploy auth is intended to rely on Tailscale SSH policy for the `dev` user rather than a repository-stored CI deploy private key
+  - the deploy path never builds: `deploy-host.yml` verifies the exact profile it is about to activate is substitutable (`--option max-jobs 0 --option builders ""`) and then activates with `--remote-build`, so a cache miss fails loudly in CI instead of compiling on the host
+  - deploy auth relies on Tailscale SSH policy for the `dev` user rather than a repository-stored CI deploy private key, and the build coordinator key is never a deployment key
   - CI-specific SSH relaxations for deploy-rs are passed inline as workflow command options rather than through a generated SSH config file
-  - CI deploys also pass `deploy-rs --remote-build` inline so the target host becomes the realization point and fetches directly from configured substituters instead of using the GitHub runner as an extra store-path transfer hop
-- nixbuild.net is the CI build plane for mixed-architecture validation:
-  - GitHub Actions installs Nix with `nixbuild/nix-quick-install-action`
-  - GitHub Actions configures nixbuild with `nixbuild/nixbuild-action` using GitHub OIDC plus an attenuated `NIXBUILD_TOKEN`
-  - CI remote-builds host toplevels against `ssh-ng://eu.nixbuild.net` so `x86_64-linux` runners can validate both active host architectures without a custom runner fleet
-- Host-side Nix consumption remains substitute-only in phase 1:
-- hosts inherit one shared substitute/trust baseline through the `base` foundation aspect (`modules/flake/base/foundation.nix`)
-- current substitute defaults point at `nixbuild.net` over `ssh://eu.nixbuild.net`
-- host-side substitute/trust settings are policy-driven through `policy/globals.nix` and applied by the `base` foundation aspect rather than repeated in host files
-  - CI auth remains separate and uses GitHub OIDC plus `NIXBUILD_TOKEN`
-  - the account-specific nixbuild signing key is public but must still be populated explicitly in `policy/globals.nix` before substitute consumption is relied on
+  - there is no evaluation-only flake gate in CI: evaluating the flake realises degoog's bun2nix import-from-derivation (`runCommandLocal`, so unsubstitutable) and cannot pass on a cold runner — building `.#checks` is the same wiring gate with a builder available
+- Host-side Nix consumption remains substitute-only:
+  - hosts inherit one shared substitute/trust baseline through the `base` foundation aspect (`modules/flake/base/foundation.nix`), which is nix-fleet's `nix-baseline`; the catalog is upstream's and is not restated in `policy/globals.nix`
+  - `substituters` resolves to `https://cache.nixos.org/`, `https://nix-community.cachix.org`, `https://cache.numtide.com` and the fleet's own `https://cache.shrublab.xyz`, while `trusted-substituters` additionally carries nix-fleet's `ssh-ng://eu.nixbuild.net` default, which nothing here consumes
   - repo-local `deploy-rs` topology stays unchanged for operator workflows; the CI-only `--remote-build` override exists specifically to keep GitHub-hosted deploy runs off the store-path data plane where hosts already have direct substituter access
 - before any bootstrap/deploy operation, run `just _preflight <host>` to enforce access-safety invariants (`openssh` enabled, tcp/22 allowed, declarative `dev`/`root` SSH keys present)
 
@@ -433,6 +436,7 @@ Operator commands:
 - network-owner cutover: `nix run .#deploy-rs -- --skip-checks --boot .#la-admin-1`, then reboot from console
 - dry-activate: `just _activate oci-melb-1`
 - checks: `just checks all` (repo-owned validation checks: secret scope, ssh fingerprint, web policy/catalog, host-phase contracts, restore contracts)
+- local prebuild: `just prebuild-local <host>` (builds `.#host-<host>`, the addressable form of the deploy profile, and publishes its closure to the fleet cache so the host substitutes instead of compiling)
 - Cloudflare policy export sync: `just tofu-sync`
 - Cloudflare runtime render: `just tofu-runtime`
 - backups: `just backups run <host>`, `just backups status <host>`, `just backups logs <host>`, `just backups restore-stage <host> <snapshot> <path>`

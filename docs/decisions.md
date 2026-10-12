@@ -1443,3 +1443,40 @@ References:
 - `modules/flake/builder-access.nix`, `modules/hosts/*/default.nix`, `modules/flake/host-registry.nix`
 - nix-fleet `docs/contracts/hosts.md`, `docs/contracts/builders.md`
 - `docs/decisions.md` D-060 (generated flake and follows aliases), D-065 (the previous, now superseded, registry ownership)
+
+## D-067: The Bifrost gateway is product-named, host-networked, and pinned at v2.2.1
+
+**Status:** Accepted
+**Date:** 2026-09-22
+**Context:** `ai-gateway` was the only role-named placement aspect in a fleet of product-named
+ones, and its deployment still carried the BG-1 container decision behind a config and module
+shape that had drifted from the fleet's conventions (published port bypassing the firewall, an
+omitted `config_store` key papered over by a boot-time deletion, no dashboard auth). The upstream
+flake at its own latest release tag (v2.2.1, 2026-09-18) still fails to build its UI package
+(`npmDepsHash` mismatch against its own lockfile), pins nixpkgs `staging-next`, carries a Go 1.27
+overlay workaround, and patches a UI file the Vite migration deleted — the container boundary from
+BG-1 holds.
+
+**Decision:**
+
+- the aspect is renamed `bifrost` and moves to the `modules/ai/` domain (`modules/ai/bifrost.nix`
+  owner plus the `modules/ai/bifrost/service.nix` sibling contributor). The option namespace
+  (`services.bifrost-gateway` → `services.bifrost`), the secret file (`bifrost-gateway.yaml` →
+  `bifrost.yaml`), and the policy data (`globals.aiGateway` → `globals.bifrost`) follow the aspect
+  name; the unconsumed `globals.services.bifrost-gateway` defaults block is deleted
+- the image pin moves to v2.2.1 tag + digest; the v2.0.0 breaking changes are audited and none
+  apply (no custom plugins, no admin-API callers, no cost/observability integrations)
+- file-driven mode becomes real: `policy/bifrost-config.json` states `config_store.enabled = false`
+  and the render unit no longer deletes `config.db` on boot
+- the dashboard and management API require governance admin auth from the host secret file;
+  `disable_auth_on_inference` stays false
+- the container is host-networked with no published port (the hindsight/docs-mcp shape);
+  `oci-melb-1` admits its default podman bridge to port 7411 so the karakeep and paperless-gpt
+  containers keep reaching `host.containers.internal:7411`
+- the stale `crofai_api_key` secret key leaves the template and scope
+
+**Consequences:** the operator re-encrypts `secrets/services/bifrost.yaml` once (two admin keys
+in, one dead provider key out); the karakeep and paperless-gpt consumers change one option-path
+each; docs-mcp on home-forge is untouched; oci-melb-1's bridge firewall drops the stale `4533`
+openings (operator-confirmed unused; the navidrome catalog route points at home-forge); `5030` on
+`podman0` has no identifiable consumer and stays until the operator confirms it dead.

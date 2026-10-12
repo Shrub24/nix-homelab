@@ -7,6 +7,7 @@
 }:
 let
   hasHostSecrets = builtins.pathExists ../../../secrets/hosts/home-forge/system.yaml;
+  globals = import ../../../policy/globals.nix;
 
   # Host-owned physical music root; the music aspect derives the storage
   # library contract from it.
@@ -98,6 +99,23 @@ in
   };
 
   services.syncthing.openDefaultPorts = lib.mkForce true;
+
+  services.degoog = {
+    secretFiles.host = ../../../secrets/services/degoog.yaml;
+  };
+
+  services.hindsight = {
+    secretFiles.host = ../../../secrets/services/hindsight.yaml;
+    # Single model locus (retain + reflect). Router-side alias: add "hindsight"
+    # to omniroute's served models when it is deployed on this host.
+    llm.model = "hindsight";
+  };
+
+  services.docs-mcp = {
+    # Cross-host gateway origin: the web catalog deliberately exposes no
+    # origins, so the host states the physical endpoint explicitly.
+    embedding.baseUrl = "http://oci-melb-1.${globals.tailnet.suffix}:7411/v1";
+  };
 
   system.stateVersion = "25.11";
 }

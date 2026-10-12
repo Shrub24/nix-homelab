@@ -2,20 +2,27 @@
 
 ## Purpose
 
-Define the canonical ownership model and storage contracts for dependency source metadata — flake inputs, OCI image references, and non-flake package sources — so updates are predictable, reviewable, and tool-accountable.
+Define the canonical ownership model and storage contracts for dependency sources — flake inputs, OCI image references, and the locally owned package outputs the package-updates batch refreshes — so updates are predictable, reviewable, and tool-accountable.
 
 ## Requirements
 
 ### Requirement: Dependency ownership SHALL be explicit by source type
 
-The repository SHALL maintain one canonical ownership model for dependency updates: flake inputs and OCI image references are Renovate-managed, while non-flake package sources are nvfetcher-managed.
+The repository SHALL maintain one canonical ownership model for dependency updates: flake inputs and OCI image references are Renovate-managed, and locally owned `packages.<system>` outputs are updated through nix-fleet's published package-updates contract, backed by `nix-update` and its update-script path. The repository SHALL register exactly the package outputs it owns, and SHALL NOT run a second update engine for that class.
 
 #### Scenario: Operator audits dependency ownership
 
 - **WHEN** an operator reviews how a dependency class is updated
 - **THEN** the repository identifies Renovate as the canonical updater for flake inputs and OCI image references
-- **AND** the repository identifies nvfetcher as the canonical updater for non-flake package source metadata
+- **AND** the repository identifies the registered package batch as the canonical updater for locally owned package outputs
 - **AND** no dependency class is owned by both tools simultaneously
+
+#### Scenario: Locally owned package pins are refreshed
+
+- **WHEN** the registered package batch runs
+- **THEN** it updates only the packages declared in its registry
+- **AND** it updates through the importing repository's evaluated `nix-update`, using the update-script path
+- **AND** it writes no `flake.lock`
 
 ### Requirement: OCI image references SHALL be centralized and consumable
 
@@ -37,22 +44,18 @@ Canonical OCI image references SHALL include both an updateable tag component an
 - **THEN** the stored reference includes the image name, tag, and digest together
 - **AND** operators can review both the version movement and the immutable digest in the resulting change
 
-### Requirement: Non-flake package sources SHALL use committed generated metadata
+### Requirement: Package-update refreshes SHALL be reviewable
 
-Non-flake upstream package sources that require version/hash materialization for custom derivations SHALL be represented through nvfetcher-generated committed metadata.
+Scheduled refresh SHALL run the registered package batch, evaluate the refreshed tree, and present the result as one pull request. Refresh SHALL NOT be acceptance: the repository's validate gate is the acceptance decision, and the batch SHALL NOT write `flake.lock`, publish, or activate anything.
 
-#### Scenario: Custom derivation consumes upstream non-flake source
+#### Scenario: Scheduled refresh finds newer releases
 
-- **WHEN** a package derivation needs an upstream version and hash for a non-flake source
-- **THEN** the derivation reads that source metadata from committed nvfetcher-generated outputs
-- **AND** operators do not need to hand-edit version and hash pairs in multiple places
+- **WHEN** the scheduled refresh runs and the batch changes a package pin
+- **THEN** the repository opens or updates one pull request carrying the batch's report
+- **AND** the refreshed tree is evaluated before the pull request is opened
+- **AND** `flake.lock` is unchanged
 
-### Requirement: Generated source refreshes SHALL be reviewable
+#### Scenario: Scheduled refresh finds nothing
 
-The repository SHALL provide an automated workflow that refreshes nvfetcher-managed metadata on a schedule and proposes the resulting changes through a pull request.
-
-#### Scenario: Scheduled nvfetcher refresh finds updates
-
-- **WHEN** scheduled automation regenerates nvfetcher outputs and detects changes
-- **THEN** the automation creates or updates a pull request containing the generated metadata changes
-- **AND** the refresh does not push dependency updates directly to `main`
+- **WHEN** the batch changes no file
+- **THEN** the workflow reports the batch outcome and opens no pull request

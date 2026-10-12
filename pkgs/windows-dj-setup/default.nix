@@ -3,6 +3,10 @@
   stdenv,
   fetchurl,
   p7zip,
+  writeShellApplication,
+  python3,
+  cacert,
+  nix,
 }:
 let
   winfspSrc = fetchurl {
@@ -13,10 +17,25 @@ let
     url = "https://github.com/pal1000/mesa-dist-win/releases/download/26.2.0/mesa3d-26.2.0-release-msvc.7z";
     hash = "sha256-3LJxnvNG2rW2Cfyxk6XxPPxLBQLj9N4a1D00lHdAL0c=";
   };
+
+  updater = writeShellApplication {
+    name = "windows-dj-setup-update";
+    runtimeInputs = [
+      python3
+      cacert
+      nix
+    ];
+    text = ''
+      export SSL_CERT_FILE=${cacert}/etc/ssl/certs/ca-bundle.crt
+      exec python3 ${./update.py} "$@"
+    '';
+  };
 in
 stdenv.mkDerivation {
   pname = "windows-dj-setup";
-  version = "1.0";
+  # WinFsp carries the version: it is the primary pin and the pair's setup order,
+  # and its release is what `checkUpdate` reports. Mesa is refreshed with it.
+  version = "2.1.25156";
   dontUnpack = true;
   nativeBuildInputs = [ p7zip ];
 
@@ -39,6 +58,27 @@ stdenv.mkDerivation {
     Run once as Administrator:  powershell -ExecutionPolicy Bypass -File S:\setup.ps1
     EOF
   '';
+
+  passthru = {
+    # Cheap release check for `--check`: the newest stable WinFsp release,
+    # compared against `version`. Both pins live in one derivation, so the
+    # standard release discovery cannot apply — the updater is this package's.
+    checkUpdate = writeShellApplication {
+      name = "windows-dj-setup-check-update";
+      runtimeInputs = [
+        python3
+        cacert
+      ];
+      text = ''
+        export SSL_CERT_FILE=${cacert}/etc/ssl/certs/ca-bundle.crt
+        exec python3 ${./update.py} --check
+      '';
+    };
+
+    # Run by the batch through nix-update's update-script path. It refreshes both
+    # coupled pins and writes only pkgs/windows-dj-setup/.
+    updateScript = lib.getExe updater;
+  };
 
   meta = {
     description = "Windows DJ setup media — WinFsp, Mesa fallback, and setup script for Engine DJ VM";

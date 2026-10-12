@@ -1,32 +1,42 @@
 # nixbuild-build-plane Specification
 
 ## Purpose
-Defines nixbuild.net as the canonical CI remote build plane and shared substituter contract for fleet hosts and documented local consumers.
+Defines the fleet's CI build plane and the shared substituter contract for fleet hosts and documented local consumers: repository CI builds through the fleet's own builders, reached by nix-fleet's reusable workflow and its rendered builder profile, routine validation builds no fleet output, and hosts substitute from nix-fleet's shared baseline plus the fleet's own sovereign cache. (The capability keeps its historical file name.)
 
 ## Requirements
 
-### Requirement: CI builds SHALL use nixbuild.net as the primary remote build plane
-Repository CI workflows SHALL execute build-heavy Nix validation through `nixbuild.net` rather than depending on GitHub-hosted multi-architecture runners.
+### Requirement: CI builds SHALL use the fleet's own builders
+
+Repository CI SHALL build through the fleet's own builders, reached by nix-fleet's reusable build-push-cache workflow and its rendered `ci` builder profile, rather than through a third-party build service or a GitHub-hosted multi-architecture runner matrix. Routine push and pull-request validation SHALL evaluate rather than build fleet outputs; building checks SHALL run only from the separate, manually dispatched build path, which is registered on `main` alone.
 
 #### Scenario: Pull request validation runs
+
 - **WHEN** a pull request targeting `main` triggers CI
-- **THEN** Nix validation workflows use `nixbuild.net` as the configured remote build plane
-- **AND** CI does not require a dedicated multi-architecture runner matrix to build host outputs
+- **THEN** validation runs the repository's formatting and evaluation gates
+- **AND** it builds no fleet output
+- **AND** the fleet build is reachable only through the separate manual dispatch
+
+#### Scenario: The build path is dispatched
+
+- **WHEN** an operator dispatches the fleet build on `main`
+- **THEN** the run reaches the fleet's builders through the rendered `ci` profile, with no builder coordinates in the workflow
 
 ### Requirement: Shared substituter contract SHALL be available for active hosts
-Active hosts SHALL support a common substituter/trust baseline that prioritizes `nixbuild.net` as the first substituter and the sovereign S3-backed binary cache as the durable secondary tier, with `cache.nixos.org` as the upstream fallback.
+
+Active hosts SHALL support a common substituter baseline derived from nix-fleet's shared baseline: `cache.nixos.org` for upstream packages, the community caches, and the fleet's own sovereign niks3 cache where CI and hosts publish. nix-fleet's default `ssh-ng://eu.nixbuild.net` entry MAY remain in `trusted-substituters` but SHALL NOT appear in `substituters`, because nothing in this fleet consumes it.
 
 #### Scenario: Host build configuration is evaluated
-- **WHEN** `nixosConfigurations.la-admin-1` and `nixosConfigurations.oci-melb-1` are evaluated
-- **THEN** both include `ssh://eu.nixbuild.net` as the first substituter
-- **AND** both include the sovereign S3 cache as the second substituter
-- **AND** both include `https://cache.nixos.org` as the upstream fallback
-- **AND** host composition remains module-driven rather than ad hoc host-inline Nix settings
+
+- **WHEN** a fleet host's configuration is evaluated
+- **THEN** its `substituters` resolves to the nix-fleet baseline: `cache.nixos.org`, the community caches, and the fleet's own sovereign cache
+- **AND** nix-fleet's `ssh-ng://eu.nixbuild.net` default, if present at all, appears only in `trusted-substituters`
+- **AND** host composition remains module-driven rather than host-inline
 
 #### Scenario: Sovereign cache is unavailable
-- **WHEN** the sovereign S3 cache is unreachable during Nix evaluation or build
+
+- **WHEN** the sovereign cache is unreachable during Nix evaluation or build
 - **THEN** Nix falls through to `cache.nixos.org` as the next configured substituter
-- **AND** host evaluation does not fail solely due to sovereign cache unavailability
+- **AND** host evaluation does not fail solely because the sovereign cache is unavailable
 
 ### Requirement: Host-side build mode SHALL remain substituter-only in phase 1
 Phase-1 host participation in `nixbuild.net` SHALL be limited to substitute consumption and SHALL NOT require host-side remote build offload.

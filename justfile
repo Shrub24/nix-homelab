@@ -93,7 +93,6 @@ mod ops '.just/ops.just'
 mod checks '.just/checks.just'
 mod backups '.just/backups.just'
 mod host-age '.just/host-age.just'
-mod deps '.just/deps.just'
 mod dev '.just/dev.just'
 
 # Domain-colocated modules

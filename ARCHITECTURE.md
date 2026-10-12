@@ -115,7 +115,7 @@ The former `modules/core/` and `modules/profiles/` directories were deleted in d
 
 - Purpose: GitHub Actions automation for validation and deployment
 - Location: `.github/workflows/`
-- Contains: `ci.yml` (a builder-free validate job plus one build job that calls nix-fleet's reusable `build-push-cache` workflow on `.#checks`), `deploy.yml` (manual full deploy pipeline with serial ordering), `deploy-host.yml` (reusable host deploy: verifies the profile is substitutable, then activates)
+- Contains: `ci.yml` (validation only: formatting, the repository's contract tests and the generated `flake.nix` freshness comparator; callable, so the build workflow reuses it), `fleet-build.yml` (the fleet build plane: hand-dispatched on `main`, validation first, calling nix-fleet's reusable `build-push-cache` workflow on `.#checks`), `package-updates-refresh.yml` (weekly refresh of the registered package pins, evaluated, opening one pull request), `deploy.yml` (manual full deploy pipeline with serial ordering), `deploy-host.yml` (reusable host deploy: verifies the profile is substitutable, then activates)
 - Depends on: nix-fleet's builder contract (build-account, the `ci` profile and its reusable workflow), the fleet niks3 cache, Tailscale GitHub Action for tailnet access
 - Used by: Repository automation
 
@@ -353,7 +353,7 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 
 **Secrets:** All secrets encrypted with `sops` + `age`. Decrypted at activation time by `sops-nix`. Path-scoped `.sops.yaml` rules enforce blast-radius boundaries. No plaintext secrets in git.
 
-**CI/CD:** GitHub Actions is the hosted surface; the build plane is the fleet's own machines — one coordinator job calls nix-fleet's `build-push-cache` workflow to build `.#checks` for both architectures on the fleet's builders, publishing to the niks3 cache. Tailscale `tailscale/github-action@v4` for tailnet access. Serial deploy ordering: `la-admin-1` → `oci-melb-1`, each host verifying its profile is substitutable before activating (D-082).
+**CI/CD:** GitHub Actions is the hosted surface; the build plane is the fleet's own machines — the hand-dispatched `fleet-build` workflow calls nix-fleet's `build-push-cache` workflow to build `.#checks` for both architectures on the fleet's builders, publishing to the niks3 cache, while routine validation in `ci.yml` builds no fleet output. Tailscale `tailscale/github-action@v4` for tailnet access. Serial deploy ordering: `la-admin-1` → `oci-melb-1`, each host verifying its profile is substitutable before activating (D-082).
 
 **Identity:** Kanidm-based OIDC provides single-sign-on for admin services. Kanidm is self-hosted on `la-admin-1`. OIDC client configurations are generated from `policy/identity.json`. Host-level SSH auth integrates with Kanidm groups.
 

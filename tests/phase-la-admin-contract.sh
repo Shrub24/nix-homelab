@@ -32,7 +32,7 @@ fi
 # publisher must appear in the plain-text template's `auth-users` and
 # `auth-tokens` sections, while extra users (the administrator) are allowed.
 # The template is ciphertext-free source, so this check needs no decryption.
-TEMPLATE="secrets/.templates/services/ntfy.yaml"
+TEMPLATE="secrets/.templates/services/ntfy.yaml.j2"
 TEMPLATE_USERS=$(awk -F'"' '/^auth-users:|^auth_users:/{u=1; next} /^auth-tokens:|^auth_tokens:/{u=0} u && /^  - "/{split($2, f, ":"); print f[1]}' "$TEMPLATE")
 TEMPLATE_TOKENS=$(awk -F'"' '/^auth-tokens:|^auth_tokens:/{t=1; next} t && /^  - "/{split($2, f, ":"); print f[1]}' "$TEMPLATE")
 if grep -qE '^auth-access:|^auth_access:' "$TEMPLATE"; then
@@ -88,7 +88,7 @@ if awk -F'"' '
 ' "$TEMPLATE"; then
   :
 else
-  echo "la-admin-1: ntfy template auth-users entries must use username:<bcrypt-hash>:role (see secrets/.templates/services/ntfy.yaml)" >&2
+  echo "la-admin-1: ntfy template auth-users entries must use username:<bcrypt-hash>:role (see secrets/.templates/services/ntfy.yaml.j2)" >&2
   exit 1
 fi
 

@@ -144,12 +144,11 @@ if errs:
     sys.exit(1)
 PYEOF
 
-# A host whose consumers all authenticate over the Unix socket has nothing to
-# apply, so it must not grow an idle provisioning unit.
-provision_oci="$(ne --raw --apply 'c: builtins.toJSON (c.systemd.services ? postgresql-provision)' 'path:.#nixosConfigurations.oci-melb-1.config')" ||
-  fail "postgres provisioning probe does not evaluate on oci-melb-1"
-[ "$provision_oci" = "false" ] ||
-  fail "oci-melb-1 registers only peer consumers, so no provisioning unit is needed"
+# Whether oci-melb-1 grows the provisioning unit depends on whether its host
+# secret files are present — the credentialled consumers declare their
+# credential sources, and the module renders the unit from them. That makes its
+# mere presence a state, not a contract; the credentialled case is asserted
+# above, on home-forge.
 registry_keys="$(ne --raw --apply 'c: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames c))' 'path:.#nixosConfigurations')"
 if [ "$registry_keys" != '["home-forge","la-admin-1","oci-melb-1"]' ]; then
   fail "nixosConfigurations keys drifted: $registry_keys"
@@ -2008,7 +2007,7 @@ PYEOF
 }
 
 placement_json="$(probe_placement "$ROOT" oci-melb-1)" || fail "7n-2: oci-melb-1 placement probe does not evaluate"
-assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["paperless"],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheAspect":true,"niks3ServerEnable":true,"langfuseEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
+assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["langfuse","paperless"],"bifrostEnable":true,"karakeepEnable":true,"niks3CacheAspect":true,"niks3ServerEnable":true,"langfuseEnable":true,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" la-admin-1)" || fail "7n-2: la-admin-1 placement probe does not evaluate"
 assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":false,"omnirouteEnable":false,"omnirouteMonitor":false}'
 placement_json="$(probe_placement "$ROOT" home-forge)" || fail "7n-2: home-forge placement probe does not evaluate"
@@ -2016,7 +2015,7 @@ la_absence="$(ne --raw --apply 'c: builtins.toJSON { cockpit = !(c.services.admi
   fail "7n-2: LA absence probe does not evaluate"
 [ "$la_absence" = '{"adminSsh":true,"cockpit":true,"termix":true}' ] ||
   fail "7n-2: demoted capabilities must leave no namespace or secret registration on la-admin-1: $la_absence"
-assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse"],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
+assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse","hindsight"],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":false,"omnirouteEnable":true,"omnirouteMonitor":true}'
 
 # 7n-3. Semantic throwaway mutations (tasks 6.2/6.3). Each fails for its
 # intended semantic reason rather than a generic parse error, and the working

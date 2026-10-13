@@ -33,6 +33,14 @@
 
   hindsight = "ghcr.io/vectorize-io/hindsight:0.10.0-slim@sha256:f6ce417777a2034a71e25df0093b28092f689a4f991eca4e2954c8b6aec2fad1";
 
+  tududi = "docker.io/chrisvel/tududi:1.9.1@sha256:e3496f2d68c6cfb69e85bd779ae30da2f3e81b78a8b0e7595e6dc97ef9cb71ef";
+
+  # Multi-arch manifest index, including the OCI host's aarch64-linux platform.
+  homarr = "ghcr.io/homarr-labs/homarr:v2.5.2@sha256:025471efe0735b6bb89953ea4e141c984a171c1781bc8ca404163d3c26d0e26d";
+
+  # Multi-arch index digest: the arm64 manifest is selected on oci-melb-1.
+  inboxZero = "ghcr.io/elie222/inbox-zero:2.30.0@sha256:e9970c499a79b8a15bbab21363d1b87ea247c75b2721f036c7cee0e2c78d1fcc";
+
   # Latitude ships one release tag across all six application images, so the
   # versions move together; digests are the multi-arch index digests, which is
   # what keeps the pins valid on both aarch64 and x86_64 hosts.

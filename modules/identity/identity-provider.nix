@@ -54,6 +54,11 @@ _: {
                 termix = ../../secrets/hosts/la-admin-1/oidc.yaml;
                 karakeep = ../../secrets/hosts/oci-melb-1/oidc.yaml;
                 paperless = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+                actual = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+                memos = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+                tududi = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+                geopulse = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+                homarr = ../../secrets/hosts/oci-melb-1/oidc.yaml;
                 langfuse = ../../secrets/hosts/home-forge/oidc.yaml;
                 grafana = ../../secrets/hosts/home-forge/oidc.yaml;
                 cloudflare-access = ../../secrets/opentofu/oidc.yaml;

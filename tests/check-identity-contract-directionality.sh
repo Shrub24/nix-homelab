@@ -25,6 +25,9 @@ json="$(ne 'c: builtins.toJSON {
   kanidmAppUrl = c.services.identity.kanidm.appUrl;
   providerUrl = c.services.identity.oidc.providerUrl;
   urlAligned = c.services.identity.oidc.providerUrl == c.services.identity.kanidm.appUrl;
+  homarrRedirectUris = c.services.kanidm.provision.systems.oauth2.homarr.originUrl;
+  homarrEndpointHost = c.repo.web.catalog.homarr.endpoint.host;
+  homarrEndpointPort = c.repo.web.catalog.homarr.endpoint.port;
   adminKanidmAbsent = !(c.services.admin ? kanidm);
   oauth2ClientSecrets = builtins.sort builtins.lessThan (builtins.filter (n: builtins.match "kanidm_oauth2.*" n != null) (builtins.attrNames c.sops.secrets));
   # Cockpit and Termix are demoted (2026-09-21): their aspects stay in the
@@ -47,17 +50,26 @@ expected = {
     "kanidmAppUrl": "https://id.shrublab.xyz",
     "providerUrl": "https://id.shrublab.xyz",
     "urlAligned": True,
+    "homarrRedirectUris": [
+        "https://home.shrublab.xyz/api/auth/callback/oidc",
+        f"https://{got['homarrEndpointHost']}:{got['homarrEndpointPort']}/api/auth/callback/oidc",
+    ],
     "adminKanidmAbsent": True,
     "oauth2ClientSecrets": [
+        "kanidm_oauth2_actual_basic_secret",
         "kanidm_oauth2_beszel_basic_secret",
         "kanidm_oauth2_cloudflare-access_basic_secret",
+        "kanidm_oauth2_geopulse_basic_secret",
         "kanidm_oauth2_grafana_basic_secret",
+        "kanidm_oauth2_homarr_basic_secret",
         "kanidm_oauth2_karakeep_basic_secret",
         "kanidm_oauth2_langfuse_basic_secret",
+        "kanidm_oauth2_memos_basic_secret",
         "kanidm_oauth2_paperless_basic_secret",
         # The Termix client stays provisioned while its aspect is deselected:
         # re-selecting the aspect must not require a policy or secret edit.
         "kanidm_oauth2_termix_basic_secret",
+        "kanidm_oauth2_tududi_basic_secret",
     ],
     "cockpitNamespaceAbsent": True,
     "termixNamespaceAbsent": True,
@@ -68,6 +80,10 @@ expected = {
     "webhookServiceEnable": True,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
+if not got["homarrEndpointHost"].startswith("oci-melb-1."):
+    errs.append(f"Homarr private callback host is not the OCI tailnet name: {got['homarrEndpointHost']!r}")
+if got["homarrEndpointPort"] != 7575:
+    errs.append(f"Homarr private callback port is not 7575: {got['homarrEndpointPort']!r}")
 if errs:
     print("; ".join(errs), file=sys.stderr)
     sys.exit(1)
@@ -151,9 +167,8 @@ expected = {
     "homepageLeafAbsent": True,
     "webhookServiceEnable": False,
     "webhookLeafAbsent": True,
-    # Seven provider-owned client secrets: beszel, cloudflare-access, grafana,
-    # karakeep, langfuse, paperless, termix (Quantum retired 2026-09-21).
-    "oauth2SecretCount": 7,
+    # Twelve provider-owned client secrets, including Homarr.
+    "oauth2SecretCount": 12,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
 if errs:
@@ -966,9 +981,9 @@ expected = {
     "kanidmProvisionEnable": True,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
-if got.get("provisionClientKeys") != ["beszel", "cloudflare-access", "grafana", "karakeep", "langfuse", "paperless", "termix"]:
+if got.get("provisionClientKeys") != ["actual", "beszel", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"]:
     errs.append(f"provisionClientKeys: got {got.get('provisionClientKeys')!r}")
-if got.get("oauth2SecretSourceKeys") != ["beszel", "cloudflare-access", "grafana", "karakeep", "langfuse", "paperless", "termix"]:
+if got.get("oauth2SecretSourceKeys") != ["actual", "beszel", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"]:
     errs.append(f"oauth2SecretSourceKeys: got {got.get('oauth2SecretSourceKeys')!r}")
 if errs:
     print("; ".join(errs), file=sys.stderr)
@@ -1056,7 +1071,7 @@ expected = {
     "kanidmProvisionEnable": False,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
-if got.get("clientKeys") != ["beszel", "cloudflare-access", "grafana", "karakeep", "langfuse", "paperless", "termix"]:
+if got.get("clientKeys") != ["actual", "beszel", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"]:
     errs.append(f"clientKeys: got {got.get('clientKeys')!r}")
 beszel = got.get("beszel") or {}
 for field, want in {
@@ -1073,5 +1088,195 @@ if errs:
     print("; ".join(errs), file=sys.stderr)
     sys.exit(1)
 PYEOF
+
+# 16. GeoPulse client policy (add-geopulse task 3.1). The canonical client is
+# users-only, keeps PKCE enforced because the backend patch implements it, and
+# carries the legacy RSA algorithm the backend's RS256-only verifier requires.
+# Its callback is the documented public origin: the web-policy route for GeoPulse
+# is still private, so the policy carries the callback directly until the
+# exposure task publishes the route's public identity and the route-derived form
+# replaces it. The two controls mutate the policy in a copy and require this
+# expectation to fail on the rendered values, so neither the PKCE switch nor the
+# scope map can drift unnoticed.
+geopulse_policy_check() { # $1 observables JSON; nonzero when the client policy drifts
+  python3 - "$1" <<'PYEOF'
+import json
+import sys
+
+got = json.loads(sys.argv[1])
+provision = got.get("geopulseProvision") or {}
+errs = []
+
+if provision.get("displayName") != "GeoPulse":
+    errs.append(f"displayName: {provision.get('displayName')!r}")
+if provision.get("originUrl") != "https://geopulse.shrublab.xyz/oidc/callback":
+    errs.append(f"originUrl: {provision.get('originUrl')!r}")
+if provision.get("enableLegacyCrypto") is not True:
+    errs.append(f"enableLegacyCrypto: {provision.get('enableLegacyCrypto')!r}")
+if provision.get("allowInsecureClientDisablePkce") is not False:
+    errs.append(f"allowInsecureClientDisablePkce: {provision.get('allowInsecureClientDisablePkce')!r}")
+if provision.get("public") is not False:
+    errs.append(f"public: {provision.get('public')!r}")
+if provision.get("scopeMaps") != {"users": ["openid", "profile", "email"]}:
+    errs.append(f"scopeMaps: {provision.get('scopeMaps')!r}")
+for field in ("supplementaryScopeMaps", "claimMaps"):
+    if provision.get(field) not in (None, {}):
+        errs.append(f"{field}: {provision.get(field)!r}")
+if got.get("secretPath") != "/run/secrets/kanidm.oauth2.geopulse.basic_secret":
+    errs.append(f"secretPath: {got.get('secretPath')!r}")
+if got.get("secretKey") != "geopulse/client_secret":
+    errs.append(f"secretKey: {got.get('secretKey')!r} (the operator fills this key in the host OIDC file)")
+# The callback is the route's published identity plus the declared path, so the
+# provider policy tracks a placement or subdomain change instead of a literal.
+if got.get("routePublicUrl") != "https://geopulse.shrublab.xyz":
+    errs.append(f"routePublicUrl: {got.get('routePublicUrl')!r}")
+if got.get("derivedFromRoute") is not True:
+    errs.append("the rendered callback is not the route's public URL plus /oidc/callback")
+
+clients = got.get("clients") or {}
+for field, want in {
+    "clientId": "geopulse",
+    "issuerUrl": "https://id.shrublab.xyz/oauth2/openid/geopulse",
+    "wellknownUrl": "https://id.shrublab.xyz/oauth2/openid/geopulse/.well-known/openid-configuration",
+    "authorizationUrl": "https://id.shrublab.xyz/ui/oauth2",
+    "tokenUrl": "https://id.shrublab.xyz/oauth2/token",
+    "userinfoUrl": "https://id.shrublab.xyz/oauth2/openid/geopulse/userinfo",
+}.items():
+    if clients.get(field) != want:
+        errs.append(f"clients.{field}: {clients.get(field)!r} want {want!r}")
+
+if errs:
+    print("; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+}
+
+geopulse_probe() { # $1 installable
+  nix eval --no-write-lock-file --raw --apply 'c: builtins.toJSON {
+    geopulseProvision = builtins.intersectAttrs {
+      displayName = 1;
+      originUrl = 1;
+      public = 1;
+      allowInsecureClientDisablePkce = 1;
+      enableLegacyCrypto = 1;
+      scopeMaps = 1;
+      supplementaryScopeMaps = 1;
+      claimMaps = 1;
+    } c.services.kanidm.provision.systems.oauth2.geopulse;
+    clients = builtins.intersectAttrs {
+      clientId = 1;
+      issuerUrl = 1;
+      wellknownUrl = 1;
+      authorizationUrl = 1;
+      tokenUrl = 1;
+      userinfoUrl = 1;
+    } c.services.identity.oidc.clients.geopulse;
+    secretPath = c.sops.secrets."kanidm_oauth2_geopulse_basic_secret".path;
+    secretKey = c.sops.secrets."kanidm_oauth2_geopulse_basic_secret".key;
+    routePublicUrl = c.repo.web.catalog.geopulse.publicUrl;
+    derivedFromRoute = c.services.kanidm.provision.systems.oauth2.geopulse.originUrl == "${c.repo.web.catalog.geopulse.publicUrl}/oidc/callback";
+  }' "$1"
+}
+
+gp_real="$(geopulse_probe "path:.#nixosConfigurations.la-admin-1.config")" ||
+  fail "the GeoPulse client policy probe does not evaluate"
+geopulse_policy_check "$gp_real" || fail "the canonical GeoPulse OIDC client policy drifted"
+
+# The policy has to declare the route-derived form: a literal that happens to
+# agree would still be a second source of truth for the callback.
+python3 - "$ROOT/policy/identity.json" <<'PYEOF' || fail "the geopulse client must derive its callback from the published route"
+import json
+import sys
+
+client = json.load(open(sys.argv[1]))["systems"]["oauth2"]["geopulse"]
+errs = [
+    f"{key}: {client.get(key)!r} want {value!r}"
+    for key, value in {"routeKey": "geopulse", "callbackPath": "/oidc/callback"}.items()
+    if client.get(key) != value
+]
+if "originUrl" in client:
+    errs.append(f"an originUrl literal is back: {client['originUrl']!r}")
+if errs:
+    print("; ".join(errs), file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+D5="$(mktemp -d /tmp/identity-geopulse.XXXXXX)"
+trap 'rm -rf "$D" "$D2" "$D3" "$D4" "$D5"' EXIT
+tar -C "$ROOT" \
+  --exclude=.git --exclude=.jj --exclude=./opentofu --exclude=./opentofu/* \
+  --exclude=.hp-forge-esp-backup --exclude=.qmd --exclude=.direnv \
+  --exclude=.cortexkit --exclude=.tmp --exclude=.pi --exclude=.firecrawl \
+  --exclude=.ruff_cache \
+  -cf - . | tar -C "$D5" -xf -
+
+python3 - "$D5" <<'PYEOF' > /dev/null || fail "GeoPulse PKCE control mutation script failed"
+import json
+import sys
+
+p = sys.argv[1] + "/policy/identity.json"
+d = json.load(open(p))
+client = d["systems"]["oauth2"]["geopulse"]
+assert client["enable"] is True, "geopulse policy anchor drifted"
+assert "allowInsecureClientDisablePkce" not in client, "geopulse must not disable PKCE in canonical policy"
+client["allowInsecureClientDisablePkce"] = True
+json.dump(d, open(p, "w"), indent=2)
+PYEOF
+set +e
+pkce_out="$(geopulse_policy_check "$(geopulse_probe "path:${D5}#nixosConfigurations.la-admin-1.config")" 2>&1)"
+pkce_rc=$?
+set -e
+[ "$pkce_rc" -ne 0 ] ||
+  fail "PKCE control: disabling PKCE enforcement in policy must fail the GeoPulse client expectation"
+case "$pkce_out" in
+  *allowInsecureClientDisablePkce*) ;;
+  *) fail "PKCE control: expected the PKCE failure, got: $(printf '%s' "$pkce_out" | tail -2)" ;;
+esac
+
+python3 - "$D5" <<'PYEOF' > /dev/null || fail "GeoPulse scope control mutation script failed"
+import json
+import sys
+
+p = sys.argv[1] + "/policy/identity.json"
+d = json.load(open(p))
+client = d["systems"]["oauth2"]["geopulse"]
+assert client.pop("allowInsecureClientDisablePkce") is True, "PKCE control anchor drifted"
+client["scopeMaps"]["admins"] = ["openid", "profile", "email"]
+json.dump(d, open(p, "w"), indent=2)
+PYEOF
+set +e
+scope_out="$(geopulse_policy_check "$(geopulse_probe "path:${D5}#nixosConfigurations.la-admin-1.config")" 2>&1)"
+scope_rc=$?
+set -e
+[ "$scope_rc" -ne 0 ] ||
+  fail "scope control: widening the client scope map must fail the GeoPulse client expectation"
+case "$scope_out" in
+  *scopeMaps*) ;;
+  *) fail "scope control: expected the scope-map failure, got: $(printf '%s' "$scope_out" | tail -2)" ;;
+esac
+
+# The rendered callback follows the policy's callback path, which is what makes the
+# derivation real rather than a literal that happens to match.
+python3 - "$D5" <<'PYEOF' > /dev/null || fail "GeoPulse callback-path control mutation script failed"
+import json
+import sys
+
+p = sys.argv[1] + "/policy/identity.json"
+d = json.load(open(p))
+client = d["systems"]["oauth2"]["geopulse"]
+client["scopeMaps"] = {"users": ["openid", "profile", "email"]}
+client["callbackPath"] = "/oidc/other"
+json.dump(d, open(p, "w"), indent=2)
+PYEOF
+set +e
+callback_out="$(geopulse_policy_check "$(geopulse_probe "path:${D5}#nixosConfigurations.la-admin-1.config")" 2>&1)"
+callback_rc=$?
+set -e
+[ "$callback_rc" -ne 0 ] ||
+  fail "callback control: a callback path that disagrees with the route identity must fail the client expectation"
+case "$callback_out" in
+  *"route's public URL plus /oidc/callback"*) ;;
+  *) fail "callback control: expected the derived-callback failure, got: $(printf '%s' "$callback_out" | tail -2)" ;;
+esac
 
 echo "check-identity-contract-directionality: PASS"

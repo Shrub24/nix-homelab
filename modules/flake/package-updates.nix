@@ -6,13 +6,19 @@
 #   nix run .#update             interactive picker over flake inputs and package updates
 #   nix run .#update-packages    batch, or the named packages; -- --check is the cheap release check
 #
-# `windows-dj-setup` is the only package this repository owns. Every other
-# `packages.<system>` entry is derived from an input (deploy-rs, niks3,
-# sops-bootstrap, bifrost, bifrost-voyage-plugin), a deploy profile (host-*), or
-# nix-fleet's own CI helper, so none of them is a second writer.
+# `windows-dj-setup` and `geopulse` are the packages this repository owns.
+# GeoPulse's backend and frontend build from one upstream pin, so the batch
+# dispatches `geopulse` to its own coupled updater (pkgs/geopulse/update.py) and
+# the two halves stay derived outputs. Every other `packages.<system>` entry is
+# derived from an input (deploy-rs, niks3, sops-bootstrap, bifrost,
+# bifrost-voyage-plugin), a deploy profile (host-*), or nix-fleet's own CI
+# helper, so none of them is a second writer.
 { inputs, ... }:
 {
   imports = [ inputs.nix-fleet.flakeModules.packageUpdates ];
 
-  perSystem.packageUpdates.packages = [ "windows-dj-setup" ];
+  perSystem.packageUpdates.packages = [
+    "geopulse"
+    "windows-dj-setup"
+  ];
 }

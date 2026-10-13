@@ -326,6 +326,131 @@ in
           health.path = "/";
         };
 
+        # Published household apps with their own OIDC login. Actual and Memos
+        # bind loopback on this host, so the edge dials them locally (`direct`).
+        # tududi's container publishes its port to loopback only, which keeps the
+        # same edge-local socket. Their clients cannot carry an Access session.
+        actual = {
+          subdomain = "budget";
+          origin = {
+            scheme = "http";
+            provider = "oci-melb-1";
+            port = 5006;
+          };
+          exposureMode = "direct";
+          category = "app";
+          access.oidc.enabled = true;
+          access.requireCloudflareAccess = false;
+        };
+
+        memos = {
+          subdomain = "memos";
+          origin = {
+            scheme = "http";
+            provider = "oci-melb-1";
+            port = 5230;
+          };
+          exposureMode = "direct";
+          category = "app";
+          access.oidc.enabled = true;
+          access.requireCloudflareAccess = false;
+        };
+
+        tududi = {
+          subdomain = "tududi";
+          origin = {
+            scheme = "http";
+            provider = "oci-melb-1";
+            port = 3002;
+          };
+          exposureMode = "direct";
+          category = "app";
+          access.oidc.enabled = true;
+          access.requireCloudflareAccess = false;
+        };
+
+        # Keep the OIDC-protected route private through Tailscale Serve until
+        # Homarr has been bootstrapped and its public edge route is released.
+        homarr = {
+          subdomain = "home";
+          origin = {
+            scheme = "http";
+            provider = "oci-melb-1";
+            port = 7575;
+          };
+          exposureMode = "tailscale-serve";
+          category = "app";
+          access.oidc.enabled = true;
+          access.requireCloudflareAccess = false;
+          publicReady = false;
+        };
+
+        # Google sign-in gates the app itself; the webhook must stay public, so
+        # neither Access nor application OIDC sits in front of it.
+        inbox-zero = {
+          subdomain = "inbox";
+          origin = {
+            scheme = "http";
+            provider = "oci-melb-1";
+            port = 3004;
+          };
+          exposureMode = "direct";
+          category = "app";
+          access.oidc.enabled = false;
+          access.requireCloudflareAccess = false;
+        };
+
+        # GeoPulse's private front-end listener. The aspect reads this declaration
+        # for the port its own listener binds, so the socket and the route cannot
+        # drift; the public identity (subdomain, exposure, the bootstrap gate) is
+        # the later identity task, and until then the route carries no public URL
+        # and therefore no edge route, dashboard tile or uptime check.
+        # Public identity from the start, but not yet published: the OIDC callback
+        # derives from this origin while the edge withholds the route, so no
+        # Access-free site answers before the private bootstrap is done. Publishing
+        # it is this `publicReady` flag and nothing else. Access stays off because
+        # device ingest cannot present an interactive Access session and the
+        # application authenticates its own callers.
+        geopulse = {
+          subdomain = "geopulse";
+          origin = {
+            scheme = "http";
+            provider = "oci-melb-1";
+            port = 8085;
+          };
+          exposureMode = "direct";
+          declarePublic = true;
+          publicReady = false;
+          category = "app";
+          access.oidc.enabled = true;
+          access.requireCloudflareAccess = false;
+          health.path = "/";
+          # GP-5: surfaces GeoPulse leaves unauthenticated that this deployment does
+          # not need. Each entry is the permit-list pattern for its own path, so the
+          # authenticated management APIs beside them keep working. Device ingest
+          # (`/api/owntracks`, `/api/gpslogger`) and `/api/geocoding/*` stay open:
+          # the first is the acceptance path and the SPA has geocoding features.
+          deniedPaths = [
+            "/api/prometheus/metrics" # operational metrics
+            "/api/health" # diagnostics
+            "/api/maintenance/status" # diagnostics
+            "/api/version" # version diagnostics
+            "/api/version/status" # version diagnostics
+            "/api/home/content" # unauthenticated home copy
+            "/api/shared/*" # public share links (a non-goal)
+            "/api/overland" # unused ingest sources
+            "/api/traccar"
+            "/api/colota"
+            "/api/homeassistant"
+            "/api/homeassistant/*"
+            "/api/dawarich/*"
+            "/api/ai" # AI is a non-goal; closed publicly
+            "/api/ai/*"
+            "/mcp" # MCP tool surface
+            "/mcp/*"
+          ];
+        };
+
         webhook-admin = {
           subdomain = "webhook";
           origin = {

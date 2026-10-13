@@ -77,6 +77,26 @@ creation_rules:
       - age:
           - *owner_age
           - *oci_melb_1_age
+  - path_regex: ^secrets/services/tududi\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
+  - path_regex: ^secrets/services/inbox-zero\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
+  - path_regex: ^secrets/services/geopulse\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
+  - path_regex: ^secrets/services/homarr\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
   - path_regex: ^secrets/services/bifrost\.ya?ml$
     key_groups:
       - age:

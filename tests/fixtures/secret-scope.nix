@@ -34,6 +34,10 @@
     "home-forge"
   ];
   "services/omniroute" = [ "home-forge" ];
+  "services/tududi" = [ "oci-melb-1" ];
+  "services/geopulse" = [ "oci-melb-1" ];
+  "services/homarr" = [ "oci-melb-1" ];
+  "services/inbox-zero" = [ "oci-melb-1" ];
   "services/ntfy" = [ "la-admin-1" ];
   "services/ntfy-firebase-key.json" = [ "la-admin-1" ];
   "services/notification-daemon" = [

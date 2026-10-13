@@ -44,6 +44,12 @@ in
         aspects.postgres
         aspects.bifrost
         aspects.karakeep
+        aspects.actual
+        aspects.memos
+        aspects.tududi
+        aspects.inbox-zero
+        aspects.homarr
+        aspects.geopulse
         aspects.niks3-cache
         aspects.sops-systemd-activation
         aspects.base

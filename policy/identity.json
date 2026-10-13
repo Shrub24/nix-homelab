@@ -66,7 +66,65 @@
           "admins": ["openid", "profile", "email", "groups_name"]
         }
       },
-      "cloudflare-access": {
+      "actual": {
+        "enable": true,
+        "displayName": "Actual Budget",
+        "secretKeyPrefix": "actual",
+        "routeKey": "actual",
+        "callbackPath": "/openid/callback",
+        "enableLegacyCrypto": true,
+        "scopeMaps": {
+          "service-admins": ["openid", "profile", "email"],
+          "users": ["openid", "profile", "email"]
+        }
+      },
+      "memos": {
+        "enable": true,
+        "displayName": "Memos",
+        "secretKeyPrefix": "memos",
+        "routeKey": "memos",
+        "callbackPath": "/auth/callback",
+        "scopeMaps": {
+          "service-admins": ["openid", "profile", "email"],
+          "users": ["openid", "profile", "email"]
+        }
+      },
+      "tududi": {
+        "enable": true,
+        "displayName": "tududi",
+        "secretKeyPrefix": "tududi",
+        "routeKey": "tududi",
+        "callbackPath": "/api/oidc/callback/kanidm",
+        "enableLegacyCrypto": true,
+        "scopeMaps": {
+          "service-admins": ["openid", "profile", "email"],
+          "users": ["openid", "profile", "email"]
+        }
+      },
+      "geopulse": {
+        "enable": true,
+        "displayName": "GeoPulse",
+        "secretKeyPrefix": "geopulse",
+        "routeKey": "geopulse",
+        "callbackPath": "/oidc/callback",
+        "enableLegacyCrypto": true,
+        "scopeMaps": {
+          "users": ["openid", "profile", "email"]
+        }
+      },
+      "homarr": {
+    "enable": true,
+    "displayName": "Homarr",
+    "secretKeyPrefix": "homarr",
+    "routeKey": "homarr",
+    "callbackPath": "/api/auth/callback/oidc",
+    "includePrivateEndpointCallback": true,
+    "scopeMaps": {
+      "service-admins": ["openid", "profile", "email"],
+      "users": ["openid", "profile", "email"]
+    }
+  },
+  "cloudflare-access": {
         "enable": true,
         "displayName": "Cloudflare Access",
         "secretKeyPrefix": "cloudflare-access",

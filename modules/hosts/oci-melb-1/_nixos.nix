@@ -102,6 +102,29 @@ in
       secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
     };
 
+    actual.secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
+
+    memos.secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
+
+    tududi.secretFiles = {
+      host = ../../../secrets/services/tududi.yaml;
+      oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
+    };
+
+    inbox-zero.secretFiles.host = ../../../secrets/services/inbox-zero.yaml;
+
+    homarr = {
+      # Temporary: the private first-administrator bootstrap needs the local
+      # credentials provider and the private BASE_URL. The runbook removes this
+      # and releases the route in the same change.
+      credentialsBootstrap = true;
+      secretFiles = {
+        host = ../../../secrets/services/homarr.yaml;
+        oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
+      };
+    };
+    geopulse.secretFiles.host = ../../../secrets/services/geopulse.yaml;
+
     tailscale.debugMtu = 1200;
 
     hostRecovery = lib.mkIf hasHostSecrets {

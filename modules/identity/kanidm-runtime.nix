@@ -45,6 +45,7 @@ _: {
           inherit (clientPolicy) displayName secretKeyPrefix scopeMaps;
           callbackPath = clientPolicy.callbackPath or null;
           originUrl = clientPolicy.originUrl or null;
+          includePrivateEndpointCallback = clientPolicy.includePrivateEndpointCallback or false;
           supplementaryScopeMaps = clientPolicy.supplementaryScopeMaps or { };
           claimMaps = clientPolicy.claimMaps or { };
         }
@@ -99,11 +100,25 @@ _: {
       oauth2Provisioning = lib.mapAttrs (
         name: client:
         let
-          resolvedOriginUrl =
+          canonicalOriginUrl =
             if client.originUrl != null then
               client.originUrl
             else
               "${client.route.publicUrl}${client.callbackPath}";
+          # Some services need a private Tailscale callback during bootstrap.
+          # The route catalog supplies the provider name and port; Tailscale
+          # Serve terminates HTTPS on that origin socket.
+          privateEndpointCallback =
+            if client.includePrivateEndpointCallback then
+              "https://${client.route.endpoint.host}:${toString client.route.endpoint.port}${client.callbackPath}"
+            else
+              null;
+          resolvedOriginUrl =
+            if privateEndpointCallback == null then
+              canonicalOriginUrl
+            else
+              (if builtins.isList canonicalOriginUrl then canonicalOriginUrl else [ canonicalOriginUrl ])
+              ++ [ privateEndpointCallback ];
         in
         {
           inherit (client) displayName;

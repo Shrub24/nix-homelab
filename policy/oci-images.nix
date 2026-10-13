@@ -11,13 +11,13 @@
 
   karakeepWeb = "ghcr.io/karakeep-app/karakeep:0.33.2@sha256:b069e4307dec06ea06d16989c6861c30a1ff208568be44ed5fb5d422cd3e950c";
 
-  karakeepChrome = "ghcr.io/karakeep-app/karakeep-chrome:151.0.7922.47-r1@sha256:5b19bbb160e9ff60681a3abd97e1c4ec9f64212301410de658c3900ab7ef31e7";
+  karakeepChrome = "ghcr.io/karakeep-app/karakeep-chrome:154.0.8037.57-r1@sha256:c51a8c8e6c3c1040a50fa0ecfd0b2fc298401b4229262636552458151f6f18fa";
 
   karakeepMeilisearch = "getmeili/meilisearch:v1.49.0@sha256:bdc7d7e7939911c40d88d6bcd01f9c72c81f7293135916d48bce241569f721bd";
 
   audiomuse = "ghcr.io/neptunehub/audiomuse-ai:3.5.2@sha256:726d30981a601cb4556c6caece162ac15df247a7e7f09e36b64e8afd2f8f0b60";
 
-  redis7Alpine = "docker.io/library/redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99";
+  redis7Alpine = "docker.io/library/redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0";
 
   guacd = "docker.io/guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f";
 
@@ -31,7 +31,7 @@
 
   docsMcpServer = "ghcr.io/arabold/docs-mcp-server:3.1.0@sha256:5bf22439746680e064db7cd1979fc192f9733f312ab9ce1c98ea0e7aa453a1f7";
 
-  hindsight = "ghcr.io/vectorize-io/hindsight:0.10.0-slim@sha256:f6ce417777a2034a71e25df0093b28092f689a4f991eca4e2954c8b6aec2fad1";
+  hindsight = "ghcr.io/vectorize-io/hindsight:1.0.0-slim@sha256:f284d0d63e92e993686e18c15f6e4a221cd80fdfd47625a7c5f6cd8568078440";
 
   # Latitude ships one release tag across all six application images, so the
   # versions move together; digests are the multi-arch index digests, which is

@@ -45,6 +45,17 @@ _: {
               ''
             else
               "";
+          # Ordered route-scoped refusal: a denied path is answered before the proxy
+          # runs, so the surface stays closed at the published edge even though the
+          # listener behind it still serves that path on loopback.
+          denyGuard =
+            if route.deniedPaths == [ ] then
+              ""
+            else
+              ''
+                @${id}_denied path ${lib.concatStringsSep " " route.deniedPaths}
+                respond @${id}_denied 403
+              '';
           upstreamTransport =
             if
               route.upstreamTlsInsecure
@@ -71,6 +82,7 @@ _: {
           ''
             # ${name} (${route.exposureMode})
             handle {
+              ${denyGuard}
               ${accessGuard}
               ${responseHeaders}
               reverse_proxy ${route.upstream} {
@@ -86,6 +98,7 @@ _: {
             # ${name} (${route.exposureMode})
             ${lib.optionalString route.forceTrailingSlash "redir ${route.path} ${route.path}/ 308"}
             handle_path ${route.path}* {
+              ${denyGuard}
               ${accessGuard}
               ${responseHeaders}
               reverse_proxy ${route.upstream} {
@@ -102,6 +115,7 @@ _: {
             ${lib.optionalString route.forceTrailingSlash "redir ${route.path} ${route.path}/ 308"}
             @${id}_path path ${route.path}*
             handle @${id}_path {
+              ${denyGuard}
               ${accessGuard}
               ${responseHeaders}
               reverse_proxy ${route.upstream} {
@@ -356,6 +370,17 @@ _: {
                   type = lib.types.bool;
                   default = false;
                   description = "Redirect the exact route path to a trailing-slash variant before proxying.";
+                };
+
+                deniedPaths = lib.mkOption {
+                  type = lib.types.listOf lib.types.str;
+                  default = [ ];
+                  example = [ "/api/metrics" ];
+                  description = ''
+                    Path matchers this route refuses with 403 before proxying, so an
+                    upstream surface stays closed at the published edge. Each entry is
+                    a Caddy path matcher, so "/api/x/*" covers the subtree.
+                  '';
                 };
 
                 responseHeaders = lib.mkOption {

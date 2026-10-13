@@ -45,6 +45,7 @@ in
         aspects.bifrost
         aspects.karakeep
         aspects.niks3-cache
+        aspects.sops-systemd-activation
         aspects.base
         aspects.shell
         aspects.networking

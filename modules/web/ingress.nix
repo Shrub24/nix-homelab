@@ -13,29 +13,15 @@ _: {
     }:
     let
       cfg = config.services.ingress;
+      ingressRoutes = import ./_ingress-routes.nix { inherit lib; };
       currentHost = lib.attrByPath [ "repo" "web" "currentHost" ] { } config;
-      resolvedRoutes = currentHost.services or { };
+      # A policy route that declares publicReady=false has an identity but no
+      # publication yet: the edge serves nothing for it until the policy says the
+      # route is ready, so a declared public origin never answers on its own.
+      resolvedRoutes = lib.filterAttrs (name: svc: svc.publicReady or true) (currentHost.services or { });
       primaryDomain = currentHost.primaryDomain or "";
 
-      edgeRoutes = lib.mapAttrs (_: svc: {
-        inherit (svc)
-          subdomain
-          path
-          exposureMode
-          category
-          stripPrefix
-          declarePublic
-          responseHeaders
-          upstream
-          ;
-        forceTrailingSlash = svc.forceTrailingSlash or false;
-        upstreamHostHeader = svc.upstreamHostHeader or "{host}";
-        upstreamTlsInsecure = svc.upstreamTlsInsecure or false;
-        upstreamTlsCaCertFile = svc.upstreamTlsCaCertFile or null;
-        upstreamTlsServerName = svc.upstreamTlsServerName or null;
-        cloudflareAccessRequired = svc.access.requireCloudflareAccess;
-        authenticatedOriginPullsRequired = svc.cloudflare.authenticatedOriginPulls;
-      }) resolvedRoutes;
+      edgeRoutes = ingressRoutes resolvedRoutes;
 
       isEdge = cfg.role == "edge";
     in

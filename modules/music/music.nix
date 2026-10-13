@@ -65,6 +65,9 @@ _: {
             mediaPaths.quarantineDir
             mediaPaths.untaggedDir
             mediaPaths.approvedDir
+            # The ready flag is cleared by the runner's own ExecStartPost, so its
+            # state directory must be writable here too (outside restic, /var/lib).
+            (dirOf config.services.musicIngest.readyFlag)
           ];
           mountFor = [
             "${cfg.dataRoot}/beets"

@@ -767,13 +767,13 @@ in
                     RemainAfterExit = true;
                   };
                   script = ''
-                    # The client comes from the same pinned ClickHouse as the
-                    # server (D-080); this host's own does not link.
+                    # The client comes from the same host package set as the
+                    # server (D-093).
                     # Bound the wait: After=clickhouse.service orders against
                     # the start job completing, not the port accepting — a
                     # graceful CH start is still loading config when this runs.
                     for ((i=0; i<30; i++)); do
-                      if ${config.repo.packages.clickhouse}/bin/clickhouse-client --query "CREATE DATABASE IF NOT EXISTS ${cfg.clickhouseDatabase}"; then
+                      if ${pkgs.clickhouse}/bin/clickhouse-client --query "CREATE DATABASE IF NOT EXISTS ${cfg.clickhouseDatabase}"; then
                         exit 0
                       fi
                       sleep 2

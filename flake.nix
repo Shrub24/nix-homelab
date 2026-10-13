@@ -34,7 +34,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nixpkgs.follows = "nix-fleet/nixpkgs";
-    nixpkgs-clickhouse.url = "github:NixOS/nixpkgs/44a91898084f46797b5fac650c7e8c9ac38c43d4";
     sops-nix.follows = "nix-fleet/sops-nix";
     traktor-m3u-sync = {
       url = "github:Shrub24/traktor-m3u-sync";

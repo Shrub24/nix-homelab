@@ -265,10 +265,10 @@
         # digest of the same plaintext the containers authenticate with.
         services.clickhouse = {
           enable = true;
-          # Pinned away from this host's nixpkgs: unstable's clickhouse does not
-          # link at the current baseline, and the pinned revision's derivation is
-          # the same version and substitutes (D-080).
-          package = config.repo.packages.clickhouse;
+          # The host package set's ClickHouse. The dedicated nixpkgs pin is gone:
+          # this baseline pins LLVM 22 for the build, which is the condition the
+          # pin worked around, and the package substitutes again (D-093).
+          package = pkgs.clickhouse;
           serverConfig = {
             listen_host = [
               loopback

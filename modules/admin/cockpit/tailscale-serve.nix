@@ -39,6 +39,11 @@ _: {
           stopIfChanged = true;
           preStart = "${pkgs.tailscale}/bin/tailscale wait --timeout=60s";
 
+          # Start limits are [Unit] settings; systemd ignores them in [Service].
+          unitConfig = {
+            StartLimitIntervalSec = 300;
+            StartLimitBurst = 3;
+          };
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
@@ -46,8 +51,6 @@ _: {
             # so a genuinely logged-out node fails loudly instead of spinning.
             Restart = "on-failure";
             RestartSec = "10s";
-            StartLimitIntervalSec = 300;
-            StartLimitBurst = 3;
             ExecStart = ''
               ${pkgs.tailscale}/bin/tailscale serve --yes --bg --https=${toString tailscaleServe.port} ${localUrl}
             '';

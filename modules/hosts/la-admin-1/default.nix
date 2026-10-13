@@ -41,6 +41,9 @@ in
         aspects.beszel
         aspects.homepage
         aspects.webhook
+        # Systemd secret activation is the fleet policy: the installer is its own
+        # unit, so a service that binds a regular secret orders after it (D-XXX).
+        aspects.sops-systemd-activation
         aspects.base
         aspects.shell
         aspects.networking

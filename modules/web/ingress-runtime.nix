@@ -330,6 +330,11 @@ _: {
                     "app"
                     "admin"
                     "sensitive"
+                    # Private transports (`tailscale-only` with `declarePublic =
+                    # false`) pass through the edge route map even though no
+                    # policy publishes them, so their category names what they
+                    # are rather than defaulting to "app".
+                    "infra"
                   ];
                   default = "app";
                   description = "Route category used by policy guardrails.";

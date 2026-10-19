@@ -2224,9 +2224,7 @@ nix-fleet's own graph.
   (content-derived unit revisions for stable paths)
 - nix-fleet: `modules/ai/bifrost.nix`, `docs/contracts/bifrost.md`
 
-## D-080: ClickHouse comes from its own nixpkgs pin, because unstable's does not link
-
-**Status:** Accepted
+**Status:** Superseded by D-093 — this baseline pins LLVM 22 for the ClickHouse build, so the package substitutes from the shared baseline again
 
 **Context:**
 
@@ -2649,6 +2647,22 @@ needs trusted-user authority for ssh-ng's store operation.
 - The processor reaches a host when that host is switched, not when the pin moves. A host whose running collector predates the change keeps dropping Pi series until it is activated.
 - A delta stream silent for longer than five minutes restarts from zero. That is intended for per-run Pi counters.
 
+## D-091: User applications authenticate at the application rather than the edge
+
+**Status:** Accepted; implemented for Actual Budget, Memos and tududi on `oci-melb-1`, not deployed.
+
+**Evidence:** Confirmed packaging and exposure choices; Memos' file-loader contract is source-backed. Actual/tududi signing compatibility is inferred from their client libraries and remains subject to live login verification.
+
+**Source:** `openspec/changes/add-actual-memos-tududi/design.md` and `docs/research/actual-memos-tududi-upstream-facts.md`.
+
+**Verification:** Uncorroborated on a running host; evaluated wiring and placement checks pass, but the full scaffold gate is blocked by the absent tududi encrypted secret.
+
+**Decision:** Use native nixpkgs services for Actual Budget and Memos and a digest-pinned container for tududi. Publish all three through loopback-backed `direct` routes, with Kanidm application login and no Cloudflare Access gate. Keep Actual's password method alongside its preview OpenID integration. Render Memos' provider as a root-owned sops template, load it as a systemd credential, and bind the unit's private credential directory at its fixed `/etc/secrets` path. Direct symlink delivery failed because the shared rendered-secret directory was `0750 root:root`; widening that directory is rejected. The explicit `/run/credentials/memos.service` bind was verified with a non-secret fixture on OCI under the service sandbox; `%d` was rejected in the bind setting. Keep tududi's bootstrap email with its application secrets, not as host configuration; an omitted email leaves bootstrap disabled.
+
+**Alternatives considered:** Cloudflare Access in front of these applications was rejected because sync, mobile and API clients cannot be assumed to carry its browser session. A manual Memos provider was initially planned because its documentation emphasized instance settings; source verification established the pinned version's file loader, so manual configuration is retained only as a live-deployment fallback.
+
+**Consequences:** Public routes rely on the application's own authentication and must pass real login and client checks before acceptance. Memos file access under its systemd sandbox remains unverified. A fallback provider belongs to its database and is lost on a bare reimage without database restoration. Primary SQLite databases use export-first backups; Actual's raw user-file consistency remains unresolved. The operator must prepare the tududi secret file and three host-scoped OAuth2 client secrets before rollout. See `docs/runbooks/actual-memos-tududi.md`.
+
 ## D-090: Routine CI is validation-only, and package pins move through nix-fleet's package-updates contract
 
 **Status:** Accepted; adopted while the nix-fleet pin already equalled upstream `main` (`e5d74415`). Nothing deployed.
@@ -2671,3 +2685,170 @@ needs trusted-user authority for ssh-ng's store operation.
 - A pull request can no longer reach the fleet build at all, and a branch dispatch is refused by the workflow's own main-only condition as well.
 - Two stale canonical specs are corrected in the same change: `dependency-source-management` (nvfetcher → the package-updates contract) and `nixbuild-build-plane` (nixbuild.net, and a substitution-only framing → the fleet's own builders and substituters). The latter's file name no longer describes its content; renaming a main spec is left to a separate change rather than taken silently here.
 - Nothing is deployed and no host or secret changes. The DJ VM's setup media content is unchanged; only how its pins are refreshed.
+
+## D-092: Homarr is the user-facing dashboard beside operator Homepage
+
+**Status:** Accepted; implementation in progress on `oci-melb-1`, not deployed.
+
+**Evidence:** User-facing placement and per-user OIDC requirements are confirmed. The pinned v2.5.2 release, secret formats, OIDC callback path, and environment behavior are source-backed. Live authentication and restore remain unverified.
+
+**Source:** `openspec/changes/add-homarr-dashboard/design.md`; Homarr v2.5.2 [environment example](https://raw.githubusercontent.com/homarr-labs/homarr/v2.5.2/.env.example), [environment variables](https://homarr.dev/docs/advanced/environment-variables), and [single sign-on](https://homarr.dev/docs/advanced/single-sign-on) documentation.
+
+**Verification:** The placement contract evaluates the pinned image, OIDC environment, callback URIs, withheld route, and SQLite export. No service secret has been provisioned and no live login or restore has been performed.
+
+**Decision:** Deploy released Homarr v2.5.2 as a digest-pinned OCI container managed by the NixOS `homarr` aspect on `oci-melb-1`. Keep it separate from operator Homepage: Homarr owns user accounts, groups, boards, and per-user home boards through its UI, while the fleet owns the service runtime, canonical route, OIDC client, encrypted secrets, and backup. Use Kanidm OIDC without Cloudflare Access, keep Homarr's local group management enabled, and explicitly disable dangerous OIDC credential linking. Keep the public route withheld while a disabled-by-default credentials option permits private first-admin setup through the provider's Tailscale Serve URL. Register both the public callback and private HTTPS callback with Kanidm. During bootstrap, `BASE_URL` follows the private origin; in steady state it follows the public origin, while `NEXTAUTH_URL` remains unset so the callback is derived from request headers. Persist distinct `AUTH_SECRET` and `SECRET_ENCRYPTION_KEY` values in the service-scoped encrypted file. Export SQLite through its backup API and exclude the live database directory from raw capture.
+
+**Alternatives considered:** Replacing Homepage was rejected because the two dashboards serve different audiences. Generating Homarr's boards from web policy was rejected because it would duplicate route ownership and remove the requested per-user, UI-managed workflow. Cloudflare Access was rejected because Homarr already owns browser authentication and an edge login would complicate its OIDC flow. Maintaining a local Nix build was rejected in favor of the official immutable image: nixpkgs has no Homarr package, and the repository does not need to own the full web-app build to declare its runtime reproducibly.
+
+**Consequences:** The public route cannot be released until the private Kanidm login and per-user authorization checks pass. The operator must prepare the two persistent secret files and preserve the exact Homarr keys with its database state. UI-managed links can drift from canonical web policy and need manual updates. Restore the pre-upgrade database before rolling back an image after Homarr migrations. See `docs/runbooks/homarr.md`.
+
+## D-093: ClickHouse returns to the host package set
+
+**Status:** Accepted.
+
+**Context:** The dedicated `nixpkgs-clickhouse` pin existed because this baseline's ClickHouse failed at the final link — ClickHouse's own `cmake/strip_rust_symbols.sh` corrupting the Rust staticlibs under LLVM 21.1.8 (D-080). That condition has gone: the packaging now builds with `llvmPackages_22` rather than the baseline's default toolchain, and the package it derives substitutes again.
+
+**Evidence:** At the current baseline, `pkgs/by-name/cl/clickhouse/generic.nix` sets `llvmPackages = llvmPackages_22`. The baseline evaluates `clickhouse-26.8.7.19-lts` to `/nix/store/g6ffa90mzkqym0pf7ycynjwjhmrhrw92-clickhouse-26.8.7.19-lts.drv`, output `/nix/store/lg4lv7dkq2rfk2f3gp6s36bd7132cg4s-clickhouse-26.8.7.19-lts`, which cache.nixos.org serves and the fleet cache carries — no host builds it locally.
+
+**Decision:** ClickHouse comes from the host package set. The `nixpkgs-clickhouse` input is dropped, `repo.packages.clickhouse` with it, and both call sites read `pkgs.clickhouse`: the Langfuse module binds `services.clickhouse.package`, and the Latitude database-init client takes its `clickhouse-client` from the same package. `renovate.json` loses the rule that kept the retired input frozen.
+
+**Alternatives considered:** Keeping the pin was rejected — it held a second nixpkgs node plus an indirection between two call sites for a condition that no longer holds, and it would need re-verifying at every baseline. Keeping `repo.packages.clickhouse` as an alias of `pkgs.clickhouse` was rejected for the same reason: an indirection with one possible value.
+
+**Consequences:** `tests/check-dendritic-scaffold-contract.sh` asserts the pin and the projection are gone, that neither call site names the projection, and that the ClickHouse server home-forge deploys is the host package set's own derivation. If a future baseline reintroduces the link failure, the workaround is D-080's shape — a pinned revision, a projection, and both call sites reading it.
+
+## D-094: The rescue password secret lives at sops-nix's `neededForUsers` default
+
+**Status:** Accepted.
+
+**Context:** `host_recovery_rescue_password_hash` is the fleet's only `neededForUsers` secret, and it carried an explicit `path = "/run/secrets/host-recovery.rescue_password_hash"`. Verification on la-admin-1 after the systemd activation switch, and on home-forge under the legacy activation path, found that symlink absent while the file itself sat at `/run/secrets-for-users/host_recovery_rescue_password_hash`. The digest of that file still matched the hash applied to the rescue account on both hosts, so the password was applied by ordering luck rather than by the configured path.
+
+**Evidence:** sops-nix's `secrets-for-users` manifest sets `symlinkPath = /run/secrets-for-users` and `secretsMountPoint = /run/secrets-for-users.d`; `symlinkSecretsAndTemplates` creates each secret's configured path as a symlink into that directory, while the *regular* manifest's run swaps `/run/secrets` for its own generation directory (`atomicSymlink(secretDir, "/run/secrets")` in `pkgs/sops-install-secrets/main.go`). A `neededForUsers` symlink placed under `/run/secrets` therefore dies with the directory it was created in. On la-admin-1 (systemd activation) the swap runs after the activation step that installs this file, so nothing else could read it afterwards; on home-forge (legacy activation, where both installs are activation snippets) it is absent as well.
+
+**Decision:** Drop the `path` override and let the secret sit at sops-nix's default, `/run/secrets-for-users/<name>` — outside the directory the regular installer swaps. `hashedPasswordFile` keeps reading `sops.secrets.<name>.path`, which now names the durable location.
+
+**Alternatives considered:** Setting the default path explicitly was rejected as redundant. Ordering an extra activation dependency to protect the symlink was rejected because it would preserve a dependency on install order for a path sops-nix already publishes correctly.
+
+**Consequences:** The rescue password no longer depends on the users step running between the two installs. `tests/check-shell-account-contract.sh` asserts every rescue secret's path sits under `/run/secrets-for-users` and equals the account's `hashedPasswordFile`, with a control that must reject the old path.
+
+## D-095: The 19 October PostgreSQL switch failure stays unreproduced, and the provisioning shape is unchanged until reproduced
+
+**Status:** Accepted. Investigation closed as unreproduced. The provisioning unit keeps its two-unit shape; the binary-identity wait is removed.
+
+**Context:** On 2026-10-19 the `oci-melb-1` deploy of the generation built from `fe13242` failed activation. `postgresql-provision.service` reported `server runs '…v4vm1…-postgresql-and-plugins-17.11/bin/postgres', expected '…7g8f51…-postgresql-and-plugins-17.11/bin/postgres' after 60s`, `switch-to-configuration` returned status 4, and deploy-rs rolled back to generation 330. The database was intact: a provisioning run after the server restarted succeeded. The open questions were what made the switch restart the server late and why the failing provisioning guard ran before the server had restarted.
+
+**Evidence:**
+
+- Closure diff, generation 330 → the failing generation (verified from the store): the `postgresql.service` binary changed (rebuilt plugin set, `v4vm1` → `7g8f51`); the provisioning script changed (0 → 14 `geopulse` references, a new consumer); `postgresql.service`'s `X-Restart-Triggers` changed (its content is the provisioning script path); the new sops secret `postgres_geopulse_password` carries `restartUnits = postgresql-provision.service`; and `unit-postgresql-provision.service` is byte-identical between the two generations.
+- The switch's stop list named `postgresql.service` and `postgresql-setup.service`; its restart list named `postgresql-provision.service`. The Postgres stop ran at 02:13:25.716, after both 60-second guard runs had failed and deploy-rs had begun rolling back.
+- VM reproductions (nixosTest, `switch-to-configuration test`, `dbus-monitor` on `JobNew`/`JobRemoved`) did not reproduce the late stop: a stock `services.postgresql` unit change; the fleet postgres module with a unit-only change; the same with a rotated consumer secret; and a mirror of the generation 330 → failing generation changes (new binary, new consumer with an extension, new secret, script change). Every job completed `done`, the server restarted in the stop phase, and provisioning ran once in the restart phase and succeeded.
+- A live switch on `oci-melb-1` to a rebuilt generation carrying the same Postgres changes (`STC_DEBUG=1 STC_DISPLAY_ALL_UNITS=1`, job trace captured) exited 0 with no failed units. Postgres was not in the stop list because the running unit already matched, and provisioning finished `success`.
+
+**Decision:**
+
+1. The failure is recorded as unreproduced. No mechanism is claimed. Statements not supported by the evidence are: that a skipped or late stop explains the failure, that `After=` is at fault, and that a job-queue block explains the 60-second wait.
+2. The provisioning unit keeps its shape: a separate oneshot, ordered by `requires`/`after` on `postgresql.service` and `postgresql-setup.service`, and re-run through `partOf` when postgresql restarts. Its script trigger stays on `postgresql.service`, and its consumer secret keeps `restartUnits`. Ordering is left to systemd's documented behaviour, including the case where a restart is queued in the same switch.
+3. The binary-identity wait (the 60-second loop in `modules/database/postgres.nix`) is removed. It converted a switch-ordering question into a timed failure and hid where the ordering broke. Without it, the script applies its SQL to whichever server is live when it starts. A consumer whose extension the live server lacks fails loudly at `CREATE EXTENSION`, which is the observable signal.
+4. Observability for the next occurrence is a nix-fleet concern. This repository only selects the producers once they exist.
+5. `ExecStartPost` on `postgresql.service` remains a possible later shape. It is not adopted: it would remove the separate unit, which this decision keeps for reproduction, and it would change the failure semantics of the database server.
+
+**Alternatives considered:**
+
+- Keeping the wait was rejected: it turns a visible ordering failure into a timed one and hides the ordering behaviour.
+- Moving to `ExecStartPost` now was deferred: it removes the unit whose ordering is being examined, and no reproduction yet shows it fixes the observed failure.
+
+**Consequences:** `oci-melb-1` runs a generation built from the same Postgres changes, so its next Postgres unit change is the natural reproduction point. The VM reproduction files are in `/tmp/stc-repro` (outside the repository) and are reconstructible from this entry.
+
+## D-096: The PostgreSQL substrate installs only the extensions its consumers keep, so a consumer's own migration can create and drop its own
+
+**Status:** Accepted. Implemented in `modules/apps/inbox-zero.nix` and verified on `oci-melb-1`.
+
+**Context:** The Inbox Zero deployment served a partial schema for six days. `inbox-zero-watch-renewal` failed with `curl: (22) … 500` and `inbox-zero-scheduled-actions` returned 500 on every run, because the database had no `EmailAccount` or `ScheduledAction` table. Prisma's `_prisma_migrations` showed one unresolved row: `20240116235134_shared_premium` failed with `must be owner of extension uuid-ossp` (SQLSTATE 42501), which blocks every later migration. The consumer's `setupSQL` had created `uuid-ossp` as the cluster superuser, and the migration's final statement is `DROP EXTENSION "uuid-ossp"` — only the role that created an extension may drop it, so the migration could never complete.
+
+**Evidence:**
+
+- `_prisma_migrations`: 13 rows, `20240116235134_shared_premium` with `finished_at` null and `rolled_back_at` null, log text naming the SQLSTATE and the ownership error.
+- The image's `/app/apps/web/prisma/migrations/20240116235134_shared_premium/migration.sql` creates `uuid-ossp` at line 39 and drops it at line 73.
+- `pg_extension` before the fix: `uuid-ossp` and `btree_gist` owned by `postgres`; the database `inbox_zero` owned by the application role.
+- `uuid-ossp.control` in the pinned `postgresql-17.11` carries `trusted = true`, so the database owner may create it without superuser.
+- Recovery on `oci-melb-1`: drop the superuser-owned extension, `prisma migrate resolve --rolled-back`, restart. The log then read "All migrations have been successfully applied", applied migrations went 12 → 213, `EmailAccount`/`ScheduledAction`/`Premium` exist, `uuid-ossp` is absent, and both maintenance units returned `Result=success`.
+- The database held 0 rows in `User`, `Account` and `Rule`, and the failed migration had rolled back cleanly (no `Premium` table), so the retry ran against an empty schema.
+
+**Decision:** A consumer declares in `setupSQL` only the extensions it keeps for the life of the database. An extension that the application's own migrations create and drop is left out, so the application role owns what it drops. Inbox Zero therefore installs `btree_gist` only.
+
+**Alternatives considered:**
+
+- Transferring ownership with `ALTER EXTENSION … OWNER TO` was rejected: PostgreSQL has no such clause for extensions.
+- `REASSIGN OWNED BY postgres TO inbox_zero` was rejected: it reassigns every object the superuser owns in that database, far beyond the one extension.
+- Installing `uuid-ossp` and patching the migration was rejected: the migration lives in the pinned image, and forking it would drift from upstream's schema history.
+- Resolving the migration as applied was rejected: it skips the …shared_premium… DDL the later migrations build on.
+
+**Consequences:** A consumer whose migrations touch an extension it does not own fails the same way, so the rule is recorded here rather than in one module. The substrate stays generic: it installs what it is told and does not infer ownership. Recovery needs `prisma migrate resolve --rolled-back` inside the container before the retry, because upstream's `start.sh` logs a `migrate deploy` failure and starts the application anyway; that procedure is in `docs/runbooks/inbox-zero.md`.
+
+## D-097: Secret activation is a fleet aspect bound over nix-fleet's policy, not a per-host option
+
+**Status:** Accepted. Prepared in the repository; each host takes it on its next deploy.
+
+**Context:** NixOS 26.11 removes the activation-script restart path (`/run/nixos/activation-restart-list`) that `sops-nix` used by default. nix-fleet adopted systemd secret activation as fleet policy and documented the consumer's contract in `docs/patterns/systemd-lifecycle.md`: a service binding a regular SOPS secret orders after and wants `sops-install-secrets.service`, and no module branches on the activation mode. la-admin-1 had been running the systemd path alone through an explicit `sops.useSystemdActivation = true`, which is exactly the per-host divergence that contract forbids.
+
+**Evidence:**
+
+- All three hosts evaluate `sops.useSystemdActivation = true` and enable `sops-install-secrets.service` after selecting the aspect.
+- The installer ordering now renders on `geopulse-backend`, `podman-homarr`, `memos` and `bifrost` (both hosts that place it).
+- An audit of rendered units referencing `/run/secrets` counts 19 on oci-melb-1, 12 on home-forge and 6 on la-admin-1; 33 of the 37 have no explicit edge, and all are units this repository does not own (`paperless-*`, `niks3-*`, `notify`, `beets-*`, `clickhouse`, `degoog`, `kanidm`, `vaultwarden`, `restic-backups-state`, the OTLP collector).
+- la-admin-1 ran the systemd path in production for several deploys before this change, which is what made a fleet-wide flip safe to consider.
+
+**Decision:** `modules/flake/sops-systemd-activation.nix` publishes the aspect name and imports nix-fleet's module, and every host record selects it. No host sets `sops.useSystemdActivation` itself.
+
+**Alternatives considered:**
+
+- Setting the option per host was rejected: it is the divergence the upstream contract names, and it makes a host's secret semantics invisible to the fleet.
+- Folding it into `base` was rejected: `sops-nix` is a host import, so a fleet-baseline module would have to assume it is present; an aspect makes the dependency explicit at selection.
+- Adding the explicit installer edge to all 33 upstream units was deferred: the installer is `WantedBy sysinit.target` and ordinary units inherit `After=sysinit.target` from `DefaultDependencies`, so the edge restates a guarantee for them. Making the contract literal everywhere stays available if an early-starting unit ever needs it.
+
+**Consequences:** Secret semantics are the same on every host, and the nix-fleet lock already carries the policy commit. Two things remain unproven until the hosts deploy: that a consumer-secret rotation still re-runs PostgreSQL provisioning (its `restartUnits` used the legacy `try-restart` path), and that the ordering edges render as expected in the live unit graph. nix-fleet's own `notify`, `restic-backups-state` and `niks3-auto-upload` units carry no explicit edge either; that belongs upstream rather than being patched here.
+
+## D-098: A route is published by the policy's own `publicReady`, with no host-side release switch
+
+**Status:** Accepted. `services.geopulse.publicReady` and `services.ingress.releasedRoutes` deleted; verified on the oci-melb-1 edge.
+
+**Context:** GeoPulse's route was withheld by two independent switches. `policy/web-services.nix` declared `publicReady = false`, and the aspect offered `services.geopulse.publicReady`, which registered the route in `services.ingress.releasedRoutes`; the ingress filter served a route when `svc.publicReady or true` **or** its name was in that list. Releasing GeoPulse therefore meant overriding the policy from a host record, while the policy still said the route was not ready. Homarr, declared later, released through the policy flag alone.
+
+**Evidence:**
+
+- `releasedRoutes` had exactly one producer (GeoPulse) and one consumer (the ingress filter), so it was a general mechanism with a single user.
+- The evaluated edge served no `geopulse` route while the gate was closed and 31 other routes normally, which is indistinguishable from the policy's own answer.
+- After removal the GeoPulse contract still proves the released shape: rendering the route from the resolved policy record with `publicReady` flipped produces the 17 denial matchers, the loopback upstream and the direct canonical host.
+- The filter's `or true` default published any route that forgot the field, which is the wrong way to lean on a security-relevant bit.
+
+**Decision:** Publication is one fact, `publicReady` on the route in `policy/web-services.nix`. The edge serves a route exactly when it is true. A second switch, and the ingress list that carried it, are gone.
+
+**Alternatives considered:**
+
+- Keeping the two-key release (policy identity plus host release) was rejected: both edits land in the same reviewed change, so the second key adds no gate, only a second place to look.
+- Adding an option for the release list to the *policy data* so a test could flip it was rejected: it would put a knob back for the sake of a test.
+- Releasing through a mutated tree copy in the test was rejected for this repository, where `.#` reads the Git index and a copy evaluates a different tree.
+
+**Consequences:** The edge route projection moved to `modules/web/_ingress-routes.nix` so the ingress module and the tests that render a withheld route share one function; the GeoPulse test now releases the route the way production does. The rule generalises: an option that exists to be flipped after an imperative step is acceptable only when the fact it mirrors cannot be read from the repository — Homarr's first-administrator window is that case, because the fact lives in Homarr's database; GeoPulse's did not, because policy already held it.
+
+## D-099: Cache pins are reserved per calling repository, and the cache's own metrics are collected on its host
+
+**Status:** Accepted. Rendered and verified: three OIDC rules with `pins`, and a `niks3` scrape job on oci-melb-1.
+
+**Context:** Push access to the niks3 cache API is federated to GitHub Actions with OIDC, and one provider rule bound all three calling repositories (`nix-fleet`, `nix-homelab`, `nix-dotfiles`) to a single `write` scope. A niks3 pin is *not* covered by a scope: niks3's own documentation for the option states that any token holding `write` may create or repoint any pin that no rule reserves. So a token minted for one repository could move another repository's `main` pin — the name a consumer reads as "the fleet's current main".
+
+**Evidence:** The pinned niks3 (`27d6bdb`, module `nix/nixosModules/niks3.nix`) exposes `pins` on a provider and on each entry of `rules`, described as "pin names (glob patterns) reserved for boundClaims/boundSubject: a pin that matches can then only be created or moved by a token this provider matches, or by an admin. Other pins still need write only". `server/oidc/config.go` rejects a rule whose `pins` are set without `write`/`admin`, and a provider that sets both `rules` and top-level claims. The rendered config file for oci-melb-1 carries the three rules and no top-level claims.
+
+**Decision:** One rule per calling repository. Each rule keeps the shared claims — owner ID, `refs/heads/main`, and the one workflow that mints a pushing token (nix-fleet's `build-push-cache.yml`) — names its own repository, grants `write`, and reserves that repository's pin namespace as `<repository>-main-*`. A pin therefore reads as `<repository>-main-<system>` (`nix-fleet-main-aarch64-linux`), and only that repository's CI identity or an admin token can create or move it.
+
+**Alternatives considered:**
+
+- Keeping one provider-level rule and reserving all three namespaces together was rejected: it still lets any calling repository's token move any other repository's `main` pin, which is the risk being closed.
+- `boundSubject` patterns instead of claims were already rejected earlier: GitHub mints `sub` in two forms, and the immutable form (used by repositories created on or after 2026-07-15) does not match the older `repo:owner/*` shape.
+
+**Consequences:** The pin names are a convention the build plane has to create; nothing creates pins yet, so the reservation is inert until nix-fleet's `build-push-cache` workflow publishes them. The reservation is deny-by-default for those names in the meantime.
+
+The same change registers the cache's own metrics. `GET /metrics` is served by the same listener as the cache API and is unauthenticated like `/health` (niks3's monitoring documentation), so the host that runs the cache scrapes itself over loopback through nix-fleet's telemetry contract. No new exposure is added — the port is the one the private service policy already declares, and the scrape target is loopback.
+
+The board is niks3's own, not one authored here: the flake input already publishes it as `dashboards.niks3`, so the store reads it from `inputs.niks3.dashboards.niks3` and rewrites it on the way in exactly as it treats the other upstream boards. Two rewrites are needed. The board is written for an `instance` label while every series this fleet scrapes carries the canonical host ID as `host`, so the variable, its `label_values` query, every selector and every aggregation move to that name. And its `Last GC` panel subtracts a comparison from the clock (`time() - (gauge > 0)`), which on a server that has not collected yet renders the epoch age — roughly 55 years — while the panel's own description promises "none yet"; a 1.15.0 server reports the gauge as `0` rather than omitting it (observed: `niks3_gc_last_run_timestamp_seconds 0`, with 137,311 objects and 465 GB cached), so the mask divides instead and the panel reads no data until a run completes.
+
+Authoring a board was the first attempt and was dropped: the input's board covers the same ground with more panels (requests by route and status, latency mean and p90, storage and garbage collection, skipped uploads) and moves with the pin that ships the server it describes.

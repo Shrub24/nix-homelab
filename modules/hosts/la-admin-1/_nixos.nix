@@ -34,6 +34,16 @@
   # ens18 is the LA uplink; RA defaults kept, no bridge, no pinned DNS.
   fleet.networking.uplink.interface = "ens18";
 
+  # Secret activation is the fleet policy now, supplied by the
+  # `sops-systemd-activation` aspect, so this host sets nothing here. The
+  # activation-script path it replaces is the mechanism NixOS 26.11 removes, and
+  # it is the one that queues restarts through
+  # `/run/nixos/activation-restart-list`; the unit path orders against
+  # `sysinit.target` and `sysinit-reactivation.target`. `neededForUsers` secrets
+  # are unaffected: sops-nix keys that split on `systemd.sysusers`/`userborn`,
+  # which this fleet does not use, so the rescue-password secret keeps its
+  # activation-script install ahead of user creation (`users.deps`).
+
   services = {
     admin.vaultwarden.secretFiles.host = ../../../secrets/applications/admin.yaml;
 

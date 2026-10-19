@@ -46,16 +46,6 @@
       "groupName": "nix flake inputs"
     },
     {
-      "description": "Frozen at the revision whose clickhouse links; the shared baseline's does not (D-080)",
-      "matchManagers": [
-        "nix"
-      ],
-      "matchDepNames": [
-        "nixpkgs-clickhouse"
-      ],
-      "enabled": false
-    },
-    {
       "matchManagers": [
         "custom.regex"
       ],

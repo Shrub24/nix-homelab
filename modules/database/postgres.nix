@@ -61,32 +61,6 @@
       provisionScript = pkgs.writeShellScript "postgresql-provision" ''
         set -euo pipefail
         export PGPORT=${if instance == null then "5432" else toString instance.port}
-        # A switch that ships a new server package enqueues postgresql's restart
-        # after this unit may already be queued, so `After=` alone can hand us the
-        # old process — and CREATE EXTENSION resolves against the server's package.
-        # Wait (bounded) for this generation's own server before any SQL runs.
-        wantServer=${config.services.postgresql.finalPackage}/bin/postgres
-        gotServer=
-        for _ in $(seq 1 60); do
-          gotServer=
-          # Identity = the unit MainPID's command line, not /proc/*/exe: the
-          # and-plugins package is a ~70k launcher that execs the shared plain
-          # server, so every generation's exe resolves outside its own store
-          # path — and a /proc scan is lexicographic (last match nondeterministic
-          # between launcher and backends; a scan once "passed" by luck).
-          mainPid=$(systemctl show --property=MainPID --value postgresql 2>/dev/null || true)
-          if [ -n "${"mainPid:-"}" ] && [ "$mainPid" != "0" ]; then
-            gotServer=$(tr "\0" "\n" < "/proc/$mainPid/cmdline" 2>/dev/null | head -n1 || true)
-          fi
-          if [ "$gotServer" = "$wantServer" ]; then
-            break
-          fi
-          sleep 1
-        done
-        if [ "$gotServer" != "$wantServer" ]; then
-          echo "postgresql-provision: server runs '$gotServer', expected '$wantServer' after 60s" >&2
-          exit 1
-        fi
         ${lib.concatMapStringsSep "\n" (
           c:
           ensureRole c
@@ -265,10 +239,9 @@
           );
 
           systemd.services.postgresql = lib.mkIf (instance != null) {
-            # Consumer changes ride postgresql's restart set: systemctl
-            # propagates through partOf, so the pair restarts in one ordered
-            # transaction and provisioning always starts after this
-            # generation's server is live (the trampoline unit itself never
+            # Consumer changes ride postgresql's restart set: a change to the
+            # provisioning script restarts postgresql, and partOf propagates
+            # that restart to provisioning (the trampoline unit itself never
             # changes).
             restartTriggers = lib.optionals (provisionable != [ ]) [ provisionScript ];
             serviceConfig.ReadWritePaths = [ instance.dataDir ];
@@ -283,10 +256,10 @@
           # re-applies consumer state.
           systemd.services.postgresql-provision = lib.mkIf (instance != null && provisionable != [ ]) {
             description = "PostgreSQL consumer provisioning (roles, databases, credentials, setup SQL)";
-            # The requires edge on postgresql is load-bearing for ordering:
-            # switch-to-configuration restarts units through their requires
-            # graph, so without it provisioning can start (and burn its
-            # server-identity wait) before this activation's postgres restart.
+            # Ordering is systemd's: the requires edge makes postgresql's own
+            # restart reach this unit, and After= orders its start behind it.
+            # No identity check runs here; the script applies its SQL to the
+            # server that is live when it starts (D-095).
             requires = [
               "postgresql-setup.service"
               "postgresql.service"
@@ -296,12 +269,8 @@
               "postgresql-setup.service"
             ];
             wantedBy = [ "postgresql.target" ];
-            # Re-run only as a consequence of postgresql's own restart, never
-            # as an independent job: switch-to-configuration enqueues the two
-            # restarts in nondeterministic order, and an early provisioning
-            # attempt (its server-identity guard timing out at 60s) starves the
-            # job queue — including postgresql's restart itself — until it
-            # fails. The script trigger therefore lives on postgresql below.
+            # Re-run as a consequence of postgresql's own restart (partOf).
+            # The script trigger lives on postgresql below.
             partOf = [
               "postgresql.target"
               "postgresql.service"

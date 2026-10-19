@@ -222,6 +222,12 @@
           # fleet's own `restartTriggers` covers the rendered configuration; this
           # half is the consumer's, because the secret file is.
           services.bifrost.restartTriggers = [ cfg.secretFiles.host ];
+          # The rendered environment file is installed by the fleet's systemd
+          # secret activation, so the unit orders after its installer.
+          services.bifrost = {
+            wants = [ "sops-install-secrets.service" ];
+            after = [ "sops-install-secrets.service" ];
+          };
         };
       };
     };

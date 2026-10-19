@@ -11,6 +11,7 @@ result
 .tmp
 .ruff_cache/
 .codenomad/
+.claude/settings.local.json
 *.token
 .pi/
 .jcodemunch.jsonc

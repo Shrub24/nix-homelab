@@ -27,6 +27,9 @@ all:
   @./tests/check-bifrost-gateway-contract.sh home-forge
   @./tests/check-build-account-contract.sh
   @./tests/check-telemetry-view-composition.sh
+  @./tests/check-user-app-placements.sh
+  @./tests/check-geopulse-contract.sh
+  @./tests/check-homarr-contract.sh
 
 test-secrets:
   @./tests/check-secret-scope.sh
@@ -70,3 +73,12 @@ test-build-account:
 
 test-telemetry-views:
   @./tests/check-telemetry-view-composition.sh
+
+test-user-app-placements:
+  @./tests/check-user-app-placements.sh
+
+test-homarr-contract:
+  @./tests/check-homarr-contract.sh
+
+test-geopulse-contract:
+  @./tests/check-geopulse-contract.sh

@@ -47,6 +47,7 @@ in
         aspects.hindsight
         aspects.docs-mcp
         # Foundation aspects (FND-1): selection is enablement.
+        aspects.sops-systemd-activation
         aspects.base
         aspects.shell
         aspects.networking

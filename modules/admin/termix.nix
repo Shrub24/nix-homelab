@@ -75,6 +75,11 @@ _: {
             stopIfChanged = true;
             wantedBy = [ "multi-user.target" ];
             preStart = "${pkgs.tailscale}/bin/tailscale wait --timeout=60s";
+            # Start limits are [Unit] settings; systemd ignores them in [Service].
+            unitConfig = {
+              StartLimitIntervalSec = 300;
+              StartLimitBurst = 3;
+            };
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
@@ -83,8 +88,6 @@ _: {
               # spinning.
               Restart = "on-failure";
               RestartSec = "10s";
-              StartLimitIntervalSec = 300;
-              StartLimitBurst = 3;
               ExecStart = ''
                 ${pkgs.tailscale}/bin/tailscale serve --yes --bg --https=8443 ${termixUpstream}
               '';

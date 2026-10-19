@@ -21,7 +21,7 @@
 # filesystem: these units run as dynamic users under ProtectSystem=full, so a
 # relocation to a bulk mount is a bind mount in front of that state directory
 # rather than a storage-path flag. Retention is the volume control.
-{ ... }:
+{ inputs, ... }:
 {
   flake.modules.nixos.victoria =
     {
@@ -63,6 +63,9 @@
       # Upstream dashboards pinned to the releases that match the versions
       # nixpkgs ships (VictoriaMetrics 1.152.0, VictoriaLogs 1.52.0,
       # VictoriaTraces 0.11.1); the node board is grafana.com 1860 revision 45.
+      # A board a flake input already ships is read from the input (`file`)
+      # rather than fetched, so it moves with the pin that ships the server it
+      # describes: the niks3 board is `inputs.niks3.dashboards.niks3`.
       #
       # Every board is rewritten on the way in so that it addresses *our*
       # datasources, never the ones its author had:
@@ -110,6 +113,36 @@
           datasourceType = "jaeger";
           url = "https://raw.githubusercontent.com/VictoriaMetrics/VictoriaTraces/v0.11.1/dashboards/victoriatraces.json";
           hash = "sha256-UHDflmMyp0LFbM9SMgQevmDaedze0EH2soO7O6IZW2M=";
+        }
+        {
+          slug = "niks3-cache";
+          folder = "fleet";
+          datasourceUid = prometheusUid;
+          datasourceType = "prometheus";
+          file = inputs.niks3.dashboards.niks3;
+          # Written for an `instance` label; this fleet's scrape job labels every
+          # series with the canonical host ID instead (`host`), so the variable,
+          # its query, every selector and every aggregation move to that name.
+          #
+          # The `Last GC` panel subtracts a comparison from the clock
+          # (`time() - (gauge > 0)`), which on a server that has not collected yet
+          # renders the epoch age — about 55 years — while the panel's own
+          # description says it should read "none yet". A 1.15.0 server reports
+          # the gauge as 0 rather than omitting it, so the mask has to divide:
+          # the corrected form yields no data until a run completes, and the age
+          # itself afterwards. Exact-string, so an upstream rewrite simply stops
+          # matching instead of corrupting the query.
+          extraJq = ''
+            | (.templating.list[]? | select(.name == "instance")) |= (.name = "host" | .label = "host")
+            | walk(if type == "string" then gsub("\\binstance\\b"; "host") else . end)
+            | walk(
+                if type == "string"
+                   and . == "time() - (niks3_gc_last_run_timestamp_seconds{host=~\"$host\"} > 0)"
+                then
+                  "(time() - niks3_gc_last_run_timestamp_seconds{host=~\"$host\"})"
+                  + " / (niks3_gc_last_run_timestamp_seconds{host=~\"$host\"} > 0)"
+                else . end)
+          '';
         }
         {
           slug = "tailscale-machine";
@@ -188,10 +221,13 @@
               | .id = null
               | .uid = "${dashboard.slug}"${dashboard.extraJq or ""}' \
               ${
-                pkgs.fetchurl {
-                  name = "${dashboard.slug}.json";
-                  inherit (dashboard) url hash;
-                }
+                if dashboard ? file then
+                  dashboard.file
+                else
+                  pkgs.fetchurl {
+                    name = "${dashboard.slug}.json";
+                    inherit (dashboard) url hash;
+                  }
               } > $out/${dashboard.folder}/${dashboard.slug}.json
           '') dashboardSources
           ++ map (board: "cp ${board.file} $out/${board.folder}/${board.slug}.json\n") authoredDashboards

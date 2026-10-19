@@ -123,9 +123,9 @@ errs = []
 if not got.get("hasUnit"):
     errs.append("home-forge registers a credentialled consumer, so postgresql-provision must exist")
 else:
-    # Membership, not exact match: both edges are load-bearing pins — setup
-    # (credential application needs the schema) and postgresql (ordering the
-    # restart pass before provisioning's server-identity wait).
+    # Membership, not exact match: both edges are pins — setup (credential
+    # application needs the schema) and postgresql (provisioning follows the
+    # server's restart).
     for dep in ("postgresql-setup.service", "postgresql.service"):
         if dep not in (got.get("requires") or []):
             errs.append(f"provisioning must require {dep}, got {got.get('requires')!r}")
@@ -251,7 +251,7 @@ done
 for system in x86_64-linux aarch64-linux; do
   pkgs="$(ne --raw --apply 'p: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames p))' "path:.#packages.${system}")" ||
     fail "packages.${system} does not evaluate"
-  if [ "$pkgs" != '["arm-expensive","bifrost","bifrost-voyage-plugin","cache-api-url","ci","ci-tailscale","deploy-rs","fixture","host-home-forge","host-la-admin-1","host-oci-melb-1","niks3","sops-bootstrap","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
+  if [ "$pkgs" != '["arm-expensive","bifrost","bifrost-voyage-plugin","cache-api-url","ci","ci-tailscale","deploy-rs","fixture","geopulse","geopulse-backend","geopulse-frontend","host-home-forge","host-la-admin-1","host-oci-melb-1","niks3","sops-bootstrap","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
     fail "packages.${system} keys drifted: $pkgs"
   fi
 done
@@ -537,7 +537,7 @@ if errs:
 PYEOF
 }
 
-probe oci-melb-1 '{"bootLoader":"grub","buildTmpfsSize":"8G","systemdBoot":false,"grub":true,"efiRemovable":true,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"dj":false,"containers":3,"containerLimits":true}'
+probe oci-melb-1 '{"bootLoader":"grub","buildTmpfsSize":"8G","systemdBoot":false,"grub":true,"efiRemovable":true,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"dj":false,"containers":6,"containerLimits":true}'
 probe la-admin-1 '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"dj":false,"containers":0,"containerLimits":true}'
 probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":null,"tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"dj":true,"containers":16,"containerLimits":true}'
 
@@ -604,14 +604,14 @@ PYEOF
 # served). The private
 # origin transport is provider-side: the provider renders the front the edge
 # dials, the edge only dials the canonical private name.
-probe_web_identity oci-melb-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","fronts":["tailscale-serve-cockpit"],"kanidmExposureMode":null,"catalogExposureModes":["tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":"https://la-admin-1.tail0fe19b.ts.net:8443","kanidmSni":null,"kanidmFrontLoopback":false,"kanidmTlsChain":null,"kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
-probe_web_identity la-admin-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","ntfyUrl":"http://127.0.0.1:2586","fronts":["tailscale-serve-kanidm-admin"],"kanidmExposureMode":"tailscale-serve","catalogExposureModes":["tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":null,"kanidmSni":null,"kanidmFrontLoopback":true,"kanidmTlsChain":"/srv/data/kanidm/tls/fullchain.pem","kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
-probe_web_identity home-forge '{"providerUrl":"https://id.shrublab.xyz","hostAuth":false,"kanidmUri":null,"fronts":[],"kanidmExposureMode":null,"catalogExposureModes":["tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":null,"kanidmSni":null,"kanidmFrontLoopback":false,"kanidmTlsChain":null,"kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
+probe_web_identity oci-melb-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","fronts":["tailscale-serve-cockpit","tailscale-serve-homarr"],"kanidmExposureMode":null,"catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":"https://la-admin-1.tail0fe19b.ts.net:8443","kanidmSni":null,"kanidmFrontLoopback":false,"kanidmTlsChain":null,"kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
+probe_web_identity la-admin-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","ntfyUrl":"http://127.0.0.1:2586","fronts":["tailscale-serve-kanidm-admin"],"kanidmExposureMode":"tailscale-serve","catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":null,"kanidmSni":null,"kanidmFrontLoopback":true,"kanidmTlsChain":"/srv/data/kanidm/tls/fullchain.pem","kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
+probe_web_identity home-forge '{"providerUrl":"https://id.shrublab.xyz","hostAuth":false,"kanidmUri":null,"fronts":[],"kanidmExposureMode":null,"catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":null,"kanidmSni":null,"kanidmFrontLoopback":false,"kanidmTlsChain":null,"kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
 # Identity clients are the policy-derived oauth2 set on OCI/LA; forge has none.
 for host in oci-melb-1 la-admin-1; do
   clients="$(ne --raw --apply 'c: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames (c.services.identity.oidc.clients or {})))' "path:.#nixosConfigurations.${host}.config")" ||
     fail "${host}: identity clients do not evaluate"
-  [ "$clients" = '["beszel","cloudflare-access","grafana","karakeep","langfuse","paperless","termix"]' ] ||
+  [ "$clients" = '["actual","beszel","cloudflare-access","geopulse","grafana","homarr","karakeep","langfuse","memos","paperless","termix","tududi"]' ] ||
     fail "${host}: identity clients drifted: $clients"
 done
 # Forge carries only the intrinsic OIDC contract, because the Grafana it runs
@@ -728,7 +728,7 @@ if errs:
 PYEOF
 }
 
-probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"knownHosts":["host-home-forge","host-la-admin-1","host-oci-melb-1"],"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"bifrost":{"failure":true,"success":false},"nix-daemon":{"failure":true,"success":false},"fast-nix-gc":{"failure":true,"success":false},"fast-nix-optimise":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-prune":{"failure":true,"success":false},"prometheus-node-exporter":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false},"tailscaled":{"failure":true,"success":false},"vector":{"failure":true,"success":false},"vmagent":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
+probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"knownHosts":["host-home-forge","host-la-admin-1","host-oci-melb-1"],"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"bifrost":{"failure":true,"success":false},"inbox-zero-scheduled-actions":{"failure":true,"success":false},"inbox-zero-watch-renewal":{"failure":true,"success":false},"nix-daemon":{"failure":true,"success":false},"fast-nix-gc":{"failure":true,"success":false},"fast-nix-optimise":{"failure":true,"success":false},"geopulse-backend":{"failure":true,"success":false},"geopulse-web":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-inbox-zero":{"failure":true,"success":false},"podman-prune":{"failure":true,"success":false},"prometheus-node-exporter":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false},"tailscaled":{"failure":true,"success":false},"vector":{"failure":true,"success":false},"vmagent":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
 probe_ops la-admin-1 "$(printf '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"knownHosts":["host-home-forge","host-la-admin-1","host-oci-melb-1"],"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"nix-daemon":{"failure":true,"success":false},"fast-nix-gc":{"failure":true,"success":false},"fast-nix-optimise":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"prometheus-node-exporter":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false},"tailscaled":{"failure":true,"success":false},"vector":{"failure":true,"success":false},"vmagent":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}' "$web_suffix")"
 probe_ops home-forge "$(printf '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"knownHosts":["host-home-forge","host-la-admin-1","host-oci-melb-1"],"buildMachines":0,"monitor":{"beets-duplicates":{"failure":true,"success":false},"beets-inbox":{"failure":true,"success":false},"beets-reconcile":{"failure":true,"success":false},"beszel-agent":{"failure":true,"success":false},"bifrost":{"failure":true,"success":false},"nix-daemon":{"failure":true,"success":false},"fast-nix-gc":{"failure":true,"success":false},"fast-nix-optimise":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"opentelemetry-collector":{"failure":true,"success":false},"podman-omniroute":{"failure":true,"success":true},"prometheus-node-exporter":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false},"tailscaled":{"failure":true,"success":false},"vector":{"failure":true,"success":false},"vmagent":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}' "$web_suffix")"
 
@@ -1101,7 +1101,7 @@ got = json.loads(sys.argv[1])
 expected = {
     "providerUrl": "https://id.shrublab.xyz",
     "identityNamespaces": ["oidc"],
-    "clientKeys": ["beszel", "cloudflare-access", "grafana", "karakeep", "langfuse", "paperless", "termix"],
+    "clientKeys": ["actual", "beszel", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"],
     "paperlessClientId": "paperless",
     "paperlessWellknownAligned": True,
     "karakeepClientId": "karakeep",
@@ -1499,11 +1499,6 @@ in {
   }) (builtins.filter (n: builtins.any (prefix: builtins.substring 0 (builtins.stringLength prefix) n == prefix)
     [ "traces/route-ai" "metrics/route-ai" "logs/route-ai" ])
     (builtins.attrNames (c.services.opentelemetry-collector.settings.service.pipelines or { }))));
-  # The frozen clickhouse pin version, visible on every host: the projection
-  # resolves from `nixpkgs-clickhouse` rather than from the host package set
-  # (D-080). Both candidates carry the same version string, so the pin identity
-  # is asserted on derivation paths in 7n-2b below.
-  clickhouseVersion = c.repo.packages.clickhouse.version or "";
   omnirouteEnable = c.services.omniroute.enable or false;
   omnirouteMonitor = builtins.hasAttr "podman-omniroute" (c.services.notify.events or { });
   monitorUnits = builtins.attrNames (c.services.notify.events or { });
@@ -1531,45 +1526,50 @@ PYEOF
 }
 
 placement_json="$(probe_placement "$ROOT" oci-melb-1)" || fail "7n-2: oci-melb-1 placement probe does not evaluate"
-assert_placement oci-melb-1 "$placement_json" '{"clickhouseVersion":"26.8.7.19-lts","ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["paperless"],"bifrostEnable":true,"bifrostCollector":"http://home-forge:4319/v1/traces","karakeepEnable":true,"niks3CacheAspect":true,"niks3ServerEnable":true,"langfuseEnable":false,"latitudeEnable":false,"langfusePort":0,"langfuseCatPort":3030,"grafanaCatPort":3000,"grafanaListener":0,"langfuseCollector":"","latitudeCollector":"","signalPipelines":{"logs":[],"metrics":[],"traces":[]},"aiRouteSignals":[],"aiRoutePipelines":{},"omnirouteEnable":false,"omnirouteMonitor":false,"hindsightWorkerEnabled":""}'
+assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["geopulse","inbox-zero","paperless"],"bifrostEnable":true,"bifrostCollector":"http://home-forge:4319/v1/traces","karakeepEnable":true,"niks3CacheAspect":true,"niks3ServerEnable":true,"langfuseEnable":false,"latitudeEnable":false,"langfusePort":0,"langfuseCatPort":3030,"grafanaCatPort":3000,"grafanaListener":0,"langfuseCollector":"","latitudeCollector":"","signalPipelines":{"logs":[],"metrics":[],"traces":[]},"aiRouteSignals":[],"aiRoutePipelines":{},"omnirouteEnable":false,"omnirouteMonitor":false,"hindsightWorkerEnabled":""}'
 placement_json="$(probe_placement "$ROOT" la-admin-1)" || fail "7n-2: la-admin-1 placement probe does not evaluate"
-assert_placement la-admin-1 "$placement_json" '{"clickhouseVersion":"26.8.7.19-lts","ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":false,"signalPipelines":{"logs":[],"metrics":[],"traces":[]},"aiRouteSignals":[],"aiRoutePipelines":{},"omnirouteEnable":false,"omnirouteMonitor":false,"hindsightWorkerEnabled":""}'
+assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":false,"signalPipelines":{"logs":[],"metrics":[],"traces":[]},"aiRouteSignals":[],"aiRoutePipelines":{},"omnirouteEnable":false,"omnirouteMonitor":false,"hindsightWorkerEnabled":""}'
 placement_json="$(probe_placement "$ROOT" home-forge)" || fail "7n-2: home-forge placement probe does not evaluate"
 la_absence="$(ne --raw --apply 'c: builtins.toJSON { cockpit = !(c.services.admin ? cockpit); termix = !(c.services.admin ? termix); adminSsh = (builtins.filter (n: n == "admin_ssh_identity" || n == "admin_ssh_known_hosts") (builtins.attrNames c.sops.secrets)) == []; }' "path:.#nixosConfigurations.la-admin-1.config")" ||
   fail "7n-2: LA absence probe does not evaluate"
 [ "$la_absence" = '{"adminSsh":true,"cockpit":true,"termix":true}' ] ||
   fail "7n-2: demoted capabilities must leave no namespace or secret registration on la-admin-1: $la_absence"
-assert_placement home-forge "$placement_json" '{"clickhouseVersion":"26.8.7.19-lts","ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse","hindsight","langfuse","latitude"],"bifrostEnable":true,"bifrostCollector":"http://home-forge:4319/v1/traces","karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":true,"latitudeEnable":true,"langfusePort":3030,"langfuseCatPort":3030,"grafanaCatPort":3000,"grafanaListener":3000,"langfuseCollector":"http://127.0.0.1:3030/api/public/otel","latitudeCollector":"http://127.0.0.1:3002","signalPipelines":{"logs":["otlphttp/victorialogs"],"metrics":["prometheusremotewrite/victoriametrics"],"traces":["otlphttp/victoriatraces"]},"aiRouteSignals":["traces","metrics","logs"],"aiRoutePipelines":{"logs/route-ai":["otlphttp/route-ai-victorialogs"],"metrics/route-ai":["prometheusremotewrite/route-ai-victoriametrics"],"traces/route-ai":["otlphttp/route-ai-langfuse"],"traces/route-ai-latitude":["otlphttp/route-ai-latitude"],"traces/route-ai-lean":["otlphttp/route-ai-victoriatraces"]},"omnirouteEnable":true,"omnirouteMonitor":true,"hindsightWorkerEnabled":"false"}'
+assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse","hindsight","langfuse","latitude"],"bifrostEnable":true,"bifrostCollector":"http://home-forge:4319/v1/traces","karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":true,"latitudeEnable":true,"langfusePort":3030,"langfuseCatPort":3030,"grafanaCatPort":3000,"grafanaListener":3000,"langfuseCollector":"http://127.0.0.1:3030/api/public/otel","latitudeCollector":"http://127.0.0.1:3002","signalPipelines":{"logs":["otlphttp/victorialogs"],"metrics":["prometheusremotewrite/victoriametrics"],"traces":["otlphttp/victoriatraces"]},"aiRouteSignals":["traces","metrics","logs"],"aiRoutePipelines":{"logs/route-ai":["otlphttp/route-ai-victorialogs"],"metrics/route-ai":["prometheusremotewrite/route-ai-victoriametrics"],"traces/route-ai":["otlphttp/route-ai-langfuse"],"traces/route-ai-latitude":["otlphttp/route-ai-latitude"],"traces/route-ai-lean":["otlphttp/route-ai-victoriatraces"]},"omnirouteEnable":true,"omnirouteMonitor":true,"hindsightWorkerEnabled":"false"}'
 
-# 7n-2b. ClickHouse comes from its own nixpkgs pin because this baseline's
-# build does not link (D-080), and both candidate revisions carry the same
-# version string — only the derivation identity tells them apart. Assert the
-# relationship on the deployed host: the projection is the frozen input's
-# package, the host's ClickHouse service consumes that projection, and neither
-# is the baseline nixpkgs build.
+# 7n-2b. ClickHouse comes from the host package set. The dedicated nixpkgs pin
+# and its `repo.packages.clickhouse` projection were retired once this baseline
+# pinned LLVM 22 for the build (D-080 → D-093), so nothing may reintroduce a
+# second source and the deployed server must be the host's own package.
+if grep -RnE --include='*.nix' 'nixpkgs-clickhouse|repo\.packages\.clickhouse' modules policy flake.nix; then
+  fail "7n-2b: the ClickHouse pin and its projection must be gone"
+fi
+if grep -q 'nixpkgs-clickhouse' renovate.json; then
+  fail "7n-2b: renovate must not carry a rule for the retired ClickHouse pin"
+fi
+grep -q 'package = pkgs.clickhouse;' modules/observability/langfuse/service.nix ||
+  fail "7n-2b: the Langfuse ClickHouse server must bind the host package set"
+grep -qF '${pkgs.clickhouse}/bin/clickhouse-client' modules/observability/latitude.nix ||
+  fail "7n-2b: the Latitude init client must come from the host package set"
 clickhouse_json="$(ne --raw --apply 'c: builtins.toJSON {
-  projected = c.repo.packages.clickhouse.drvPath or "";
   deployed = c.services.clickhouse.package.drvPath or "";
 }' "path:.#nixosConfigurations.home-forge.config")" ||
   fail "7n-2b: home-forge ClickHouse probe does not evaluate"
-clickhouse_pins="$(nix eval --impure --no-write-lock-file --raw --expr 'let f = builtins.getFlake (toString ./.); in builtins.toJSON {
-  frozen = f.inputs.nixpkgs-clickhouse.legacyPackages.x86_64-linux.clickhouse.drvPath;
-  baseline = f.inputs.nixpkgs.legacyPackages.x86_64-linux.clickhouse.drvPath;
-}')" || fail "7n-2b: ClickHouse pins do not evaluate"
-python3 - "$clickhouse_json" "$clickhouse_pins" <<'PYEOF' || fail "7n-2b: ClickHouse package provenance violated"
+clickhouse_baseline="$(nix eval --impure --no-write-lock-file --raw --expr 'let f = builtins.getFlake (toString ./.); in f.inputs.nixpkgs.legacyPackages.x86_64-linux.clickhouse.drvPath')" ||
+  fail "7n-2b: the baseline ClickHouse derivation does not evaluate"
+python3 - "$clickhouse_json" "$clickhouse_baseline" <<'PYEOF' || fail "7n-2b: ClickHouse package provenance violated"
 import json, sys
 
-got, pins = json.loads(sys.argv[1]), json.loads(sys.argv[2])
-projected, deployed = got["projected"], got["deployed"]
-errs = []
-if not projected or projected != pins["frozen"]:
-    errs.append(f"the projection must be the frozen nixpkgs-clickhouse package: {projected!r} != {pins['frozen']!r}")
-if deployed != projected:
-    errs.append(f"the deployed ClickHouse package must be the projection: {deployed!r} != {projected!r}")
-if projected and projected == pins["baseline"]:
-    errs.append("the projection must not be this baseline nixpkgs' ClickHouse build")
-if errs:
-    print("\n".join(errs), file=sys.stderr)
+got = json.loads(sys.argv[1])
+baseline = sys.argv[2]
+if not got["deployed"]:
+    print("home-forge: the ClickHouse server package did not evaluate", file=sys.stderr)
+    sys.exit(1)
+if got["deployed"] != baseline:
+    print(
+        "the deployed ClickHouse must be the baseline package set's build: "
+        f"{got['deployed']!r} != {baseline!r}",
+        file=sys.stderr,
+    )
     sys.exit(1)
 PYEOF
 
@@ -1827,7 +1827,7 @@ if not got["handlerUnit"]:
     errs.append("the notify-event@ handler template must exist when units are registered")
 if got["unreal"]:
     errs.append(f"registered units without an implementation: {got['unreal']!r}")
-if got["names"] != ["beszel-agent", "bifrost", "fast-nix-gc", "fast-nix-optimise", "nh-clean", "nix-daemon", "podman-prune", "prometheus-node-exporter", "restic-backups-state", "tailscaled", "vector", "vmagent"]:
+if got["names"] != ["beszel-agent", "bifrost", "fast-nix-gc", "fast-nix-optimise", "geopulse-backend", "geopulse-web", "inbox-zero-scheduled-actions", "inbox-zero-watch-renewal", "nh-clean", "nix-daemon", "podman-inbox-zero", "podman-prune", "prometheus-node-exporter", "restic-backups-state", "tailscaled", "vector", "vmagent"]:
     errs.append(f"registered units drifted from the owning capabilities: {got['names']!r}")
 if got["fromPackage"] != ["nix-daemon", "tailscaled"]:
     errs.append(f"package-provided registrations drifted: {got['fromPackage']!r}")

@@ -392,6 +392,16 @@ Potential later model:
 
 - edge HA/failover and advanced policy hardening once phase-1 operational posture is stable
 
+## User Application Placements
+
+Actual Budget, Memos and tududi are selected on `oci-melb-1`. The first two use native nixpkgs services; tududi uses one digest-pinned container with loopback publication. Their edge routes are `direct`, publicly named, and application-authenticated through Kanidm without Cloudflare Access, so native sync and API clients do not need an edge session (D-091).
+
+Actual retains password login because its OpenID integration is upstream preview functionality. Memos' provider is declared as a root-owned sops-rendered file and delivered through systemd credentials bound at `/etc/secrets` inside the unit, rather than configured manually by default. This avoids the shared rendered-secret directory's traversal restriction without widening its permissions. File loading under the unit sandbox and actual login remain live acceptance checks; instance settings are the documented fallback and then belong to the database. tududi's bootstrap email, password and session secret are service-scoped secrets; an empty email disables creation of the local recovery account.
+
+State resides under `/srv/data/{actual,memos,tududi}`, with export-first capture of the primary SQLite databases. Actual's raw `user-files` capture has not been proven coherent. These placements are not deployed, and the absent encrypted tududi file blocks the complete host derivation. The [runbook](runbooks/actual-memos-tududi.md) owns operator preparation, rollout and recovery checks.
+
+Homarr v2 is a separate user-facing dashboard being added for `oci-melb-1`, not a replacement for the operator Homepage on `la-admin-1` (D-092). Nix owns its digest-pinned runtime, Kanidm OIDC, private Tailscale bootstrap and recovery contract. Homarr's users, groups, boards and catalogue entries are edited in the application and are not generated from web policy. The public route stays withheld until private OIDC acceptance; host selection awaits the operator-provisioned service and OAuth client secrets. See the [Homarr runbook](runbooks/homarr.md).
+
 ## Deployment Architecture
 
 Bootstrap and rollout order:

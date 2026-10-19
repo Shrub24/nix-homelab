@@ -46,6 +46,8 @@ in
         aspects.degoog
         aspects.hindsight
         aspects.docs-mcp
+        # Home automation: the upstream container, host-networked for discovery.
+        aspects.home-assistant
         # Foundation aspects (FND-1): selection is enablement.
         aspects.sops-systemd-activation
         aspects.base

@@ -38,6 +38,11 @@
   # Multi-arch manifest index, including the OCI host's aarch64-linux platform.
   homarr = "ghcr.io/homarr-labs/homarr:v2.5.2@sha256:025471efe0735b6bb89953ea4e141c984a171c1781bc8ca404163d3c26d0e26d";
 
+  # Home Assistant's own image: the container is the installation method
+  # upstream supports (ADR-0012), and the multi-arch index keeps the pin valid
+  # on either architecture.
+  homeAssistant = "ghcr.io/home-assistant/home-assistant:2026.10.1@sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0";
+
   # Multi-arch index digest: the arm64 manifest is selected on oci-melb-1.
   inboxZero = "ghcr.io/elie222/inbox-zero:2.30.0@sha256:e9970c499a79b8a15bbab21363d1b87ea247c75b2721f036c7cee0e2c78d1fcc";
 

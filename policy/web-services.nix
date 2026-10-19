@@ -620,6 +620,34 @@ in
           category = "admin";
           health.path = "/api/health";
         };
+
+        # Home automation. The container shares home-forge's network namespace,
+        # so the origin is the provider's own listener on the provider's tailnet
+        # name — the edge dials it directly, with no provider-side front.
+        #
+        # Withheld until the instance is onboarded and accepted: released by
+        # flipping `publicReady`, the same single edit Homarr uses. Until then it
+        # is reached on the tailnet at the provider's port, and Home Assistant's
+        # own login is the only gate, so nothing new sits in the login path.
+        home-assistant = {
+          subdomain = "hass";
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 8123;
+          };
+          exposureMode = "tailscale-upstream";
+          category = "app";
+          publicReady = false;
+          # Once published, Access is the outer wall and Home Assistant's login
+          # the inner one. `access.oidc.enabled` stays off: this instance uses
+          # Home Assistant's own auth, not Kanidm.
+          access.requireCloudflareAccess = true;
+          cloudflare = {
+            proxied = true;
+            authenticatedOriginPulls = true;
+          };
+        };
       };
     };
   };

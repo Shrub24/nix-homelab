@@ -30,6 +30,7 @@ all:
   @./tests/check-user-app-placements.sh
   @./tests/check-geopulse-contract.sh
   @./tests/check-homarr-contract.sh
+  @./tests/check-home-assistant-contract.sh
 
 test-secrets:
   @./tests/check-secret-scope.sh
@@ -82,3 +83,6 @@ test-homarr-contract:
 
 test-geopulse-contract:
   @./tests/check-geopulse-contract.sh
+
+test-home-assistant-contract:
+  @./tests/check-home-assistant-contract.sh

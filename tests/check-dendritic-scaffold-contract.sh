@@ -251,7 +251,7 @@ done
 for system in x86_64-linux aarch64-linux; do
   pkgs="$(ne --raw --apply 'p: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames p))' "path:.#packages.${system}")" ||
     fail "packages.${system} does not evaluate"
-  if [ "$pkgs" != '["arm-expensive","bifrost","bifrost-voyage-plugin","cache-api-url","ci","ci-tailscale","deploy-rs","fixture","geopulse","geopulse-backend","geopulse-frontend","host-home-forge","host-la-admin-1","host-oci-melb-1","niks3","sops-bootstrap","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
+  if [ "$pkgs" != '["arm-expensive","bifrost","bifrost-voyage-plugin","cache-api-url","cache-public-key","cache-substituter-url","ci","ci-tailscale","deploy-rs","fixture","geopulse","geopulse-backend","geopulse-frontend","host-home-forge","host-la-admin-1","host-oci-melb-1","niks3","sops-bootstrap","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
     fail "packages.${system} keys drifted: $pkgs"
   fi
 done

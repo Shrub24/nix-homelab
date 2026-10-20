@@ -3,7 +3,7 @@
 ## 1. Pin Homarr v2 and establish canonical identity and routing
 
 - [x] 1.1 Verify the released `ghcr.io/homarr-labs/homarr:v2.5.2` image index includes `linux/arm64`, record its immutable digest in `policy/oci-images.nix`, and confirm the registry reference evaluates for `aarch64-linux`.
-- [x] 1.2 Add the `home.shrublab.xyz` route on `oci-melb-1` using Homarr's verified port and Tailscale-Serve transport so bootstrap remains privately reachable while `publicReady = false`; keep Cloudflare Access disabled and app OIDC enabled. Run web-policy and service-catalog contracts and verify the exported route uses the canonical host.
+- [x] 1.2 Add the `home.shrublab.xyz` route on `oci-melb-1` using Homarr's verified port and Tailscale-Serve transport so bootstrap remains privately reachable while the route's `publish` is false; keep Cloudflare Access disabled and app OIDC enabled. Run web-policy and service-catalog contracts and verify the exported route uses the canonical host.
 - [x] 1.3 Add a dedicated Homarr client to `policy/identity.json` with the canonical OIDC callback and the HTTPS Tailscale Serve callback derived from the service catalog provider host and port; use minimal identity scopes and the correct Kanidm authorization group. Bind its client secret to the OCI host OIDC source and add the generated key to its secret template/SOPS scope. Verify identity directionality and secret-scope checks without decrypting or editing encrypted secrets.
 
 ## 2. Implement the isolated service and verify OIDC behavior

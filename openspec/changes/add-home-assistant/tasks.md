@@ -9,7 +9,7 @@
 
 ## 2. Route, notification and backup contracts
 
-- [x] 2.1 Declare the `hass.shrublab.xyz` route in `policy/web-services.nix` with `exposureMode = "tailscale-upstream"`, `publicReady = false`, Cloudflare Access enabled and application OIDC off.
+- [x] 2.1 Declare the `hass.shrublab.xyz` route in `policy/web-services.nix` with `exposureMode = "tailscale-upstream"`, `publish = false`, Cloudflare Access enabled and application OIDC off.
 - [x] 2.2 Register the container with `services.notify.events` for failure.
 - [x] 2.3 Register export-first backup: SQLite online backup for the recorder database, raw copy of the directory, and the database plus WAL sidecars excluded from that copy.
 - [x] 2.4 Add `tests/check-home-assistant-contract.sh` covering the container shape, the withheld route, the port agreement and the backup exclusions, and wire it into `just checks all`.
@@ -24,5 +24,5 @@
 
 - [ ] 4.1 Deploy `home-forge` and confirm the container is active, the state directory is created `0700`, and `http://home-forge.tail0fe19b.ts.net:8123` answers.
 - [ ] 4.2 Onboard the owner account and confirm the instance is usable over the tailnet.
-- [ ] 4.3 Release the route: set `publicReady = true`, add `use_x_forwarded_for` and the pinned `trusted_proxies` entry to `configuration.yaml`, deploy, and confirm `https://hass.shrublab.xyz` reaches the instance through the edge.
+- [ ] 4.3 Release the route: set `publish = true`, add `use_x_forwarded_for` and the pinned `trusted_proxies` entry to `configuration.yaml`, deploy, and confirm `https://hass.shrublab.xyz` reaches the instance through the edge.
 - [ ] 4.4 Confirm the first backup run captured the exported database and that a restore of `.storage` plus the export loads the instance with its integrations intact.

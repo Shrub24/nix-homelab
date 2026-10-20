@@ -15,10 +15,12 @@ _: {
       cfg = config.services.ingress;
       ingressRoutes = import ./_ingress-routes.nix { inherit lib; };
       currentHost = lib.attrByPath [ "repo" "web" "currentHost" ] { } config;
-      # A policy route that declares publicReady=false has an identity but no
-      # publication yet: the edge serves nothing for it until the policy says the
-      # route is ready, so a declared public origin never answers on its own.
-      resolvedRoutes = lib.filterAttrs (name: svc: svc.publicReady or true) (currentHost.services or { });
+      # `publish = false` is a posture, not progress: the route keeps its
+      # identity — public URL, OIDC callback, origin and access posture — while
+      # the edge serves nothing for it. A route is published unless the policy
+      # says otherwise, because declaring a route at all is the publication
+      # declaration; withholding is the exception and has to be written down.
+      resolvedRoutes = lib.filterAttrs (name: svc: svc.publish or true) (currentHost.services or { });
       primaryDomain = currentHost.primaryDomain or "";
 
       edgeRoutes = ingressRoutes resolvedRoutes;

@@ -16,7 +16,7 @@
 ## 3. Identity and controlled public exposure (GP-2, GP-4, GP-5)
 
 - [x] 3.1 Add the canonical `geopulse` identity client with `/oidc/callback`, `users`-only `openid profile email`, RS256 compatibility and PKCE enforcement retained. Verify rendered provider policy and canonical discovery/callback values; document the one-time database provider entry, manual account linking and actual registration-setting precedence.
-- [x] 3.2 Add the public web-policy identity and minimal GeoPulse-owned ingress gate keyed by `publicReady`, false by default. Preserve private frontend access with no public bootstrap window; test rendered configs in both gate states and public endpoint denials without source-text assertions. Write and validate the HTTPS hostname-preserving SSH-tunnel procedure for private OIDC bootstrap.
+- [x] 3.2 Add the public web-policy identity with a withheld publication posture (`publish = false`; D-098 removed the GeoPulse-owned gate this was planned as). Preserve private frontend access with no public bootstrap window; test rendered configs in both gate states and public endpoint denials without source-text assertions. Write and validate the HTTPS hostname-preserving SSH-tunnel procedure for private OIDC bootstrap.
 - [ ] 3.3 Complete the owner/device runbook with private first-account setup, database-owned registration closure, provider setup and source-specific Basic authentication. Document external map/geocoding/weather privacy and disabled AI/MQTT. Record the decision and placement in existing architecture docs; verify the examples match the rendered runtime and do not expose tokens in command history or logs.
 
 ## 4. Integration and operator acceptance

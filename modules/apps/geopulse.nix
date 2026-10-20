@@ -283,7 +283,7 @@
         }
 
         # Publication is a policy fact: `policy/web-services.nix` declares the route
-        # with `publicReady = false` until the private bootstrap is finished, and
+        # with `publish = false` until the private bootstrap is finished, and
         # releasing it is that one edit.
 
         (lib.mkIf cfg.enable {

@@ -7,7 +7,7 @@ Homarr is the user-facing dashboard on `oci-melb-1`, separate from the operator 
 - The module, route, Kanidm client and contract test are in the repository.
 - `secrets/services/homarr.yaml` exists.
 - **Selected on `oci-melb-1`** with `credentialsBootstrap = true`, pending deploy. Nothing runs yet.
-- The route's `publicReady` is `false`; the edge serves no site for it.
+- The route's `publish` posture is `false`; the edge serves no site for it.
 
 The selection and the systemd secret-activation policy (D-097) land in the same deploy, so the installer unit the container orders after exists on the host.
 
@@ -55,9 +55,11 @@ homarr = {
 The Kanidm client accepts two exact redirect URIs:
 
 - Public: `https://home.shrublab.xyz/api/auth/callback/oidc`
-- Private: `https://<oci-melb-1-tailnet-name>:7575/api/auth/callback/oidc`
+- Private: `https://oci-melb-1.tail0fe19b.ts.net:7575/api/auth/callback/oidc`
 
-The private URI uses the host and port from Homarr's provider endpoint, with `https` because Tailscale Serve terminates TLS. To obtain the current name from the resolved catalog:
+The private URI uses the host and port from Homarr's provider endpoint, with `https` because Tailscale Serve terminates TLS.
+
+**Use the full tailnet name, not the short one.** Tailscale Serve terminates TLS with a certificate issued for the node's tailnet FQDN only (`/var/lib/tailscale/certs/oci-melb-1.tail0fe19b.ts.net.crt` on the host), so `https://oci-melb-1:7575/` fails the handshake — the browser reports "Secure connection failed" and curl reports `error:0A000438:SSL routines::tlsv1 alert internal error`. That is the certificate refusing an SNI it does not cover, not a broken proxy; the FQDN with the same port answers. `tailscale serve status` on the host lists the only reachable form. To obtain the current name from the resolved catalog:
 
 ```sh
 nix eval --raw .#nixosConfigurations.la-admin-1.config.repo.web.catalog.homarr.endpoint.host
@@ -72,14 +74,14 @@ Homarr's `BASE_URL` depends on `services.homarr.credentialsBootstrap`:
 
 **The private OIDC login works only while `credentialsBootstrap = true`.** With it `false`, Homarr redirects to the public URL, which the edge withholds. `NEXTAUTH_URL` is intentionally unset so the callback follows the forwarded request host and can use either registered URI.
 
-1. The host record already sets `credentialsBootstrap = true`. Deploy `oci-melb-1` and confirm `publicReady` is still `false`.
-2. From a tailnet-connected browser, open `https://<oci-melb-1-tailnet-name>:7575/` and create Homarr's first local credentials administrator. This local account is the verified route to administrator; OIDC alone does not grant it.
+1. The host record already sets `credentialsBootstrap = true`. Deploy `oci-melb-1` and confirm the route's `publish` is still `false`.
+2. From a tailnet-connected browser, open `https://oci-melb-1.tail0fe19b.ts.net:7575/` and create Homarr's first local credentials administrator. This local account is the verified route to administrator; OIDC alone does not grant it.
 3. Sign out and sign in with the Kanidm account. Homarr creates a separate OIDC user on first login. From the local administrator, promote that user to administrator in Homarr.
 4. Verify a second Kanidm identity creates a separate account and cannot see another user's private board or home-board selection.
 5. Remove the temporary local credentials account.
 6. Release the route in the same change that sets `credentialsBootstrap = false`:
    - `services.homarr.credentialsBootstrap = false;` in the OCI host composition.
-   - `publicReady = true;` on the `homarr` route in `policy/web-services.nix`. The edge releases a route when its policy `publicReady` is true. Homarr has no host-side gate; GeoPulse does, through `services.geopulse.publicReady`.
+   - `publish = true;` on the `homarr` route in `policy/web-services.nix`. The edge serves a route whose policy `publish` is true (the default), and no aspect has a host-side release switch, so that field is the whole change.
    - Do not leave a public route with credentials enabled.
 7. Deploy. Confirm anonymous requests cannot read dashboard content and Kanidm sign-in still works through the public callback. Keep Cloudflare Access disabled; it would interfere with the app's own OIDC flow.
 

@@ -97,7 +97,7 @@ let
   # The un-overridden runtime: the fixture guard below is only trustworthy if the
   # same detector fires on these.
   realFinishedExec = cfg.systemd.services.geopulse-web.serviceConfig.ExecStart;
-  # Publication is the policy route's own publicReady. The released variant
+  # Publication is the policy route's own `publish` posture. The released variant
   # renders that route through the same projection the edge uses, so the proof
   # follows the release path instead of a host-side switch beside it.
   ingressRoutes = import $ROOT/modules/web/_ingress-routes.nix { inherit (f.inputs.nixpkgs) lib; };
@@ -105,7 +105,7 @@ let
     let
       services = cfg.repo.web.hosts.$HOST.services;
     in
-    ingressRoutes (services // { geopulse = services.geopulse // { publicReady = true; }; });
+    ingressRoutes (services // { geopulse = services.geopulse // { publish = true; }; });
   openCfg = (f.nixosConfigurations.$HOST.extendModules {
     modules = [
       {
@@ -224,7 +224,7 @@ in
   localEndpointPort = cfg.services.postgres.localEndpoint.port;
   route = builtins.intersectAttrs { geopulse = 1; } cfg.repo.web.catalog;
   gate = {
-    routePublicReady = cfg.repo.web.hosts.$HOST.services.geopulse.publicReady or null;
+    routePublish = cfg.repo.web.hosts.$HOST.services.geopulse.publish or null;
     edgeClosed = edgeRoute cfg;
     edgeOpen = edgeRoute openCfg;
     edgePublicService = {
@@ -322,8 +322,8 @@ else:
         )
 
 gate = d["gate"]
-if gate["routePublicReady"] is not False:
-    errs.append("the geopulse policy route must declare publicReady = false until the bootstrap is done")
+if gate["routePublish"] is not False:
+    errs.append("the geopulse policy route must declare publish = false until the bootstrap is done")
 if gate["edgeClosed"] is not None:
     errs.append(f"the edge serves the geopulse route while the gate is closed: {gate['edgeClosed']!r}")
 released = gate["edgeOpen"]
@@ -1073,7 +1073,7 @@ let
   }).config;
   ingressRoutes = import $ROOT/modules/web/_ingress-routes.nix { inherit (np) lib; };
   closedCfg = withAspect base;
-  releasedRoute = closedCfg.repo.web.hosts.$HOST.services.geopulse // { publicReady = true; };
+  releasedRoute = closedCfg.repo.web.hosts.$HOST.services.geopulse // { publish = true; };
   services0 = closedCfg.repo.web.hosts.$HOST.services;
   releasedRoutes = ingressRoutes (services0 // { geopulse = releasedRoute; });
   opened =

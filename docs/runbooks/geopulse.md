@@ -4,7 +4,7 @@ GeoPulse records location history (track ingest from OwnTracks/GPSLogger-style
 sources, PostGIS-backed tracks, OIDC login) and is placed on `oci-melb-1` by the
 `geopulse` aspect in `modules/apps/geopulse.nix`. This runbook covers the
 database seam, the operator-owned secrets and the native runtime the aspect
-delivers. The public route is withheld by the policy's `publicReady` flag until the owner's
+delivers. The public route is withheld by the policy's `publish` posture until the owner's
 private bootstrap is verified (see [Publication gate](#publication-gate)).
 
 ## Current state (2026-10-19)
@@ -17,7 +17,7 @@ private bootstrap is verified (see [Publication gate](#publication-gate)).
 | `geopulse-web` | active, answers `200` on loopback |
 | `geopulse-backend` | active and running; `/api/health` answers `200` |
 | Start limits | 5 starts in 5 minutes on both units, so a crash loop reaches `failed` and notifies |
-| Publication | withheld: the policy route declares `publicReady = false` |
+| Publication | withheld: the policy route declares `publish = false` |
 | Live login | not verified |
 
 ## Operator secret preparation
@@ -318,13 +318,13 @@ The route declares its public identity from the start — `geopulse.shrublab.xyz
 Access-free, application OIDC on — but declares no publication, so the edge serves
 no site for it.
 
-| State | Route `publicReady` in policy | Route identity | Edge site |
+| State | Route `publish` in policy | Route identity | Edge site |
 | --- | --- | --- | --- |
 | Shipped default | `false` | `https://geopulse.shrublab.xyz` | withheld |
 | After bootstrap | `true` | unchanged | served |
 
 - Publication is the policy's own flag. Flipping it is one line in
-  `policy/web-services.nix`, followed by a deploy: `publicReady = true;` on the
+  `policy/web-services.nix`, followed by a deploy: `publish = true;` on the
   `geopulse` route. There is no host-side release switch, so the policy is the
   only place that answers whether the site is live.
 - Flip it only after the owner's login is verified and password and OIDC
@@ -568,7 +568,7 @@ to the notifier.
   `secrets/hosts/oci-melb-1/oidc.yaml`, enters the same value into the provider row,
   and logs in from the private URL (see [Private bootstrap over HTTPS](#private-bootstrap-over-https)).
 - Owner account creation, registration closed, then publication: set
-  `publicReady = true` on the `geopulse` route in `policy/web-services.nix` (see
+  `publish = true` on the `geopulse` route in `policy/web-services.nix` (see
   [Publication gate](#publication-gate)). Do it only after the login above is
   verified.
 - Device ingest, the tile proxy (no tile has been fetched yet), and the JVM heap

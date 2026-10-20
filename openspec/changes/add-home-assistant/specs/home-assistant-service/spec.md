@@ -38,15 +38,15 @@ The port Home Assistant listens on SHALL be declared once as an option and SHALL
 - **THEN** evaluation fails with a message naming both, rather than the edge dialling a port nothing listens on
 
 ### Requirement: The public route SHALL stay withheld until acceptance
-The `hass.shrublab.xyz` route SHALL be declared in canonical web policy with `publicReady = false` and SHALL be released by setting that field, with no host-side release switch. While withheld, the edge SHALL serve no site for it.
+The `hass.shrublab.xyz` route SHALL be declared in canonical web policy with `publish = false` and SHALL be released by setting that field, with no host-side release switch. While withheld, the edge SHALL serve no site for it.
 
 #### Scenario: The instance is not yet accepted
-- **WHEN** the edge is evaluated while `publicReady` is false
+- **WHEN** the edge is evaluated while `publish` is false
 - **THEN** no ingress route is projected for `home-assistant`
 - **AND** the instance is reachable on the provider's tailnet address at its own port
 
 #### Scenario: The route is released
-- **WHEN** `publicReady` is set to true in the policy
+- **WHEN** `publish` is set to true in the policy
 - **THEN** the edge serves the route, with Cloudflare Access enabled outside Home Assistant's own login
 
 #### Scenario: Application OIDC is claimed

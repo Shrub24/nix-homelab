@@ -382,7 +382,7 @@ in
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;
-          publicReady = false;
+          publish = false;
         };
 
         # Google sign-in gates the app itself; the webhook must stay public, so
@@ -408,7 +408,7 @@ in
         # Public identity from the start, but not yet published: the OIDC callback
         # derives from this origin while the edge withholds the route, so no
         # Access-free site answers before the private bootstrap is done. Publishing
-        # it is this `publicReady` flag and nothing else. Access stays off because
+        # it is this `publish` field and nothing else. Access stays off because
         # device ingest cannot present an interactive Access session and the
         # application authenticates its own callers.
         geopulse = {
@@ -420,7 +420,7 @@ in
           };
           exposureMode = "direct";
           declarePublic = true;
-          publicReady = false;
+          publish = false;
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;
@@ -626,7 +626,7 @@ in
         # name — the edge dials it directly, with no provider-side front.
         #
         # Withheld until the instance is onboarded and accepted: released by
-        # flipping `publicReady`, the same single edit Homarr uses. Until then it
+        # flipping `publish`, the same single edit Homarr uses. Until then it
         # is reached on the tailnet at the provider's port, and Home Assistant's
         # own login is the only gate, so nothing new sits in the login path.
         home-assistant = {
@@ -638,7 +638,7 @@ in
           };
           exposureMode = "tailscale-upstream";
           category = "app";
-          publicReady = false;
+          publish = false;
           # Once published, Access is the outer wall and Home Assistant's login
           # the inner one. `access.oidc.enabled` stays off: this instance uses
           # Home Assistant's own auth, not Kanidm.

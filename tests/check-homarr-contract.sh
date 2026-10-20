@@ -55,7 +55,7 @@ in {
   credentialsBootstrapDefault = defaults.options.services.homarr.credentialsBootstrap.default;
   route = {
     inherit (route) exposureMode upstreamPort publicUrl declarePublic;
-    publicReady = routeData.publicReady or null;
+    publish = routeData.publish or null;
     inherit (route.access) requireCloudflareAccess;
     oidcEnabled = route.access.oidc.enabled;
   };
@@ -112,13 +112,13 @@ def route_errors(candidate):
         found.append("the route must declare its application OIDC consumer")
     if candidate["declarePublic"] is not True:
         found.append("the withheld route must retain its public identity for eventual release")
-    if candidate["publicReady"] is not False:
+    if candidate["publish"] is not False:
         found.append("the public route must remain withheld until private OIDC acceptance")
     return found
 
 errors.extend(route_errors(route))
 mutated_route = dict(route)
-mutated_route["publicReady"] = True
+mutated_route["publish"] = True
 if not route_errors(mutated_route):
     errors.append("mutation control failed to reject premature public route release")
 

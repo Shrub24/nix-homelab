@@ -2876,3 +2876,21 @@ The recorder keeps SQLite to start. Home Assistant's own guidance is that an ext
 - Kanidm OIDC was deferred rather than declined. It needs the `hass-oidc-auth` custom component inside `/config`, which Nix does not manage for a container, so putting it in the authentication path before the instance is proven buys risk, not parity.
 
 **Consequences:** The route is declared with `publicReady = false` and reached on the tailnet at the provider's port until onboarding is accepted, then released by flipping that one policy field — the same single edit Homarr uses, with no host-side switch. Publishing additionally needs `use_x_forwarded_for` and a pinned `trusted_proxies` entry in `configuration.yaml`, which the runbook records because it is operator-owned state. The container is registered with `services.notify.events` so a crash loop reaches the notifier, and its recorder database is exported through SQLite's online backup API while the database and its WAL sidecars are excluded from the raw copy of the directory.
+
+## D-101: A route's publication is a posture field (`publish`), not a readiness flag
+
+**Status:** Accepted. Supersedes the *name* in D-098; the decision it records — one field, no host-side release switch — stands.
+
+**Context:** D-098 left publication as `publicReady` on the route in `policy/web-services.nix`. The mechanism was right, the name was not: `publicReady` describes where a human has got to in an acceptance process ("is it ready yet?"), so the policy file carried a lifecycle state rather than an intent. A declarative configuration should state the desired posture; the process that leads to it belongs in a runbook.
+
+**Evidence:** It is not an upstream idiom. In the pinned nixpkgs, options named for lifecycle state are essentially absent (a single `ready` and a single `bootstrap` across `nixos/modules`), while the attribute names in use are intent-shaped (`enable`, and per-capability `*Enabled`). The two switches D-098 deleted were also state-named (`services.geopulse.publicReady`, `services.ingress.releasedRoutes`), so this was the last one left.
+
+**Decision:** The field is `publish` on the route record, defaulting to true: declaring a route at all *is* the publication declaration, so withholding is the exception that has to be written down. `publish = false` reads the same way as `enable = false` — an instruction about the desired state, with no claim about whether anyone has finished a process. The runbooks keep the acceptance steps; the policy file keeps the posture.
+
+**Alternatives considered:**
+
+- Collapsing publication into the fields that already exist — declaring a withheld route `tailscale-only` + `declarePublic = false` — was rejected on a concrete cost: `publicUrl`/`publicHost` are null for a service that is not public, and those values are exactly what a withheld deployment still needs. The registered OIDC redirect URI derives from `publicUrl`, as do the ntfy base URL, the operator homepage links and cockpit's host. A withheld route must keep its public identity while the edge serves nothing, so the two axes have to stay separate.
+- `forcePrivate` was rejected as a name: "force" reads as definition priority (`mkForce`) in Nix, so the field would look like an override mechanism rather than the posture itself.
+- Defaulting `publish` to `false`, so a route must opt in to being served, was rejected: every one of the fleet's published routes would need the line, and the failure mode of the safe default is a route that silently answers nothing because someone forgot it.
+
+**Consequences:** Withholding and releasing are one field either way, so the working shape is unchanged; what changes is that the file now says what the system should be, and `just checks` pins that posture rather than a stage. The rename touched the ingress filter, the three withheld routes (`geopulse`, `homarr`, `home-assistant`), their contract tests, and the runbooks.

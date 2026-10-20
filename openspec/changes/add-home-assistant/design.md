@@ -24,7 +24,7 @@ nixpkgs owns `services.home-assistant` for its native module. Declaring our cont
 
 ## Routing: withheld by policy, released by one field
 
-The route is declared with `publicReady = false`, so the edge renders no site for it (D-098: publication is the policy's own field, with no host-side release switch). Until release, the instance is reached over the tailnet at the provider's port — the tailnet is already an encrypted, authenticated transport, so nothing needs to terminate in front of it.
+The route is declared with `publish = false`, so the edge renders no site for it (D-098: publication is the policy's own field, with no host-side release switch). Until release, the instance is reached over the tailnet at the provider's port — the tailnet is already an encrypted, authenticated transport, so nothing needs to terminate in front of it.
 
 `exposureMode = "tailscale-upstream"`, not `tailscale-serve`: the container binds the host's interfaces, so its socket is reachable on the provider's tailnet name and no provider-side front is needed.
 

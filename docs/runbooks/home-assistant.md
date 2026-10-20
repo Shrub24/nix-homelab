@@ -11,7 +11,7 @@ instance is onboarded and accepted.
 - The aspect, route, image pin, backup contract and contract test are in the
   repository.
 - Selected on `home-forge`; **not deployed yet**.
-- The route's `publicReady` is `false`, so the edge serves no site for it.
+- The route's `publish` posture is `false`, so the edge serves no site for it.
 
 ## 1. Reach it before release
 
@@ -85,7 +85,7 @@ is the reason discovery works at all.
 ## 5. Release to the public hostname
 
 1. Confirm the instance is reachable and healthy over the tailnet.
-2. Set the route's `publicReady = true` in `policy/web-services.nix`.
+2. Set the route's `publish = true` in `policy/web-services.nix`.
 3. Set Home Assistant to trust the edge as a proxy, in `configuration.yaml`:
 
    ```yaml

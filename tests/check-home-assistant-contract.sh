@@ -118,7 +118,7 @@ route = forge["edgeRoute"]
 if route is None:
     errs.append("the edge host has no resolved home-assistant route")
 else:
-    if route.get("publicReady") is not False:
+    if route.get("publish") is not False:
         errs.append("the route must stay withheld until the instance is accepted")
     if route["subdomain"] != "hass":
         errs.append(f"subdomain {route['subdomain']!r}")

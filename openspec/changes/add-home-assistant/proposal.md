@@ -11,7 +11,7 @@
 - Add a `home-assistant` aspect under `modules/apps/` and select it on `home-forge`.
 - Pin `ghcr.io/home-assistant/home-assistant` by tag and digest in `policy/oci-images.nix`; run it as a container that **shares the host network namespace**, so discovery integrations (HomeKit, Chromecast, Hue, Matter, ESPHome) work, and publishes no port.
 - Keep `/srv/data/home-assistant` operator-owned: Home Assistant creates its own minimal `configuration.yaml`, and Nix creates only the directory (mode `0700`, since `.storage` holds every integration credential).
-- Declare the `hass.shrublab.xyz` route through canonical web policy with `publicReady = false`, so the edge serves nothing until onboarding is accepted; reach the instance on the tailnet at the provider's port in the meantime.
+- Declare the `hass.shrublab.xyz` route through canonical web policy with `publish = false`, so the edge serves nothing until onboarding is accepted; reach the instance on the tailnet at the provider's port in the meantime.
 - Register the recorder database for export-first backup: SQLite's online backup API for history, a raw copy of the rest of the directory, and the database plus its WAL sidecars excluded from that copy.
 - Register the container with `services.notify.events` so a crash loop reaches the notifier.
 - Add a placement contract check, an operator runbook, and the decision record.

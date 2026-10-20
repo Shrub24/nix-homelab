@@ -13,7 +13,7 @@ trap cleanup EXIT
 
 nix eval --impure --json --no-write-lock-file --expr '
   let
-    flake = builtins.getFlake (toString ./.);
+    flake = builtins.getFlake "path:${toString ./.}";
     lib = flake.inputs.nixpkgs.lib;
     policy = import ./policy/web-services.nix {
       canonicalServices = flake.inputs.nix-fleet.lib.serviceEndpoints.canonicalServices;

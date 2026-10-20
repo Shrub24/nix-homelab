@@ -31,7 +31,7 @@ fail() {
 
 cat >"$PROBE" <<EOF
 let
-  f = builtins.getFlake (toString $ROOT);
+  f = builtins.getFlake "path:$ROOT";
   lib = f.inputs.nixpkgs.lib;
   validator =
     if builtins.getEnv "NIX_FLEET_OUTPUT_VIEW_CHECKS" != "" then

@@ -267,7 +267,7 @@ done
 for pair in "x86_64-linux la-admin-1" "x86_64-linux home-forge" "aarch64-linux oci-melb-1"; do
   # shellcheck disable=SC2086
   set -- $pair
-  drvs="$(ne --impure --raw --expr "let f = builtins.getFlake (toString $ROOT); in f.checks.$1.host-$2.drvPath + \" \" + f.packages.$1.host-$2.drvPath")" ||
+  drvs="$(ne --impure --raw --expr "let f = builtins.getFlake "path:$ROOT"; in f.checks.$1.host-$2.drvPath + \" \" + f.packages.$1.host-$2.drvPath")" ||
     fail "checks.$1.host-$2 or packages.$1.host-$2 is missing"
   check_drv="${drvs%% *}"
   package_drv="${drvs##* }"
@@ -1554,7 +1554,7 @@ clickhouse_json="$(ne --raw --apply 'c: builtins.toJSON {
   deployed = c.services.clickhouse.package.drvPath or "";
 }' "path:.#nixosConfigurations.home-forge.config")" ||
   fail "7n-2b: home-forge ClickHouse probe does not evaluate"
-clickhouse_baseline="$(nix eval --impure --no-write-lock-file --raw --expr 'let f = builtins.getFlake (toString ./.); in f.inputs.nixpkgs.legacyPackages.x86_64-linux.clickhouse.drvPath')" ||
+clickhouse_baseline="$(nix eval --impure --no-write-lock-file --raw --expr 'let f = builtins.getFlake "path:${toString ./.}"; in f.inputs.nixpkgs.legacyPackages.x86_64-linux.clickhouse.drvPath')" ||
   fail "7n-2b: the baseline ClickHouse derivation does not evaluate"
 python3 - "$clickhouse_json" "$clickhouse_baseline" <<'PYEOF' || fail "7n-2b: ClickHouse package provenance violated"
 import json, sys

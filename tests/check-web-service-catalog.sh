@@ -9,7 +9,7 @@ cd "$REPO_ROOT"
 # transport fields as cross-host addresses.
 nix eval --impure --no-write-lock-file --expr '
   let
-    flake = builtins.getFlake (toString ./.);
+    flake = builtins.getFlake "path:${toString ./.}";
     lib = flake.inputs.nixpkgs.lib;
     policy = import ./policy/web-services.nix {
       canonicalServices = flake.inputs.nix-fleet.lib.serviceEndpoints.canonicalServices;
@@ -38,7 +38,7 @@ echo "web-service catalog contract: PASS"
 # catalog can become ambiguous.
 nix eval --impure --no-write-lock-file --expr '
   let
-    flake = builtins.getFlake (toString ./.);
+    flake = builtins.getFlake "path:${toString ./.}";
     lib = flake.inputs.nixpkgs.lib;
     policyLib = import ./lib/policy.nix { inherit lib; };
     dupPolicy = {
@@ -70,7 +70,7 @@ echo "web-service catalog duplicate-key: PASS"
 # serial deploy order is independent of which host is the edge.
 nix eval --impure --no-write-lock-file --expr '
   let
-    flake = builtins.getFlake (toString ./.);
+    flake = builtins.getFlake "path:${toString ./.}";
     deploy = flake.deployHosts;
   in
   assert deploy.edgeHost == "oci-melb-1";
@@ -87,7 +87,7 @@ echo "deploy default-target boundary: PASS"
 # the single tailnet suffix authority (policy/globals.nix).
 web_refs="$(nix eval --impure --raw --no-write-lock-file --expr '
   let
-    flake = builtins.getFlake (toString ./.);
+    flake = builtins.getFlake "path:${toString ./.}";
     globals = import ./policy/globals.nix;
     policy = import ./policy/web-services.nix {
       canonicalServices = flake.inputs.nix-fleet.lib.serviceEndpoints.canonicalServices;
@@ -149,7 +149,7 @@ echo "web routing canonical-host references: PASS"
 # prove generically; it stays as a concrete check rather than an abstraction.
 nix eval --impure --no-write-lock-file --json --expr '
   let
-    flake = builtins.getFlake (toString ./.);
+    flake = builtins.getFlake "path:${toString ./.}";
     provider = flake.nixosConfigurations.oci-melb-1.config;
     catalog = provider.repo.web.catalog."niks3-write";
     lib = flake.inputs.nixpkgs.lib;

@@ -13,6 +13,14 @@ _: {
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       route = config.repo.web.catalog.homarr or null;
       oidcClient = config.services.identity.oidc.clients.homarr or null;
+      # Whether this route is served is a policy posture, not progress the module
+      # tracks: the same `publish` field the edge filter reads decides the
+      # browser's origin and whether local credentials remain reachable. A
+      # withheld route is a tailnet-only instance, so it keeps the private
+      # origin and the credentials provider; a published one is public and
+      # OIDC-only. Re-asserting `publish = false` in policy is therefore also the
+      # way back in if identity breaks (D-104).
+      published = if route == null then true else route.publish;
 
       dataDir = "/srv/data/homarr";
       containerPort = 7575;
@@ -33,16 +41,6 @@ _: {
           oidc = secretHelpers.mkSecretFileOption "homarr-oidc-secrets";
         };
 
-        credentialsBootstrap = lib.mkOption {
-          type = lib.types.bool;
-          default = false;
-          description = ''
-            Temporarily enable Homarr's local credentials provider for private
-            first-administrator setup. This also selects the private Tailscale
-            Serve origin for BASE_URL. Keep the public route withheld, create and
-            promote the Kanidm-backed account, then disable this before release.
-          '';
-        };
       };
 
       config = lib.mkMerge [
@@ -77,8 +75,10 @@ _: {
             })
           ];
 
-          # BASE_URL follows the browser's current private/public phase. Leave
-          # NEXTAUTH_URL unset so Auth.js derives its OIDC callback from forwarded headers.
+          # BASE_URL follows the route's posture: the private Tailscale Serve
+          # origin while it is withheld, Homarr's public origin once published.
+          # Leave NEXTAUTH_URL unset so Auth.js derives its OIDC callback from
+          # forwarded headers.
           sops.templates."homarr.environment" = {
             owner = "root";
             group = "root";
@@ -88,18 +88,39 @@ _: {
               AUTH_SECRET=${config.sops.placeholder.homarr_auth_secret}
               SECRET_ENCRYPTION_KEY=${config.sops.placeholder.homarr_secret_encryption_key}
               BASE_URL=${
-                if cfg.credentialsBootstrap then
-                  "https://${route.endpoint.host}:${toString route.endpoint.port}"
-                else
+                if published then
                   route.publicUrl
+                else
+                  "https://${route.endpoint.host}:${toString route.endpoint.port}"
               }
-              AUTH_PROVIDERS=${if cfg.credentialsBootstrap then "credentials,oidc" else "oidc"}
+              # Local credentials exist only while the route is withheld: they are
+              # how the first administrator is created on a private instance. A
+              # published instance authenticates through Kanidm alone.
+              AUTH_PROVIDERS=${if published then "oidc" else "credentials,oidc"}
               AUTH_OIDC_ISSUER=${oidcClient.issuerUrl}
               AUTH_OIDC_CLIENT_ID=${oidcClient.clientId}
               AUTH_OIDC_CLIENT_NAME=Kanidm
               AUTH_OIDC_CLIENT_SECRET=${config.sops.placeholder.homarr_oidc_client_secret}
-              AUTH_OIDC_SCOPE_OVERWRITE="openid email profile"
-              AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=true
+              # Unquoted on purpose. This file is consumed as a container env
+              # file, whose parser keeps quotes as part of the value, so a quoted
+              # list reaches Kanidm as `scope="openid email profile"` and is
+              # rejected with invalid_scope: the leading and trailing quote fail
+              # its per-token scope regex.
+              #
+              # `groups_name` asks Kanidm for the built-in groups scope in its
+              # name-only form. Kanidm always emits that claim under the key
+              # `groups`, with the values depending on which variant was
+              # requested — `groups` gives uuid+spn pairs, `groups_name` gives the
+              # bare names Homarr matches on.
+              AUTH_OIDC_SCOPE_OVERWRITE=openid email profile groups_name
+              AUTH_OIDC_GROUPS_ATTRIBUTE=groups
+              # false: memberships follow the claim. With local management on,
+              # Homarr ignores the claim and an idp-side admin group would never
+              # grant anything (D-103). Sync is authoritative in both directions:
+              # an OIDC user is removed from Homarr groups the claim does not name,
+              # so every group an OIDC user should keep must exist in Kanidm under
+              # the same name.
+              AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false
               AUTH_OIDC_ENABLE_DANGEROUS_CREDENTIALS_LINKING=false
             '';
           };

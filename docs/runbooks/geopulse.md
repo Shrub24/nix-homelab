@@ -40,27 +40,22 @@ by `oci-melb-1`.
    sops updatekeys secrets/services/geopulse.yaml
    ```
 
-2. Generate those three keys once, on the operator's workstation, in a mode-0700
+2. Generate the two values once, on the operator's workstation, in a mode-0700
    temporary directory that is tmpfs or encrypted at rest — never on a host and
    never inside the repository:
 
    ```sh
    umask 077
    KEYDIR=$(mktemp -d "${XDG_RUNTIME_DIR:?}/geopulse-keys.XXXXXX")
-   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$KEYDIR/jwt-private-key.pem"
-   openssl rsa -pubout -in "$KEYDIR/jwt-private-key.pem" -out "$KEYDIR/jwt-public-key.pem"
    openssl rand -base64 32 > "$KEYDIR/ai-encryption-key.txt"
-   openssl pkey -in "$KEYDIR/jwt-private-key.pem" -pubout | diff - "$KEYDIR/jwt-public-key.pem"  # the pair must match
-   base64 -d "$KEYDIR/ai-encryption-key.txt" | wc -c                                        # 32
+   base64 -d "$KEYDIR/ai-encryption-key.txt" | wc -c   # 32
    ```
 
-   These are upstream's commands (`generate-keys.sh` runs `openssl genpkey
-   -algorithm RSA` and `openssl rand -base64 32`; its key omits the size, which
-   OpenSSL defaults to 2048 bits, and 3072 is a drop-in replacement). The formats
-   are fixed by the loaders: the private key is PKCS#8 PEM
-   (`smallrye.jwt.sign.key.location`), the public key is a SubjectPublicKeyInfo
-   PEM (`mp.jwt.verify.publickey.location`), and the AI key is base64 of exactly
-   16, 24 or 32 bytes (`KeyCipher.load` decodes it with `Base64.getDecoder()`).
+   GeoPulse 2.x keeps sessions in PostgreSQL and no longer signs JWTs, so there is
+   no keypair to generate. A file created for 1.x still carries `jwt/private_key`
+   and `jwt/public_key`; they are ignored and can be dropped at the next rotation.
+   The AI key must stay: it is base64 of exactly 16, 24 or 32 bytes (`KeyCipher`
+   decodes it with `Base64.getDecoder()`) and encrypts provider secrets at rest.
 
 3. Fill the file with the SOPS editor, pasting each PEM as a literal block
    scalar:
@@ -82,10 +77,10 @@ by `oci-melb-1`.
 4. Track the file and refresh the Git index (`git add -A`) before anything
    evaluates `.#`.
 
-An empty value is not a working default: the AI key decodes to 0 bytes and the
-JWT verifier cannot parse an empty PEM, so a backend started with unfilled keys
-fails. The runtime task must also check the delivered files are non-empty before
-starting the JVM, so that failure is legible rather than buried in a stack trace.
+An empty value is not a working default: the AI key decodes to 0 bytes and every
+provider secret encrypted with it becomes unreadable. The start wrapper checks the
+delivered files are non-empty before starting the JVM, so that failure is legible
+rather than buried in a stack trace.
 
 ## Secret delivery contract
 
@@ -96,8 +91,6 @@ file the host binds as `services.geopulse.secretFiles.host`:
 | Value | Key in `secrets/services/geopulse.yaml` | Delivered path |
 | --- | --- | --- |
 | Database password | `roles/geopulse/password` | `/run/secrets/geopulse/postgres-password` |
-| JWT signing key | `jwt/private_key` | `/run/secrets/geopulse/jwt-private-key.pem` |
-| JWT verification key | `jwt/public_key` | `/run/secrets/geopulse/jwt-public-key.pem` |
 | AI / provider-secret key | `ai/encryption_key` | `/run/secrets/geopulse/ai-encryption-key.txt` |
 
 Each file is `0400` owned by the `geopulse` account. This delivery does not use
@@ -160,10 +153,9 @@ wrapper refuses to start when a delivered file is missing or empty, so an
 unfilled key is a legible failure instead of a JVM stack trace.
 - AI and MQTT stay off here. MQTT is switched off explicitly; AI has no
 server-side switch upstream, so it is off because no user enables it.
-- Deliberately unset, because they are public identity: `GEOPULSE_PUBLIC_BASE_URL`,
-`GEOPULSE_JWT_ISSUER` and the CORS origin. Until the exposure task sets them the
-application keeps its own `http://localhost:5555` fallback — another reason the
-listener stays private.
+- `GEOPULSE_PUBLIC_BASE_URL` is set from the route's identity, because it is public
+  identity and the OIDC callback is built from it (D-104). CORS stays disabled: the
+  front end proxies `/api` on the same origin.
 
 ## Database seam
 
@@ -204,10 +196,13 @@ repeated here.
   the schema migration; there is no separate migration step to schedule. Any
   start of a backend whose migrations have not run against this database applies
   them.
-- The PKCE patch adds `V36.53.0__Add_oidc_session_code_verifier.sql`, a column on
-  the OIDC session-state table. A login started before that migration has no
-  stored verifier, so its token exchange fails; the change accepts that rather
-  than keeping verifiers for in-flight logins.
+- The verifier column `oidc_session_states.code_verifier` came from a repeatable
+  migration we still ship (`pkgs/geopulse/migrations/`), even though the login no
+  longer writes a verifier: Flyway records an applied repeatable migration by
+  description and checksum, so removing the file would leave it unresolved and
+  fail validation. The statement is `ADD COLUMN IF NOT EXISTS`, so it re-runs as
+  a no-op. A login started before that migration has no stored verifier; nothing
+  reads the column now.
 - A migration run needs the cluster's own server and extension versions (the
   substrate never upgrades a cluster to match an application), the role's
   credential in the file the host binds, and the PostGIS extensions already
@@ -245,10 +240,10 @@ through the rendered provisioning policy:
 | Field | Value |
 | --- | --- |
 | client id | `geopulse` |
-| callback | `https://geopulse.shrublab.xyz/oidc/callback` |
+| callback | `https://geo.shrublab.xyz/oidc/callback` |
 | scopes | `openid profile email`, mapped to `users` only |
 | signature algorithm | `enableLegacyCrypto` — Kanidm offers RS256 only in that mode, and the backend verifies RS256 |
-| PKCE | enforced: the patched backend sends its S256 challenge, so the client must not carry `allowInsecureClientDisablePkce` |
+| PKCE | off: the backend sends no code challenge, so the client carries `allowInsecureClientDisablePkce`, declared in `policy/identity.json` and applied by Kanidm's own provisioning (D-108) |
 
 The callback is written into the policy rather than derived from the route,
 because the GeoPulse web-policy route is still private and a private route
@@ -314,13 +309,13 @@ alone), which is how the owner gets in without configuring an admin email.
 
 ## Publication gate
 
-The route declares its public identity from the start — `geopulse.shrublab.xyz`,
+The route declares its public identity from the start — `geo.shrublab.xyz`,
 Access-free, application OIDC on — but declares no publication, so the edge serves
 no site for it.
 
 | State | Route `publish` in policy | Route identity | Edge site |
 | --- | --- | --- | --- |
-| Shipped default | `false` | `https://geopulse.shrublab.xyz` | withheld |
+| Shipped default | `false` | `https://geo.shrublab.xyz` | withheld |
 | After bootstrap | `true` | unchanged | served |
 
 - Publication is the policy's own flag. Flipping it is one line in
@@ -336,10 +331,10 @@ no site for it.
   answers that hostname with Caddy's default for an unmatched host — the contract
   check records a bodyless `200` carrying no application content and no route to
   the listener.
-- The app's own origin is independent of the gate: `GEOPULSE_PUBLIC_BASE_URL` and
-  `GEOPULSE_JWT_ISSUER` come from the route's published identity, so the callback
-  and issued tokens are the public ones already during the private bootstrap. CORS
-  stays disabled because the front end proxies `/api` on the same origin.
+- The app's own origin follows the route's posture: `GEOPULSE_PUBLIC_BASE_URL` is the
+  public origin once the route is published and the provider's own front while it is
+  withheld, so the callback always points at a host that actually serves the app
+  (D-104). CORS stays disabled because the front end proxies `/api` on the same origin.
 
 ## Public surface denials
 
@@ -385,11 +380,11 @@ metric panel degrades the same way.
 ## Private bootstrap over HTTPS
 
 Browser login must use the public callback
-`https://geopulse.shrublab.xyz/oidc/callback` even while the route is withheld, so
+`https://geo.shrublab.xyz/oidc/callback` even while the route is withheld, so
 private access preserves that origin rather than substituting a loopback URL. On
 the operator's machine:
 
-1. Resolve the name locally: `127.0.0.1 geopulse.shrublab.xyz` in `/etc/hosts`, or
+1. Resolve the name locally: `127.0.0.1 geo.shrublab.xyz` in `/etc/hosts`, or
    the browser's own resolver override.
 2. Terminate TLS for that name on port 443 with a certificate your browser trusts.
    A local CA is enough: the provider never fetches the redirect URI, so the
@@ -397,14 +392,14 @@ the operator's machine:
 3. Forward the decrypted traffic to the app's loopback listener over SSH —
    `ssh -N -L 8443:127.0.0.1:8085 <host>`, with the local TLS listener proxying to
    `http://127.0.0.1:8443`. Port 8085 is the route's declared listener port.
-4. Open `https://geopulse.shrublab.xyz/` and create the owner account there.
+4. Open `https://geo.shrublab.xyz/` and create the owner account there.
 
 The app's front end trusts loopback alone, so the public host and the HTTPS scheme
 the local terminator produced survive to the backend. The GeoPulse contract check
 runs that half of the procedure with the real Caddy binary: a TLS terminator with a
 locally issued certificate, reached as this hostname through name resolution; a TCP
 forward standing in for the SSH hop; and a fixture backend that observes
-`Host: geopulse.shrublab.xyz` and `X-Forwarded-Proto: https`. It also shows the
+`Host: geo.shrublab.xyz` and `X-Forwarded-Proto: https`. It also shows the
 terminator owning the client chain, so a caller-supplied `X-Forwarded-For` does not
 reach the backend.
 
@@ -416,7 +411,8 @@ follows.
 
 ## Key recovery
 
-- **JWT pair** — losing it invalidates issued session tokens and nothing else:
+- **2.x sessions** live in the database, so a lost session is a re-login and nothing more.
+  A 1.x-era JWT pair has no reader any more:
   regenerate the pair, fill the file, redeploy, and users sign in again. The
   database holds no key material for these.
 - **AI key** — the opposite. Existing ciphertext (the provider client secret and
@@ -483,8 +479,8 @@ fixture strings only, rootless container, deleted afterwards):
 
 | Observation | Result |
 | --- | --- |
-| Isolated evaluation of the aspect with a fixture file bound | four `sops.secrets` entries, all `0400`, owner and group `geopulse`, keys `roles/geopulse/password`, `jwt/private_key`, `jwt/public_key`, `ai/encryption_key` |
-| Their delivered paths | `/run/secrets/geopulse/{postgres-password,jwt-private-key.pem,jwt-public-key.pem,ai-encryption-key.txt}`; no entry under `/run/secrets.d` |
+| Isolated evaluation of the aspect with a fixture file bound | two `sops.secrets` entries, all `0400`, owner and group `geopulse`, keys `roles/geopulse/password`, `jwt/private_key`, `jwt/public_key`, `ai/encryption_key` |
+| Their delivered paths | `/run/secrets/geopulse/{postgres-password,ai-encryption-key.txt}`; no entry under `/run/secrets.d` |
 | The substrate's own copy of the same password | `/run/secrets/postgres/geopulse.password`, key `roles/geopulse/password` — one source, two owner-scoped deliveries on the same host |
 | Service account reading a delivered file (`0751` mount, `0400` owned by it) | readable; the mount itself is not listable |
 | Service account reading a template-style path (`0750 root:root` parent) | `Permission denied` |
@@ -515,7 +511,7 @@ only rollback path.
 1. Restore the matching `secrets/services/geopulse.yaml` version. The AI key
    encrypts the provider client secret and any entered API keys; without the key
    that produced the export, those values are unreadable and must be re-entered.
-   The JWT pair holds no data and is regenerated only if it is lost.
+   2.x keeps sessions in the database, so there is no signing key to regenerate.
 2. Stop `geopulse-backend.service`. Restore the database from the pre-upgrade
    export into a cluster on the same PostgreSQL and PostGIS versions, and confirm
    `flyway_schema_history` matches the export's schema version.

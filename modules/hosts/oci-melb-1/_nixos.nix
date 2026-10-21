@@ -114,10 +114,6 @@ in
     inbox-zero.secretFiles.host = ../../../secrets/services/inbox-zero.yaml;
 
     homarr = {
-      # Temporary: the private first-administrator bootstrap needs the local
-      # credentials provider and the private BASE_URL. The runbook removes this
-      # and releases the route in the same change.
-      credentialsBootstrap = true;
       secretFiles = {
         host = ../../../secrets/services/homarr.yaml;
         oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;

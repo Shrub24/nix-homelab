@@ -97,7 +97,7 @@ let
   # The un-overridden runtime: the fixture guard below is only trustworthy if the
   # same detector fires on these.
   realFinishedExec = cfg.systemd.services.geopulse-web.serviceConfig.ExecStart;
-  # Publication is the policy route's own `publish` posture. The released variant
+  # Publication is the policy route's own publish posture. The released variant
   # renders that route through the same projection the edge uses, so the proof
   # follows the release path instead of a host-side switch beside it.
   ingressRoutes = import $ROOT/modules/web/_ingress-routes.nix { inherit (f.inputs.nixpkgs) lib; };
@@ -106,11 +106,21 @@ let
       services = cfg.repo.web.hosts.$HOST.services;
     in
     ingressRoutes (services // { geopulse = services.geopulse // { publish = true; }; });
+  # The live edge run below cannot dial a tailnet name from a workstation, so the
+  # released route's upstream is pointed at the fixture listener. The transport
+  # shape is asserted on releasedRoutes itself, above; only the dial moves.
+  edgeRoutes = f.inputs.nixpkgs.lib.mapAttrs (
+    n: r:
+    if n == "geopulse" then
+      r // { upstream = "http://127.0.0.1:" + toString cfg.repo.web.catalog.geopulse.endpoint.port; }
+    else
+      r
+  ) releasedRoutes;
   openCfg = (f.nixosConfigurations.$HOST.extendModules {
     modules = [
       {
         services.geopulse.secretFiles.host = f.inputs.nixpkgs.lib.mkForce "$FIXTURE_SECRET";
-        services.ingress.routes = f.inputs.nixpkgs.lib.mkForce releasedRoutes;
+        services.ingress.routes = f.inputs.nixpkgs.lib.mkForce edgeRoutes;
       }
     ];
   }).config;
@@ -227,6 +237,7 @@ in
     routePublish = cfg.repo.web.hosts.$HOST.services.geopulse.publish or null;
     edgeClosed = edgeRoute cfg;
     edgeOpen = edgeRoute openCfg;
+    releasedShape = edgeRoute { services.ingress.routes = releasedRoutes; };
     edgePublicService = {
       closed = edgePublicService cfg;
       open = edgePublicService openCfg;
@@ -306,19 +317,21 @@ else:
     # Placement is identity: the catalog projects a loopback dial only when the
     # evaluating host is the provider, so this asserts the route places the
     # workload here rather than reading the declared provider back.
-    if route["endpoint"]["host"] != "127.0.0.1":
+    if route["endpoint"]["host"] != "oci-melb-1.tail0fe19b.ts.net":
         errs.append(
-            f"route endpoint host {route['endpoint']['host']!r}; the placement host must serve it on loopback"
+            f"route endpoint host {route['endpoint']['host']!r}; a tailnet-served route dials the provider"
         )
-    if route["endpoint"]["url"] != f"http://127.0.0.1:{route['upstreamPort']}":
+    # The provider's Tailscale Serve front terminates TLS on the declared port, so
+    # the machine-to-machine dial is https even though the app speaks http.
+    if route["endpoint"]["url"] != f"https://oci-melb-1.tail0fe19b.ts.net:{route['upstreamPort']}":
         errs.append(f"route endpoint url {route['endpoint']['url']!r} does not match its port")
     if not route["declarePublic"]:
         errs.append("the route must declare its public identity: the OIDC callback derives from it")
-    if route["publicUrl"] != "https://geopulse.shrublab.xyz" or route["publicHost"] != "geopulse.shrublab.xyz":
+    if route["publicUrl"] != "https://geo.shrublab.xyz" or route["publicHost"] != "geo.shrublab.xyz":
         errs.append(f"route public identity {route['publicUrl']!r}/{route['publicHost']!r} is not the canonical one")
-    if route["exposureMode"] != "direct":
+    if route["exposureMode"] != "tailscale-serve":
         errs.append(
-            f"route exposure mode {route['exposureMode']!r}: the front end is a loopback listener on the edge host"
+            f"route exposure mode {route['exposureMode']!r}: the front end is reachable only on the provider's tailnet"
         )
 
 gate = d["gate"]
@@ -326,19 +339,21 @@ if gate["routePublish"] is not False:
     errs.append("the geopulse policy route must declare publish = false until the bootstrap is done")
 if gate["edgeClosed"] is not None:
     errs.append(f"the edge serves the geopulse route while the gate is closed: {gate['edgeClosed']!r}")
-released = gate["edgeOpen"]
+# The shape assertions read the projection itself; the adapted copy below exists
+# only so the live edge run can dial a loopback fixture.
+released = gate["releasedShape"]
 if released is None:
     errs.append("releasing the gate must render the route at the edge")
 else:
-    if released["exposureMode"] != "direct" or released["subdomain"] != "geopulse":
-        errs.append(f"released route {released!r}, want the direct canonical host")
+    if released["exposureMode"] != "tailscale-serve" or released["subdomain"] != "geo":
+        errs.append(f"released route {released!r}, want the tailnet-served geo host")
     # Device sources authenticate with their own application credentials and the
     # application runs its own OIDC login, so no interactive Access session may sit
     # in front of the route.
     if released["cloudflareAccessRequired"]:
         errs.append("the released route requires Cloudflare Access; device ingest cannot present one")
-    if released["upstream"] != f"http://127.0.0.1:{route['upstreamPort']}":
-        errs.append(f"released route upstream {released['upstream']!r} is not the loopback front end")
+    if released["upstream"] != f"https://oci-melb-1.tail0fe19b.ts.net:{route['upstreamPort']}":
+        errs.append(f"released route upstream {released['upstream']!r} is not the provider's front end")
     # The device paths and the API reach the application untouched, so its own
     # per-source credentials stay the only gate on ingest.
     if released["path"] != "/" or released["stripPrefix"]:
@@ -351,7 +366,7 @@ for state in ("closed", "open"):
     if service is None:
         errs.append(f"the Cloudflare-facing projection loses the geopulse route while {state}")
         continue
-    if service["exposureMode"] != "direct" or not service["declarePublic"]:
+    if service["exposureMode"] != "tailscale-serve" or not service["declarePublic"]:
         errs.append(f"Cloudflare-facing route while {state}: {service!r}")
     if service["access"]["requireCloudflareAccess"]:
         errs.append(f"Cloudflare-facing route while {state} requires Cloudflare Access")
@@ -395,8 +410,6 @@ else:
 # rotation restarts the unit that read them.
 want_secrets = {
     "geopulse/postgres-password": ("/run/secrets/geopulse/postgres-password", "roles/geopulse/password"),
-    "geopulse/jwt-private-key": ("/run/secrets/geopulse/jwt-private-key.pem", "jwt/private_key"),
-    "geopulse/jwt-public-key": ("/run/secrets/geopulse/jwt-public-key.pem", "jwt/public_key"),
     "geopulse/ai-encryption-key": ("/run/secrets/geopulse/ai-encryption-key.txt", "ai/encryption_key"),
 }
 for name, (want_path, want_key) in want_secrets.items():
@@ -417,8 +430,6 @@ for name, (want_path, want_key) in want_secrets.items():
 # the rest of its environment non-secret; the empty-key guard runs before the JVM.
 env = d["backendUnit"]["env"]
 for var, want in (
-    ("GEOPULSE_JWT_PRIVATE_KEY_LOCATION", "file:/run/secrets/geopulse/jwt-private-key.pem"),
-    ("GEOPULSE_JWT_PUBLIC_KEY_LOCATION", "file:/run/secrets/geopulse/jwt-public-key.pem"),
     ("GEOPULSE_AI_ENCRYPTION_KEY_LOCATION", "file:/run/secrets/geopulse/ai-encryption-key.txt"),
 ):
     if env.get(var) != want:
@@ -543,9 +554,9 @@ src = open(path).read()
 start = src.index("        geopulse = {")
 end = src.index("        webhook-admin = {", start)
 block = src[start:end]
-assert 'subdomain = "geopulse";' in block and 'exposureMode = "direct";' in block, "geopulse route anchor drifted"
-mutated = block.replace('subdomain = "geopulse";', "subdomain = null;", 1).replace(
-    'exposureMode = "direct";', 'exposureMode = "tailscale-only";', 1
+assert 'subdomain = "geo";' in block and 'exposureMode = "tailscale-serve";' in block, "geopulse route anchor drifted"
+mutated = block.replace('subdomain = "geo";', "subdomain = null;", 1).replace(
+    'exposureMode = "tailscale-serve";', 'exposureMode = "tailscale-only";', 1
 )
 open(path, "w").write(src[:start] + mutated + src[end:])
 PYEOF
@@ -991,7 +1002,7 @@ esac
 
 # The edge dials this listener on the canonical public host and forwards the
 # scheme it terminated plus the client address. Both must arrive intact.
-PUBLIC_HOST="geopulse.shrublab.xyz"
+PUBLIC_HOST="geo.shrublab.xyz"
 EDGE_CLIENT="203.0.113.7"
 public_body() { curl -fsS --noproxy '*' -H "Host: ${PUBLIC_HOST}" "$@"; }
 
@@ -1038,8 +1049,7 @@ PYINNER
 [ -f "$BACKEND_EXEC" ] || fail "the backend start wrapper ${BACKEND_EXEC} was not realised"
 grep -q "quarkus-run.jar" "$BACKEND_EXEC" || fail "the start wrapper does not launch the Quarkus fast-jar"
 grep -q "GEOPULSE_POSTGRES_PASSWORD" "$BACKEND_EXEC" || fail "the start wrapper does not export the database password"
-for delivered in /run/secrets/geopulse/postgres-password /run/secrets/geopulse/jwt-private-key.pem \
-  /run/secrets/geopulse/jwt-public-key.pem /run/secrets/geopulse/ai-encryption-key.txt; do
+for delivered in /run/secrets/geopulse/postgres-password /run/secrets/geopulse/ai-encryption-key.txt; do
   grep -q "$delivered" "$BACKEND_EXEC" || fail "the start wrapper does not read ${delivered}"
 done
 grep -q "$FIXTURE_SENTINEL" "$BACKEND_EXEC" && fail "a secret value from the bound file reached the store"
@@ -1076,11 +1086,22 @@ let
   releasedRoute = closedCfg.repo.web.hosts.$HOST.services.geopulse // { publish = true; };
   services0 = closedCfg.repo.web.hosts.$HOST.services;
   releasedRoutes = ingressRoutes (services0 // { geopulse = releasedRoute; });
+  # The rendered config is exercised from a workstation, which cannot dial the
+  # provider's tailnet name the published route declares. Only the dial is
+  # rewritten onto the fixture listener; the transport shape is asserted on
+  # releasedRoutes itself, before this copy is made.
+  fixtureDial = routes:
+    routes
+    // np.lib.optionalAttrs (routes ? geopulse) {
+      geopulse = routes.geopulse // {
+        upstream = "http://127.0.0.1:" + toString closedCfg.repo.web.catalog.geopulse.upstreamPort;
+      };
+    };
   opened =
     withAspect
       (base
         // {
-          services.ingress.routes = np.lib.mkForce releasedRoutes;
+          services.ingress.routes = np.lib.mkForce (fixtureDial releasedRoutes);
         });
 in
 {
@@ -1091,7 +1112,7 @@ in
       (base
         // {
           services.ingress.routes = np.lib.mkForce (
-            ingressRoutes (services0 // { geopulse = releasedRoute // { deniedPaths = [ ]; }; })
+            fixtureDial (ingressRoutes (services0 // { geopulse = releasedRoute // { deniedPaths = [ ]; }; }))
           );
         })).services.caddy.configFile;
   denied = opened.services.ingress.routes.geopulse.deniedPaths;

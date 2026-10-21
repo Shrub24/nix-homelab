@@ -1090,8 +1090,9 @@ if errs:
 PYEOF
 
 # 16. GeoPulse client policy (add-geopulse task 3.1). The canonical client is
-# users-only, keeps PKCE enforced because the backend patch implements it, and
-# carries the legacy RSA algorithm the backend's RS256-only verifier requires.
+# users-only, carries the legacy RSA algorithm the backend's RS256-only verifier
+# requires, and declares the PKCE exemption the unpatched backend needs (D-108:
+# upstream sends no challenge, so Kanidm must not require one).
 # Its callback is the documented public origin: the web-policy route for GeoPulse
 # is still private, so the policy carries the callback directly until the
 # exposure task publishes the route's public identity and the route-derived form
@@ -1109,11 +1110,14 @@ errs = []
 
 if provision.get("displayName") != "GeoPulse":
     errs.append(f"displayName: {provision.get('displayName')!r}")
-if provision.get("originUrl") != "https://geopulse.shrublab.xyz/oidc/callback":
-    errs.append(f"originUrl: {provision.get('originUrl')!r}")
+# The tailnet front keeps its own callback beside the public one (the GeoPulse
+# route is tailscale-serve), so the list must hold the public callback first.
+origin_urls = provision.get("originUrl")
+if not isinstance(origin_urls, list) or not origin_urls or origin_urls[0] != "https://geo.shrublab.xyz/oidc/callback":
+    errs.append(f"originUrl: {origin_urls!r}")
 if provision.get("enableLegacyCrypto") is not True:
     errs.append(f"enableLegacyCrypto: {provision.get('enableLegacyCrypto')!r}")
-if provision.get("allowInsecureClientDisablePkce") is not False:
+if provision.get("allowInsecureClientDisablePkce") is not True:
     errs.append(f"allowInsecureClientDisablePkce: {provision.get('allowInsecureClientDisablePkce')!r}")
 if provision.get("public") is not False:
     errs.append(f"public: {provision.get('public')!r}")
@@ -1128,7 +1132,7 @@ if got.get("secretKey") != "geopulse/client_secret":
     errs.append(f"secretKey: {got.get('secretKey')!r} (the operator fills this key in the host OIDC file)")
 # The callback is the route's published identity plus the declared path, so the
 # provider policy tracks a placement or subdomain change instead of a literal.
-if got.get("routePublicUrl") != "https://geopulse.shrublab.xyz":
+if got.get("routePublicUrl") != "https://geo.shrublab.xyz":
     errs.append(f"routePublicUrl: {got.get('routePublicUrl')!r}")
 if got.get("derivedFromRoute") is not True:
     errs.append("the rendered callback is not the route's public URL plus /oidc/callback")
@@ -1174,7 +1178,10 @@ geopulse_probe() { # $1 installable
     secretPath = c.sops.secrets."kanidm_oauth2_geopulse_basic_secret".path;
     secretKey = c.sops.secrets."kanidm_oauth2_geopulse_basic_secret".key;
     routePublicUrl = c.repo.web.catalog.geopulse.publicUrl;
-    derivedFromRoute = c.services.kanidm.provision.systems.oauth2.geopulse.originUrl == "${c.repo.web.catalog.geopulse.publicUrl}/oidc/callback";
+    derivedFromRoute = builtins.elem "${c.repo.web.catalog.geopulse.publicUrl}/oidc/callback" (
+      let origin = c.services.kanidm.provision.systems.oauth2.geopulse.originUrl;
+      in if builtins.isList origin then origin else [ origin ]
+    );
   }' "$1"
 }
 
@@ -1218,8 +1225,8 @@ p = sys.argv[1] + "/policy/identity.json"
 d = json.load(open(p))
 client = d["systems"]["oauth2"]["geopulse"]
 assert client["enable"] is True, "geopulse policy anchor drifted"
-assert "allowInsecureClientDisablePkce" not in client, "geopulse must not disable PKCE in canonical policy"
-client["allowInsecureClientDisablePkce"] = True
+assert client["allowInsecureClientDisablePkce"] is True, "geopulse must declare the PKCE exemption"
+del client["allowInsecureClientDisablePkce"]
 json.dump(d, open(p, "w"), indent=2)
 PYEOF
 set +e
@@ -1227,7 +1234,7 @@ pkce_out="$(geopulse_policy_check "$(geopulse_probe "path:${D5}#nixosConfigurati
 pkce_rc=$?
 set -e
 [ "$pkce_rc" -ne 0 ] ||
-  fail "PKCE control: disabling PKCE enforcement in policy must fail the GeoPulse client expectation"
+  fail "PKCE control: re-enforcing PKCE without a client that sends a challenge must fail the GeoPulse client expectation"
 case "$pkce_out" in
   *allowInsecureClientDisablePkce*) ;;
   *) fail "PKCE control: expected the PKCE failure, got: $(printf '%s' "$pkce_out" | tail -2)" ;;
@@ -1240,7 +1247,10 @@ import sys
 p = sys.argv[1] + "/policy/identity.json"
 d = json.load(open(p))
 client = d["systems"]["oauth2"]["geopulse"]
-assert client.pop("allowInsecureClientDisablePkce") is True, "PKCE control anchor drifted"
+# The PKCE control already removed the exemption from this copy, so the scope
+# mutation starts from a policy that also fails the PKCE expectation: the check
+# below greps for the scope failure specifically.
+assert "allowInsecureClientDisablePkce" not in client, "scope control must run on the PKCE-mutated copy"
 client["scopeMaps"]["admins"] = ["openid", "profile", "email"]
 json.dump(d, open(p, "w"), indent=2)
 PYEOF

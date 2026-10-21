@@ -2,14 +2,16 @@
 
 Homarr is the user-facing dashboard on `oci-melb-1`, separate from the operator Homepage on `la-admin-1`. Its boards, service tiles, users, groups, and per-user home boards are edited in Homarr; they are not generated from web policy. The public route is `https://home.shrublab.xyz`, but it remains withheld until private OIDC acceptance is complete. Cloudflare Access is off; Homarr's own Kanidm OIDC is the browser gate.
 
-## Status (2026-10-19)
+## Status (2026-10-20)
 
-- The module, route, Kanidm client and contract test are in the repository.
-- `secrets/services/homarr.yaml` exists.
-- **Selected on `oci-melb-1`** with `credentialsBootstrap = true`, pending deploy. Nothing runs yet.
-- The route's `publish` posture is `false`; the edge serves no site for it.
-
-The selection and the systemd secret-activation policy (D-097) land in the same deploy, so the installer unit the container orders after exists on the host.
+- Installed on `oci-melb-1` and reachable on the tailnet at
+  `https://oci-melb-1.tail0fe19b.ts.net:7575/`.
+- The route is published: the edge serves `https://home.shrublab.xyz`, Cloudflare Access is off,
+  and Homarr's own Kanidm login is the browser gate.
+- Group membership follows Kanidm's `groups` claim (D-103), so administration is granted by
+  putting a person in the `service-admins` group in Kanidm — not by promoting them in Homarr.
+- There is no bootstrap switch. Whether the instance runs private or public is the route's
+  `publish` posture in `policy/web-services.nix`, and nothing else (D-104).
 
 ## 1. Prepare secrets
 
@@ -40,7 +42,6 @@ The host record selects `aspects.homarr` beside the other user-facing applicatio
 
 ```nix
 homarr = {
-  credentialsBootstrap = true;
   secretFiles = {
     host = ../../../secrets/services/homarr.yaml;
     oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
@@ -48,7 +49,9 @@ homarr = {
 };
 ```
 
-`credentialsBootstrap = true` is the private bootstrap window; it comes off in the same change that releases the route (step 6 of [section 2](#2-private-first-admin-and-oidc-setup)). Run `just checks all` before deploying; `tests/check-homarr-contract.sh` pins the route, the client and the secret bindings.
+The aspect owns the container, the OIDC wiring and the backup contract; the host supplies only
+the two secret files. `tests/check-homarr-contract.sh` pins the route, the client and the secret
+bindings.
 
 ## 2. Private first-admin and OIDC setup
 
@@ -65,25 +68,74 @@ The private URI uses the host and port from Homarr's provider endpoint, with `ht
 nix eval --raw .#nixosConfigurations.la-admin-1.config.repo.web.catalog.homarr.endpoint.host
 ```
 
-Homarr's `BASE_URL` depends on `services.homarr.credentialsBootstrap`:
+`NEXTAUTH_URL` is intentionally unset so the callback follows the forwarded request host and can
+use either registered URI.
 
-| `credentialsBootstrap` | `BASE_URL` | `AUTH_PROVIDERS` | Use |
+### Posture: one field, no state
+
+`AUTH_PROVIDERS` and `BASE_URL` are derived from the route's `publish` posture, so there is no
+second switch and nothing to remember between deploys:
+
+| route `publish` | `BASE_URL` | `AUTH_PROVIDERS` | Use |
 | --- | --- | --- | --- |
-| `true` | the private Tailscale Serve origin | `credentials,oidc` | private first administrator and OIDC acceptance |
-| `false` | the public URL (`home.shrublab.xyz`) | `oidc` | after release |
+| absent or `true` | the public URL (`home.shrublab.xyz`) | `oidc` | the deployed state |
+| `false` | the private Tailscale Serve origin | `credentials,oidc` | first administrator, and recovery |
 
-**The private OIDC login works only while `credentialsBootstrap = true`.** With it `false`, Homarr redirects to the public URL, which the edge withholds. `NEXTAUTH_URL` is intentionally unset so the callback follows the forwarded request host and can use either registered URI.
+A withheld route is a private instance, so it keeps the private origin and the credentials
+provider. Publishing a route therefore also disables local credentials — which is the point:
+the two cannot drift apart, and a public route can never keep a password login alive.
 
-1. The host record already sets `credentialsBootstrap = true`. Deploy `oci-melb-1` and confirm the route's `publish` is still `false`.
-2. From a tailnet-connected browser, open `https://oci-melb-1.tail0fe19b.ts.net:7575/` and create Homarr's first local credentials administrator. This local account is the verified route to administrator; OIDC alone does not grant it.
-3. Sign out and sign in with the Kanidm account. Homarr creates a separate OIDC user on first login. From the local administrator, promote that user to administrator in Homarr.
-4. Verify a second Kanidm identity creates a separate account and cannot see another user's private board or home-board selection.
-5. Remove the temporary local credentials account.
-6. Release the route in the same change that sets `credentialsBootstrap = false`:
-   - `services.homarr.credentialsBootstrap = false;` in the OCI host composition.
-   - `publish = true;` on the `homarr` route in `policy/web-services.nix`. The edge serves a route whose policy `publish` is true (the default), and no aspect has a host-side release switch, so that field is the whole change.
-   - Do not leave a public route with credentials enabled.
-7. Deploy. Confirm anonymous requests cannot read dashboard content and Kanidm sign-in still works through the public callback. Keep Cloudflare Access disabled; it would interfere with the app's own OIDC flow.
+**Recovery is the same field.** If identity breaks and no administrator can sign in, set
+`publish = false` on the `homarr` route and deploy; the instance returns to the private origin
+with the credentials provider, and the local administrator account — which group sync never
+touches, because it is not an OIDC user — is reachable again.
+
+**Deploy order matters.** Kanidm refuses an authorize request whose scopes are not in the
+client's granted scope maps, so `la-admin-1` must carry the `groups_name` grant before
+`oci-melb-1` starts asking for it. Deploy `la-admin-1` first, then `oci-melb-1`; the reverse
+order breaks Homarr's login until the grant lands.
+
+### First bring-up on a new host
+
+1. Leave `publish = false` on the route and deploy the provider host.
+2. Open the private origin on the tailnet, and create the first credentials administrator.
+3. Sign in with Kanidm; its OIDC user gets its groups from the claim automatically.
+4. Create the Homarr group that matches the Kanidm admin group (`service-admins`) and give it the
+   Administrator preset, then confirm the Kanidm account is an administrator.
+5. Remove `publish = false` and deploy provider host, then edge. Local credentials are disabled by
+   the same change; keep the local account until you have confirmed Kanidm administration works.
+
+### Verifying the deployed state
+
+- Anonymous requests to `https://home.shrublab.xyz` must not read dashboard content.
+- Kanidm sign-in must complete through the public callback.
+- An account in Kanidm's `service-admins` group must see the administration surface; an account
+  only in `users` must not.
+
+### Groups come from Kanidm
+
+Homarr does not decide group membership. `AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false` makes the
+`groups` claim authoritative, and the claim arrives because the client requests the
+`groups_name` scope: Kanidm always emits it under the key `groups`, and the `_name` variant
+gives bare group names rather than `name@domain` service principal names. Both halves are
+required — Kanidm checks requested scopes against the client's *scope maps*, so the scope is
+granted to `service-admins` and `users` in `policy/identity.json`, and Homarr names the claim
+with `AUTH_OIDC_GROUPS_ATTRIBUTE=groups`.
+
+Membership is then automatic in one direction and manual in the other:
+
+- **Automatic:** adding a person to the `service-admins` group in Kanidm grants whatever that
+  group holds in Homarr, at their next login.
+- **Manual, once:** create the Homarr group with the *same name* — `service-admins` — and give
+  it the Administrator preset. Homarr joins groups by name and never creates them, so a group
+  that exists only in Kanidm matches nothing.
+
+Two consequences worth knowing before you tidy anything up:
+
+- Sync is authoritative. An OIDC user is removed from every Homarr group the claim does not
+  name, except `Everyone`, so a group an OIDC user must keep has to exist in Kanidm too.
+- The credentials administrator is not an OIDC user, so sync never touches it. It stays the
+  way back in if a claim or a Kanidm group is misconfigured.
 
 Homarr's board and catalogue configuration is imperative. Add only user-facing destinations; a route or hostname change in Nix policy may need a corresponding manual edit in Homarr.
 
@@ -135,3 +187,47 @@ Verify the run with `just backups status oci-melb-1` and `just backups logs oci-
 ## 4. Acceptance boundary
 
 Before release, the operator verifies private callback login, two distinct Kanidm users, per-user board separation, and that the temporary credentials provider is removed. After release, verify the public callback and anonymous denial. The code contract proves routing, secret references, environment composition, and the SQLite export command; it does not substitute for live Homarr login or a restic restore.
+
+## App bookmarks are synced from the web policy
+
+`modules/apps/homarr/apps.nix` keeps Homarr's app inventory in step with
+`policy/web-services.nix`. Apps are the tedious part — a name, a URL and an icon
+that go stale whenever a route is renamed or a service moves — so they are
+derived. Boards are taste: build them in the UI out of the synced apps.
+
+Two policy fields decide what becomes an app:
+
+- `category` — `app` and `admin` routes become apps; `infra` routes are machine
+  endpoints (a metrics store, an ingest listener, the cache's write API) and earn
+  none.
+- `publish` — a withheld route is not served by the edge, so it would be a dead
+  app until release.
+
+The `homarr-apps` oneshot converges the instance through the API: apps are
+matched by URL, created when missing, and patched when the name or icon drifts.
+Nothing is deleted — an app that already existed is your own, and an app whose
+route retired may still sit on a board you arranged.
+
+### Minting the API key (once)
+
+The sync authenticates as an administrator, so the key is minted by a person:
+
+1. Sign in to Homarr as the administrator.
+2. Open **Authentication → API keys** and create a key. The value has the form
+   `<id>.<token>` and is shown once.
+3. Add it to the service secret file under the key `api_key`:
+
+       sops secrets/services/homarr.yaml      # add: api_key: <id>.<token>
+
+4. Deploy, or restart the unit on the host:
+
+       systemctl restart homarr-apps
+       journalctl -u homarr-apps -n 20
+
+Until `api_key` exists the unit logs that it has nothing to sync and exits
+successfully; that is a prepared state, not a failure. A missing key still fails
+secret installation, so add it before deploying this host.
+
+An app's icon comes from the dashboard-icons CDN, chosen by service id; where a
+project renamed itself, or a route is named for its role (`gatus-admin`), the
+slug is listed in `iconSlugs` in the module.

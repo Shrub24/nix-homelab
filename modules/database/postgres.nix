@@ -197,6 +197,12 @@
             enable = true;
             inherit (instance) dataDir;
 
+            # The major version is pinned rather than inherited from nixpkgs'
+            # default. A default bump would start the new major against this
+            # cluster's existing data directory and fail at boot, so the upgrade
+            # has to be a deliberate change with its own migration step.
+            package = pkgs.postgresql_17;
+
             enableTCPIP = true;
 
             authentication = lib.mkBefore (lib.concatStringsSep "\n" (lib.concatMap authLine consumers));

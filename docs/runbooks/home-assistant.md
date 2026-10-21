@@ -55,7 +55,14 @@ assertion. If you change `http.server_port` in `configuration.yaml`, change
 edge will dial a port nothing listens on.
 
 A second collision to watch for: any other service on `home-forge` that wants
-`8123` cannot have it while this container runs.
+`8123` cannot have it while this container runs. ClickHouse's HTTP interface was
+the first one — it defaults to `8123` and Langfuse and Latitude both queried it
+there, so the first deploy of this module left Home Assistant in recovery mode
+while ClickHouse answered `200` on the port and made the service look healthy.
+ClickHouse now reads `observability.clickhouseHttpPort` (`8124`) from
+`policy/globals.nix`, and this module's assertion fails at evaluation if the two
+ever meet again (D-102). A new host-networked service needs the same check, and
+the module that introduces it owns that assertion.
 
 ## 4. Adding a radio later
 

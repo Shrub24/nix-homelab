@@ -1,18 +1,18 @@
 {
   lib,
   buildNpmPackage,
-  nodejs_22,
+  nodejs_24,
   src,
   version,
 }:
 buildNpmPackage {
   pname = "geopulse-frontend";
   inherit version;
-  # The frontend is a subdirectory of the upstream repository. Node 20 is no
-  # longer packaged in this nixpkgs; Vite 4 builds on Node 22.
+  # The frontend is a subdirectory of the upstream repository. 2.0 declares
+  # `engines.node >= 24.15` and builds on Vite 8, so the toolchain follows it.
   src = "${src}/frontend";
-  nodejs = nodejs_22;
-  npmDepsHash = "sha256-Gc2qCgjIhNicIMqP4RGyz1gsWYZDN6nczcVsprCg+eY=";
+  nodejs = nodejs_24;
+  npmDepsHash = "sha256-PUq6t3cNKUxihbNYmC/KxnX0PCuvsK2LgXsa2pocLAI=";
   dontNpmInstall = true;
 
   installPhase = ''

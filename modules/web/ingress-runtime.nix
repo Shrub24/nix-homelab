@@ -178,9 +178,15 @@ _: {
           sortedNames = lib.sort (
             a: b: builtins.stringLength (routeByName a).path > builtins.stringLength (routeByName b).path
           ) namesForHost;
-          routeBlocks = lib.concatStringsSep "\n" (
-            map (name: mkRouteHandle name (routeByName name)) sortedNames
-          );
+          # A redirect owns its whole site: there is no upstream to share a site with.
+          redirectNames = builtins.filter (name: (routeByName name).redirectTo != null) sortedNames;
+          routeBlocks =
+            if redirectNames != [ ] then
+              lib.concatStringsSep "\n" (
+                map (name: "redir ${(routeByName name).redirectTo}{uri} permanent") redirectNames
+              )
+            else
+              lib.concatStringsSep "\n" (map (name: mkRouteHandle name (routeByName name)) sortedNames);
         in
         ''
           ${host} {
@@ -198,7 +204,11 @@ _: {
         ${lib.concatStringsSep "\n\n" (map renderSite siteHosts)}
       '';
 
-      certExtraDomains = [ "*.${cfg.primaryDomain}" ];
+      # The wildcard does not cover the apex, which is a separate name in the certificate.
+      certExtraDomains = [
+        "*.${cfg.primaryDomain}"
+        cfg.primaryDomain
+      ];
 
       routeAssertions =
         lib.map (
@@ -318,8 +328,15 @@ _: {
                 };
 
                 upstream = lib.mkOption {
-                  type = lib.types.str;
-                  description = "Reverse-proxy upstream target (e.g. http://127.0.0.1:4533).";
+                  type = lib.types.nullOr lib.types.str;
+                  default = null;
+                  description = "Reverse-proxy upstream target (e.g. http://127.0.0.1:4533). Null for a redirect.";
+                };
+
+                redirectTo = lib.mkOption {
+                  type = lib.types.nullOr lib.types.str;
+                  default = null;
+                  description = "Absolute URL the apex answers with a permanent redirect. Mutually exclusive with upstream.";
                 };
 
                 exposureMode = lib.mkOption {

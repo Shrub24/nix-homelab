@@ -371,6 +371,19 @@ in
 
         # Keep the OIDC-protected route private through Tailscale Serve until
         # Homarr has been bootstrapped and its public edge route is released.
+        # The apex answers with a permanent redirect to the dashboard. It is a
+        # landing point with no application behind it, so no session or cookie
+        # can be scoped to the registrable domain. It needs no login and no Access
+        # application: the redirect carries no data, and Access on the apex would
+        # block the browsers that arrive there.
+        apex = {
+          subdomain = null;
+          redirectTo = "https://home.shrublab.xyz";
+          exposureMode = "direct";
+          access.oidc.enabled = false;
+          access.requireCloudflareAccess = false;
+        };
+
         homarr = {
           subdomain = "home";
           origin = {
@@ -382,7 +395,8 @@ in
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;
-          publish = false;
+          # Published: the Kanidm login is the gate and `groups` from Kanidm
+          # decides administration, so there is nothing left to withhold (D-103).
         };
 
         # Google sign-in gates the app itself; the webhook must stay public, so
@@ -412,13 +426,18 @@ in
         # device ingest cannot present an interactive Access session and the
         # application authenticates its own callers.
         geopulse = {
-          subdomain = "geopulse";
+          subdomain = "geo";
           origin = {
             scheme = "http";
             provider = "oci-melb-1";
             port = 8085;
           };
-          exposureMode = "direct";
+          # `tailscale-serve`, not `direct`: the front end binds loopback, so a
+          # co-located edge route would have nothing to dial, and until the route
+          # is published there would be no private way in at all. The provider
+          # renders the front itself, which is also what makes the private OIDC
+          # callback reachable for first-time onboarding.
+          exposureMode = "tailscale-serve";
           declarePublic = true;
           publish = false;
           category = "app";
@@ -509,7 +528,9 @@ in
             port = 3001;
           };
           exposureMode = "tailscale-upstream";
-          category = "admin";
+          # An API origin, not a page: the web app's browser calls it directly,
+          # so it is a machine endpoint and earns no dashboard app.
+          category = "infra";
           # Deliberately no interactive gate: the browser calls this origin
           # directly (the web app does not proxy the API) and so does the web
           # container, so an Access challenge here breaks sign-in. Latitude's own

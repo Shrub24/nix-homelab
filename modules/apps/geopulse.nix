@@ -42,6 +42,20 @@
         in
         if url == null then throw publicOriginMessage else url;
 
+      # ...but only while the route is published. A withheld route is a private
+      # instance, so the browser, the OIDC redirect and the token issuer all use
+      # the provider's own Tailscale Serve front instead; otherwise the first
+      # OIDC login would be sent to a hostname the edge does not serve. Same rule
+      # as Homarr: the posture decides, and nothing has to be flipped by hand
+      # (D-104). The endpoint host is the provider's tailnet name because this is
+      # a tailnet exposure mode, so the origin is reachable from the tailnet only.
+      published = frontendRoute.publish == null || frontendRoute.publish;
+      browserOrigin =
+        if published then
+          publicOrigin
+        else
+          "https://${frontendRoute.endpoint.host}:${toString frontendRoute.endpoint.port}";
+
       # The backend dials the host's own cluster on loopback: a host without one is
       # a configuration error, not a case to fall back from. The address is built
       # here so any path that forces it reports the requirement by name instead of
@@ -75,8 +89,6 @@
       # non-root service cannot traverse.
       secrets = {
         postgresPassword = "/run/secrets/geopulse/postgres-password";
-        privateKey = "/run/secrets/geopulse/jwt-private-key.pem";
-        publicKey = "/run/secrets/geopulse/jwt-public-key.pem";
         aiKey = "/run/secrets/geopulse/ai-encryption-key.txt";
       };
 
@@ -86,18 +98,6 @@
         "geopulse/postgres-password" = {
           key = "roles/geopulse/password";
           path = secrets.postgresPassword;
-          owner = "geopulse";
-          group = "geopulse";
-        };
-        "geopulse/jwt-private-key" = {
-          key = "jwt/private_key";
-          path = secrets.privateKey;
-          owner = "geopulse";
-          group = "geopulse";
-        };
-        "geopulse/jwt-public-key" = {
-          key = "jwt/public_key";
-          path = secrets.publicKey;
           owner = "geopulse";
           group = "geopulse";
         };
@@ -210,7 +210,7 @@
         text = ''
           # An operator who bootstrapped the file but left the keys empty would
           # otherwise only see the JVM's own stack traces.
-          for file in ${secrets.postgresPassword} ${secrets.privateKey} ${secrets.publicKey} ${secrets.aiKey}; do
+          for file in ${secrets.postgresPassword} ${secrets.aiKey}; do
             if [ ! -s "$file" ]; then
               echo "geopulse: delivered secret '$file' is missing or empty; fill secrets/services/geopulse.yaml with 'sops edit' and redeploy" >&2
               exit 1
@@ -242,6 +242,18 @@
         enable = lib.mkEnableOption "the GeoPulse location-history platform";
 
         secretFiles.host = secretHelpers.mkSecretFileOption "geopulse-host-secrets";
+
+        adminEmail = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          example = "owner@example.com";
+          description = ''
+            The account GeoPulse treats as administrator. When set, that address
+            is promoted on start and on login, so the admin is a declared fact
+            rather than whichever account registered first. Leave null to accept
+            the upstream first-user bootstrap.
+          '';
+        };
 
         dataDir = lib.mkOption {
           type = lib.types.path;
@@ -413,20 +425,16 @@
 
               GEOPULSE_POSTGRES_URL = localPostgresUrl;
               GEOPULSE_POSTGRES_USERNAME = "geopulse";
-              GEOPULSE_JWT_PRIVATE_KEY_LOCATION = "file:${secrets.privateKey}";
-              GEOPULSE_JWT_PUBLIC_KEY_LOCATION = "file:${secrets.publicKey}";
               GEOPULSE_AI_ENCRYPTION_KEY_LOCATION = "file:${secrets.aiKey}";
 
               # The browser reaches the app over HTTPS at the edge, and the private
               # bootstrap keeps that origin (design GP-4): no plain-HTTP cookie.
               GEOPULSE_AUTH_SECURE_COOKIES = "true";
-
               # Upstream defaults the issuer to http://localhost:8080 and builds
               # the OIDC callback from the public base URL, so both take the route's
               # published origin. The gate does not switch them off: the private
               # bootstrap presents that same HTTPS origin through a tunnel.
-              GEOPULSE_PUBLIC_BASE_URL = publicOrigin;
-              GEOPULSE_JWT_ISSUER = publicOrigin;
+              GEOPULSE_PUBLIC_BASE_URL = browserOrigin;
 
               # No broker and no AI configuration in this deployment (design
               # non-goals); AI stays off until a user enables it in their own
@@ -442,6 +450,12 @@
               GEOPULSE_IMPORT_DROP_FOLDER_PATH = "${cfg.dataDir}/import";
               GEOPULSE_IMPORT_TEMP_DIR = "${cfg.dataDir}/import/tmp";
               GEOPULSE_IMPORT_CHUNKS_DIR = "${cfg.dataDir}/import/chunks";
+            }
+            // lib.optionalAttrs (cfg.adminEmail != null) {
+              # 2.0 promotes this address on start and on every login, so the
+              # administrator is declared rather than claimed by the first
+              # registration.
+              GEOPULSE_ADMIN_EMAIL = cfg.adminEmail;
             };
             unitConfig = {
               StartLimitIntervalSec = 300;

@@ -17,20 +17,27 @@
       s3 = globals.s3 or { };
       # niks3 derives TLS from useSSL, so the endpoint carries no protocol.
       s3Host = builtins.replaceStrings [ "https://" "http://" ] [ "" "" ] (s3.endpoint or "");
-      # The one workflow that mints a pushing token — nix-fleet's reusable build
-      # plane — plus the claims that read the same in both GitHub subject forms:
-      # an immutable-subject repository still reports these values.
-      ciClaims = {
-        repository_owner_id = [ "20262061" ];
-        ref = [ "refs/heads/main" ];
-        job_workflow_ref = [ "Shrub24/nix-fleet/.github/workflows/build-push-cache.yml@*" ];
-      };
+      # Claims shared by every rule: they read the same in both GitHub subject
+      # forms, because an immutable-subject repository still reports these values.
+      # The workflow is a parameter: publishing and pinning are different powers
+      # and each is bound to the one workflow that exercises it.
+      ciClaims =
+        workflow:
+        {
+          repository_owner_id = [ "20262061" ];
+          ref = [ "refs/heads/main" ];
+          job_workflow_ref = [ "Shrub24/nix-fleet/.github/workflows/${workflow}@*" ];
+        };
       # The repositories whose CI may publish, and therefore the pin namespaces
-      # below: one reserved namespace per repository.
+      # below: one reserved namespace per repository. A repository that has not yet
+      # adopted pinning simply never calls the pin workflow.
       ciRepositories = [
         "nix-fleet"
         "nix-homelab"
         "nix-dotfiles"
+        "memex"
+        "Pi-Bolt.nix"
+        "agent-radar"
       ];
       niks3WritePort = config.repo.web.catalog."niks3-write".endpoint.port;
       # nix-fleet's telemetry contract declares the scrape registry, and the cache
@@ -80,13 +87,30 @@
         oidc.providers.github = {
           issuer = "https://token.actions.githubusercontent.com";
           audience = "https://cache.shrublab.xyz";
-          rules = map (repository: {
-            boundClaims = ciClaims // {
-              repository = [ "Shrub24/${repository}" ];
-            };
-            scopes = [ "write" ];
-            pins = [ "${repository}-main-*" ];
-          }) ciRepositories;
+          rules = lib.concatMap (
+            repository:
+            let
+              bound = claims: {
+                boundClaims = claims // {
+                  repository = [ "Shrub24/${repository}" ];
+                };
+              };
+            in
+            [
+              # Publishing: uploads paths, cannot touch a reserved pin name.
+              (bound (ciClaims "build-push-cache.yml") // {
+                scopes = [ "write" ];
+                pins = [ ];
+              })
+              # Pinning: writes only this repository's reserved names. niks3 checks
+              # the write scope before the pin name, so a pins-only rule would be
+              # rejected; the separation that matters is which names each may move.
+              (bound (ciClaims "pin-cache.yml") // {
+                scopes = [ "write" ];
+                pins = [ "${repository}-main-*" ];
+              })
+            ]
+          ) ciRepositories;
         };
         # The listen port is the private service policy's declaration, shared
         # with every publisher that dials it.

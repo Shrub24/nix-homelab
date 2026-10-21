@@ -1,5 +1,5 @@
 diff --git a/backend/src/main/java/org/github/tess1o/geopulse/auth/oidc/model/OidcSessionStateEntity.java b/backend/src/main/java/org/github/tess1o/geopulse/auth/oidc/model/OidcSessionStateEntity.java
-index 0b9f22a..d19450f 100644
+index 4ed6680..db83a4a 100644
 --- a/backend/src/main/java/org/github/tess1o/geopulse/auth/oidc/model/OidcSessionStateEntity.java
 +++ b/backend/src/main/java/org/github/tess1o/geopulse/auth/oidc/model/OidcSessionStateEntity.java
 @@ -35,6 +35,9 @@ public class OidcSessionStateEntity extends PanacheEntityBase {
@@ -43,28 +43,27 @@ index 007f241..9983f41 100644
       * Delete expired session states
       */
 diff --git a/backend/src/main/java/org/github/tess1o/geopulse/auth/oidc/service/OidcAuthenticationService.java b/backend/src/main/java/org/github/tess1o/geopulse/auth/oidc/service/OidcAuthenticationService.java
-index fd60f44..d02e0db 100644
+index 9f06333..4982a6a 100644
 --- a/backend/src/main/java/org/github/tess1o/geopulse/auth/oidc/service/OidcAuthenticationService.java
 +++ b/backend/src/main/java/org/github/tess1o/geopulse/auth/oidc/service/OidcAuthenticationService.java
-@@ -39,6 +39,9 @@ import org.github.tess1o.geopulse.user.service.UserService;
- import org.github.tess1o.geopulse.auth.exceptions.OidcAccountLinkingRequiredException;
+@@ -29,11 +29,16 @@ import org.github.tess1o.geopulse.shared.security.CryptoUtils;
+ import org.github.tess1o.geopulse.user.model.UserEntity;
+ import org.github.tess1o.geopulse.user.service.UserService;
  
- import java.net.URI;
 +import java.nio.charset.StandardCharsets;
 +import java.security.MessageDigest;
 +import java.security.NoSuchAlgorithmException;
- import java.security.SecureRandom;
  import java.text.ParseException;
  import java.time.Instant;
-@@ -46,6 +49,7 @@ import java.time.temporal.ChronoUnit;
- import java.util.Base64;
+ import java.time.temporal.ChronoUnit;
++import java.util.Base64;
  import java.util.List;
  import java.util.Map;
 +import java.util.Objects;
  import java.util.Optional;
  import java.util.UUID;
- import java.util.concurrent.ConcurrentHashMap;
-@@ -252,6 +256,7 @@ public class OidcAuthenticationService {
+ import java.util.stream.Collectors;
+@@ -231,6 +236,7 @@ public class OidcAuthenticationService {
          // Generate state and nonce for security
          String state = generateSecureRandomString(32);
          String nonce = generateSecureRandomString(32);
@@ -72,7 +71,7 @@ index fd60f44..d02e0db 100644
  
          // Store session state
          OidcSessionStateEntity sessionState = OidcSessionStateEntity.builder()
-@@ -261,13 +266,14 @@ public class OidcAuthenticationService {
+@@ -240,13 +246,14 @@ public class OidcAuthenticationService {
                  .redirectUri(redirectUri) // Store where to redirect after authentication
                  .linkingUserId(linkingUserId)
                  .linkingToken(linkingToken)
@@ -88,7 +87,7 @@ index fd60f44..d02e0db 100644
  
          return OidcLoginInitResponse.builder()
                  .authorizationUrl(authUrl)
-@@ -278,10 +284,9 @@ public class OidcAuthenticationService {
+@@ -257,10 +264,9 @@ public class OidcAuthenticationService {
  
      @Transactional // Ensure entire callback operation is atomic
      public OidcCallbackAuthResult handleCallback(OidcCallbackRequest request) {
@@ -101,7 +100,7 @@ index fd60f44..d02e0db 100644
                      .orElseThrow(() -> new IllegalArgumentException("Invalid state token"));
  
              if (sessionState.getExpiresAt().isBefore(Instant.now())) {
-@@ -294,7 +299,7 @@ public class OidcAuthenticationService {
+@@ -273,7 +279,7 @@ public class OidcAuthenticationService {
                      .orElseThrow(() -> new IllegalArgumentException("Provider not found: " + providerName));
  
              // Exchange code for tokens
@@ -110,10 +109,10 @@ index fd60f44..d02e0db 100644
  
              // Validate ID token and extract user info
              OidcUserInfo userInfo = validateAndExtractUserInfo(tokenResponse, provider, sessionState);
-@@ -339,16 +344,6 @@ public class OidcAuthenticationService {
+@@ -322,16 +328,6 @@ public class OidcAuthenticationService {
          } catch (Exception e) {
              log.error("OIDC callback failed: {}", e.getMessage());
-             throw new RuntimeException("OIDC authentication failed.", e);
+             throw new OIDCAuthFailedException("OIDC authentication failed.", e);
 -        } finally {
 -            // Clean up session state in all cases (success or failure)
 -            // Single cleanup path eliminates redundant database queries
@@ -121,14 +120,14 @@ index fd60f44..d02e0db 100644
 -                try {
 -                    sessionStateRepository.delete(sessionState);
 -                } catch (Exception cleanupError) {
--                    log.warn("Failed to clean up session state for state token: {}", request.getState(), cleanupError);
+-                    log.warn("Failed to clean up OIDC session state", cleanupError);
 -                }
 -            }
          }
      }
  
-@@ -512,7 +507,7 @@ public class OidcAuthenticationService {
-         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+@@ -490,7 +486,7 @@ public class OidcAuthenticationService {
+         return CryptoUtils.randomUrlSafeToken(length);
      }
  
 -    private String buildAuthorizationUrl(OidcProviderConfiguration provider, String state, String nonce) {
@@ -136,7 +135,7 @@ index fd60f44..d02e0db 100644
          // Build OAuth2/OIDC authorization URL
          StringBuilder url = new StringBuilder(provider.getAuthorizationEndpoint());
          url.append("?response_type=code");
-@@ -521,10 +516,22 @@ public class OidcAuthenticationService {
+@@ -499,10 +495,22 @@ public class OidcAuthenticationService {
          url.append("&scope=").append(provider.getScopes().replace(" ", "%20"));
          url.append("&state=").append(state);
          url.append("&nonce=").append(nonce);
@@ -159,7 +158,7 @@ index fd60f44..d02e0db 100644
      private String getEffectiveCallbackBaseUrl() {
          Optional<String> callback = firstConfiguredUrl(settingsService == null
                  ? callbackBaseUrl
-@@ -562,13 +569,14 @@ public class OidcAuthenticationService {
+@@ -540,13 +548,14 @@ public class OidcAuthenticationService {
          return Optional.of(first);
      }
  
@@ -175,15 +174,17 @@ index fd60f44..d02e0db 100644
                  .param("redirect_uri", redirectUri)
                  .param("client_id", provider.getClientId())
                  .param("client_secret", provider.getClientSecret());
-diff --git a/backend/src/main/resources/db/migration/V36.53.0__Add_oidc_session_code_verifier.sql b/backend/src/main/resources/db/migration/V36.53.0__Add_oidc_session_code_verifier.sql
+diff --git a/backend/src/main/resources/db/migration/R__Add_oidc_session_code_verifier.sql b/backend/src/main/resources/db/migration/R__Add_oidc_session_code_verifier.sql
 new file mode 100644
-index 0000000..3e4b29d
+index 0000000..2006ae2
 --- /dev/null
-+++ b/backend/src/main/resources/db/migration/V36.53.0__Add_oidc_session_code_verifier.sql
-@@ -0,0 +1,3 @@
++++ b/backend/src/main/resources/db/migration/R__Add_oidc_session_code_verifier.sql
+@@ -0,0 +1,5 @@
 +-- PKCE (RFC 7636): the verifier whose S256 challenge the login sent to the provider.
-+-- Nullable: login states created before this migration have no verifier.
-+ALTER TABLE oidc_session_states ADD COLUMN code_verifier VARCHAR(128);
++-- Repeatable and idempotent: upstream owns every V36.x number, and 2.0 reuses the
++-- 36.53.0 this patch first occupied, so a versioned file here collides. Repeatable
++-- migrations run after the versioned stream and re-run only when this file changes.
++ALTER TABLE oidc_session_states ADD COLUMN IF NOT EXISTS code_verifier VARCHAR(128);
 diff --git a/backend/src/test/java/org/github/tess1o/geopulse/auth/oidc/service/FakeOidcProviderResource.java b/backend/src/test/java/org/github/tess1o/geopulse/auth/oidc/service/FakeOidcProviderResource.java
 new file mode 100644
 index 0000000..5f27d00
@@ -385,10 +386,10 @@ index 0000000..5f27d00
 +}
 diff --git a/backend/src/test/java/org/github/tess1o/geopulse/auth/oidc/service/OidcPkceTest.java b/backend/src/test/java/org/github/tess1o/geopulse/auth/oidc/service/OidcPkceTest.java
 new file mode 100644
-index 0000000..89c7e8f
+index 0000000..681e5ee
 --- /dev/null
 +++ b/backend/src/test/java/org/github/tess1o/geopulse/auth/oidc/service/OidcPkceTest.java
-@@ -0,0 +1,154 @@
+@@ -0,0 +1,155 @@
 +package org.github.tess1o.geopulse.auth.oidc.service;
 +
 +import io.quarkus.narayana.jta.QuarkusTransaction;
@@ -448,7 +449,8 @@ index 0000000..89c7e8f
 +
 +        OidcCallbackAuthResult result = callback(login);
 +
-+        assertNotNull(result.authResponse());
++        assertNotNull(result.user(), "a matching verifier must resolve the user");
++        assertNotNull(result.idToken());
 +        assertTrue(sessionStateRepository.findByStateToken(login.getState()).isEmpty());
 +    }
 +

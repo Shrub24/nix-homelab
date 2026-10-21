@@ -26,7 +26,7 @@ maven.buildMavenPackage {
       done
     '';
   };
-  mvnHash = "sha256-Il6Yqxv9xkeenxEQ+1h+lBCbfpI5kqPoVE8dd+377vU=";
+  mvnHash = "sha256-WucDIjE95ZuioTcLodG6IuI1O55WKE116jjv42YGM1w=";
   mvnParameters = "-pl backend -Dquarkus.profile=prod";
   doCheck = false;
 

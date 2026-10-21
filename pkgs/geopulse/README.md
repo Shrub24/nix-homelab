@@ -7,7 +7,7 @@ outputs come from it:
   owner.
 - `geopulse-backend` — Quarkus fast-jar on JDK 25, with `patches/pkce.patch`
   applied.
-- `geopulse-frontend` — Vite build on Node 22.
+- `geopulse-frontend` — Vite build on Node 24 (2.0's `engines.node >= 24.15`).
 
 `source.nix` holds the single release pin — `version`, `rev`, `hash` — and the
 two derivations take their version from it.

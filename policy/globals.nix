@@ -28,6 +28,15 @@
     containerSourceCIDR = "10.89.0.0/16";
   };
 
+  # ClickHouse's HTTP interface, away from its conventional 8123: home-forge
+  # runs Home Assistant there, sharing the host network namespace, so the two
+  # cannot both hold the port. Declared once because the server's own config and
+  # every consumer's URL must agree — and because a port chosen in two files is
+  # how this collision happened (D-102).
+  observability = {
+    clickhouseHttpPort = 8124;
+  };
+
   # Beszel's agent credential is the hub's SSH public key: every agent accepts
   # the hub's connection only against it, and the matching private half never
   # leaves the hub's data directory. Public data, delivered as plain

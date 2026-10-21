@@ -41,6 +41,8 @@ let
     catalog = c.repo.web.catalog.home-assistant or null;
     edgeRoute = c.repo.web.hosts.oci-melb-1.services.home-assistant or null;
     edgeServes = builtins.hasAttr "home-assistant" (c.services.ingress.routes or { });
+    failedAssertions = map (a: a.message) (builtins.filter (a: !a.assertion) (c.assertions or [ ]));
+    clickhousePort = c.services.clickhouse.serverConfig.http_port or 0;
   };
 in
 {
@@ -53,11 +55,28 @@ EOF
 probe="$(nix eval --impure --no-write-lock-file --json -f "$tmp/probe.nix")" ||
   fail "the probe does not evaluate"
 
-python3 - "$probe" <<'PYEOF' || fail "placement contract violated"
+# Control: force ClickHouse's HTTP port onto Home Assistant's, which is the
+# collision that put this instance into recovery mode (D-102). The guard must
+# fire at evaluation, not at activation where the symptom is a bare error page.
+collision="$(
+  nix eval --impure --no-write-lock-file --json --expr "
+    let
+      np = builtins.getFlake \"path:$ROOT\";
+      lib = np.inputs.nixpkgs.lib;
+      port = np.nixosConfigurations.home-forge.config.services.hass.port;
+      c = (np.nixosConfigurations.home-forge.extendModules {
+        modules = [ { services.clickhouse.serverConfig.http_port = lib.mkForce port; } ];
+      }).config;
+    in map (a: a.message) (builtins.filter (a: !a.assertion) c.assertions)
+  "
+)" || fail "the collision control does not evaluate"
+
+python3 - "$probe" "$collision" <<'PYEOF' || fail "placement contract violated"
 import json
 import sys
 
 data = json.loads(sys.argv[1])
+collision = json.loads(sys.argv[2])
 errs = []
 
 forge = data["home-forge"]
@@ -128,6 +147,18 @@ else:
         errs.append("this instance authenticates with Home Assistant's own login, not Kanidm OIDC")
 if forge["edgeServes"]:
     errs.append("the edge renders a site for a route that is not released")
+
+# The host is shared: another native listener holding Home Assistant's port wins
+# the bind, because the container joins the host network namespace.
+if forge["port"] == forge["clickhousePort"]:
+    errs.append(
+        f"Home Assistant and ClickHouse both claim port {forge['port']} on home-forge; "
+        "a host-networked container cannot bind a port a native service holds"
+    )
+if forge["failedAssertions"]:
+    errs.append(f"home-forge violates an assertion: {forge['failedAssertions']}")
+if not any("ClickHouse" in message for message in collision):
+    errs.append("mutation control failed to reject a Home Assistant/ClickHouse port collision")
 
 # Placement: the aspect is selected by the host that runs the workload only.
 for other in ("oci-melb-1", "la-admin-1"):

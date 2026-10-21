@@ -79,10 +79,11 @@ in
       ingestPort = catalog."latitude-ingest".endpoint.port or cfg.ingestPort;
       ingestUrl = "http://${config.networking.hostName}.${globals.tailnet.suffix}:${toString ingestPort}";
 
-      # ClickHouse: HTTP 8123 for queries, native 9000 for the goose migrations.
-      # Both are reached through the stable service name, which every container
-      # gets as an /etc/hosts entry.
-      clickhouseUrl = "http://${serviceHost}:8123";
+      # ClickHouse: HTTP for queries, native 9000 for the goose migrations. Both
+      # are reached through the stable service name, which every container gets
+      # as an /etc/hosts entry. The HTTP port is fleet policy because Home
+      # Assistant owns 8123 on this host (D-102).
+      clickhouseUrl = "http://${serviceHost}:${toString globals.observability.clickhouseHttpPort}";
 
       # The users fragment is its own file (each consumer owns one), and
       # latitude deliberately needs no substitution file: its user is
@@ -158,7 +159,7 @@ in
         deadline=$(( SECONDS + 120 ))
         for target in \
           ${serviceAddress}:5432 \
-          ${serviceAddress}:8123 \
+          ${serviceAddress}:${toString globals.observability.clickhouseHttpPort} \
           ${serviceAddress}:${toString cfg.redisPort} \
           ${serviceAddress}:${toString cfg.redisQueuePort} \
           ${serviceAddress}:${toString cfg.temporalPort}

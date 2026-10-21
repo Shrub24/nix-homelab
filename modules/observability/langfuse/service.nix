@@ -50,15 +50,18 @@
       # Stateful roles bind loopback + the service address. The worker keeps its own
       # bridge and dials the service name; web shares the host netns (it listens).
       loopback = "127.0.0.1";
-      serviceNetwork = (import ../../../policy/globals.nix).serviceNetwork;
+      globals = import ../../../policy/globals.nix;
+      serviceNetwork = globals.serviceNetwork;
+      clickhouseHttpPort = globals.observability.clickhouseHttpPort;
       serviceAddress = serviceNetwork.address;
       serviceHost = serviceNetwork.hostName;
       containerSourceCIDR = serviceNetwork.containerSourceCIDR;
       netHelpers = import ../../../lib/networking.nix { inherit lib; };
 
-      # Langfuse reaches ClickHouse over HTTP (8123) for queries and the native
-      # protocol (9000) for migrations.
-      clickhouseUrl = "http://${serviceHost}:8123";
+      # Langfuse reaches ClickHouse over HTTP for queries and the native
+      # protocol (9000) for migrations. The HTTP port is fleet policy, not a
+      # literal: Home Assistant owns 8123 on the host that runs both (D-102).
+      clickhouseUrl = "http://${serviceHost}:${toString clickhouseHttpPort}";
       clickhouseMigrationUrl = "clickhouse://${serviceHost}:9000";
 
       # Footgun (ClickHouse >= 26.8): include_from is read per separately-loaded
@@ -274,7 +277,7 @@
               loopback
               serviceAddress
             ];
-            http_port = 8123;
+            http_port = clickhouseHttpPort;
             tcp_port = 9000;
           };
           usersConfig = { };
@@ -579,7 +582,7 @@
               sourceCIDR = containerSourceCIDR;
               address = serviceAddress;
               ports = [
-                8123
+                clickhouseHttpPort
                 9000
               ];
             })

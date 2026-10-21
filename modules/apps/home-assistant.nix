@@ -76,6 +76,19 @@ _: {
               assertion = route == null || route.upstreamPort == cfg.port;
               message = "services.hass: the route's upstream port must match services.hass.port, or the edge dials a port nothing listens on.";
             }
+            {
+              # A host-networked container shares the host's port space, so a
+              # native listener on the same port wins the bind and Home Assistant
+              # falls into recovery mode with no frontend. ClickHouse's HTTP
+              # interface was the first collision: 8123 is its default and
+              # home-forge runs both (D-102). Fail closed here rather than at
+              # activation, where the symptom is a bare recovery page.
+              assertion =
+                !(config.services ? clickhouse)
+                || !(config.services.clickhouse.enable or false)
+                || (config.services.clickhouse.serverConfig.http_port or 0) != cfg.port;
+              message = "services.hass: port ${toString cfg.port} is also ClickHouse's HTTP port on this host; a host-networked Home Assistant cannot bind it. Move one of the two, as policy/globals.nix does for ClickHouse.";
+            }
           ];
 
           # Host networking, not a published port: discovery integrations

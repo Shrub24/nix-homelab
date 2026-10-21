@@ -17,7 +17,6 @@ import sys
 from urllib.request import Request, urlopen
 
 SOURCE = Path("pkgs/geopulse/source.nix")
-PATCH = Path("pkgs/geopulse/patches/pkce.patch")
 # Each derived output owns one dependency hash, which nix-update regenerates
 # from the pinned revision: maven for the backend, npm for the frontend.
 DERIVED_PACKAGES = ("geopulse-backend", "geopulse-frontend")
@@ -112,20 +111,6 @@ def checked(argv, what, cwd=None):
     return result
 
 
-def assert_patch_applies(tree, rev):
-    """The PKCE patch is version-coupled, so a new pin has to still accept it.
-
-    A revision the patch cannot apply to must fail here, in the candidate,
-    rather than in a build. `nix store prefetch-file --unpack` leaves the
-    unpacked revision in the store, where a dry run reports without writing.
-    """
-    checked(
-        ["patch", "-p1", "--dry-run", "--force", "-i", str(PATCH.resolve())],
-        f"{PATCH} no longer applies to {rev[:12]}",
-        cwd=tree,
-    )
-
-
 def assert_source_hash():
     """Fail loudly when the prefetched hash is not the one the pin needs."""
     checked(
@@ -166,7 +151,6 @@ def main():
     checked(["git", "add", "-A"], "staging the edited pin")
 
     if tree is not None:
-        assert_patch_applies(tree, rev)
         assert_source_hash()
 
     for name in DERIVED_PACKAGES:

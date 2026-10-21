@@ -2996,3 +2996,19 @@ It also adds `services.geopulse.adminEmail`, bound to `GEOPULSE_ADMIN_EMAIL`, be
 **Rejected:** generating boards as well (the arrangement is taste, and reconciliation would need to model Homarr's editor payload to change it safely); pruning apps that no longer correspond to a route (deleting silently empties a tile someone placed, and an unused app costs nothing); resolving icons through Homarr's icon search at sync time (a network call and a non-deterministic input for a cosmetic value — the dashboard-icons slug is compiled, with a per-route override).
 
 **Consequences:** the app list a person picks from is an observable of the web policy, verifiable against `repo.web.catalog`, and a renamed subdomain yields a corrected app instead of a stale bookmark. Board arrangement remains manual, which is where hand work belongs.
+
+## D-108: GeoPulse stops carrying the PKCE patch; the Kanidm client opts out declaratively
+
+**Status:** Accepted. Applies on the next deploy chain, `la-admin-1` before `oci-melb-1`.
+
+**Context:** D-105 kept a 547-line local patch so GeoPulse's OIDC login would send a PKCE challenge, because Kanidm requires PKCE and upstream 2.0 has none. The patch carried three Java changes, an entity column, a repeatable migration and a test harness, and it cost real money twice: rebasing it across the 2.0 rewrite, and the Flyway version collision that took the backend down when the patch's `V36.53.0` met upstream's new file of the same number.
+
+**Decision:** the patch is removed and GeoPulse is built from unmodified upstream sources. The client declares `allowInsecureClientDisablePkce` in `policy/identity.json`, which this repository already maps through `services.kanidm.provision.systems.oauth2` — nixpkgs' declarative provisioning applies it at activation. No operator command, no imperative step.
+
+The repeatable migration `R__Add_oidc_session_code_verifier.sql` stays in the package (`pkgs/geopulse/migrations/`), unchanged. Flyway records an applied repeatable migration by description and checksum, so dropping the file would leave it unresolved locally and fail validation on the next start; the statement is `ADD COLUMN IF NOT EXISTS`, so it re-runs as a no-op and the unused column remains.
+
+**Why the downgrade is acceptable:** PKCE protects against authorization-code interception, which matters most for public clients that cannot hold a secret. GeoPulse is a confidential client with a client secret, reached over TLS on the tailnet or behind Access, and it is the only client in the fleet relying on this flag. Kanidm marks the client insecure when it is set, which is the visibility wanted: the posture is a declaration in `policy/identity.json`, not a hidden CLI change.
+
+**Alternatives considered:** keeping the patch was rejected as a recurring cost on every GeoPulse bump, with a failure mode (schema-version collision) that lands in production rather than in a build. Deleting the repeatable migration as well was rejected: it would make Flyway refuse to start on a database that has applied it.
+
+**Consequences:** a GeoPulse bump is now `version`, `rev`, `hash` and the two dependency hashes, with nothing to re-apply. The client's PKCE exemption is visible in `policy/identity.json` and in Kanidm's own output. If GeoPulse ever ships PKCE upstream, the flag comes off the same way it went on, and the sparse-checkout-free patch never returns.

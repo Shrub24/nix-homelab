@@ -5,8 +5,8 @@ outputs come from it:
 
 - `geopulse` — the coupled release, both halves joined; the family's registered
   owner.
-- `geopulse-backend` — Quarkus fast-jar on JDK 25, with `patches/pkce.patch`
-  applied.
+- `geopulse-backend` — Quarkus fast-jar on JDK 25, built from unmodified upstream
+  sources; the one file we add is the repeatable migration under `migrations/`.
 - `geopulse-frontend` — Vite build on Node 24 (2.0's `engines.node >= 24.15`).
 
 `source.nix` holds the single release pin — `version`, `rev`, `hash` — and the
@@ -36,11 +36,10 @@ nix run .#update-packages -- --check                                 # newest st
 GEOPULSE_UPDATE_VERSION=1.39.2 nix run .#update-packages -- geopulse # recorded target
 ```
 
-`update.py` moves `version`, `rev` and `hash` in `source.nix` together, checks
-that `patches/pkce.patch` still applies to the new revision, verifies the source
-hash by building `geopulse-backend.src`, and then regenerates the Maven and npm
-dependency hashes. A revision the patch no longer applies to fails the candidate
-rather than producing a build that cannot compile.
+`update.py` moves `version`, `rev` and `hash` in `source.nix` together, verifies
+the source hash by building `geopulse-backend.src`, and then regenerates the
+Maven and npm dependency hashes. No source patch is carried any more, so a bump
+no longer has to re-apply one.
 
 The backend's Maven fixed-output hash is one value for both Linux
 architectures. brotli4j selects its native jar through OS/arch-activated

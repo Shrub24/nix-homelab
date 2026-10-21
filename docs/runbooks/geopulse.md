@@ -196,10 +196,13 @@ repeated here.
   the schema migration; there is no separate migration step to schedule. Any
   start of a backend whose migrations have not run against this database applies
   them.
-- The PKCE patch adds `R__Add_oidc_session_code_verifier.sql`, a column on
-  the OIDC session-state table. A login started before that migration has no
-  stored verifier, so its token exchange fails; the change accepts that rather
-  than keeping verifiers for in-flight logins.
+- The verifier column `oidc_session_states.code_verifier` came from a repeatable
+  migration we still ship (`pkgs/geopulse/migrations/`), even though the login no
+  longer writes a verifier: Flyway records an applied repeatable migration by
+  description and checksum, so removing the file would leave it unresolved and
+  fail validation. The statement is `ADD COLUMN IF NOT EXISTS`, so it re-runs as
+  a no-op. A login started before that migration has no stored verifier; nothing
+  reads the column now.
 - A migration run needs the cluster's own server and extension versions (the
   substrate never upgrades a cluster to match an application), the role's
   credential in the file the host binds, and the PostGIS extensions already
@@ -240,7 +243,7 @@ through the rendered provisioning policy:
 | callback | `https://geo.shrublab.xyz/oidc/callback` |
 | scopes | `openid profile email`, mapped to `users` only |
 | signature algorithm | `enableLegacyCrypto` — Kanidm offers RS256 only in that mode, and the backend verifies RS256 |
-| PKCE | enforced: the patched backend sends its S256 challenge, so the client must not carry `allowInsecureClientDisablePkce` |
+| PKCE | off: the backend sends no code challenge, so the client carries `allowInsecureClientDisablePkce`, declared in `policy/identity.json` and applied by Kanidm's own provisioning (D-108) |
 
 The callback is written into the policy rather than derived from the route,
 because the GeoPulse web-policy route is still private and a private route

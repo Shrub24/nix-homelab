@@ -9,8 +9,17 @@ maven.buildMavenPackage {
   pname = "geopulse-backend";
   inherit version src;
 
-  # PKCE on the OIDC login (GP-2); see patches/pkce.patch.
-  patches = [ ./patches/pkce.patch ];
+  # Our PKCE patch is gone: the login no longer sends a code challenge, and the
+  # Kanidm client opts out declaratively (`allowInsecureClientDisablePkce` in
+  # policy/identity.json), so upstream sources build unmodified. The repeatable
+  # migration that created the verifier column stays, because Flyway records an
+  # applied repeatable migration by description and checksum: dropping the file
+  # would leave that migration unresolved locally and fail validation. Its content
+  # is unchanged from the one that ran, so it re-runs as a no-op.
+  postPatch = ''
+    cp ${./migrations/R__Add_oidc_session_code_verifier.sql} \
+      backend/src/main/resources/db/migration/
+  '';
 
   mvnJdk = jdk25;
 

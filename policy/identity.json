@@ -108,6 +108,7 @@
         "routeKey": "geopulse",
         "callbackPath": "/oidc/callback",
     "includePrivateEndpointCallback": true,
+        "allowInsecureClientDisablePkce": true,
         "enableLegacyCrypto": true,
         "scopeMaps": {
           "users": ["openid", "profile", "email"]

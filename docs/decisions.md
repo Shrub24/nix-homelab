@@ -2894,3 +2894,105 @@ The recorder keeps SQLite to start. Home Assistant's own guidance is that an ext
 - Defaulting `publish` to `false`, so a route must opt in to being served, was rejected: every one of the fleet's published routes would need the line, and the failure mode of the safe default is a route that silently answers nothing because someone forgot it.
 
 **Consequences:** Withholding and releasing are one field either way, so the working shape is unchanged; what changes is that the file now says what the system should be, and `just checks` pins that posture rather than a stage. The rename touched the ingress filter, the three withheld routes (`geopulse`, `homarr`, `home-assistant`), their contract tests, and the runbooks.
+
+## D-102: ClickHouse's HTTP port is fleet policy, and a host-networked collision fails at evaluation
+
+**Status:** Accepted.
+
+**Context:** Two facts collided on `home-forge`. Home Assistant runs with `--network=host` so discovery integrations can see the LAN, which makes it bind `0.0.0.0:8123` in the host's own port space. ClickHouse's HTTP interface defaults to `8123`, and on that same host Langfuse and Latitude both dial it there. The first Home Assistant deploy produced a container that was *up* and a port that answered `200` — because ClickHouse was answering — while Home Assistant had failed to bind, logged `Failed to create HTTP server at port 8123: address in use`, and dropped into recovery mode with no frontend. The switch then failed for a reason nothing in the repo could see: the ports were chosen in three files that never compared notes.
+
+**Decision:** ClickHouse's HTTP port is declared once, in `policy/globals.nix` (`observability.clickhouseHttpPort = 8124`), and both the server's `serverConfig.http_port` and both consumers' URLs read it. Home Assistant keeps `8123`, the port its documentation, companion app and integration guides assume. When a host also enables a ClickHouse server, the Home Assistant module asserts that the two ports differ, so the collision fails at evaluation rather than at activation.
+
+**Alternatives considered:**
+
+- Moving Home Assistant's port was rejected: its listener is configured in operator-owned `configuration.yaml` (`http.server_port`), which Nix deliberately does not manage, and a non-standard port breaks the assumptions every guide and the companion app make.
+- Bridged networking with published ports was rejected for the same reason host networking exists here — multicast discovery needs the LAN namespace — and the published port would still have collided on the loopback address ClickHouse holds.
+- Single-sourcing the port in one of the two observability modules was rejected: the value is a property of the host that runs the server, both consumers are separate files, and the fleet's existing home for a shared non-secret constant is `policy/globals.nix`.
+
+**Consequences:** Nothing else on the host moves, and the Langfuse/Latitude ClickHouse path keeps working across the rename — the guard proves the two ports differ. The assertion covers the pair that actually collided, not the class of host-networked port collisions: a new host-networked service must make the same check, and the module that introduces it owns that assertion.
+
+## D-103: Homarr takes its groups from the Kanidm `groups` claim, requested as `groups_name`
+
+**Status:** Accepted.
+
+**Context:** Homarr ran with `AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=true`, which makes group membership local to Homarr. An administrator therefore had to be promoted by hand after their first OIDC login, and a person added to the fleet's admin group in Kanidm gained nothing there. The fleet's identity provider already knows the answer, and Kanidm can put it in the token.
+
+**Decision:** Homarr requests the `groups_name` scope, reads the claim through `AUTH_OIDC_GROUPS_ATTRIBUTE=groups`, and follows it with `AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false`. The scope is granted to the Homarr client's `service-admins` and `users` scope maps in `policy/identity.json`.
+
+**Why the scope maps and not the supplemental ones:** Kanidm's `process_requested_scopes_for_identity` (server/lib/src/idm/oauth2.rs) rejects an authorize request unless every requested scope is present in the *scope maps* for the user's groups; supplemental scope maps are merged into the granted set afterwards and never authorise a request. A `groups_name` granted only as supplemental would therefore make Homarr's request fail rather than arrive empty.
+
+**Why `groups_name`:** Kanidm always emits the claim under the key `groups`; the value shape depends on which variant was requested — `groups` gives UUID and SPN pairs, `groups_spn` gives `name@domain`, `groups_name` gives bare names. Homarr matches group names, and `service-admins` is the name both sides already use.
+
+**Consequences:** Adding a person to `service-admins` in Kanidm grants admin in Homarr at their next login, and nothing needs re-issuing when the group changes. Homarr still joins only groups that already exist in its own database, so the `service-admins` group and its Administrator preset are created once, by hand — the one imperative step that remains. Sync is authoritative in both directions: an OIDC user is removed from Homarr groups the claim does not name (except `Everyone`), so any group an OIDC user must keep has to exist in Kanidm. The credentials administrator is not an OIDC user and is untouched by sync, which keeps it available as break-glass while `credentialsBootstrap` is still on.
+
+## D-104: Homarr has no bootstrap switch; its posture is the route's `publish`
+
+**Status:** Accepted.
+
+**Context:** `services.homarr.credentialsBootstrap` existed to sequence a private bring-up: while `true`, `BASE_URL` pointed at the Tailscale Serve origin and `AUTH_PROVIDERS` allowed local credentials so the first administrator could be created; while `false`, both flipped to the public origin and OIDC only. It encoded a fact the repository cannot read — whether a first administrator exists, which lives in Homarr's SQLite database — so it had to be flipped by hand after an imperative step, and forgetting the flip left either a password login on a public route or an instance no administrator could reach. It was also the surviving case of the option class D-098 removed for GeoPulse and Homarr's own route.
+
+**Decision:** The option is gone. `BASE_URL` and `AUTH_PROVIDERS` are derived from the route's `publish` posture in `policy/web-services.nix`: a withheld route is a private instance and keeps the private origin with `credentials,oidc`; a published route is public and OIDC-only. The posture reaches the aspect through the catalog: `lib/policy.nix` now carries `publish` on each catalog entry, defaulted the same way the edge filter defaults it, so a consumer never reads the provider-host record to learn whether its own route is served.
+
+**Alternatives considered:**
+
+- Keeping a boolean and renaming it was rejected: the name was never the problem. The value still mirrored an unreadable database fact, and a rename would preserve the failure mode D-098 rejected for GeoPulse.
+- Always OIDC-only was rejected. Homarr's first user becomes administrator only through credentials onboarding; with an OIDC-only provider the onboarding skips the user step to an external-group step, and an already-onboarded instance grants administration solely through group membership. Neither produces an administrator without an administrator.
+- Keeping credentials enabled on the public route was rejected: a public dashboard with a password login beside OIDC is a second, weaker door, and the posture makes the two impossible to separate.
+
+**Consequences:** Publishing a route now also disables local credentials, and withholding it re-enables them along with the private origin — so `publish = false` is both the private bring-up state and the recovery path when identity fails. Group administration is unaffected by the flip, because group sync only touches OIDC users and the local administrator remains in the database. Two footguns remain and are documented in the runbook: Homarr joins only groups that already exist in its own database, so a `service-admins` group must be created once by hand; and Kanidm rejects scopes that are not in the client's granted scope maps, so `la-admin-1` must be deployed before the host whose client requests a new scope.
+
+## D-105: GeoPulse 2.0 replaces JWT sessions, keeps PKCE as a patch, and declares its administrator
+
+**Status:** Accepted.
+
+**Context:** GeoPulse 2.0.0 was released on 2026-10-17, before this deployment carried real location history. Upgrading later would mean migrating a live database instead of an empty one. The release changes three things that reach this repository: it stays on PostgreSQL 17 (an 18 migration is separate and optional, with its own script), it replaces JWT authentication with database-backed sessions — `SessionAuthenticationMechanism` and `MobileSessionExchangeResource`, with no `geopulse.jwt.*` or `GEOPULSE_JWT_*` anywhere in the shipped configuration — and its frontend declares `engines.node >= 24.15` on Vite 8, where our build pinned Node 22 for Vite 4.
+
+The upstream release still has no PKCE: at tag `v2.0.0` there is no `codeVerifier`, `code_challenge` or `code_verifier` in the backend. Kanidm enforces PKCE, so `patches/pkce.patch` remains load-bearing and had to be rebased onto rewritten OIDC code.
+
+**Decision:** Pin `2.0.0` (`11955ec8`) and carry four coupled changes.
+
+- **The patch is rebased, not dropped.** Ten hunks in `OidcAuthenticationService` survived the rewrite; the three that did not were the import block (2.0 dropped `java.net.URI` and moved lines, so `StandardCharsets`, `MessageDigest`, `NoSuchAlgorithmException` and `Base64` were re-added), the removal of the `finally` cleanup block (2.0 still deletes session state there, and the atomic `consumeByStateToken` still owns single-use semantics), and one test assertion (`OidcCallbackAuthResult` is now a record of user/redirect/provider/subject/session/idToken, so the test asserts `user()` and `idToken()`).
+- **The migration becomes repeatable.** The patch first shipped its column as `V36.53.0`, and 2.0 introduced a *different* migration at that exact version (`V36.53.0__Add_user_notification_preferences_and_gps_health_incidents.sql`), so Flyway refused to start: `Found more than one migration with version 36.53.0` and the backend crash-looped into `start-limit-hit`. It is now `R__Add_oidc_session_code_verifier.sql` with `ADD COLUMN IF NOT EXISTS`: repeatable migrations run after the versioned stream and re-run only when the file changes, so a patch-owned schema change never occupies a number upstream may take. The stale `36.53.0` history row (ours, and the newest applied, so deleting it left no out-of-order gap) was removed from the live database before the retry.
+- **The frontend toolchain follows the engine.** `nodejs_24` replaces `nodejs_22`.
+- **The dead JWT wiring is removed.** The three `GEOPULSE_JWT_*` variables, the two PEM `sops.secrets` entries, and the start wrapper's requirement that those files be non-empty all go: 2.0 never opens them, and a preflight demanding them would fail a host that has no reason to create them.
+
+It also adds `services.geopulse.adminEmail`, bound to `GEOPULSE_ADMIN_EMAIL`, because 2.0's `AdminBootstrapService` promotes that address on start and on every login. Administration then becomes a declared fact instead of "whichever account registered first" — the risk that made the earlier bootstrap sequence delicate.
+
+**Alternatives considered:** Staying on 1.39.1 was rejected — the reason to upgrade is precisely to avoid a migration with real history in it. Dropping the PKCE patch was rejected: the identity provider requires PKCE and upstream has no verifier column, so login would fail outright. Renumbering the patch migration above 2.0's was rejected once the collision surfaced: any fixed number is a number upstream can reach, whereas a repeatable migration cannot collide. Deleting the stale history row and re-applying was preferred to Flyway `repair`, which would have had to realign a checksum for a file that no longer exists on disk. Keeping the JWT files and their preflight was rejected: they would be a required secret that no process reads, and the first host built without them would refuse to start for nothing.
+
+**Consequences:** Sessions do not carry over from 1.x, so every user signs in once. A deployment that installed the 1.x-era `V36.53.0` must delete that history row once, by hand, before 2.0 will start; a fresh database never hits it, because the repeatable migration simply creates the column. A `secrets/services/geopulse.yaml` written for 1.x still holds `jwt/private_key` and `jwt/public_key`; they are ignored and can be dropped at the next rotation. `GEOPULSE_ADMIN_EMAIL` is optional — unset, 2.0 falls back to promoting the only user, and refuses to guess once there are several.
+
+## D-106: The zone apex answers with a permanent redirect to the dashboard
+
+**Status:** Accepted, pending deploy and the apex DNS apply.
+
+**Context:** `shrublab.xyz` had no service behind it, so a visitor to the bare domain met nothing. Three shapes were offered: a redirect to `home.shrublab.xyz`, Homarr served at the apex, or a repo-owned static landing page.
+
+**Decision:** The apex is a route with `subdomain = null` and `redirectTo`, rendered by Caddy as `redir <target>{uri} permanent`. It has no upstream, no health probe and no Access application, and it is withheld from the cross-host catalog because nothing dials it.
+
+- **Resolver:** an origin-less route is valid only when it declares `redirectTo`, and only at the apex (`web-policy` rejects a redirect with a subdomain). `hostPorts`, the catalog and the provider projection skip redirects, and `mkUpstream`/`healthUrl` are not computed for them.
+- **Edge:** a redirect owns its whole site, and `_ingress-routes.nix` carries `redirectTo` through. The certificate gains the apex as an explicit SAN, because `*.shrublab.xyz` does not cover the apex.
+- **DNS:** the record is named `@` and carries `settings.flatten_cname = true`, since a zone apex cannot be a bare CNAME. The flag is set only on the apex record; every other record keeps `false`.
+
+**Rejected:** Serving Homarr at the apex. Its cookies could be scoped to `shrublab.xyz`, which every other host receives, and the apex would become a workload whose name is the one people share. A static landing page was deferred: it is content to maintain, and the redirect can be replaced by one later without changing the DNS record.
+
+**Consequences:** `home.shrublab.xyz` is the single dashboard address. Changing the landing target is one edit to `policy/web-services.nix`, and the rendered site and the DNS export follow from it.
+
+**Follow-up found by the live check:** publishing the apex exposed that the dashboard's public route had never worked. `https://home.shrublab.xyz/` answered `400 Client sent an HTTP request to an HTTPS server` — Go's own error string, from the provider's Tailscale Serve front. A `tailscale-serve` route published its socket behind that front, which terminates TLS on the declared port and proxies to the app's loopback listener, but the edge derived its dial scheme from the application's `origin.scheme` (`http`). The dial was therefore a plain-HTTP request to a TLS listener. `lib/policy.nix` now has one `dialScheme` that answers `https` for `tailscale-serve` regardless of what the app speaks, applied to both the edge upstream and the catalog endpoint; dialing the front at the app's scheme is never correct, and the same defect silently affected every tailnet-served route. Verified live: `https://shrublab.xyz/boards` 301s to `https://home.shrublab.xyz/boards`, which answers 200.
+
+## D-107: Homarr's app inventory is a projection of the web policy, synced through Homarr's API
+
+**Status:** Accepted. Awaiting the operator's API key before it runs.
+
+**Context:** Homarr is the user-facing dashboard, but its apps and boards live in its own SQLite database: no configuration file, and the apps a person can add to a board were hand-made. That is the one place where "what links exist" lived outside `policy/web-services.nix`. Keeping those links true is the tedious part — the name, URL and icon go stale whenever a route is renamed or a service moves — while arranging a board is a matter of taste, done once and occasionally.
+
+**Decision:** Sync the **apps**; leave boards to the UI. `modules/apps/homarr/apps.nix` compiles the desired apps from `repo.web.catalog` and `modules/apps/homarr/reconcile.py` converges them through the API from a oneshot unit.
+
+- **Selection is policy, not a list.** A route becomes an app when its `category` is `app` or `admin` and it is published. `infra` routes are machine endpoints — metrics stores, ingest listeners, the cache's write API — that no one opens, so they earn none; a withheld route is not served by the edge, so an app for it would be dead until release. `latitude-api` was retagged `infra` on this basis: it is the API origin the Latitude web app's browser calls, not a page.
+- **Apps are matched by URL** and only ever created or patched. Nothing is deleted: an app the sync did not create is someone's own bookmark, and an app whose route retired may still sit on a board that was arranged by hand.
+- **Boards are not generated.** Homarr's `PUT /api/boards/{id}/content` would let a script rewrite editor state, but that payload models sections, layouts and widget options this repository would have to track, and the result is a layout nobody asked it to decide. A board is built in the UI from the synced apps.
+- **The API key is the one operator step**, because Homarr has no headless login: an administrator mints it in the UI and it is stored in the service secret file under `api_key`. A missing or empty key makes the unit exit successfully with a journal line, since an unminted key is a prepared state rather than a fault; API errors are failures, so the unit reaches `failed` and the notification path reports it.
+
+**Rejected:** generating boards as well (the arrangement is taste, and reconciliation would need to model Homarr's editor payload to change it safely); pruning apps that no longer correspond to a route (deleting silently empties a tile someone placed, and an unused app costs nothing); resolving icons through Homarr's icon search at sync time (a network call and a non-deterministic input for a cosmetic value — the dashboard-icons slug is compiled, with a per-route override).
+
+**Consequences:** the app list a person picks from is an observable of the web policy, verifiable against `repo.web.catalog`, and a renamed subdomain yields a corrected app instead of a stale bookmark. Board arrangement remains manual, which is where hand work belongs.

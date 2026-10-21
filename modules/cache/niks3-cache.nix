@@ -21,13 +21,11 @@
       # forms, because an immutable-subject repository still reports these values.
       # The workflow is a parameter: publishing and pinning are different powers
       # and each is bound to the one workflow that exercises it.
-      ciClaims =
-        workflow:
-        {
-          repository_owner_id = [ "20262061" ];
-          ref = [ "refs/heads/main" ];
-          job_workflow_ref = [ "Shrub24/nix-fleet/.github/workflows/${workflow}@*" ];
-        };
+      ciClaims = workflow: {
+        repository_owner_id = [ "20262061" ];
+        ref = [ "refs/heads/main" ];
+        job_workflow_ref = [ "Shrub24/nix-fleet/.github/workflows/${workflow}@*" ];
+      };
       # The repositories whose CI may publish, and therefore the pin namespaces
       # below: one reserved namespace per repository. A repository that has not yet
       # adopted pinning simply never calls the pin workflow.
@@ -98,17 +96,23 @@
             in
             [
               # Publishing: uploads paths, cannot touch a reserved pin name.
-              (bound (ciClaims "build-push-cache.yml") // {
-                scopes = [ "write" ];
-                pins = [ ];
-              })
+              (
+                bound (ciClaims "build-push-cache.yml")
+                // {
+                  scopes = [ "write" ];
+                  pins = [ ];
+                }
+              )
               # Pinning: writes only this repository's reserved names. niks3 checks
               # the write scope before the pin name, so a pins-only rule would be
               # rejected; the separation that matters is which names each may move.
-              (bound (ciClaims "pin-cache.yml") // {
-                scopes = [ "write" ];
-                pins = [ "${repository}-main-*" ];
-              })
+              (
+                bound (ciClaims "pin-cache.yml")
+                // {
+                  scopes = [ "write" ];
+                  pins = [ "${repository}-main-*" ];
+                }
+              )
             ]
           ) ciRepositories;
         };

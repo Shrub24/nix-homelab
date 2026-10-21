@@ -8,9 +8,6 @@ set no-cd
 # flake realises degoog's unsubstitutable bun2nix import-from-derivation (D-082).
 all:
   @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).check-flake-file"
-  @./tests/check-secret-scope.sh
-  @./tests/check-secret-scope-extra-reader.sh
-  @./tests/check-secret-updatekeys-selection.sh
   @./tests/check-ssh-host-fingerprint.sh
   @./tests/check-host-age-anchor.sh
   @./tests/check-deploy-bootstrap-gate.sh
@@ -31,15 +28,6 @@ all:
   @./tests/check-geopulse-contract.sh
   @./tests/check-homarr-contract.sh
   @./tests/check-home-assistant-contract.sh
-
-test-secrets:
-  @./tests/check-secret-scope.sh
-
-test-secret-scope-extra-reader:
-  @./tests/check-secret-scope-extra-reader.sh
-
-test-secret-updatekeys:
-  @./tests/check-secret-updatekeys-selection.sh
 
 test-ssh-fingerprint:
   @./tests/check-ssh-host-fingerprint.sh

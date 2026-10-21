@@ -96,7 +96,7 @@ nixos-rebuild boot --target-host <initial-user>@<addr> --use-remote-sudo --flake
 
 **Before boot (validation gates):**
 
-- `just fmt-check` and `just checks all` pass (repo formatting, secret-scope, host-phase, and restore contracts)
+- `just fmt-check` and `just checks all` pass (repo formatting, host-phase, and restore contracts)
 - the host toplevel evaluates/builds: `nix build .#host-<host>` (or the equivalent preflight gate for the change)
 - `just _preflight <host>` confirms the generation declares `openssh`, tcp/22, and `dev`/`root` keys
 

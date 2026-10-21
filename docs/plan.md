@@ -209,7 +209,6 @@ Current operator/validation entrypoints that docs should track when they change:
 - `just check`
 - `just tofu-sync`
 - `just tofu-runtime`
-- `tests/check-secret-scope.sh`
 - `tests/check-web-services-policy.sh`
 - `scripts/export-web-services-policy.sh`
 - `scripts/render-opentofu-cloudflare-runtime.sh`

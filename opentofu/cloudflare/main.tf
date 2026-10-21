@@ -93,6 +93,11 @@ resource "cloudflare_dns_record" "service" {
   content = var.edge_record_target
   proxied = try(each.value.proxied, true)
 
+  # A zone apex cannot be a bare CNAME; Cloudflare flattens it to address records.
+  settings = {
+    flatten_cname = try(each.value.apex, false)
+  }
+
   comment = "Managed by OpenTofu from policy/web-services.nix"
 }
 

@@ -49,9 +49,17 @@ rec {
     globalDefaults: hostDefaults: serviceCfg:
     lib.recursiveUpdate (lib.recursiveUpdate globalDefaults hostDefaults) serviceCfg;
 
+  # A tailnet-served route's socket is behind the provider's Tailscale Serve
+  # front, which terminates TLS on the declared port and proxies to the app's own
+  # loopback listener. The dial therefore has to be https no matter what scheme
+  # the application speaks: dialing the front with the app's `http` scheme is a
+  # plain-HTTP request to a TLS listener, which the front answers 400.
+  dialScheme =
+    resolved: if resolved.exposureMode == "tailscale-serve" then "https" else resolved.origin.scheme;
+
   mkUpstream =
     dialer: resolved:
-    "${resolved.origin.scheme}://${
+    "${dialScheme resolved}://${
       upstreamHost resolved.origin.provider resolved.exposureMode dialer
     }:${toString resolved.origin.port}";
 
@@ -87,10 +95,20 @@ rec {
         service = serviceName;
         inherit primaryDomain;
         publicHost = mkPublicHost primaryDomain resolved;
-        upstream = mkUpstream hostName resolved;
         publicUrl = mkPublicUrl resolved;
-        healthUrl = mkHealthUrl resolved;
       }
+      # A redirect answers from the edge itself, so it has no socket to dial and
+      # no health endpoint to probe; declaring an origin for it would be a lie
+      # the upstream string would then repeat.
+      // (
+        if resolved ? redirectTo then
+          { }
+        else
+          {
+            upstream = mkUpstream hostName resolved;
+            healthUrl = mkHealthUrl resolved;
+          }
+      )
     ) services;
 
   resolveCloudflareHosts =
@@ -138,7 +156,10 @@ rec {
           name = publicHost;
           value = {
             inherit publicHost;
-            hostname = canonicalService.subdomain;
+            # The apex has no subdomain label; Cloudflare names it "@" and flattens
+            # the CNAME, because a zone apex may not point at another name.
+            apex = canonicalService.subdomain == null;
+            hostname = if canonicalService.subdomain == null then "@" else canonicalService.subdomain;
             inherit (canonicalService) primaryDomain;
             proxied = canonicalService.cloudflare.proxied or true;
             declarePublic = true;
@@ -179,7 +200,10 @@ rec {
   exportHostJson = policy: hostName: builtins.toJSON (exportHostPolicy policy hostName);
 
   hostPorts =
-    policy: hostName: lib.mapAttrs (_: svc: svc.origin.port) (resolveHostServices policy hostName);
+    policy: hostName:
+    lib.mapAttrs (_: svc: svc.origin.port) (
+      lib.filterAttrs (_: svc: !(svc ? redirectTo)) (resolveHostServices policy hostName)
+    );
 
   # Provider-side projection: the routes a host provides, so a host serving an
   # origin can render the front the edge dials without reading the edge's route
@@ -229,12 +253,16 @@ rec {
     let
       public = isPublicService resolved;
       endpointHostValue = endpointHost resolved.origin.provider resolved.exposureMode evalHostName;
-      endpoint = {
-        inherit (resolved.origin) scheme;
-        host = endpointHostValue;
-        port = resolved.origin.port;
-        url = "${resolved.origin.scheme}://${endpointHostValue}:${toString resolved.origin.port}";
-      };
+      endpoint =
+        let
+          scheme = dialScheme resolved;
+        in
+        {
+          inherit scheme;
+          host = endpointHostValue;
+          port = resolved.origin.port;
+          url = "${scheme}://${endpointHostValue}:${toString resolved.origin.port}";
+        };
     in
     {
       service = serviceName;
@@ -244,6 +272,12 @@ rec {
       publicHost = if public then resolved.publicHost else null;
       publicDomain = if public then resolved.primaryDomain else null;
       inherit endpoint;
+      # The route's publication posture travels with the catalog entry: it is
+      # property of the route, not of the browser that reads it, and a consumer
+      # that must behave differently while its route is withheld (a private
+      # instance versus a published one) would otherwise have to read the
+      # provider-host record. Same default as the edge filter.
+      publish = resolved.publish or true;
       inherit (resolved)
         primaryDomain
         subdomain
@@ -260,12 +294,14 @@ rec {
     policy: evalHostName:
     let
       hosts = policy.hosts or { };
+      # A redirect route is published identity with no dial target, so it stays out
+      # of the cross-host catalog: consumers resolve sockets here, not landing points.
       allServices = lib.concatLists (
         lib.mapAttrsToList (
           hostName: _:
           lib.mapAttrsToList (serviceName: resolved: {
             inherit hostName serviceName resolved;
-          }) (resolveHostServices policy hostName)
+          }) (lib.filterAttrs (_: resolved: !(resolved ? redirectTo)) (resolveHostServices policy hostName))
         ) hosts
       );
 

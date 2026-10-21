@@ -1109,8 +1109,11 @@ errs = []
 
 if provision.get("displayName") != "GeoPulse":
     errs.append(f"displayName: {provision.get('displayName')!r}")
-if provision.get("originUrl") != "https://geopulse.shrublab.xyz/oidc/callback":
-    errs.append(f"originUrl: {provision.get('originUrl')!r}")
+# The tailnet front keeps its own callback beside the public one (the GeoPulse
+# route is tailscale-serve), so the list must hold the public callback first.
+origin_urls = provision.get("originUrl")
+if not isinstance(origin_urls, list) or not origin_urls or origin_urls[0] != "https://geo.shrublab.xyz/oidc/callback":
+    errs.append(f"originUrl: {origin_urls!r}")
 if provision.get("enableLegacyCrypto") is not True:
     errs.append(f"enableLegacyCrypto: {provision.get('enableLegacyCrypto')!r}")
 if provision.get("allowInsecureClientDisablePkce") is not False:
@@ -1128,7 +1131,7 @@ if got.get("secretKey") != "geopulse/client_secret":
     errs.append(f"secretKey: {got.get('secretKey')!r} (the operator fills this key in the host OIDC file)")
 # The callback is the route's published identity plus the declared path, so the
 # provider policy tracks a placement or subdomain change instead of a literal.
-if got.get("routePublicUrl") != "https://geopulse.shrublab.xyz":
+if got.get("routePublicUrl") != "https://geo.shrublab.xyz":
     errs.append(f"routePublicUrl: {got.get('routePublicUrl')!r}")
 if got.get("derivedFromRoute") is not True:
     errs.append("the rendered callback is not the route's public URL plus /oidc/callback")
@@ -1174,7 +1177,10 @@ geopulse_probe() { # $1 installable
     secretPath = c.sops.secrets."kanidm_oauth2_geopulse_basic_secret".path;
     secretKey = c.sops.secrets."kanidm_oauth2_geopulse_basic_secret".key;
     routePublicUrl = c.repo.web.catalog.geopulse.publicUrl;
-    derivedFromRoute = c.services.kanidm.provision.systems.oauth2.geopulse.originUrl == "${c.repo.web.catalog.geopulse.publicUrl}/oidc/callback";
+    derivedFromRoute = builtins.elem "${c.repo.web.catalog.geopulse.publicUrl}/oidc/callback" (
+      let origin = c.services.kanidm.provision.systems.oauth2.geopulse.originUrl;
+      in if builtins.isList origin then origin else [ origin ]
+    );
   }' "$1"
 }
 

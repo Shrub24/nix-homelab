@@ -14,8 +14,9 @@ lib.mapAttrs (_: svc: {
     stripPrefix
     declarePublic
     responseHeaders
-    upstream
     ;
+  upstream = svc.upstream or null;
+  redirectTo = svc.redirectTo or null;
   deniedPaths = svc.deniedPaths or [ ];
   forceTrailingSlash = svc.forceTrailingSlash or false;
   upstreamHostHeader = svc.upstreamHostHeader or "{host}";

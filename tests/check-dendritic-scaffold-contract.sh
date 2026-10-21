@@ -226,34 +226,16 @@ for out in bootstrap checks deploy deployHosts devShells formatter nixosConfigur
   ne --apply '_: true' "path:.#${out}" >/dev/null || fail "flake output .${out} missing"
 done
 
-# Package keys stay exact per system. The `host-<host>` entries are the
-# addressable form of the deploy profiles, published unfiltered so a
-# cross-system prebuild resolves them from any evaluating system; the same
-# derivations are the `checks.<system>.host-<host>` entries asserted below, and
-# only on the host's own system. `write-flake`/`write-inputs`/`write-lock` are flake-file's generator tooling
-# (D-060): the packages that render the generated flake.nix. The fleet's CI
-# builder bundles (`packages.<profile>`) arrive with the fleet feature import,
-# one per declared build profile; the CI adoption itself is TD-30. `ci` and
-# `arm-expensive` are the canonical profiles, and `cache-api-url` is the same
-# feature's resolved niks3 write-API coordinate — what the build-push-cache
-# workflow's `cache_api_url` input falls back to when it is not passed.
-# `fixture` is nix-fleet's own
-# fixture profile, which still reaches this evaluation through the published
-# feature — measured, it renders `fixture-host`/`builder.invalid` rather than
-# our hosts — reported upstream; the pin records it until it drops.
-# `sops-bootstrap` is nix-fleet's secret-template driver, which the
-# `just secrets bootstrap` recipe invokes; it is published here so the devShell
-# and `nix run` reach the same package.
-# `ci-tailscale` is nix-fleet's build/cache CI identity (client id and audience), published by the same feature as `ci`.
-# `bifrost` and `bifrost-voyage-plugin` are nix-fleet's gateway runtime and its
-# Voyage request normalizer: the gateway is a native service now (D-078), so the
-# binary is a first-class repository package and the plugin is its paired build.
+# Packages this repository depends on must exist on both systems. This is a
+# containment check: an added package passes it, and the list names only what
+# the repository consumes. `host-<host>` are the deploy profiles the checks
+# output reuses (asserted below). `ci-coordinator-ci` is the coordinator that
+# fleet-build.yml requests through `profile: ci`; nix-fleet derives the others.
+required='["bifrost" "bifrost-voyage-plugin" "ci-coordinator-ci" "deploy-rs" "host-home-forge" "host-la-admin-1" "host-oci-melb-1" "niks3" "sops-bootstrap" "windows-dj-setup" "write-flake"]'
 for system in x86_64-linux aarch64-linux; do
-  pkgs="$(ne --raw --apply 'p: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames p))' "path:.#packages.${system}")" ||
+  missing="$(ne --raw --apply "p: builtins.toJSON (builtins.filter (n: !(builtins.hasAttr n p)) $required)" "path:.#packages.${system}")" ||
     fail "packages.${system} does not evaluate"
-  if [ "$pkgs" != '["arm-expensive","bifrost","bifrost-voyage-plugin","cache-api-url","cache-public-key","cache-substituter-url","ci","ci-tailscale","deploy-rs","fixture","geopulse","geopulse-backend","geopulse-frontend","host-home-forge","host-la-admin-1","host-oci-melb-1","niks3","sops-bootstrap","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
-    fail "packages.${system} keys drifted: $pkgs"
-  fi
+  [ "$missing" = '[]' ] || fail "packages.${system} is missing: $missing"
 done
 
 # The deploy surface is reachable from the standard checks output (FB-4): each

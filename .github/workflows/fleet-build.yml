@@ -24,11 +24,10 @@ jobs:
     # before main-push builds are enabled, and the cache's OIDC claims are
     # main-scoped, so a branch dispatch must not reach publication at all.
     if: ${{ github.ref == 'refs/heads/main' }}
-    # Pinned to the same commit as the flake input: an older revision lacks the
-    # metadata artifact the caller renders. nix-fleet's `v1` tag predates the
-    # unified recipe, so the ref moves to a tag once one is cut at or after this
-    # commit — always together with the flake pin.
-    uses: Shrub24/nix-fleet/.github/workflows/build-push-cache.yml@e5d7441563f88cfecab703827c6186cadd62c9a9
+    # Pinned to the nix-fleet `v2` tag. The coordinator is resolved from this
+    # workflow's own revision, so the ref moves with the consumer's documented
+    # adoption path, not with the flake lock.
+    uses: Shrub24/nix-fleet/.github/workflows/build-push-cache.yml@v2
     permissions:
       contents: read
       id-token: write
@@ -37,7 +36,7 @@ jobs:
       # foreign-architecture target cannot fall back to the runner's own store.
       runner_system: x86_64-linux
       systems: x86_64-linux aarch64-linux
-      builder_attr: ci
+      profile: ci
       targets: .#checks
     secrets:
       BUILDER_SSH_KEY: ${{ secrets.FLEET_BUILDER_SSH_KEY }}

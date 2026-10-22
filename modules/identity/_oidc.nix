@@ -1,17 +1,13 @@
-# Intrinsic OIDC contract: derives per-client endpoint URIs from canonical
-# identity policy plus the resolved web-policy Kanidm route, and emits them
-# read-only. It deploys nothing, so it is not an aspect: the provider leaf, the
-# host-auth capability, and OIDC-consuming leaves import this file, and the
-# contract's options exist wherever a reader needs them.
+# Intrinsic OIDC contract: per-client endpoint URIs from identity policy and the resolved
+# Kanidm route, read-only. It deploys nothing, so readers import it rather than select it.
 { lib, config, ... }:
 let
   cfg = config.services.identity.oidc;
   identityPolicy = builtins.fromJSON (builtins.readFile ../../policy/identity.json);
   oauth2Policy = identityPolicy.systems.oauth2 or { };
   enabledOauth2Clients = lib.filterAttrs (_name: client: client.enable or true) oauth2Policy;
-  # The Kanidm web-policy route is the single source of the provider URL; this
-  # contract (via the default) and the identity-provider leaf (directly) read the
-  # same resolved route, and neither writes the other's option namespace.
+  # The provider URL comes from the resolved Kanidm route; neither side writes the other's
+  # option namespace.
   webPolicyKanidmUrl = lib.attrByPath [
     "repo"
     "web"

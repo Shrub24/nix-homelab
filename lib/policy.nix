@@ -4,12 +4,8 @@ let
   # placement ID into a dialable tailnet name.
   tailnetSuffix = (import ../policy/globals.nix).tailnet.suffix;
 
-  # Ingress upstream transport — mode-driven: `direct` is the edge-local
-  # loopback exception, and every other mode names a tailnet-bound socket
-  # (the origin's own socket or a `tailscale-serve` front), so it is dialed
-  # by provider FQDN even when provider and edge coincide. Identity (public
-  # URLs, OIDC endpoints, TLS server names) never derives through here; it
-  # stays literal and stable in the policy.
+  # Ingress upstream: `direct` loops back edge-locally, every other mode is dialed by provider
+  # FQDN even when provider and edge coincide. Identity never derives through here.
   upstreamHost =
     provider: exposureMode: dialer:
     if exposureMode == "direct" && provider == dialer then
@@ -17,12 +13,8 @@ let
     else
       "${provider}.${tailnetSuffix}";
 
-  # Machine-to-machine endpoint transport — locality-driven, the service-to-
-  # service counterpart the ingress policy does not subsume: a private service
-  # colocated with the host evaluating this projection is reached over
-  # loopback (unless it is served through a tailnet front), otherwise by
-  # provider FQDN. A provider move stays a placement edit in the policy; no
-  # consumer changes.
+  # Machine-to-machine endpoint: loopback when colocated (unless served through a tailnet
+  # front), provider FQDN otherwise, so a provider move is one policy edit.
   endpointHost =
     provider: exposureMode: consumer:
     if exposureMode != "tailscale-serve" && provider == consumer then
@@ -49,11 +41,8 @@ rec {
     globalDefaults: hostDefaults: serviceCfg:
     lib.recursiveUpdate (lib.recursiveUpdate globalDefaults hostDefaults) serviceCfg;
 
-  # A tailnet-served route's socket is behind the provider's Tailscale Serve
-  # front, which terminates TLS on the declared port and proxies to the app's own
-  # loopback listener. The dial therefore has to be https no matter what scheme
-  # the application speaks: dialing the front with the app's `http` scheme is a
-  # plain-HTTP request to a TLS listener, which the front answers 400.
+  # A tailnet-served socket sits behind a TLS front, so the dial is https whatever the
+  # application speaks; dialing it with `http` gets a 400.
   dialScheme =
     resolved: if resolved.exposureMode == "tailscale-serve" then "https" else resolved.origin.scheme;
 
@@ -97,9 +86,7 @@ rec {
         publicHost = mkPublicHost primaryDomain resolved;
         publicUrl = mkPublicUrl resolved;
       }
-      # A redirect answers from the edge itself, so it has no socket to dial and
-      # no health endpoint to probe; declaring an origin for it would be a lie
-      # the upstream string would then repeat.
+      # A redirect has no socket, so an origin would be a lie the upstream string repeats.
       // (
         if resolved ? redirectTo then
           { }
@@ -205,10 +192,8 @@ rec {
       lib.filterAttrs (_: svc: !(svc ? redirectTo)) (resolveHostServices policy hostName)
     );
 
-  # Provider-side projection: the routes a host provides, so a host serving an
-  # origin can render the front the edge dials without reading the edge's route
-  # table and without restating the port. Origins themselves never enter the
-  # cross-host catalog; placement is matched by canonical host ID.
+  # Routes this host provides, so it renders the front the edge dials without restating
+  # the port. Origins never enter the cross-host catalog; placement is the host ID.
   providedServices =
     policy: hostId:
     let
@@ -236,15 +221,8 @@ rec {
       }) provided
     );
 
-  # Cross-host catalog projection. Every service carries the published upstream
-  # *shape* (scheme + port) so a consumer can configure its own listen address,
-  # and a machine-to-machine `endpoint` whose host resolves against the
-  # evaluating host: loopback when that host serves the service, the provider's
-  # tailnet name otherwise. In-fleet clients dial that endpoint, never the public
-  # hostname — crossing the edge would hit the Access gate and Cloudflare's
-  # browser-signature rule. A public service additionally exposes its published
-  # identity (public URL/host, access, health); a private one leaves those null.
-  # A provider move stays a placement edit here and never a consumer edit.
+  # Catalog: upstream shape plus a machine-to-machine `endpoint` resolved against the
+  # evaluating host. Clients dial it, never the public hostname, which hits the Access gate.
   isPublicService =
     resolved: (resolved.declarePublic or false) && resolved.exposureMode != "tailscale-only";
 
@@ -272,10 +250,7 @@ rec {
       publicHost = if public then resolved.publicHost else null;
       publicDomain = if public then resolved.primaryDomain else null;
       inherit endpoint;
-      # The route's publication posture travels with the catalog entry: it is
-      # property of the route, not of the browser that reads it, and a consumer
-      # that must behave differently while its route is withheld (a private
-      # instance versus a published one) would otherwise have to read the
+      # Publication posture travels with the entry, so a consumer need not read the
       # provider-host record. Same default as the edge filter.
       publish = resolved.publish or true;
       inherit (resolved)

@@ -5,9 +5,7 @@
   ...
 }:
 let
-  # Provider port: the canonical cross-fleet record's (nix-fleet's service
-  # inventory), resolved here so the default IS that value instead of a copy a
-  # provider move would leave behind.
+  # Resolved from the canonical inventory so a provider move cannot leave a copy behind.
   canonicalApiPort =
     (inputs.nix-fleet.lib.serviceEndpoints.resolveEndpoint config.fleet {
       service = "hindsight";
@@ -20,7 +18,6 @@ in
     {
       config,
       lib,
-      pkgs,
       options,
       ...
     }:
@@ -112,16 +109,8 @@ in
             type = lib.types.str;
             default =
               let
-                # The gateway is a cross-host service: placement lives in the web
-                # policy, and the catalog's per-host endpoint resolves to loopback
-                # where it is co-located and to the provider's tailnet name
-                # elsewhere. A host that runs the gateway itself publishes its
-                # listener as `localEndpoint`, which is the address to prefer —
-                # placement names the provider host, so the catalog alone would
-                # send a co-located consumer across the tailnet for a local
-                # socket; this host-networked container shares the host namespace,
-                # so loopback reaches it. That record is a bare origin, while the
-                # catalog route's base path already carries /v1.
+                # Prefer `localEndpoint` where the gateway runs here: placement names the
+                # provider, so the catalog alone would cross the tailnet for a local socket.
                 hasLocalBifrost = lib.hasAttrByPath [ "services" "bifrost" "localEndpoint" ] options;
                 catalogEndpoint = lib.attrByPath [ "repo" "web" "catalog" "bifrost" "endpoint" "url" ] "" config;
               in
@@ -238,9 +227,8 @@ in
               "127.0.0.1/32"
               "::1/128"
             ];
-            # Server-side package, composed through the instance's own extension set
-            # so it matches the server version; the SQL name stays here because
-            # extension packages carry no `passthru.extensionName`.
+            # Through the instance's extension set to match the server version; the SQL
+            # name stays because extension packages carry no `passthru.extensionName`.
             extensions = ps: [ ps.pgvector ];
             setupSQL = "CREATE EXTENSION IF NOT EXISTS vector;";
           };
@@ -259,9 +247,8 @@ in
               HINDSIGHT_API_EMBEDDINGS_LITELLM_SDK_API_KEY=${config.sops.placeholder.hindsight_embeddings_api_key}
               HINDSIGHT_API_EMBEDDINGS_LITELLM_SDK_MODEL=${cfg.embeddings.model}
               HINDSIGHT_API_EMBEDDINGS_LITELLM_SDK_API_BASE=${cfg.embeddings.baseUrl}
-              # Empty means "omit": litellm's OpenAI path re-injects
-              # encoding_format="float" (Voyage rejects the field outright), and
-              # Voyage-native litellm passes nothing when hindsight passes nothing.
+              # Empty means omit: litellm's OpenAI path re-injects encoding_format="float",
+              # which Voyage rejects outright.
               HINDSIGHT_API_EMBEDDINGS_LITELLM_SDK_ENCODING_FORMAT=
               HINDSIGHT_API_RERANKER_LITELLM_SDK_API_KEY=${config.sops.placeholder.hindsight_embeddings_api_key}
               HINDSIGHT_API_MCP_AUTH_TOKEN=${config.sops.placeholder.hindsight_mcp_auth_token}
@@ -310,9 +297,7 @@ in
                 # which changes each restart and orphans claimed tasks.
                 HINDSIGHT_API_WORKER_ID = "hindsight";
                 HINDSIGHT_API_VECTOR_EXTENSION = cfg.vectorExtension;
-                # Voyage rerank through litellm-sdk: the -slim image ships no
-                # local reranker model, and voyage/rerank-3 runs remotely (the
-                # key rides the same voyage secret as embeddings, in the template).
+                # The -slim image ships no local reranker, so route through voyage/.
                 HINDSIGHT_API_RERANKER_PROVIDER = "litellm-sdk";
                 HINDSIGHT_API_RERANKER_LITELLM_SDK_MODEL = "voyage/rerank-3";
                 HINDSIGHT_ENABLE_API = "true";

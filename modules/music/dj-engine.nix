@@ -1,7 +1,5 @@
-# DJ engine contributor of the dj aspect: Engine DJ library hosting on a
-# Windows VM; guest setup is operator-driven (docs/runbooks/engine-dj-guest-setup.md).
-# It contributes to the same `flake.modules.nixos.dj` publication as
-# ./dj.nix and ./windows-vm.nix.
+# Engine DJ library hosting on a Windows VM; guest setup is operator-driven
+# (docs/runbooks/engine-dj-guest-setup.md).
 {
   flake.modules.nixos.dj =
     {
@@ -60,9 +58,8 @@
           while IFS= read -r pl; do
             id="$(printf "%s" "$pl" | jq -r ".id")"
             name="$(printf "%s" "$pl" | jq -r ".name")"
-            # Sanitize the playlist name into a non-empty, non-hidden basename so
-            # the *.m3u glob stages every file; the ($id) suffix disambiguates
-            # duplicate names.
+            # Sanitize the playlist name into a non-empty, non-hidden basename so the *.m3u glob
+            # stages every file; the ($id) suffix disambiguates duplicate names.
             base="$(printf "%s" "$name" | tr "/" "-")"
             while [ -n "$base" ] && [ "''${base#.}" != "$base" ]; do base="''${base#.}"; done
             [ -n "$base" ] || base="playlist"
@@ -256,10 +253,8 @@
             };
           };
 
-          # Quiesce contract: stop the VM only if it was running. The Engine library
-          # rides the music storage root, which the media backup already covers in
-          # the same window (lib.unique deduplicates the path), so this service
-          # contributes only the quiesce hooks and never backs unused /srv/data.
+          # Quiesce: stop the VM only if it was running. The Engine library rides the music root,
+          # already covered in the same window, so this contributes hooks and no second capture.
           state-backups.services.engine-dj = {
             enable = true;
             mode = "quiesce";
@@ -324,10 +319,8 @@
           };
           services."windows-vm-${engine.vmName}".conflicts = [ "dj-library-writers.target" ];
           services.restic-backups-state.conflicts = [ "dj-library-writers.target" ];
-          # The playlist-sync import and its chained engine export both write the
-          # Engine library DB; bind them to the writer target so starting either
-          # stops the VM and starting the VM stops them (BindsTo implies Requires
-          # + After on the target, which conflicts with the VM unit).
+          # Both writers touch the Engine DB, so each BindsTo the other (BindsTo implies Requires +
+          # After, which conflicts with the VM unit).
           services."traktor-m3u-sync-import@navidrome" = {
             bindsTo = [ "dj-library-writers.target" ];
             after = [ "dj-library-writers.target" ];

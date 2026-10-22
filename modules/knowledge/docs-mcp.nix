@@ -7,9 +7,7 @@
 let
   resolver = inputs.nix-fleet.lib.serviceEndpoints.resolveEndpoint config.fleet;
 
-  # The MCP port and the embeddings origin are canonical cross-fleet records
-  # (nix-fleet's service inventory), resolved here so both defaults ARE those
-  # values instead of copies a provider move would leave behind.
+  # Resolved from the canonical inventory so a provider move cannot leave a copy behind.
   canonicalPort =
     (resolver {
       service = "docs-mcp";
@@ -37,13 +35,8 @@ in
       globals = import ../../policy/globals.nix;
       exportDir = "${config.services.state-backups.stagingRoot}/docs-mcp";
 
-      # The gateway is a cross-host service: the canonical record names the
-      # provider host, so a co-located consumer would cross the tailnet for a
-      # socket on its own machine. A host that runs the aspect publishes its
-      # listener as `localEndpoint`, probed through `options` because the option
-      # exists only where the aspect is imported; this container shares the host
-      # network namespace, so loopback reaches it. The local record is a bare
-      # origin while the canonical route already carries /v1.
+      # Prefer `localEndpoint` where the gateway runs here, probed through `options`. It is a bare
+      # origin; the canonical route already carries /v1.
       hasLocalBifrost = lib.hasAttrByPath [ "services" "bifrost" "localEndpoint" ] options;
       defaultEmbeddingBaseUrl =
         if hasLocalBifrost then
@@ -105,15 +98,11 @@ in
             oci-containers.containers.docs-mcp = {
               autoStart = true;
               inherit (cfg) image;
-              # Host networking, no port publish: a publish bypasses the firewall on
-              # every interface, while a host socket is filtered by it (tailnet-only
-              # via the foundation aspect's `tailscale0` trust).
+              # Host networking, no publish: a published port bypasses the firewall on every
+              # interface.
               extraOptions = [ "--network=host" ];
-              # Unified mode: one process serves both the MCP endpoint and the web
-              # dashboard, so `--protocol http` pins the transport (the `auto` default
-              # picks stdio when there is no TTY) while the dashboard stays reachable at
-              # the root of the same port. The standalone `mcp` subcommand serves the
-              # protocol only, which 404s every non-MCP path.
+              # `--protocol http` is explicit because `auto` picks stdio when there is no TTY;
+              # one process then serves both the MCP endpoint and the dashboard.
               cmd = [
                 "server"
                 "--protocol"

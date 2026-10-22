@@ -1,9 +1,5 @@
-# Ingress deployment aspect: selecting it supplies `services.ingress.enable`, so
-# no host repeats the top-level enablement. This contributor keeps the edge-role
-# projection from canonical web policy — routes, primary domain, ACME identity,
-# and Authenticated Origin Pulls derive from `policy/web-services.nix` and the
-# repo CA certificate. The read is one-way and guarded so an origin host renders
-# no routes and a non-web host cannot force policy values.
+# Edge-role projection from web policy: routes, primary domain, ACME identity and
+# Authenticated Origin Pulls. The read is guarded, so an origin host renders no routes.
 _: {
   flake.modules.nixos.ingress =
     {
@@ -15,11 +11,8 @@ _: {
       cfg = config.services.ingress;
       ingressRoutes = import ./_ingress-routes.nix { inherit lib; };
       currentHost = lib.attrByPath [ "repo" "web" "currentHost" ] { } config;
-      # `publish = false` is a posture, not progress: the route keeps its
-      # identity — public URL, OIDC callback, origin and access posture — while
-      # the edge serves nothing for it. A route is published unless the policy
-      # says otherwise, because declaring a route at all is the publication
-      # declaration; withholding is the exception and has to be written down.
+      # `publish = false` keeps the route's identity while the edge serves nothing. A
+      # declared route is published unless the policy says otherwise.
       resolvedRoutes = lib.filterAttrs (name: svc: svc.publish or true) (currentHost.services or { });
       primaryDomain = currentHost.primaryDomain or "";
 

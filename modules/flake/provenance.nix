@@ -1,10 +1,5 @@
-# Repository provenance.
-#
-# The published copy is the tracked configuration set: every local reference to
-# this flake uses the Git-tree form (`.#`), which resolves tracked content only,
-# so `/etc/nixos-source` carries fleet sources without VCS metadata, tool state,
-# vendored bulk, or plaintext credential files. `self.rev`/`self.dirtyRev` are
-# populated for that form, so `configurationRevision` is meaningful.
+# Publishes the tracked configuration set to /etc/nixos-source. `.#` resolves tracked
+# content only, so the copy carries no VCS metadata, tool state or plaintext credentials.
 {
   self,
   ...

@@ -1,15 +1,5 @@
-# Kanidm server/provisioning leaf, owned by the `identity-provider` aspect.
-# Declares the complete Kanidm runtime contract under `services.identity.kanidm`:
-# provider state paths, bootstrap/provisioning secret sources, and the explicit
-# per-client OIDC provisioning secret-source map keyed by canonical oauth2
-# client id. The only endpoint source is canonical web policy
-# (`repo.web.catalog`); the provider URL comes from the intrinsic
-# OIDC contract (`./_oidc.nix`), which the provider consumes but never writes.
-#
-# Runtime sibling of the `identity-provider` aspect: the two halves
-# cross-reference option values (provider URL wiring reads the sops templates
-# defined here), so they stay separate files contributing to the same aspect
-# name.
+# Kanidm provider runtime: state paths, bootstrap/provisioning secret sources, and the
+# per-client OIDC secret map. Endpoints come from web policy; the URL from ./_oidc.nix.
 _: {
   flake.modules.nixos.identity-provider =
     {
@@ -28,16 +18,11 @@ _: {
         _name: clientPolicy: clientPolicy.enable or true
       ) oauth2Policy;
 
-      # Provider endpoint data comes from canonical web policy, not from any admin
-      # namespace. Route-key clients resolve their callback origin through the same
-      # resolved host services map that admin workloads consume.
+      # Route clients resolve their callback origin through the same resolved host services map.
       policyServices = config.repo.web.catalog or { };
 
-      # Explicit provider-owned credential-source map keyed by canonical oauth2
-      # client id. Keys are validated against the enabled canonical client set
-      # (missing and extra keys both fail); the paths themselves stay explicit
-      # because they encode SOPS readership/blast radius and are never inferred
-      # from logical client metadata.
+      # Keys are validated against the enabled client set; the paths stay explicit
+      # because they encode SOPS readership and are never inferred from client metadata.
       oauth2Clients = lib.mapAttrs (
         _name: clientPolicy:
         {
@@ -74,9 +59,7 @@ _: {
       originHostMatch = builtins.match "https://([^/]+).*" cfg.appUrl;
       originHost = if originHostMatch == null then null else builtins.head originHostMatch;
 
-      # The provider owns TLS material only while the certificate paths keep
-      # their defaults; a host that binds a fleet CA supplies both paths and
-      # owns the material itself, so no pair is generated for it.
+      # Material is generated only while both certificate paths keep their defaults.
       usesGeneratedPair =
         cfg.tlsChainFile == "${cfg.tlsStateDir}/fullchain.pem"
         && cfg.tlsKeyFile == "${cfg.tlsStateDir}/key.pem";
@@ -105,9 +88,7 @@ _: {
               client.originUrl
             else
               "${client.route.publicUrl}${client.callbackPath}";
-          # Some services need a private Tailscale callback during bootstrap.
-          # The route catalog supplies the provider name and port; Tailscale
-          # Serve terminates HTTPS on that origin socket.
+          # Tailscale Serve terminates HTTPS on the bootstrap callback socket.
           privateEndpointCallback =
             if client.includePrivateEndpointCallback then
               "https://${client.route.endpoint.host}:${toString client.route.endpoint.port}${client.callbackPath}"
@@ -146,12 +127,8 @@ _: {
       # the server unit runs), so restore/verify cannot drift from the server build.
       kanidmd = "${config.services.kanidm.package}/bin/kanidmd";
 
-      # Operator-invoked restore of a Kanidm portable backup artifact, invoked as
-      # a template instance with the artifact path as instance name:
-      #   systemctl start "$(systemd-escape --path --template=kanidm-restore@.service /var/lib/kanidm/backups/backup-<ts>.json.gz)"
-      # Never started at boot (no wantedBy); refuses to run while kanidm.service is
-      # active and never starts it. The offline verify is a strict gate: every
-      # nonzero result is fatal (no version-pinned acceptance path).
+      # Operator-invoked restore; never started at boot, refuses to run while kanidm is active.
+      #   systemctl start "$(systemd-escape --path --template=kanidm-restore@.service <artifact>)"
       restoreScript = pkgs.writeShellScript "kanidm-restore" ''
         set -euo pipefail
 
@@ -462,10 +439,7 @@ _: {
 
         environment.systemPackages = [ kanidmPackages.client ];
 
-        # The restore helper is a build output, and the restore contract executes
-        # it with substituted paths: exposing it under the conventional build
-        # namespace lets a cold store build it instead of assuming the evaluated
-        # path already exists.
+        # Exposed under the conventional build namespace so a cold store can build it.
         system.build.kanidm-restore = restoreScript;
 
         systemd = {

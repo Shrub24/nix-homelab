@@ -1,7 +1,5 @@
-# Music-storage aspect contributor: owns the media collaboration groups, every
-# media root/layout tmpfiles + ACL rule, the media permission-reconcile service,
-# and the media-fixperms operator CLI. Composed by the music coordinator aspect
-# by flake-level import; never host-imported.
+# Media collaboration groups, media roots and ACLs, the permission-reconcile service and the
+# fixperms CLI. Composed by the music aspect, never host-imported.
 _: {
   flake.modules.nixos.music =
     {

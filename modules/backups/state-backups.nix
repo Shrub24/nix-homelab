@@ -1,7 +1,5 @@
-# State backups: restic state recovery and its failure monitoring only.
-# Selection is enablement; the aspect imports the restic leaf and owns the
-# conventional host secret gate (two-step sops bootstrap). Cache publication is
-# owned by the separate cache-publisher aspect.
+# State backups: restic recovery and its failure monitoring. Cache publication is the
+# separate cache-publisher aspect.
 
 _: {
   flake.modules.nixos.state-backups =
@@ -53,16 +51,8 @@ _: {
         opt: "-o ${lib.escapeShellArg opt}"
       ) cfg.extraOptions;
 
-      # Operator-invoked restic restore-staging helper. Restores exactly one
-      # absolute include path from a snapshot into a fresh root-only directory
-      # under /var/tmp/state-restore/ and prints ONLY the resulting destination
-      # path on stdout (diagnostics go to stderr) so `stage=$(just ...)` works.
-      # It reuses this module's exact repository, credentials, and backend
-      # options, so the operator never reads secrets or passes arbitrary restic
-      # flags. There is no destination argument: live service paths can never be
-      # chosen or written here; applying staged files is a separate, documented
-      # per-service step. --decode mode accepts base64-encoded arguments so the
-      # just recipe can transport hostile values without remote shell parsing.
+      # Restore staging: prints only the destination path so `stage=$(just ...)` works, and takes
+      # no destination — applying staged files is a separate per-service step.
       restoreStageScript = pkgs.writeShellScriptBin "state-restore-stage" ''
         set -euo pipefail
 
@@ -127,16 +117,13 @@ _: {
         . "$env_file"
         set +a
 
-        # The staging parent is declared root-owned 0700 by tmpfiles; repair it
-        # defensively before use in case activation has not run yet. The unique
-        # child below it is created 0700 by mktemp.
+        # tmpfiles declares the parent, but repair it in case activation has not run yet.
         ${pkgs.coreutils}/bin/install -d -m 0700 -o root -g root /var/tmp/state-restore
         dest=$(${pkgs.coreutils}/bin/mktemp -d /var/tmp/state-restore/restore.XXXXXX)
         trap 'rc=$?; if [ "$rc" -ne 0 ]; then ${pkgs.coreutils}/bin/rm -rf -- "$dest"; fi' EXIT
 
-        # End-of-options (`--`) before the snapshot prevents a leading-dash
-        # snapshot from being parsed as a restic flag. restic restore writes its
-        # status to stdout, so redirect it to stderr to keep the stdout contract.
+        # `--` keeps a leading-dash snapshot from parsing as a flag; restic's status output
+        # goes to stderr to keep the stdout contract.
         ${pkgs.restic}/bin/restic ${resticExtraArgs} restore --target "$dest" --include "$include_path" -- "$snapshot" 1>&2
 
         echo "$dest"
@@ -210,17 +197,14 @@ _: {
           // lib.optionalAttrs (prepareCommands != [ ]) { backupPrepareCommand = prepareScript; }
           // lib.optionalAttrs (cleanupCommands != [ ]) { backupCleanupCommand = cleanupScript; };
 
-          # state-backups owns only the non-listable staging root and restore-staging
-          # parent. Service users can traverse to their module-owned private export
-          # directories (e.g. PostgreSQL's 0700 postgres-owned child).
+          # Only the staging root and its parent; service users traverse to their own
+          # module-owned export directories.
           systemd.tmpfiles.rules = [
             "d ${cfg.stagingRoot} 0711 root root - -"
             "d /var/tmp/state-restore 0700 root root - -"
           ];
 
-          # Failure-only registration: the notify aspect attaches its native
-          # OnFailure= handler for this unit, so a failed run is reported and a
-          # clean stop is not.
+          # Failure-only: a clean stop is not an event.
           services.notify.events."restic-backups-${cfg.backupName}".failure = { };
 
           # The state-restore-stage helper package (option defined by this module).

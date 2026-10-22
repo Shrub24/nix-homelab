@@ -1,6 +1,5 @@
-# Networking foundation aspect: selecting it is its enablement. The native
-# systemd-networkd contract is owned here: units are derived from the
-# `fleet.networking` host facts, and the scripted/dhcpcd backend is disabled.
+# Networking foundation aspect: the native systemd-networkd contract, derived from the
+# `fleet.networking` host facts. The scripted/dhcpcd backend is disabled.
 _: {
   flake.modules.nixos.networking =
     {
@@ -78,10 +77,8 @@ _: {
       };
 
       config = {
-        # Native networkd backend; legacy scripted networking and dhcpcd disabled.
-        # mkDefault so a host's plain/forced legacy `true` wins the merge and is
-        # then rejected by the curated assertions below instead of a generic
-        # equal-priority conflict.
+        # Native networkd; scripted networking and dhcpcd disabled. mkDefault so a host's legacy
+        # `true` wins the merge and is rejected by the assertions below, not by a priority conflict.
         systemd.network = {
           enable = true;
 
@@ -153,22 +150,18 @@ _: {
           "${globals.serviceNetwork.address}" = [ globals.serviceNetwork.hostName ];
         };
 
-        # Containers resolve the tailnet's short names. This is the only DNS
-        # default worth adding: `dns_servers` would override podman's per-network
-        # resolver and break container-to-container names.
+        # Containers resolve tailnet short names. No `dns_servers`: it would override podman's
+        # per-network resolver and break container-to-container names.
         virtualisation.containers.containersConf.settings.containers.dns_searches = [
           globals.tailnet.suffix
         ];
 
-        # nixos-facter's detected-DHCP module force-enables networking.useDHCP on
-        # hosts with a facter report, colliding with the aspect's ownership. The
-        # aspect owns physical networking; hardware facts stay wired. Plain
-        # priority so it beats facter's own mkDefault.
+        # nixos-facter force-enables useDHCP on hosts with a report, colliding with the aspect's
+        # ownership. Plain priority so it beats facter's own mkDefault.
         hardware.facter.detected.dhcp.enable = false;
 
-        # Resolver mechanism fleet-wide: systemd-resolved with safe defaults.
-        # Per-link DHCP DNS stays primary; global DNS is pinned only when the
-        # host declares dns.servers; FallbackDNS provides resilience.
+        # systemd-resolved with safe defaults: per-link DHCP DNS stays primary, global DNS is
+        # pinned only when the host declares dns.servers, FallbackDNS provides resilience.
         services.resolved = {
           enable = true;
           settings.Resolve = {

@@ -9,13 +9,8 @@ maven.buildMavenPackage {
   pname = "geopulse-backend";
   inherit version src;
 
-  # Our PKCE patch is gone: the login no longer sends a code challenge, and the
-  # Kanidm client opts out declaratively (`allowInsecureClientDisablePkce` in
-  # policy/identity.json), so upstream sources build unmodified. The repeatable
-  # migration that created the verifier column stays, because Flyway records an
-  # applied repeatable migration by description and checksum: dropping the file
-  # would leave that migration unresolved locally and fail validation. Its content
-  # is unchanged from the one that ran, so it re-runs as a no-op.
+  # Sources build unmodified: the client opts out of PKCE in policy/identity.json. The
+  # repeatable migration stays because Flyway records it by checksum.
   postPatch = ''
     cp ${./migrations/R__Add_oidc_session_code_verifier.sql} \
       backend/src/main/resources/db/migration/
@@ -23,10 +18,8 @@ maven.buildMavenPackage {
 
   mvnJdk = jdk25;
 
-  # brotli4j (a Quarkus transitive) selects its native jar through OS/arch
-  # activated profiles, so one architecture's resolve omits the other's. The
-  # fetch therefore resolves both Linux profiles into the one repository: the
-  # fixed-output set is the union, and the same hash holds on every builder.
+  # brotli4j selects its native jar by OS/arch profile, so the fetch resolves both Linux
+  # profiles into one repository and the hash holds on every builder.
   mvnFetchExtraArgs = {
     postBuild = ''
       for arch in amd64 aarch64; do

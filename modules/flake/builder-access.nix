@@ -1,10 +1,5 @@
-# Builder-access aspect: SSH trust for the hosts that offer build capability,
-# derived from nix-fleet's canonical facts (D-066). Scheduling stays off — CI
-# builds (TD-30), and a host that wants to offload resolves a profile in its own
-# composition. This contributor is the single importer of nix-fleet's fleet
-# feature: a second import re-defines perSystem.packages.ci and fails
-# evaluation, so every other reader (host records, the build-account seam)
-# takes config.fleet from here.
+# SSH trust for hosts that offer build capability, from the canonical inventory. The single
+# importer of the fleet feature, so every other reader takes config.fleet from here.
 {
   lib,
   config,

@@ -1,7 +1,5 @@
-# DJ aspect: owns the traktor-m3u-sync input module/package, the
-# applications.dj enablement contract, and the host-matched windows-dj-setup
-# payload. The engine host and the Windows VM workload are sibling
-# contributors of the same publication (./dj-engine.nix, ./windows-vm.nix).
+# DJ: the traktor-m3u-sync package, the applications.dj enablement contract, and the Windows
+# payload. Engine host and VM are sibling contributors of the same publication.
 {
   inputs,
   lib,

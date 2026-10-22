@@ -1,36 +1,19 @@
-# Music deployment aspect. Selecting the aspect is its top-level enablement
-# (applications.music.enable = true), and the aspect owns composition only:
-# shared path derivation, feature choices, service/backup wiring, secret-file
-# passthrough, success-chain intent, the dev/zsh operator surface, and the
-# read-only music library/storage contract.
-#
-# Concrete mechanisms are their own discovered aspects (audiomuse, syncthing,
-# navidrome, slskd, beets, tagr, music-ingest, music-storage), composed here by
-# flake-level imports of config.flake.modules.nixos.<name>. Music and DJ remain
-# separately selected aspects; DJ consumes applications.music.contract through
-# a read-only config edge with a named assertion and never imports or enables
-# music.
+# Music aspect: composition only. Selection is enablement (`applications.music.enable`).
+# Mechanisms are discovered aspects composed here; DJ consumes the read-only `applications.music.contract`.
 _: {
   flake.modules.nixos.music =
     {
       lib,
       config,
       options,
-      pkgs,
       ...
     }:
     let
       cfg = config.applications.music;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
-      # AudioMuse's database is the cluster on this host: the container reaches
-      # it over the podman bridge. A host that selects music without running a
-      # cluster must say where the database lives via
-      # `applications.music.audiomuse.postgresHost`; the assertion below names
-      # that requirement instead of silently pointing at a remote endpoint.
-      # `options` (not `config`) is what can be probed safely: reading an
-      # undeclared option path raises NixOS' "did you mean" error, so the
-      # declaration is checked before the value is read.
+      # The database is the host's own cluster; a host without one must set `audiomuse.postgresHost`.
+      # Probed through `options`: reading an undeclared path throws instead of returning null.
       hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
       localPostgres = if hasLocalCluster then config.services.postgres.localEndpoint else null;
       serviceNetwork = (import ../../policy/globals.nix).serviceNetwork;
@@ -65,8 +48,7 @@ _: {
             mediaPaths.quarantineDir
             mediaPaths.untaggedDir
             mediaPaths.approvedDir
-            # The ready flag is cleared by the runner's own ExecStartPost, so its
-            # state directory must be writable here too (outside restic, /var/lib).
+            # The runner's ExecStartPost clears the ready flag, so its state directory must be writable here.
             (dirOf config.services.musicIngest.readyFlag)
           ];
           mountFor = [
@@ -285,13 +267,7 @@ _: {
           default = { };
         };
 
-        # Read-only music library/storage contract. Declared as a typed submodule
-        # with no nullable/default sentinel: the composition assigns its value
-        # only inside the lib.mkIf cfg.enable body below, so it has no value when
-        # the selected aspect is disabled and does not exist at all on hosts that
-        # never select the music aspect (this module is not imported there). DJ
-        # reads it via `config.applications.music.contract or null`; the value is
-        # not overridable.
+        # Read-only contract for DJ: typed, unset on hosts that do not select music, and assigned only while enabled.
         contract = lib.mkOption {
           type = lib.types.submodule {
             options = {
@@ -311,7 +287,6 @@ _: {
         }
 
         (lib.mkIf cfg.enable {
-          # Assigned only while the application is enabled.
           applications.music.contract = {
             inherit (cfg) storageRoot;
             inherit (mediaPaths) libraryDir;
@@ -331,9 +306,7 @@ _: {
             }
           ];
 
-          # Storage ownership (groups, media tmpfiles/ACLs, permission reconcile)
-          # lives in the music-storage contributor; only explicit paths are
-          # injected here.
+          # Storage ownership lives in music-storage; only explicit paths are injected here.
           services.musicStorage = {
             enable = true;
             inherit (cfg) storageRoot;
@@ -410,9 +383,7 @@ _: {
             runners = beetsRunnerInstances;
             notify = {
               enable = true;
-              # Severity of the runner-failure notification: nix-fleet's severity
-              # vocabulary, replacing the retired apprise `type` positional. The
-              # music topic travels in the CLI call itself.
+              # nix-fleet severity vocabulary; the music topic travels in the CLI call.
               tier = "failure";
             };
           };
@@ -423,14 +394,7 @@ _: {
             paths = [ "${cfg.dataRoot}/beets" ];
           };
 
-          # The music capability owns the `beets-<runner>` units instantiated
-          # above, so it also owns their notification registration. Only the
-          # automated runners are registered (the interactive quarantine review
-          # worker has no unattended lifecycle worth reporting), failure-only: the
-          # notify aspect attaches the native OnFailure handler, and the runners
-          # are oneshots whose clean completion is not an operator event. A
-          # renamed runner makes this contract fail closed instead of leaving a
-          # silent fragment.
+          # Automated runners only, failure-only: oneshot success is not an operator event. A renamed runner fails the contract.
           services.notify.events =
             lib.genAttrs
               [
@@ -442,9 +406,7 @@ _: {
                 failure = { };
               });
 
-          # Ingest mechanisms are owned by the music-ingest contributor; the
-          # composition injects only explicit paths and reads back the ready flag
-          # and slskd completion hook.
+          # Ingest is owned by music-ingest; this composition injects explicit paths only.
           services.musicIngest = {
             enable = true;
             inherit (mediaPaths) inboxDir;
@@ -457,7 +419,7 @@ _: {
           ]
           ++ lib.optional cfg.navidrome.enable "navidrome-scan.service";
 
-          # Flag file the preprocess touches when a pass warrants an import; gates beets-inbox via ConditionPathExists.
+          # Touched by preprocess when an import is due; beets-inbox gates on it.
           services.beets.importReadyFlag = config.services.musicIngest.readyFlag;
 
           programs.zsh.shellAliases = {
@@ -468,7 +430,7 @@ _: {
             enable = true;
             mode = "live";
             paths = [ cfg.storageRoot ];
-            # .versions are Syncthing-internal; the job's engine-dj quiesce hooks stop the VM first.
+            # Syncthing-internal; the engine-dj quiesce hooks stop the VM first.
             exclude = [ mediaPaths.versionArchiveRoot ];
           };
 

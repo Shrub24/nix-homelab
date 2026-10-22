@@ -60,9 +60,8 @@ stdenv.mkDerivation {
   '';
 
   passthru = {
-    # Cheap release check for `--check`: the newest stable WinFsp release,
-    # compared against `version`. Both pins live in one derivation, so the
-    # standard release discovery cannot apply — the updater is this package's.
+    # Release check for `--check`: both pins live in one derivation, so standard discovery
+    # cannot apply.
     checkUpdate = writeShellApplication {
       name = "windows-dj-setup-check-update";
       runtimeInputs = [

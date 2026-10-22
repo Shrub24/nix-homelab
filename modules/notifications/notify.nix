@@ -1,22 +1,5 @@
-# Notifications foundation aspect: selecting it is its enablement. nix-fleet owns
-# the mechanism — the daemon, the `notify` CLI, the `unit-notify` systemd event
-# handler, the `services.notify` option surface and the
-# `services.notify.events.<unit>` registration contract that the capability
-# owning a unit writes directly. This contributor imports that shared aspect and
-# binds the fleet's conventions: the ntfy policy (server URL derived from the web
-# catalog, topic map) and the fail-closed secret bootstrap. Telegram is off; ntfy
-# is the push path.
-#
-# Secret readership is unchanged in shape and re-pointed in path: the shared
-# aspect renders sops.secrets."notify/telegram_bot_token" and
-# sops.secrets."notify/ntfy_token" from cfg.secretFiles.host and
-# cfg.secretFiles.hostSystem with the conventional keys and ownership, at
-# /run/secrets/notify/{telegram_bot_token,ntfy_token}.
-#
-# The daemon dispatches over /run/notify/notify.sock (mode 0660, group `notify`),
-# so non-root callers join that group from the module that owns them
-# (`users.users.<caller>.extraGroups`), and `services.notify.cliGroup` stays
-# null: root-only socket dispatch plus explicit per-caller grants.
+# Notifications. nix-fleet owns the mechanism; this binds the fleet's ntfy policy and the
+# fail-closed secret bootstrap. Non-root callers join group `notify` from their own module.
 { inputs, ... }:
 {
   flake.modules.nixos.notify =
@@ -38,21 +21,15 @@
           };
 
           ntfy = {
-            # The machine dial, not the public hostname: the catalog endpoint is
-            # loopback on the host that serves ntfy and the provider's tailnet name
-            # everywhere else, so a publish never crosses the public edge (whose
-            # browser-signature rule rejects the daemon's urllib client).
+            # The catalog endpoint, not the public hostname: the edge's browser-signature
+            # rule rejects the daemon's urllib client.
             serverUrl = lib.mkDefault (
               lib.attrByPath [ "repo" "web" "catalog" "ntfy-admin" "endpoint" "url" ] "" config
             );
             defaultTopic = lib.mkDefault "general";
             topics = lib.mkDefault {
-              # `general` is the daemon's fallback for a caller that names no
-              # topic — the deploy hook and ad-hoc operator messages — so it has
-              # to be declared here: the daemon rejects an undeclared topic
-              # before it ever reaches ntfy (observed as a 500 "unknown topic
-              # 'general'" while the same publish through the tailnet endpoint
-              # returned 200).
+              # The daemon rejects an undeclared topic before it reaches ntfy, and `general`
+              # is the fallback for callers that name none.
               general = "general";
               system = "system";
               services = "services";

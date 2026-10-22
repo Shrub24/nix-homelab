@@ -14,10 +14,8 @@ top: {
         canonicalServices = top.inputs.nix-fleet.lib.serviceEndpoints.canonicalServices;
       };
 
-      # Every host-backed reference in the web data — the policy host keys and
-      # each route's `origin.provider` placement — must name a declared
-      # canonical host ID; dial addresses never appear in this file. Unknown
-      # or missing placements fail closed at flake evaluation.
+      # Host keys and every `origin.provider` must name a declared canonical host ID;
+      # dial addresses never appear here. Unknown or missing placements fail closed.
       canonicalHosts = top.config.nixos.hosts;
       canonicalHostIds = builtins.attrNames canonicalHosts;
       policyHosts = webServicesPolicy.hosts or { };
@@ -41,12 +39,8 @@ top: {
         "tailscale-only"
       ];
 
-      # `exposureMode` is the single axis describing how a service is exposed,
-      # so it is required on every route: an unlabelled route fails evaluation
-      # instead of inheriting a default no consumer distinguishes. A served
-      # route keeps its socket on loopback — the providing host renders the
-      # front the edge dials and the upstream TLS name is derived from the dial
-      # target — so per-route TLS overrides are refused rather than ignored.
+      # Required on every route: a default would be one no consumer distinguishes. A
+      # served route keeps its socket on loopback, so per-route TLS overrides are refused.
       routeExposures = lib.concatMap (
         hostName:
         let

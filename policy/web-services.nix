@@ -1,39 +1,8 @@
-# Placement, not addresses: every route declares `origin.provider` — the
-# canonical host ID that runs the service — plus scheme and port. Dial
-# addresses are derived where they are consumed, by two distinct policies
-# over the same placement: `lib/policy.nix` renders an ingress upstream from
-# the route's `exposureMode` (`direct` loops back edge-locally; every tailnet
-# mode dials the provider by FQDN, even when provider and edge coincide,
-# because its socket belongs to the tailnet), while a private service's
-# machine-to-machine `endpoint` resolves against the evaluating host and
-# loops back when colocated with its provider. Moving the edge or a workload
-# therefore changes placement here — never a consumer's config — and
-# identity (public URLs, OIDC endpoints, TLS server names) stays literal and
-# stable, separate from transport. Provider placement and transport for a route
-# that mirrors a canonical cross-fleet service come from nix-fleet's service
-# inventory (`lib/service-inventory.nix`), threaded in as the `canonicalServices`
-# argument: the record declares host, scheme and port once, and the route keeps
-# only its own subdomain, exposure, access and health policy. The file stays
-# plain data — it takes no flake reference of its own — and four consumers read
-# it as data (the web-policy aspect, scripts/export-web-services-policy.sh,
-# tests/check-web-service-catalog.sh, tests/check-web-services-policy.sh).
-#
-# Every route declares its `exposureMode`, the one axis describing how the
-# service is exposed: `tailscale-upstream` (published; the edge dials the
-# origin's tailnet-bound socket), `tailscale-serve` (published; the origin
-# socket stays loopback-bound and the providing host renders the front the edge
-# dials), or `tailscale-only` (not published; machine-to-machine endpoint only),
-# with `direct` reserved for an edge-local loopback upstream. No default applies
-# — an unlabelled route fails evaluation.
+# Placement, not addresses: a route declares `origin.provider` plus shape; dial addresses derive in
+# lib/policy.nix and identity stays literal. exposureMode has no default.
 { canonicalServices }:
 let
-  globals = import ./globals.nix;
-
-  # A route whose provider is a canonical cross-fleet service derives its whole
-  # origin from that record, so the provider host ID and port are declared once
-  # (nix-fleet's service inventory) and cannot drift from the provider's own
-  # listener. Named errors keep a missing service, endpoint or route from
-  # degrading into an attribute-error message.
+  # Origin derives from the canonical record; named errors keep a missing service from becoming an attribute error.
   canonicalOrigin =
     service: endpoint:
     let
@@ -120,8 +89,7 @@ in
 
         kanidm-admin = {
           subdomain = "id";
-          # The provider socket is loopback-bound and TLS-only, so the providing
-          # host renders the front the edge dials.
+          # Loopback, TLS-only socket: the providing host renders the front the edge dials.
           exposureMode = "tailscale-serve";
           origin = {
             scheme = "https";
@@ -156,9 +124,7 @@ in
             provider = "oci-melb-1";
             port = 9443;
           };
-          # Tailnet-bound bespoke front (TD-29): the edge reaches the
-          # tailnet socket by provider name, never loopback — even though
-          # provider and edge coincide on oci-melb-1.
+          # Tailnet-bound: the edge dials by provider name, never loopback, even when edge and provider coincide.
           exposureMode = "tailscale-upstream";
           category = "admin";
         };
@@ -201,8 +167,7 @@ in
         ntfy-admin = {
           subdomain = "ntfy";
           exposureMode = "tailscale-upstream";
-          # Provider and transport are the canonical ntfy record's; the route
-          # keeps only its own exposure, access and health policy.
+          # Provider and transport come from the canonical ntfy record.
           origin = canonicalOrigin "ntfy" "api";
           category = "admin";
           health.path = "/v1/health";
@@ -326,10 +291,8 @@ in
           health.path = "/";
         };
 
-        # Published household apps with their own OIDC login. Actual and Memos
-        # bind loopback on this host, so the edge dials them locally (`direct`).
-        # tududi's container publishes its port to loopback only, which keeps the
-        # same edge-local socket. Their clients cannot carry an Access session.
+        # Published with their own OIDC login; loopback sockets, so the edge dials them locally.
+        # Their clients cannot carry an Access session.
         actual = {
           subdomain = "budget";
           origin = {
@@ -369,13 +332,8 @@ in
           access.requireCloudflareAccess = false;
         };
 
-        # Keep the OIDC-protected route private through Tailscale Serve until
-        # Homarr has been bootstrapped and its public edge route is released.
-        # The apex answers with a permanent redirect to the dashboard. It is a
-        # landing point with no application behind it, so no session or cookie
-        # can be scoped to the registrable domain. It needs no login and no Access
-        # application: the redirect carries no data, and Access on the apex would
-        # block the browsers that arrive there.
+        # Private until Homarr is bootstrapped; the apex is a permanent redirect with no application behind it.
+        # No login or Access application: the redirect carries no data, and Access would block arrivals.
         apex = {
           subdomain = null;
           redirectTo = "https://home.shrublab.xyz";
@@ -395,12 +353,10 @@ in
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;
-          # Published: the Kanidm login is the gate and `groups` from Kanidm
-          # decides administration, so there is nothing left to withhold (D-103).
+          # Published: Kanidm login is the gate; its `groups` decide administration.
         };
 
-        # Google sign-in gates the app itself; the webhook must stay public, so
-        # neither Access nor application OIDC sits in front of it.
+        # Google sign-in gates the app; the webhook stays public, so neither Access nor app OIDC applies.
         inbox-zero = {
           subdomain = "inbox";
           origin = {
@@ -414,17 +370,8 @@ in
           access.requireCloudflareAccess = false;
         };
 
-        # GeoPulse's private front-end listener. The aspect reads this declaration
-        # for the port its own listener binds, so the socket and the route cannot
-        # drift; the public identity (subdomain, exposure, the bootstrap gate) is
-        # the later identity task, and until then the route carries no public URL
-        # and therefore no edge route, dashboard tile or uptime check.
-        # Public identity from the start, but not yet published: the OIDC callback
-        # derives from this origin while the edge withholds the route, so no
-        # Access-free site answers before the private bootstrap is done. Publishing
-        # it is this `publish` field and nothing else. Access stays off because
-        # device ingest cannot present an interactive Access session and the
-        # application authenticates its own callers.
+        # The aspect reads the port from here, so socket and route cannot drift. Access stays
+        # off: device ingest cannot present an Access session.
         geopulse = {
           subdomain = "geo";
           origin = {
@@ -432,11 +379,7 @@ in
             provider = "oci-melb-1";
             port = 8085;
           };
-          # `tailscale-serve`, not `direct`: the front end binds loopback, so a
-          # co-located edge route would have nothing to dial, and until the route
-          # is published there would be no private way in at all. The provider
-          # renders the front itself, which is also what makes the private OIDC
-          # callback reachable for first-time onboarding.
+          # tailscale-serve: the front binds loopback, and the provider renders the private front for the OIDC callback.
           exposureMode = "tailscale-serve";
           declarePublic = true;
           publish = false;
@@ -444,11 +387,8 @@ in
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;
           health.path = "/";
-          # GP-5: surfaces GeoPulse leaves unauthenticated that this deployment does
-          # not need. Each entry is the permit-list pattern for its own path, so the
-          # authenticated management APIs beside them keep working. Device ingest
-          # (`/api/owntracks`, `/api/gpslogger`) and `/api/geocoding/*` stay open:
-          # the first is the acceptance path and the SPA has geocoding features.
+          # Permit-list only the unauthenticated leaves this deployment does not need.
+          # Device ingest is the acceptance path, and the SPA uses geocoding; both stay open.
           deniedPaths = [
             "/api/prometheus/metrics" # operational metrics
             "/api/health" # diagnostics
@@ -510,8 +450,7 @@ in
           };
           exposureMode = "tailscale-upstream";
           category = "admin";
-          # The app's own gate is a magic-link sign-in; generic OIDC is an
-          # enterprise-flagged path upstream, so Access carries the outer wall.
+          # The app's magic-link sign-in is the gate; Access is the outer wall.
           access.requireCloudflareAccess = true;
           cloudflare = {
             proxied = true;
@@ -528,13 +467,9 @@ in
             port = 3001;
           };
           exposureMode = "tailscale-upstream";
-          # An API origin, not a page: the web app's browser calls it directly,
-          # so it is a machine endpoint and earns no dashboard app.
+          # An API origin: the browser calls it directly, so it is a machine endpoint with no dashboard tile.
           category = "infra";
-          # Deliberately no interactive gate: the browser calls this origin
-          # directly (the web app does not proxy the API) and so does the web
-          # container, so an Access challenge here breaks sign-in. Latitude's own
-          # auth authorizes every route on it.
+          # No interactive gate: the browser and the web container call this origin directly, and Access would break sign-in.
           access.requireCloudflareAccess = false;
           cloudflare = {
             proxied = true;
@@ -553,11 +488,7 @@ in
           health.path = "/v1/models";
         };
 
-        # Private machine-to-machine service with no ingress route at all. It is
-        # listed here because this host key owns the fleet's service topology;
-        # the catalog projects it as a tailscale-only endpoint, and both the
-        # provider (listen address) and the publisher (serverUrl) read that one
-        # declaration, so the port cannot drift.
+        # Private machine endpoint with no ingress route; provider and publisher read one declaration, so the port cannot drift.
         niks3-write = {
           subdomain = null;
           # Provider and transport are the canonical niks3-write record's.
@@ -568,10 +499,7 @@ in
           health.path = "/";
         };
 
-        # Latitude's OTLP/HTTP ingest is the same kind of endpoint for the other
-        # telemetry direction: machine exporters dial it, so it has no ingress
-        # route and cannot sit behind an interactive gate. The aspect reads this
-        # declaration for LAT_INGEST_URL, so the port cannot drift.
+        # OTLP ingest is a machine endpoint with no interactive gate. LAT_INGEST_URL reads this port.
         latitude-ingest = {
           subdomain = null;
           origin = {
@@ -585,12 +513,8 @@ in
           health.path = "/health";
         };
 
-        # The fleet's observability store, placed on the host with the disks for
-        # it. The three ingest endpoints are private machine routes — a
-        # collector dials them over the tailnet and no ingress route exists —
-        # while Grafana is the human front end and stays behind Access on the
-        # public edge. The store aspect reads these declarations for its
-        # listeners, so a port is stated once.
+        # Observability store placed where its disks are: three private ingest endpoints, with Grafana behind Access.
+        # The store reads these declarations for its listeners.
         victoriametrics = {
           subdomain = null;
           origin = {
@@ -642,14 +566,8 @@ in
           health.path = "/api/health";
         };
 
-        # Home automation. The container shares home-forge's network namespace,
-        # so the origin is the provider's own listener on the provider's tailnet
-        # name — the edge dials it directly, with no provider-side front.
-        #
-        # Withheld until the instance is onboarded and accepted: released by
-        # flipping `publish`, the same single edit Homarr uses. Until then it
-        # is reached on the tailnet at the provider's port, and Home Assistant's
-        # own login is the only gate, so nothing new sits in the login path.
+        # Home Assistant shares home-forge's namespace, so the edge dials the provider's tailnet listener directly.
+        # Withheld until accepted: released by flipping `publish`; its own login is the only gate until then.
         home-assistant = {
           subdomain = "hass";
           origin = {
@@ -660,9 +578,7 @@ in
           exposureMode = "tailscale-upstream";
           category = "app";
           publish = false;
-          # Once published, Access is the outer wall and Home Assistant's login
-          # the inner one. `access.oidc.enabled` stays off: this instance uses
-          # Home Assistant's own auth, not Kanidm.
+          # Behind Access once published; Home Assistant's own auth is the inner gate, not Kanidm.
           access.requireCloudflareAccess = true;
           cloudflare = {
             proxied = true;

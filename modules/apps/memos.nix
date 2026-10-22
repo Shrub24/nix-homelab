@@ -1,6 +1,5 @@
-# Memos deployment aspect: selection supplies enablement; the loopback listener
-# and public instance URL come from the canonical `memos` route. Its OpenID
-# provider lives in instance settings in Memos' own database, not here.
+# Memos: listener and public URL from the canonical route; its OpenID provider lives in
+# instance settings in Memos' own database.
 _: {
   flake.modules.nixos.memos =
     {
@@ -49,10 +48,8 @@ _: {
             };
           };
 
-          # Memos reads identity providers only from /etc/secrets, at startup. That
-          # directory is shared and not ours to chmod, so the sops render stays
-          # root-owned and the unit receives its own credential copy, bound over
-          # /etc/secrets inside its namespace.
+          # Memos reads providers only from /etc/secrets at startup. The shared directory stays
+          # root-owned, so the unit gets a credential copy bound over it in its namespace.
           sops.templates.${providerName} = {
             restartUnits = [ "memos.service" ];
             content = builtins.toJSON {

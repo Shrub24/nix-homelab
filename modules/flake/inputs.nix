@@ -1,17 +1,13 @@
-# Flake inputs, declared in the tree instead of a hand-written manifest.
-# nix-fleet is the authority for the pins both repositories share: it owns
-# nixpkgs, flake-parts, import-tree, sops-nix and niks3, and this repository
-# follows those inputs rather than carrying its own copies, so one nix-fleet
-# revision moves the shared baseline everywhere.
+# Flake inputs, declared in the tree. nix-fleet owns the pins both repositories share
+# (nixpkgs, flake-parts, import-tree, sops-nix, niks3), which this repository follows.
 { lib, ... }:
 {
   flake-file.inputs = {
     flake-file.url = "github:denful/flake-file";
     nix-fleet.url = "github:Shrub24/nix-fleet";
 
-    # `url = lib.mkForce ""` clears the URL the dendritic preset defaults
-    # these to; flake-file renders a URL-less input as a pure follows alias,
-    # and an input may not carry both a URL and a follows.
+    # `url = lib.mkForce ""` clears the URL the dendritic preset defaults these to; flake-file renders
+    # a URL-less input as a pure follows alias, and an input may not carry both a URL and a follows.
     nixpkgs = {
       url = lib.mkForce "";
       follows = "nix-fleet/nixpkgs";

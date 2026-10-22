@@ -1,6 +1,5 @@
-# Karakeep deployment aspect: selection supplies the pod's top-level
-# enablement; OIDC wiring, the S3 asset store toggle, and both secret sources
-# stay explicit host variants.
+# Karakeep deployment aspect: selection supplies the pod's top-level enablement; OIDC wiring, the S3
+# asset store toggle, and both secret sources stay explicit host variants.
 
 _: {
   flake.modules.nixos.karakeep =
@@ -241,9 +240,8 @@ _: {
                 image = cfg.meilisearchImage;
                 extraOptions = [
                   "--network=${cfg.networkName}"
-                  # This container mounts the pod's shared environment file, which
-                  # carries the inference gateway URL even though Meilisearch reads
-                  # none of it; the entry keeps every variable in that file resolvable.
+                  # The pod's shared env file carries the gateway URL even though Meilisearch reads none of
+                  # it, and every variable in a mounted file must resolve.
                   "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
                 ];
                 environment = {
@@ -277,9 +275,8 @@ _: {
                 image = cfg.webImage;
                 extraOptions = [
                   "--network=${cfg.networkName}"
-                  # The inference gateway is a native service on this host, so the
-                  # container dials the fleet's service address rather than a
-                  # container gateway it does not share.
+                  # The inference gateway is a native service on this host, so the container dials the
+                  # fleet's service address rather than a container gateway it does not share.
                   "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
                 ];
                 ports = [

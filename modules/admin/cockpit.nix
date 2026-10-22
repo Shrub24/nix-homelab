@@ -1,7 +1,5 @@
-# Cockpit deployment aspect: selection imports the leaf (whose `enable` default
-# is true) and owns the wiring common to every host — the dedicated service user
-# and the service-user secret registration. Host variants stay explicit:
-# `publicHost`/`urlRoot` and `loopbackTls.enable` are host-local.
+# Cockpit: selection imports the leaf (enable defaults true) and owns the wiring common to
+# every host. `publicHost`, `urlRoot` and `loopbackTls.enable` stay host-local.
 _: {
   flake.modules.nixos.cockpit =
     {

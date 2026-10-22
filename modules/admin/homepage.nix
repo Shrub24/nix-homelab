@@ -1,7 +1,5 @@
-# Homepage dashboard deployment aspect: selection imports the leaf and owns its
-# enablement; the runtime composition (policy origin host/port, the secret map,
-# the auth template, and the catalog-derived dashboard data) stays in the leaf,
-# which reads only the canonical web policy.
+# Homepage: selection imports the leaf and owns its enablement; the runtime composition reads
+# only the canonical web policy.
 _: {
   flake.modules.nixos.homepage =
     { lib, config, ... }:

@@ -1,14 +1,5 @@
-# Homarr's app bookmarks, projected from the fleet's web policy.
-#
-# An app is the part of Homarr that is tedious to keep true: a name, a URL and an
-# icon that go stale whenever a route is renamed or a service moves. Boards are
-# taste — a person assembles one in the UI from these apps — so this module owns
-# the inventory of apps and nothing else.
-#
-# Homarr has no declarative configuration format, so the apps are converged
-# through its HTTP API by a oneshot unit: Nix compiles the desired set from
-# `policy/web-services.nix`, and `reconcile.py` creates what is missing and
-# patches what drifted. Editing the policy is therefore the whole gesture.
+# Homarr's app bookmarks, projected from web policy. Homarr has no declarative format,
+# so a oneshot unit converges them through its HTTP API; boards stay the user's.
 _: {
   flake.modules.nixos.homarr =
     {
@@ -22,12 +13,8 @@ _: {
       route = config.repo.web.catalog.homarr or null;
       catalog = config.repo.web.catalog;
 
-      # Two distinctions decide the set. `category` separates what a person opens
-      # from machine endpoints: an infrastructure route (a metrics store, an
-      # ingest listener, the cache's write API) is something software dials, so it
-      # earns no app. `publish` separates a link from a placeholder: the edge
-      # serves nothing for a withheld route, so an app for it would be dead until
-      # release.
+      # `category` separates what a person opens from machine endpoints; `publish`
+      # separates a link from a placeholder for a withheld route.
       apps = lib.filterAttrs (
         name: service:
         (service.category == "app" || service.category == "admin")
@@ -35,9 +22,7 @@ _: {
         && service.publicHost != null
       ) catalog;
 
-      # dashboard-icons slugs differ from our service ids where the upstream
-      # project renamed itself, or where our route is named for its role rather
-      # than the product. A wrong slug costs a broken icon, not a broken app.
+      # Slugs diverge where upstream renamed or the route is named for its role.
       iconSlugs = {
         paperless = "paperless-ngx";
         actual = "actual-budget";
@@ -81,10 +66,8 @@ _: {
           sopsFile = cfg.secretFiles.host;
         };
 
-        # Reconciled with the API key an administrator mints once in the UI:
-        # Homarr has no headless login, so the key is the one operator step. Until
-        # it exists the unit logs why it did nothing, because an unminted key is a
-        # prepared state rather than a fault.
+        # The key is the one operator step (no headless login); until it exists the unit
+        # logs why it did nothing.
         systemd.services."homarr-apps" = {
           description = "Sync Homarr app bookmarks with the fleet web policy";
           wantedBy = [ "multi-user.target" ];
@@ -113,7 +96,7 @@ _: {
               "HOMARR_API_KEY_FILE=/run/secrets/homarr.api_key"
               "HOMARR_DESIRED_FILE=${desired}"
             ];
-            ExecStart = "${pkgs.python3}/bin/python3 ${./reconcile.py}";
+            ExecStart = "${pkgs.python3}/bin/python3 ${./homarr/reconcile.py}";
           };
         };
 

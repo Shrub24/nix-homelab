@@ -1,10 +1,5 @@
-# inbox-zero: Gmail assistant (digest-pinned container on an app-owned Podman
-# bridge, native PostgreSQL consumer, and two native maintenance timers).
-#
-# Selection is enablement. The public origin and loopback listener come from the
-# canonical `inbox-zero` route, the image from the image policy, and the database
-# from the substrate. The application's own secrets come from its service file;
-# nothing here reads or generates key material.
+# Gmail assistant: digest-pinned container on its own bridge, native PostgreSQL consumer,
+# two maintenance timers. Selection is enablement.
 _: {
   flake.modules.nixos.inbox-zero =
     {
@@ -30,10 +25,8 @@ _: {
       bifrost = config.services.bifrost.endpoint.containerBaseUrl or "";
       model = globals.bifrost.aliases.text;
 
-      # Every value the application cannot start without. Checked at unit start
-      # on the rendered file, because the secret values are not visible to
-      # evaluation. Upstream's startup catches migration errors and keeps running,
-      # so an empty credential would otherwise look healthy.
+      # Checked at unit start on the rendered file: upstream catches startup errors and
+      # keeps running, so an empty credential would otherwise look healthy.
       requiredEnv = [
         "DATABASE_URL"
         "AUTH_SECRET"
@@ -59,9 +52,7 @@ _: {
         done
       '';
 
-      # The maintenance calls reach the app on its loopback listener and present
-      # the cron secret as a header. The header travels on stdin (curl --config -),
-      # so the secret never appears in an argument list.
+      # The cron secret rides stdin (curl --config -) so it never reaches an argument list.
       cronCall =
         name: path:
         pkgs.writeShellScript "inbox-zero-${name}" ''
@@ -129,12 +120,8 @@ _: {
               key = "inbox-zero/database_password";
             };
             allowedCIDRs = [ cfg.networkSubnet ];
-            # btree_gist backs the application's exclusion constraints and is never
-            # dropped, so the substrate installs it. uuid-ossp is deliberately not
-            # installed here: `20240116235134_shared_premium` creates it and then drops
-            # it, and only the creating role may drop it — installed by the cluster
-            # superuser it made that migration fail and froze every later one. It is a
-            # trusted extension, so the database-owning role can create it itself.
+            # uuid-ossp is deliberately absent: its migration creates and drops it, and only the
+            # creating role may drop it. Installed by the superuser it froze every later migration.
             setupSQL = ''
               CREATE EXTENSION IF NOT EXISTS btree_gist;
             '';

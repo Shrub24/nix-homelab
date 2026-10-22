@@ -1,8 +1,5 @@
-# Music-ingest aspect contributor: owns the ingest mechanisms — the
-# ffmpeg-preprocess binary/service, the dropbox path unit and debounce
-# poke/timers, the scoped slskd-settle polkit rule, and the slskd completion
-# hook. Composed by the music coordinator aspect by flake-level import; never
-# host-imported.
+# Music ingest: ffmpeg preprocess, dropbox watcher and debounce timers, the slskd-settle
+# polkit rule, and the completion hook. Composed by the music aspect, never host-imported.
 _: {
   flake.modules.nixos.music =
     {

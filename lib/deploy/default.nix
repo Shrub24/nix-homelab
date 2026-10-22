@@ -7,11 +7,8 @@
 let
   inherit (nixpkgs) lib;
 
-  # Only the `nodes` map from lib/deploy/hosts.nix may feed node construction;
-  # physical topology facts (`edgeHost`, `deployOrder`) must never be treated
-  # as NixOS nodes. Nodes explicitly marked `deployable = false` are physical
-  # hosts that exist in topology metadata but are excluded from deploy-rs
-  # (e.g. locally-managed hosts deployed via `nixos-rebuild --target-host`).
+  # Only `nodes` may feed node construction; `edgeHost` and `deployOrder` are never NixOS
+  # nodes. `deployable = false` marks hosts in the topology that deploy-rs must skip.
   deployableNodes = lib.filterAttrs (_: host: host.deployable or true) nodes;
   deployNode =
     name: host:

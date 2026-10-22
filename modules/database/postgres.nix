@@ -1,26 +1,6 @@
-# Shared PostgreSQL mechanism.
-#
-# Three layers, so adding a consumer or a cluster never means editing this file:
-#   * mechanism (here) — renders provisioning from an instance plus a consumer
-#     registry; names no consumer and no instance;
-#   * instance — a placement aspect imports this mechanism and the host that
-#     runs the cluster declares `services.postgres.instances.<name>`;
-#   * consumer — a service registers the database, role, credential, and
-#     extensions it needs from its own module.
-#
-# Registrations are keyed by consumer name: a host runs at most one cluster (the
-# native PostgreSQL runtime is single-cluster), so `instances.<name>` names the
-# cluster for the internal contract while consumers stay instance-free. A
-# consumer running on another host is registered here by the *provider*, because
-# only the provider can create the role and read its credential — the exception,
-# not the rule.
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}:
-{
+# Shared PostgreSQL mechanism: renders provisioning from `services.postgres.instances` and `.consumers`.
+# Names no consumer or instance; a consumer on another host is registered by the provider, which alone can create its role.
+_: {
   flake.modules.nixos.postgres =
     {
       config,
@@ -52,12 +32,9 @@
       provisionEtcName = "postgres/provision.sh";
       provisionScriptPath = "/etc/${provisionEtcName}";
 
-      # Only consumers with something to apply need the provisioning unit.
       provisionable = lib.filter (c: c.setupSQL != "" || hasCredential c) consumers;
 
-      # The unit runs a fixed trampoline and reads this script from /etc, so the
-      # executed consumer set is the current generation's even when systemd starts
-      # the unit from the definition it already had loaded (D-069).
+      # The trampoline reads its script from /etc, so a stale definition still runs the current consumer set.
       provisionScript = pkgs.writeShellScript "postgresql-provision" ''
         set -euo pipefail
         export PGPORT=${if instance == null then "5432" else toString instance.port}
@@ -70,8 +47,7 @@
         ) provisionable}
       '';
 
-      # Footgun: pg_hba needs a mask. A maskless address shifts the auth-method
-      # column into the netmask field, and postgres refuses to load the whole file.
+      # Footgun: pg_hba needs a mask; without one postgres refuses to load the whole file.
       withMask =
         cidr:
         if lib.hasInfix "/" cidr then cidr else "${cidr}/${if lib.hasInfix ":" cidr then "128" else "32"}";
@@ -81,9 +57,7 @@
         if c.auth == "peer" then
           [ "local ${c.database} ${c.role} peer" ]
         else
-          # One allow row per database per source range, then the role's
-          # catch-all reject — everything outside the owned + extra set stays
-          # unreachable even though nixpkgs' default block follows ours.
+          # Owned and extra databases get one allow row each; the role's catch-all reject follows.
           lib.concatMap (
             cidr:
             map (db: "host ${db} ${c.role} ${withMask cidr} scram-sha-256") ([ c.database ] ++ c.extraDatabases)
@@ -94,10 +68,7 @@
 
       psql = "${config.services.postgresql.finalPackage}/bin/psql";
 
-      # Roles and databases are converged here rather than through nixpkgs'
-      # `ensureDatabases`/`ensureUsers`: systemd may start postgresql-setup.service
-      # from the definition it already had loaded, which leaves a newly registered
-      # consumer's role and database missing for that activation (D-069).
+      # Converged here, not via ensureDatabases: a start from a stale definition would skip a new consumer.
       ensureRole = c: ''
         if [ "$(${psql} -tAc ${lib.escapeShellArg "SELECT 1 FROM pg_roles WHERE rolname = '${c.role}'"})" != "1" ]; then
           ${psql} -tAc ${lib.escapeShellArg "CREATE ROLE \"${c.role}\""} ||
@@ -122,8 +93,7 @@
           { echo "services.postgres.consumers.${c.name}: failed to make '${c.role}' own '${c.database}'" >&2; exit 1; }
       '';
 
-      # Applies the SOPS-held password to each provider-side role whenever this unit
-      # runs, so a rotation takes effect by restarting it.
+      # Restarting this unit re-applies a rotated password.
       setRolePassword =
         c:
         let
@@ -137,8 +107,7 @@
               { echo "services.postgres.consumers.${c.name}: failed to apply the role password" >&2; exit 1; }
         '';
 
-      # Setup SQL runs as ordinary `psql` input; without a named failure a typo would
-      # abort the cluster start with no hint of which registration caused it.
+      # Named failure: a setup-SQL typo otherwise aborts the cluster start with no hint of its source.
       runSetupSQL =
         c:
         lib.optionalString (c.setupSQL != "") ''
@@ -163,9 +132,7 @@
                 "services.postgres.consumers.${c.name}: password file '${toString c.password.file}' does not exist"
               ]
           ++
-            # pg_hba is database-scoped: a role that creates satellite databases
-            # cannot connect to them through its own catch-all reject, and the
-            # stack that requires them dies at first boot. Fail closed here.
+            # pg_hba is database-scoped: without these, satellite databases fail at first boot.
             lib.optionals (lib.hasInfix "CREATEDB" c.setupSQL && c.extraDatabases == [ ]) [
               "services.postgres.consumers.${c.name}: setupSQL grants CREATEDB but extraDatabases is empty — declare every database the role creates (and 'postgres', where it first connects to create them), or its own 'host all <role> all reject' row will refuse them"
             ]
@@ -181,9 +148,7 @@
         {
           services.postgres.enable = true;
 
-          # Defined unconditionally: a projection of the host's own declaration,
-          # read by co-located consumers to test for a local cluster even where
-          # the mechanism is disabled.
+          # Read by co-located consumers to detect a local cluster, even where the mechanism is disabled.
           services.postgres.localEndpoint = if instance == null then null else { inherit (instance) port; };
         }
 
@@ -197,23 +162,18 @@
             enable = true;
             inherit (instance) dataDir;
 
-            # The major version is pinned rather than inherited from nixpkgs'
-            # default. A default bump would start the new major against this
-            # cluster's existing data directory and fail at boot, so the upgrade
-            # has to be a deliberate change with its own migration step.
+            # Pinned: a default bump would start the new major against this data directory and fail at boot.
             package = pkgs.postgresql_17;
 
             enableTCPIP = true;
 
             authentication = lib.mkBefore (lib.concatStringsSep "\n" (lib.concatMap authLine consumers));
 
-            # Consumers contribute packages; the mechanism composes them through the
-            # instance's own extension set, so a package always matches the server.
+            # Consumers contribute packages; the instance's extension set keeps them matched to the server.
             extensions = ps: lib.unique (lib.concatMap (c: c.extensions ps) consumers);
 
             settings = {
               inherit (instance) port;
-              # mkForce: nixpkgs derives "*" from `enableTCPIP`.
               listen_addresses = lib.mkForce "127.0.0.1,${serviceNetwork.address}";
               max_connections = lib.mkDefault "40";
               shared_buffers = lib.mkDefault "64MB";
@@ -245,27 +205,16 @@
           );
 
           systemd.services.postgresql = lib.mkIf (instance != null) {
-            # Consumer changes ride postgresql's restart set: a change to the
-            # provisioning script restarts postgresql, and partOf propagates
-            # that restart to provisioning (the trampoline unit itself never
-            # changes).
+            # A provisioning-script change restarts postgresql; partOf carries the restart to provisioning.
             restartTriggers = lib.optionals (provisionable != [ ]) [ provisionScript ];
             serviceConfig.ReadWritePaths = [ instance.dataDir ];
           };
 
-          # Provisioning is its own unit, ordered after nixpkgs'
-          # postgresql-setup.service (which itself runs after postgresql.service, so
-          # `postStart` would execute too early on a fresh cluster). Consumer roles,
-          # databases, and ownership are converged here, not through nixpkgs'
-          # `ensureDatabases`/`ensureUsers` (D-069). `wantedBy` and `partOf` the
-          # postgresql target mirror nixpkgs' wiring, so restarting the target
-          # re-applies consumer state.
+          # Ordered after nixpkgs' postgresql-setup, which runs too early for postStart on a fresh cluster.
+          # wantedBy and partOf mirror nixpkgs, so restarting the target re-applies consumer state.
           systemd.services.postgresql-provision = lib.mkIf (instance != null && provisionable != [ ]) {
             description = "PostgreSQL consumer provisioning (roles, databases, credentials, setup SQL)";
-            # Ordering is systemd's: the requires edge makes postgresql's own
-            # restart reach this unit, and After= orders its start behind it.
-            # No identity check runs here; the script applies its SQL to the
-            # server that is live when it starts (D-095).
+            # requires makes a postgresql restart reach this unit; the script applies its SQL to whatever server is live.
             requires = [
               "postgresql-setup.service"
               "postgresql.service"
@@ -275,14 +224,12 @@
               "postgresql-setup.service"
             ];
             wantedBy = [ "postgresql.target" ];
-            # Re-run as a consequence of postgresql's own restart (partOf).
-            # The script trigger lives on postgresql below.
+            # Re-run on postgresql restart (partOf); the script trigger lives on postgresql.
             partOf = [
               "postgresql.target"
               "postgresql.service"
             ];
-            # Trampoline: the unit's own content never changes with the consumer set,
-            # so a stale in-memory definition still executes the current script.
+            # Trampoline: its content never changes with the consumer set.
             script = "exec ${provisionScriptPath}";
             serviceConfig = {
               Type = "oneshot";
@@ -300,10 +247,7 @@
             "d ${instance.dataDir} 0700 postgres postgres - -"
           ];
 
-          # Export-first contract: restic captures a pg_dumpall export, not the live
-          # data directory. The independent postgresqlBackup timer stays disabled
-          # (`startAt = [ ]`) — the restic job Requires+After the export — and the
-          # staging copy is cleared once the run has uploaded it.
+          # Export-first: restic captures a pg_dumpall export, not the data directory; the timer is disabled.
           services.postgresqlBackup = lib.mkIf (consumers != [ ] && config.services.state-backups.enable) {
             enable = true;
             backupAll = true;
@@ -319,13 +263,8 @@
                 after = [ "postgresqlBackup.service" ];
               };
 
-          # Upstream writes the export into `location` without creating it, and the
-          # unit runs as postgres — which cannot create a child of the 0711
-          # root-owned staging root. The directory is therefore installed with the
-          # dump itself: `+` keeps the create root-privileged while the dump stays
-          # postgres-owned, so it works on the first run after a cleanup as well as
-          # at boot. The post-restic cleanup still removes it, so no plaintext
-          # export outlives the run that uploaded it.
+          # The dump directory is created with `+` (root) while the dump stays postgres-owned, so the first run after a cleanup works.
+          # The post-restic cleanup removes it, so no plaintext export outlives its run.
           systemd.services.postgresqlBackup =
             lib.mkIf (consumers != [ ] && config.services.state-backups.enable)
               {

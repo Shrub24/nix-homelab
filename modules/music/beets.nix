@@ -46,10 +46,8 @@ _: {
         quarantine = ./beets/files/beets-quarantine-config.yaml;
       };
 
-      # Composition-facing read-only interface: prefer the rendered SOPS template
-      # when present, otherwise fall back to the injected source configs. Never
-      # depends on cfg.runners, so the composition can build runner instances from
-      # it without a cycle.
+      # Read-only interface: template when present, else the injected configs. Never reads
+      # cfg.runners, so the composition can build runners from it without a cycle.
       renderedConfigFiles = {
         standard =
           if lib.hasAttrByPath [ "sops" "templates" "beets-config.yaml" "path" ] config then
@@ -173,10 +171,8 @@ _: {
         inherit ffmpegCheck;
       };
 
-      # Operator CLIs: the leaf owns the binaries generated from built-in runner
-      # kinds; the composition keeps selecting runner instances and the OnSuccess
-      # chain intent. beets-interactive consumes cfg.onSuccessUnits for its
-      # post-success tail, preserving the exact unit set/order.
+      # The leaf owns the binaries; the composition keeps selecting instances and the
+      # OnSuccess chain, which beets-interactive consumes to preserve unit order.
       beetsInteractiveBin = pkgs.writeShellApplication {
         name = "beets-interactive";
         runtimeInputs = [
@@ -484,10 +480,8 @@ _: {
           };
         };
 
-        # Read-only composition-facing interface: renders the SOPS templates when
-        # they exist, otherwise falls back to configFiles. Declared and valued
-        # outside the secret-file gate so the composition can build runner
-        # instances regardless of secret wiring.
+        # Declared outside the secret-file gate so runners can be built regardless of
+        # secret wiring.
         renderedConfigFiles = lib.mkOption {
           type = lib.types.submodule {
             options = {
@@ -526,9 +520,7 @@ _: {
             }) beetsSecretEntries
           );
 
-          # Fleet-stable identity: state moves between hosts (OCI -> home-forge), so
-          # the numeric UID/GID is pinned instead of left to per-host dynamic
-          # allocation (NixOS descends from 999, host-dependent).
+          # Pinned: state moves between hosts, and NixOS allocation is host-dependent.
           users.groups.beets = {
             gid = lib.mkDefault 976;
           };

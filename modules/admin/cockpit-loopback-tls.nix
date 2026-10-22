@@ -1,6 +1,4 @@
-# Runtime sibling of the `cockpit` aspect: deferredModule values merge across
-# sibling files, so this file contributes to the same aspect name without an
-# imports list. Owns the loopback TLS material for the Cockpit host route.
+# Loopback TLS material for the Cockpit route; a sibling file of the same aspect.
 _: {
   flake.modules.nixos.cockpit =
     {
@@ -24,7 +22,7 @@ _: {
       key = "${stateDir}/cockpit.key";
     in
     {
-      imports = [ ../../backups/state-backups/_consumer.nix ];
+      imports = [ ../backups/state-backups/_consumer.nix ];
       config = lib.mkIf (cfg.enable && loopbackTls.enable) {
         services.state-backups.services.cockpit-loopback-tls = {
           enable = true;

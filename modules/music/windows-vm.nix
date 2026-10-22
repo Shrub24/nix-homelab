@@ -1,9 +1,5 @@
-# Windows VM runtime sibling of the `dj` aspect: declarative libvirt/KVM domains
-# attached to the host-owned always-on bridge, loopback SPICE display, and
-# virtiofs shares. Consumers define instances and wire locks/backup contracts;
-# this module owns domain XML generation and lifecycle units, and only consumes
-# the fleet-networking bridge that guests attach to — it never creates or owns
-# physical networking.
+# libvirt/KVM domains on the host-owned bridge, loopback SPICE, virtiofs shares.
+# This module never creates or owns physical networking.
 _: {
   flake.modules.nixos.dj =
     {
@@ -24,9 +20,8 @@ _: {
 
       virsh = "${pkgs.libvirt}/bin/virsh";
 
-      # Graceful ACPI shutdown with a bounded wait, then hard destroy as the
-      # fallback. Used by ExecStop and by backup quiesce hooks so every stop path
-      # has identical semantics. Takes the domain name as $1, wait seconds as $2.
+      # Graceful ACPI shutdown with a bounded wait, then destroy; $1 domain, $2 seconds.
+      # ExecStop and the backup quiesce hooks share it so every stop path agrees.
       stopAndWait = pkgs.writeShellScriptBin "windows-vm-stop" ''
         set -euo pipefail
         dom="$1"
@@ -70,9 +65,7 @@ _: {
         ${virsh} start "$1"
       '';
 
-      # Deterministic per-instance UUID: `virsh define` only updates an existing
-      # domain when identity is stable; a fresh random UUID per render collides
-      # with the existing one ("domain 'x' already exists with uuid").
+      # Stable UUID: a fresh one per render makes `virsh define` fail with "already exists".
       instanceUuid =
         name:
         let
@@ -110,9 +103,7 @@ _: {
             <backend type="emulator" version="2.0"/>
           </tpm>'';
 
-      # installer=true renders the install-media variant: Windows ISO + virtio-win
-      # driver ISO as CD-ROMs, CD-ROM-first boot. Presence of the media is decided
-      # at unit start (prepareScript), not at eval time.
+      # installer=true renders CD-ROM-first install media; presence is decided at unit start.
       domainXml =
         name: inst: installer:
         ''
@@ -122,9 +113,7 @@ _: {
             <memory unit="MiB">${toString inst.memory}</memory>
             <vcpu placement="static">${toString inst.vcpu}</vcpu>''
         + "\n"
-        # virtiofs requires guest RAM on shared pages: emit <memoryBacking> only
-        # when the instance defines shares, since it forces all guest RAM onto
-        # shared memory and must not be set unconditionally.
+        # Only with shares: <memoryBacking> forces all guest RAM onto shared pages.
         + lib.optionalString (inst.shares != { }) ''
           <memoryBacking>
             <source type="memfd"/>
@@ -211,14 +200,8 @@ _: {
         name:
         pkgs.writeText "windows-vm-${name}-install.xml" (domainXml name enabledInstances.${name} true);
 
-      # Per-instance ExecStartPre: create runtime dirs, seed OVMF vars once,
-      # preallocate the system disk when missing. umask keeps guest disk images
-      # (Windows profile data, library DB) root-only.
-      #
-      # Install mode is driven by the windows-vm-<name>-install command, which
-      # stages media into installDir and restarts this unit; the presence pick
-      # here is that command's plumbing. Installer mode lasts until the next
-      # unit restart without media (--clear removes it explicitly).
+      # Runtime dirs, OVMF vars seeded once, system disk preallocated. umask keeps guest disk
+      # images root-only. Installer mode persists until the next restart without media.
       prepareScript =
         name: inst:
         pkgs.writeShellScript "windows-vm-${name}-prepare" ''
@@ -239,9 +222,7 @@ _: {
           ${virsh} define ${instanceDir name}/domain.xml
         '';
 
-      # Explicit install-lifecycle command: staging media + restarting the unit
-      # enters installer mode; --clear removes the media and restarts back to
-      # normal boot. The only supported interface for toggling install mode.
+      # The only supported way to toggle install mode.
       installCommand =
         name: _:
         pkgs.writeShellScriptBin "windows-vm-${name}-install" ''
@@ -428,10 +409,8 @@ _: {
         # Define (and redefine on config change) all instance domains. virsh
         # define is idempotent and updates persistent XML in place.
         systemd.services = {
-          # Upstream sets restartIfChanged=false, so capability changes (swtpm
-          # entering libvirtd's PATH) never apply on switch and TPM domains fail
-          # to define against the stale daemon. Guests survive restarts because
-          # libvirtd uses KillMode=process — only the daemon is replaced.
+          # restartIfChanged=false upstream means capability changes never apply on switch, so
+          # swtpm never enters the daemon's PATH. Guests survive: KillMode=process.
           libvirtd.restartIfChanged = lib.mkForce (lib.any (i: i.tpm) (lib.attrValues enabledInstances));
           windows-vm-setup = {
             description = "Define windows-vm libvirt domains";
@@ -474,16 +453,12 @@ _: {
               "network-online.target"
             ];
             wantedBy = lib.optional inst.autostart "multi-user.target";
-            # No restartTriggers: XML changes are redefined by windows-vm-setup
-            # and apply at next guest boot. Bouncing a running Windows guest on
-            # every deploy would be hostile; restarting the controller unit is
-            # an explicit operator action.
+            # No restartTriggers: bouncing a running guest on every deploy would be hostile.
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
-              # Must exceed the worst-case stopAndWait (180s) plus destroy
-              # fallback (30s) or systemd kills the stop script mid-wait and
-              # the unit state diverges from the actual domain state.
+              # Must exceed stopAndWait (180s) plus the destroy fallback (30s), or systemd
+              # kills the stop script mid-wait and the unit state diverges.
               TimeoutStopSec = 240;
               ExecStartPre = prepareScript name inst;
               ExecStart = "${startDomain}/bin/windows-vm-start ${name}";

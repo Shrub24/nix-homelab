@@ -44,7 +44,7 @@ cat >"$tmp/probe.nix" <<EOF
 let
   repo = builtins.getFlake "path:$ROOT";
   fixture = builtins.toPath "$tmp/homarr.yaml";
-  # The login posture is derived from the route's publish flag (D-104): a
+  # The login posture is derived from the route's publish flag: a
   # published route serves OIDC only, a withheld one keeps credentials as the
   # way back in. The probes force the flag rather than an application option.
   mkHomarr = publish: repo.nixosConfigurations.oci-melb-1.extendModules {
@@ -219,7 +219,7 @@ errors.extend(scope_errors(normal_env))
 errors.extend(scope_errors(withheld_env))
 if not scope_errors('AUTH_OIDC_SCOPE_OVERWRITE="openid email profile groups_name"'):
     errors.append("mutation control failed to reject a quoted OIDC scope list")
-# Group membership is authoritative from the identity provider (D-103): the
+# Group membership is authoritative from the identity provider: the
 # `groups` claim decides administration, so the local manager must be off and the
 # claim attribute named.
 if "AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false" not in normal_env:

@@ -1,9 +1,5 @@
-# deploy-rs wiring. lib/deploy/hosts.nix owns the physical topology (edgeHost,
-# deployOrder, ssh users, remote-build flags); every host reference it makes must
-# name a declared canonical host ID and every node's `system` must agree with
-# that record — both fail closed with named errors, so a drifted topology cannot
-# silently produce a deploy output. The topology keeps owning its own physical
-# facts; they are never merged into the host records.
+# deploy-rs wiring over the physical topology in lib/deploy/hosts.nix. Host references and
+# each node's `system` are validated against the canonical records, both failing closed.
 top@{ inputs, lib, ... }:
 let
   deployTopology = import ../../lib/deploy/hosts.nix;
@@ -15,9 +11,7 @@ let
 
   unknownReferences = lib.filter (name: !(top.config.nixos.hosts ? ${name})) (lib.unique references);
 
-  # The topology keeps owning its own physical facts, so a node's `system` is
-  # not derived from the host record — but a disagreement between the two makes
-  # deploy-rs activate the wrong architecture, so it fails closed as well.
+  # Not derived from the host record, but a disagreement activates the wrong architecture.
   systemDrift =
     lib.mapAttrsToList
       (
@@ -32,10 +26,7 @@ let
         ) deployTopology.nodes
       );
 
-  # One named error per drift site, so a failing evaluation reports every drifted
-  # reference (node key / edgeHost / deployOrder) instead of only the first.
-  # Unknown references dominate: the system check reads the canonical records,
-  # so it is only forced once every reference names a declared host.
+  # One named error per drift site, so an evaluation reports every drifted reference.
   checkedDeployTopology =
     lib.throwIf (unknownReferences != [ ])
       (lib.concatMapStringsSep "; " (
@@ -58,11 +49,8 @@ in
   perSystem =
     { system, ... }:
     let
-      # The buildable deploy surface: every host's activation profile is a check
-      # on the system that builds it, so CI's standard `.#checks` target covers
-      # the whole deploy surface and needs no bespoke aggregate (FB-4). The
-      # `packages.host-*` mirror publishes the same derivations unfiltered, for
-      # cross-system prebuilds.
+      # Each activation profile is a check on the system that builds it, so `.#checks`
+      # covers the deploy surface. `packages.host-*` mirrors them unfiltered for prebuilds.
       profileChecks =
         lib.mapAttrs' (name: node: lib.nameValuePair "host-${name}" node.profiles.system.path)
           (

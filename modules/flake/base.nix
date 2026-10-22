@@ -1,13 +1,5 @@
-# Base foundation aspect contributor. Owns base OS policy, users, Nix/`nh`
-# tuning, the outbound dev SSH identity convention, and two typed machine facts
-# hosts declare instead of fighting shared defaults with mkForce:
-#
-#   fleet.foundation.bootLoader = "grub" | "systemd-boot";  # required
-#   fleet.foundation.buildTmpfsSize = "8G" | "50%";          # required str
-#
-# Host recovery is a separate contributor of the same aspect
-# (./host-recovery.nix): break-glass base policy, not an independently
-# selected capability.
+# Base OS policy, users, Nix tuning, and the two machine facts hosts declare instead of
+# fighting shared defaults with mkForce: fleet.foundation.{bootLoader,buildTmpfsSize}.
 { inputs, ... }:
 {
   flake.modules.nixos.base =
@@ -18,10 +10,8 @@
       ...
     }:
     let
-      # Conventional host-scoped SOPS scope: every per-host secret path derives
-      # from networking.hostName; an absent host system scope keeps the two-step
-      # sops bootstrap working.
-      hostSystemSecret = ../../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
+      # An absent host system scope keeps the two-step sops bootstrap working.
+      hostSystemSecret = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
       hasHostSecrets = builtins.pathExists hostSystemSecret;
 
       foundation = config.fleet.foundation;
@@ -89,10 +79,8 @@
 
         time.timeZone = "UTC";
 
-        # A container that cannot start crashes on a multi-second cycle, which never
-        # trips systemd's default limit (5 starts / 10s) — and the unit then blocks
-        # the activation's start job for its whole duration. Five restarts an hour is
-        # the budget: a persistent failure fails the unit instead of looping.
+        # A crash loop on a multi-second cycle never trips the default 5 starts / 10s and
+        # blocks activation instead, so bound it at five an hour.
         systemd.services = lib.mapAttrs' (
           name: _:
           lib.nameValuePair "podman-${name}" {
@@ -204,13 +192,8 @@
           ACTION=="add|change", KERNEL=="sd[a-z]|vd[a-z]", ATTR{queue/scheduler}="mq-deadline"
         '';
 
-        # Scheduled store garbage collection is a shared capability now: nix-fleet
-        # owns the units, their timers and their failure registrations (the aspect
-        # registers the events itself), and it owns the defaults too — nh prunes
-        # stale roots, the fast collector reclaims unconditionally, and the
-        # optimise run is a safety net. We state no override: restating a weaker
-        # schedule here would silently disable upstream's root pruning
-        # (`--keep-since`/`--keep-one`).
+        # No override: restating a weaker schedule here would silently disable upstream's
+        # root pruning.
 
         fleet.hostIdentity.sshPrivateKeyFile = lib.mkIf hasHostSecrets hostSystemSecret;
 

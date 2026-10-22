@@ -1,6 +1,5 @@
-# Gatus deployment aspect: selection imports the leaf and owns its enablement;
-# the leaf reads only the canonical web policy and has no secrets or runtime
-# paths.
+# Gatus deployment aspect: selection imports the leaf and owns its enablement; the leaf reads only the
+# canonical web policy and has no secrets or runtime paths.
 _: {
   flake.modules.nixos.gatus =
     { lib, config, ... }:
@@ -17,10 +16,8 @@ _: {
       webAddress = "0.0.0.0";
       webPort = gatusRoute.upstreamPort;
 
-      # Probes target the published URL: the signal is "the route answers",
-      # which is what an outage of either the edge or the origin breaks.
-      # Cloudflare Access answers unauthenticated probes with a redirect, so an
-      # Access-gated route counts as healthy when it reaches that gate.
+      # Probes target the published URL, so an outage of either the edge or the origin shows.
+      # Access answers unauthenticated probes with a redirect, and that gate counts as healthy.
       healthyStatuses =
         svc:
         if svc.access.requireCloudflareAccess or false then

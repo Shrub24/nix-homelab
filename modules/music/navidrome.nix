@@ -11,20 +11,11 @@ _: {
     let
       cfg = config.services.navidrome;
 
-      # Navidrome plugins are Extism wasm modules: nixpkgs builds them for
-      # wasm32-unknown-wasip1 through the wasi32 cross set (release-cross.nix
-      # marks the whole plugin set that way). Asking the host package set for one
-      # links `-buildmode=c-shared` against the host instead, which the current
-      # toolchain cannot link at all.
+      # Extism wasm: the plugin must come from the wasi32 cross set. Asking the host set
+      # links -buildmode=c-shared against the host, which the toolchain cannot link.
       audiomuseaiPlugin = pkgs.pkgsCross.wasi32.navidromePlugins.audiomuseai;
 
-      # AudioMuse plugin configuration after the binary is installed:
-      #   - Navidrome Admin → Plugins → audiomuse.ai: enable, set API URL, key
-      #   - AudioMuse first-run setup wizard (web UI on :8000)
-      #   - Symfonium → Navidrome connection: configure as OpenSubsonic server
-      # These settings reside in Navidrome's application state (DB) and cannot
-      # be seeded declaratively until upstream exposes a stable import path.
-      # ──────────────────────────────────────────────────────────────────────────
+      # Post-install plugin steps: docs/runbooks/music.md.
     in
     {
       options.services.navidrome.dataDir = lib.mkOption {
@@ -57,25 +48,17 @@ _: {
         };
       };
 
-      # Gate the entire custom Navidrome composition (settings, units, tmpfiles) on
-      # nixpkgs' services.navidrome.enable. A host that wants Navidrome must set it
-      # explicitly; hosts that only import this leaf (e.g. OCI via applications.music)
-      # can disable it cleanly without leaving dormant units or settings behind.
+      # Gated on nixpkgs' flag, so a host that imports this leaf without music enabled
+      # leaves no dormant units behind.
       config = lib.mkIf config.services.navidrome.enable {
-        # Fleet-stable identity: Navidrome state moves between hosts, so the
-        # numeric UID/GID is pinned instead of left to per-host dynamic
-        # allocation (NixOS descends from 999, host-dependent).
+        # Pinned: state moves between hosts, and NixOS allocation is host-dependent.
         users.users.navidrome.uid = lib.mkDefault 977;
         users.groups.navidrome.gid = lib.mkDefault 977;
 
         services.navidrome = {
           openFirewall = false;
-          # Cache-preserving AudioMuseAI plugin integration: we deliberately do NOT
-          # use `services.navidrome.plugins = [ pkgs.pkgsCross.wasi32.navidromePlugins.audiomuseai ]`
-          # because that bakes the plugin derivation into the Navidrome build and
-          # loses the stock cache-substitutable Navidrome. Instead we declaratively
-          # symlink the packaged WASM `.ndp` into ${dataDir}/plugins via tmpfiles and
-          # bind it into nixpkgs' fixed Plugins.Folder below.
+          # Symlinked via tmpfiles rather than set through services.navidrome.plugins, which
+          # would bake the plugin into the build and lose the cache-substitutable package.
           settings = lib.mkMerge [
             {
               MusicFolder = lib.mkDefault cfg.libraryDir;
@@ -116,10 +99,7 @@ _: {
             inherit (cfg) group;
           };
 
-        # AudioMuseAI plugin directory + packaged WASM `.ndp` symlink (cache-preserving).
-        # The plugin file is provided by pkgs.pkgsCross.wasi32.navidromePlugins.audiomuseai; symlinking
-        # into ${cfg.dataDir}/plugins avoids embedding it in the Navidrome derivation so
-        # stock cache-substitutable Navidrome is retained.
+        # The .ndp symlink keeps the stock package; see the note above.
         systemd.tmpfiles.settings.navidromeDirs."${cfg.dataDir}/plugins" = {
           "d" = {
             mode = "700";
@@ -152,12 +132,8 @@ _: {
             cfg.libraryDir
             cfg.quarantineDir
           ];
-          # RootDirectory=/run/navidrome means only bind-mounted paths exist in the
-          # service namespace. nixpkgs binds MusicFolder; the secondary and extra
-          # libraries need the same treatment or Navidrome cannot stat them.
-          # nixpkgs also fixes Plugins.Folder at finalPackage/share/plugins, so the
-          # declarative data-dir link is bound there to keep the stock package
-          # immutable and cache-substitutable.
+          # RootDirectory=/run/navidrome means only bind-mounted paths exist, so MusicFolder,
+          # secondary libraries and Plugins.Folder all need binds.
           serviceConfig.BindReadOnlyPaths = lib.mkAfter (
             [
               cfg.quarantineDir

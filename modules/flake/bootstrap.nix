@@ -1,6 +1,5 @@
-# Bootstrap projection over the canonical host records
-# (modules/flake/host-registry.nix): bootstrap-carrying hosts get their hostName
-# and flake reference derived from their record key.
+# Bootstrap projection over the canonical host records (modules/flake/host-registry.nix): bootstrap-
+# carrying hosts get their hostName and flake reference derived from their record key.
 {
   config,
   lib,

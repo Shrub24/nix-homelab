@@ -204,7 +204,7 @@ if got["readWritePaths"] != [got["dataDir"]]:
 # What recreates the process on a change. The rendered configuration half is the
 # fleet module's (the document is content-addressed, so a settings or plugin edit
 # moves it); the credential half is ours, because the rendered environment file
-# sits at a stable path and systemd cannot see its content change (D-077's blind
+# sits at a stable path and systemd cannot see its content change ('s blind
 # spot, in a native unit).
 if rendered_file not in got["restartTriggers"]:
     errs.append(f"the rendered configuration is not a restart trigger: {got['restartTriggers']!r}")

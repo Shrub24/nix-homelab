@@ -1,7 +1,5 @@
-# Host entry point: the canonical typed record (deferred NixOS composition,
-# deploy facts) whose identity derives from nix-fleet's fleet inventory. The
-# NixOS composition stays host-private in `_nixos.nix` and its `_admin-runtime.nix`
-# sibling, so a host assembly can never be selected as a public aspect.
+# Host entry point: the typed record whose identity derives from the fleet inventory, with
+# the NixOS composition host-private beside it.
 {
   config,
   inputs,
@@ -12,9 +10,8 @@ let
   identity = config.fleet.hosts.la-admin-1;
 in
 {
-  # Canonical machine identity (target system, Tailscale hostname, host key)
-  # lives in nix-fleet's fleet inventory; this record derives from it and
-  # declares only what is ours — composition, admin runtime, deploy facts.
+  # Identity comes from the inventory; this record declares only composition, admin runtime
+  # and deploy facts.
   nixos.hosts.la-admin-1 = {
     system = identity.system;
 
@@ -41,8 +38,7 @@ in
         aspects.beszel
         aspects.homepage
         aspects.webhook
-        # Systemd secret activation is the fleet policy: the installer is its own
-        # unit, so a service that binds a regular secret orders after it (D-XXX).
+        # Secrets install through a systemd unit that consumers order after.
         aspects.sops-systemd-activation
         aspects.base
         aspects.shell
@@ -54,9 +50,8 @@ in
         aspects.builder-access
         aspects.build-account
         aspects.observability-agent
-        # Telemetry: the contract's vocabulary plus our fleet policy, then the
-        # signals this host ships — metrics and logs; OTLP is admitted by the
-        # gateway host, not here.
+        # Telemetry: the contract's vocabulary plus our fleet policy, then the signals this host ships
+        # — metrics and logs; OTLP is admitted by the gateway host, not here.
         aspects.telemetry
         aspects.telemetry-metrics
         aspects.telemetry-logs

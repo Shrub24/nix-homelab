@@ -56,7 +56,7 @@ probe="$(nix eval --impure --no-write-lock-file --json -f "$tmp/probe.nix")" ||
   fail "the probe does not evaluate"
 
 # Control: force ClickHouse's HTTP port onto Home Assistant's, which is the
-# collision that put this instance into recovery mode (D-102). The guard must
+# collision that put this instance into recovery mode. The guard must
 # fire at evaluation, not at activation where the symptom is a bare error page.
 collision="$(
   nix eval --impure --no-write-lock-file --json --expr "

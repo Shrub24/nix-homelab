@@ -1,9 +1,5 @@
-# Origin-role sibling of the `ingress` aspect: a host that provides a route
-# exposed through a provider front (`exposureMode = "tailscale-serve"`) renders
-# the front the edge dials, because that route's socket stays on loopback. Every
-# mechanism-specific detail lives in this one file, so a service module never
-# learns how the private network exposes it and the mechanism can be replaced
-# without touching policy, hosts, or services.
+# The front a provider host renders for its own `tailscale-serve` routes, whose socket
+# stays on loopback. Every mechanism-specific detail lives here, so no service learns it.
 _: {
   flake.modules.nixos.ingress =
     {
@@ -20,11 +16,8 @@ _: {
 
       routePort = svc: toString svc.port;
 
-      # The front terminates the private network's own TLS and dials the
-      # service's loopback socket on the same port. For an https origin the
-      # inner pair is not validated: its security boundary is localhost, not
-      # PKI. Tailscale serve has no `http+insecure` scheme, so plain http is
-      # dialled as-is.
+      # The front terminates TLS and dials the loopback socket on the same port. An https
+      # origin is not validated: the boundary is localhost. `serve` has no http+insecure.
       backend =
         svc:
         "${if svc.scheme == "https" then "https+insecure" else svc.scheme}://127.0.0.1:${routePort svc}";

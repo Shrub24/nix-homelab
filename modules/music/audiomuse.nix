@@ -1,6 +1,5 @@
-# Music feature sibling: contributes to the `music` aspect
-# (flake.modules.nixos.music) as a deferredModule sibling; the host selects one
-# name and the module system merges every sibling file.
+# Music feature sibling: contributes to the `music` aspect (flake.modules.nixos.music) as a
+# deferredModule sibling; the host selects one name and the module system merges every sibling file.
 _: {
   flake.modules.nixos.music =
     {
@@ -15,23 +14,18 @@ _: {
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       serviceNetwork = (import ../../policy/globals.nix).serviceNetwork;
 
-      # One credential, one source: the role password lives in secretFiles.db.
-      # This service reads it to authenticate and the co-located cluster reads the
-      # same file and key to provision the role.
+      # One credential, one source: the role password lives in secretFiles.db. This service reads it
+      # to authenticate and the co-located cluster reads the same file and key to provision the role.
       dbSecretAvailable = cfg.secretFiles.db != null && builtins.pathExists cfg.secretFiles.db;
 
-      # The cluster this host runs, when it runs one. The declaration is probed
-      # through `options` before the value is read, because reading an undeclared
-      # option path raises NixOS' "did you mean" error rather than returning null.
+      # Probed through `options`: reading an undeclared option path throws instead of null.
       hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
       localPostgres = if hasLocalCluster then config.services.postgres.localEndpoint else null;
       navidromePort = 4533;
     in
     {
-      # The registration below extends `services.postgres`'s contract, so this
-      # service imports the module that declares it: a definition of an undeclared
-      # option is rejected even when its `mkIf` is false. Enablement stays with the
-      # `postgres` aspect, so importing the declarations provisions nothing.
+      # The registration extends `services.postgres`, so this imports the declaring module: an
+      # undeclared option is rejected even under a false `mkIf`.
       imports = [
         ../database/postgres/_consumer.nix
         ../backups/state-backups/_consumer.nix
@@ -126,10 +120,8 @@ _: {
       };
 
       config = lib.mkIf cfg.enable {
-        # Self-registration: the database, role, and credential this service needs,
-        # declared next to the service that uses them. The provider reads the same
-        # file and key to provision the role, so the password has one authoritative
-        # source instead of a hand-synced pair.
+        # Self-registration: the provider reads the same file and key to provision the role, so the
+        # password has one authoritative source.
         services.postgres.consumers.audiomuse = lib.mkIf (localPostgres != null) {
           database = "audiomuse";
           auth = "scram";

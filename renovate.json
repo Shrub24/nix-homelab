@@ -17,13 +17,38 @@
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "degoog release tag (tags only: upstream publishes no GitHub releases)",
+      "managerFilePatterns": ["/modules/knowledge/degoog\\.nix$/"],
+      "matchStrings": ["degoog-org/degoog/(?<currentValue>[0-9][^\"\\s]*)\""],
+      "depNameTemplate": "degoog-org/degoog",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "description": "bun2nix release tag: the generator behind pkgs/degoog/bun.nix",
+      "managerFilePatterns": ["/modules/flake/inputs\\.nix$/"],
+      "matchStrings": ["bun2nix\\.url = \"github:nix-community/bun2nix/(?<currentValue>[0-9][^\"\\s]*)\""],
+      "depNameTemplate": "nix-community/bun2nix",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
     }
   ],
   "packageRules": [
     {
       "matchManagers": ["custom.regex"],
+      "matchFileNames": ["policy/oci-images.nix"],
       "groupName": "OCI image refs",
       "commitMessageTopic": "OCI image refs"
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "matchFileNames": ["modules/knowledge/degoog.nix", "modules/flake/inputs.nix"],
+      "groupName": "degoog and bun2nix releases",
+      "commitMessageTopic": "degoog/bun2nix"
     }
   ]
 }

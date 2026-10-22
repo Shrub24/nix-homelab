@@ -1,0 +1,16 @@
+# Cache diagnostic on every push to main: does the cache serve the root the pin
+# would hold? It measures `.#packages.<system>.cache-root` — the same subject
+# retention reads — and reports a miss as a notice, never a failure. Substitution
+# is public, so no credential is held here.
+name: verify-cache
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    uses: Shrub24/nix-fleet/.github/workflows/verify-cache.yml@v3
+    with:
+      systems: x86_64-linux aarch64-linux

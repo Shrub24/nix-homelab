@@ -1,27 +1,20 @@
-# Validation only. Building checks against the fleet's builders is a separate
-# path with its own workflow (fleet-build.yml), which calls this one first so a
-# failing contract still gates a privileged publication run. Nothing here can
-# build fleet outputs on any event.
+# Validation: the fleet's reusable validator plus this repository's own contract
+# tests. Routine CI evaluates and formats; it never builds a fleet output — that
+# is fleet-build's dispatched path, and two publishers for one closure is how a
+# cache starts lying.
 #
-# The two derivations this job does build are its own tooling, not fleet
-# outputs: the formatter check, and the flake.nix freshness comparator (both
-# seconds, neither compiling a host closure). A whole-flake
-# `nix flake check --no-build` gate cannot be added here — evaluating this flake
-# realises degoog's unsubstitutable bun2nix import-from-derivation, so an
-# evaluation-only gate cannot pass on a cold store (D-082) — so the comparator
-# carries the evaluation coverage and the dispatched build carries the wiring
-# gate.
+# `fleet` runs nix-fleet's validate.yml at the pinned revision: formatting
+# (`checks.<system>.treefmt`), an evaluation of every output on both systems with
+# import-from-derivation disabled, and the generated flake/lock consistency check.
+# `repo` runs the contract tests, which no fleet workflow knows about.
 name: ci
 on:
   pull_request:
-    branches:
-      - main
+    types: [opened, synchronize, reopened, labeled]
   push:
-    branches-ignore:
-      - main
+    branches: [main]
   workflow_dispatch:
-  # Callable by fleet-build.yml, so validation gates the build without the
-  # steps being written twice.
+  # Callable by fleet-build.yml so validation gates the privileged build.
   workflow_call:
 concurrency:
   group: ci-${{ github.ref }}
@@ -29,16 +22,24 @@ concurrency:
 permissions:
   contents: read
 jobs:
-  validate:
+  fleet:
+    uses: Shrub24/nix-fleet/.github/workflows/validate.yml@v3
+    permissions:
+      contents: read
+    with:
+      # The pull request's head, not the merge ref: the candidate pipeline
+      # validates the same revision, and acceptance is bound to it.
+      revision: ${{ github.event.pull_request.head.sha || github.sha }}
+      generated_files: check
+  repo:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
+          # The tracked-source contract compares the Git index against the tree.
           fetch-depth: 0
-      - name: Install Nix for local validation
+      - name: Install Nix
         uses: nixbuild/nix-quick-install-action@v35
-      - name: Check cross-language formatting
-        run: nix develop --command treefmt --fail-on-change
-      - name: Run standard checks
+      - name: Run the repository's contract tests
         run: nix develop --command just checks all

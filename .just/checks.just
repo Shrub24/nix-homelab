@@ -2,10 +2,9 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 set no-cd
 
 # The local battery: the repository's own contract tests plus the generated
-# flake.nix freshness check. The full wiring gate is CI's build job, which builds
-# `.#checks` with the fleet's builders available — an evaluation-only
-# `nix flake check --no-build` cannot pass on a cold store, because evaluating the
-# flake realises degoog's unsubstitutable bun2nix import-from-derivation (D-082).
+# flake.nix freshness check. The wiring gate is CI: the fleet's validator
+# evaluates the whole flake with import-from-derivation disabled (D-110), and the
+# dispatched build realises `.#checks` on the fleet's builders.
 all:
   @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).check-flake-file"
   @./tests/check-secret-scope.sh

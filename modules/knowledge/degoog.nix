@@ -30,8 +30,12 @@
       options.services.degoog.secretFiles.host = secretHelpers.mkSecretFileOption "degoog-host-secrets";
 
       config = lib.mkMerge [
-        # Selection is enablement.
-        { services.degoog.enable = true; }
+        # Selection is enablement. The package comes from this repository: the
+        # upstream default generates its dependency expression during evaluation.
+        {
+          services.degoog.enable = true;
+          services.degoog.package = config.repo.packages.degoog;
+        }
 
         (lib.mkIf cfg.enable {
           assertions = [

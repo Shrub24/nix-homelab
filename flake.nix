@@ -6,6 +6,14 @@
   outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);
 
   inputs = {
+    bun2nix = {
+      url = "github:nix-community/bun2nix";
+      inputs = {
+        flake-parts.follows = "flake-parts";
+        nixpkgs.follows = "nixpkgs";
+        treefmt-nix.follows = "nix-fleet/treefmt-nix";
+      };
+    };
     degoog = {
       url = "github:degoog-org/degoog";
       inputs = {

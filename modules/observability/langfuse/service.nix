@@ -283,7 +283,12 @@
           usersConfig = { };
           extraUsersConfig = clickhouseUsers;
         };
-        systemd.services.clickhouse.restartTriggers = lib.optional hasSecretFile clickhouseUsers;
+        # ClickHouse reads its config through a stable path, so a serverConfig
+        # change leaves the unit identical and would never reach the server.
+        systemd.services.clickhouse.restartTriggers = [
+          config.environment.etc."clickhouse-server/config.d/100-nixos-module-config.yaml".source
+        ]
+        ++ lib.optional hasSecretFile clickhouseUsers;
         # Footgun: sops-install-secrets can leave /run/secrets/rendered
         # untraversable for non-root readers (0750 root:root observed in a live
         # deploy); clickhouse's loadConfiguration is the only such reader here.
@@ -466,6 +471,9 @@
           owner = "clickhouse";
           group = "clickhouse";
           mode = "0400";
+          # The digest is read once at startup, so a rotation reaches the running
+          # server only through this restart.
+          restartUnits = [ "clickhouse.service" ];
           content = ''
             <clickhouse>
               <langfuse_ch_password>${config.sops.placeholder.langfuse_clickhouse_password_sha256}</langfuse_ch_password>

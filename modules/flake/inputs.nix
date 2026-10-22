@@ -34,6 +34,12 @@
     deploy-rs.inputs.nixpkgs.follows = "nixpkgs";
     nix-index-database.url = "github:nix-community/nix-index-database";
     nix-index-database.inputs.nixpkgs.follows = "nixpkgs";
+    # degoog's dependency expression is generated from its Bun lockfile; the
+    # generator is ours so a degoog bump cannot change the artifact's shape.
+    bun2nix.url = "github:nix-community/bun2nix";
+    bun2nix.inputs.nixpkgs.follows = "nixpkgs";
+    bun2nix.inputs.flake-parts.follows = "flake-parts";
+    bun2nix.inputs.treefmt-nix.follows = "nix-fleet/treefmt-nix";
     traktor-m3u-sync.url = "github:Shrub24/traktor-m3u-sync";
     traktor-m3u-sync.inputs.nixpkgs.follows = "nixpkgs";
     traktor-m3u-sync.inputs.flake-parts.follows = "flake-parts";

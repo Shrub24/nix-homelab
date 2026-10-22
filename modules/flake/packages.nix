@@ -35,6 +35,10 @@ top@{ inputs, ... }:
         inherit (inputs.nix-fleet.packages.${system}) bifrost bifrost-voyage-plugin;
         niks3 = inputs.niks3.packages.${system}.niks3;
         sops-bootstrap = inputs.nix-fleet.packages.${system}.sops-bootstrap;
+        degoog = pkgs.callPackage ../../pkgs/degoog {
+          bun2nix = inputs.bun2nix.packages.${system}.default;
+          src = inputs.degoog;
+        };
         windows-dj-setup = pkgs.callPackage ../../pkgs/windows-dj-setup { };
         inherit (geopulsePkgs.callPackage ../../pkgs { })
           geopulse

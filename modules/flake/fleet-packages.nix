@@ -27,6 +27,10 @@
           notify
           bifrost-voyage-plugin
           ;
+        degoog = pkgs.callPackage ../../pkgs/degoog {
+          bun2nix = inputs.bun2nix.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          src = inputs.degoog;
+        };
       };
     };
 }

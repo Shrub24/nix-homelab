@@ -1,10 +1,12 @@
 # The fleet build plane, deliberately outside routine validation: dispatched by
 # hand, on main only, so no push or pull request can reach it.
 #
-# The build itself is nix-fleet's reusable coordinator: one job builds the
-# standard `.#checks` target for both systems, distributing to the fleet's
-# builders from the rendered `ci` profile (no builder coordinates live here)
-# and publishing through niks3 from both the builders and this runner.
+# The build is nix-fleet's reusable coordinator: one job builds the approved
+# selection for both systems, distributing to the fleet's builders from the
+# rendered `ci` profile and publishing through niks3 from both the builders and
+# this runner. The coordinator, the builder list, the cache coordinates and the
+# tailnet identity all resolve from the revision pinned below, so a bump moves
+# the machinery and the fleet facts together and this file holds no coordinate.
 name: fleet-build
 on:
   workflow_dispatch:
@@ -20,15 +22,10 @@ jobs:
     uses: ./.github/workflows/ci.yml
   build:
     needs: validate
-    # Main-only: a real uncached build on each architecture has to succeed
-    # before main-push builds are enabled, and the cache's OIDC claims are
-    # main-scoped, so a branch dispatch must not reach publication at all.
+    # Main-only: the cache's OIDC claims are main-scoped, so a branch dispatch
+    # must not reach publication at all.
     if: ${{ github.ref == 'refs/heads/main' }}
-    # Pinned to the same commit as the flake input: an older revision lacks the
-    # metadata artifact the caller renders. nix-fleet's `v1` tag predates the
-    # unified recipe, so the ref moves to a tag once one is cut at or after this
-    # commit — always together with the flake pin.
-    uses: Shrub24/nix-fleet/.github/workflows/build-push-cache.yml@e5d7441563f88cfecab703827c6186cadd62c9a9
+    uses: Shrub24/nix-fleet/.github/workflows/build-push-cache.yml@v3
     permissions:
       contents: read
       id-token: write
@@ -37,7 +34,9 @@ jobs:
       # foreign-architecture target cannot fall back to the runner's own store.
       runner_system: x86_64-linux
       systems: x86_64-linux aarch64-linux
-      builder_attr: ci
+      profile: ci
+      # `.#checks` includes `checks.packages`, so a build realises the retention
+      # root `pin-cache` later holds a name against.
       targets: .#checks
     secrets:
       BUILDER_SSH_KEY: ${{ secrets.FLEET_BUILDER_SSH_KEY }}

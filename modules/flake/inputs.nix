@@ -26,6 +26,9 @@
     };
     sops-nix.follows = "nix-fleet/sops-nix";
     niks3.follows = "nix-fleet/niks3";
+    # Formatting: the mode emits the `checks.<system>.treefmt` gate the fleet's
+    # validator builds, from the settings declared in `modules/flake/treefmt.nix`.
+    treefmt-nix.follows = "nix-fleet/treefmt-nix";
 
     # Deployment and host-recovery dependencies stay fleet-owned.
     disko.url = "github:nix-community/disko";
@@ -36,7 +39,10 @@
     nix-index-database.inputs.nixpkgs.follows = "nixpkgs";
     # degoog's dependency expression is generated from its Bun lockfile; the
     # generator is ours so a degoog bump cannot change the artifact's shape.
-    bun2nix.url = "github:nix-community/bun2nix";
+    # Pinned to a release, like degoog: Renovate's custom regex manager tracks
+    # the tag, and a bump that changes the generated output is then visible as a
+    # failing `check-degoog-bun-deps` rather than a silent divergence.
+    bun2nix.url = "github:nix-community/bun2nix/2.1.2";
     bun2nix.inputs.nixpkgs.follows = "nixpkgs";
     bun2nix.inputs.flake-parts.follows = "flake-parts";
     bun2nix.inputs.treefmt-nix.follows = "nix-fleet/treefmt-nix";

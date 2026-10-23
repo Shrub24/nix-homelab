@@ -13,7 +13,6 @@
           pkgs.prettier
           pkgs.shfmt
           pkgs.taplo
-          pkgs.treefmt
           pkgs.sops
           pkgs.age
           pkgs.nixos-anywhere
@@ -28,12 +27,13 @@
         ++ [
           config.packages.niks3
           config.packages.sops-bootstrap
+          # The generated formatter: `treefmt` in this shell formats with the
+          # configuration `modules/flake/treefmt.nix` declares, not a second file.
+          config.treefmt.build.wrapper
         ];
         shellHook = ''
           unset PYTHONPATH
         '';
       };
-
-      formatter = pkgs.nixfmt;
     };
 }

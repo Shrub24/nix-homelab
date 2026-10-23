@@ -1,0 +1,24 @@
+# Promotion: fast-forwards main to a validated candidate and then retains its
+# artefacts. Thin by design — the decision, the App token and the nested pin job
+# live in nix-fleet's promote-candidate.yml.
+#
+# `contents: write` is the fast-forward and `id-token: write` is the nested pin
+# job's cache token; `secrets: inherit` carries the environment-bound App key.
+name: promote
+on:
+  status:
+permissions:
+  contents: read
+jobs:
+  promote:
+    uses: Shrub24/nix-fleet/.github/workflows/promote-candidate.yml@v3
+    permissions:
+      contents: write
+      id-token: write
+    with:
+      # The retention roots this repository's approved build includes, and the
+      # aggregate they are read from — the same root verify-cache measures.
+      systems: x86_64-linux aarch64-linux
+      targets: .#packages
+      subject: cache-root
+    secrets: inherit

@@ -1,83 +1,20 @@
-# Scheduled package refresh: run this repository's registered package updaters,
-# evaluate the result, and open or update one pull request with the batch's
-# report.
+# Scheduled package refresh: a thin caller for nix-fleet's producer, which this
+# repository used to copy. Refreshing flake inputs, running the registered
+# package updaters and opening one proposal pull request are all the fleet's now;
+# only the cadence is local.
 #
-# This workflow refreshes pins; it does not accept them. Acceptance is the
-# validate gate the ci workflow runs on the pull request this creates — a green
-# refresh job is not a green candidate.
-#
-# flake.lock is deliberately not touched: the batch owns package pins, renovate
-# owns the lock.
+# The proposal is a source for the candidate pipeline, not an acceptance: the
+# pull request it opens is validated, built and cache-verified before promotion.
 name: package-updates-refresh
 on:
   schedule:
+    # Weekly: the build each proposal triggers is a full fleet build.
     - cron: "43 4 * * 1"
   workflow_dispatch:
 permissions:
-  contents: write
-  pull-requests: write
-concurrency:
-  group: package-updates-refresh
-  cancel-in-progress: true
+  contents: read
 jobs:
   refresh:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-      - name: Install Nix
-        uses: nixbuild/nix-quick-install-action@v35
-      - name: Refresh registered package pins
-        # The report files stay outside the checkout: the pull request must
-        # contain the updaters' pin changes and nothing else, and the change
-        # check below reads the working tree as-is.
-        run: |
-          nix run --no-write-lock-file .#update-packages -- \
-            --json "$RUNNER_TEMP/report.json" \
-            --markdown "$RUNNER_TEMP/pr-body.md"
-      - name: Evaluate the refreshed tree
-        # path: is deliberate: an updater may write files that are untracked in
-        # this checkout, and the Git-tree form (.#) would omit them.
-        #
-        # The evaluation is the registered package's own derivation, not a
-        # whole-flake check: evaluating this flake on a cold store realises
-        # degoog's unsubstitutable bun2nix import-from-derivation, so a
-        # whole-flake evaluation-only gate cannot pass here (D-082).
-        run: |
-          for system in x86_64-linux aarch64-linux; do
-            nix eval --no-write-lock-file "path:.#packages.$system.windows-dj-setup.drvPath" >/dev/null
-          done
-      - name: Check for changes
-        id: diff
-        run: |
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Show the refresh report
-        if: always()
-        run: |
-          cat "$RUNNER_TEMP/report.json" 2>/dev/null || echo "no report written"
-      - name: Upload the refresh report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: package-updates-report
-          path: |
-            ${{ runner.temp }}/report.json
-            ${{ runner.temp }}/pr-body.md
-          if-no-files-found: ignore
-      - name: Create or update pull request
-        if: steps.diff.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v8
-        with:
-          branch: automation/package-updates
-          commit-message: "chore(deps): refresh registered package pins"
-          title: "chore(deps): refresh registered package pins"
-          body-path: ${{ runner.temp }}/pr-body.md
-          # Both labels must already exist in the repository: adding a label the
-          # repository does not have returns 404 and fails this step.
-          labels: |
-            dependencies
-            automated
+    uses: Shrub24/nix-fleet/.github/workflows/package-updates-refresh.yml@v3
+    permissions:
+      contents: read

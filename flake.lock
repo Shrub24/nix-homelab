@@ -24,6 +24,7 @@
       },
       "original": {
         "owner": "nix-community",
+        "ref": "2.1.2",
         "repo": "bun2nix",
         "type": "github"
       }
@@ -72,6 +73,7 @@
       },
       "original": {
         "owner": "degoog-org",
+        "ref": "1.1.0",
         "repo": "degoog",
         "type": "github"
       }
@@ -382,7 +384,11 @@
           "nix-fleet",
           "sops-nix"
         ],
-        "traktor-m3u-sync": "traktor-m3u-sync"
+        "traktor-m3u-sync": "traktor-m3u-sync",
+        "treefmt-nix": [
+          "nix-fleet",
+          "treefmt-nix"
+        ]
       }
     },
     "sops-nix": {

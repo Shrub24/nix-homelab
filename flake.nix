@@ -7,7 +7,7 @@
 
   inputs = {
     bun2nix = {
-      url = "github:nix-community/bun2nix";
+      url = "github:nix-community/bun2nix/2.1.2";
       inputs = {
         flake-parts.follows = "flake-parts";
         nixpkgs.follows = "nixpkgs";
@@ -15,7 +15,7 @@
       };
     };
     degoog = {
-      url = "github:degoog-org/degoog";
+      url = "github:degoog-org/degoog/1.1.0";
       inputs = {
         flake-parts.follows = "flake-parts";
         nixpkgs.follows = "nixpkgs";
@@ -51,5 +51,6 @@
         treefmt-nix.follows = "nix-fleet/treefmt-nix";
       };
     };
+    treefmt-nix.follows = "nix-fleet/treefmt-nix";
   };
 }

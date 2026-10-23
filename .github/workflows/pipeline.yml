@@ -1,0 +1,24 @@
+# The candidate pipeline's entry point, defined on the default branch so a pull
+# request cannot change what runs it. It routes automation proposals, human
+# revisions and pushes to main; the orchestration and every decision belong to
+# nix-fleet's pipeline.yml.
+#
+# The permission union and `secrets: inherit` are the caller's obligation: GitHub
+# validates every job in the called workflow against this grant, and a narrower
+# one fails the call at startup with no jobs.
+name: pipeline
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+permissions:
+  contents: read
+jobs:
+  pipeline:
+    uses: Shrub24/nix-fleet/.github/workflows/pipeline.yml@v3
+    permissions:
+      contents: write
+      statuses: write
+      pull-requests: write
+      id-token: write
+    secrets: inherit

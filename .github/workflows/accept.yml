@@ -1,0 +1,14 @@
+# Acceptance: records the accepted revision when the `accept-update` label is
+# applied, and posts it as a failure when it is revoked. The marker is bound to
+# the head it was applied to, so a later push invalidates it.
+name: accept-update
+on:
+  pull_request_target:
+    types: [labeled, unlabeled]
+permissions:
+  statuses: write
+jobs:
+  accept:
+    uses: Shrub24/nix-fleet/.github/workflows/accept.yml@v3
+    permissions:
+      statuses: write

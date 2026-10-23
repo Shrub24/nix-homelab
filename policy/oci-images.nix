@@ -11,13 +11,13 @@
 
   karakeepWeb = "ghcr.io/karakeep-app/karakeep:0.33.2@sha256:b069e4307dec06ea06d16989c6861c30a1ff208568be44ed5fb5d422cd3e950c";
 
-  karakeepChrome = "ghcr.io/karakeep-app/karakeep-chrome:151.0.7922.47-r1@sha256:5b19bbb160e9ff60681a3abd97e1c4ec9f64212301410de658c3900ab7ef31e7";
+  karakeepChrome = "ghcr.io/karakeep-app/karakeep-chrome:156.0.8078.47-r1@sha256:4ad61127638dd27bfe685222787c5780dd1d083d23a7658c39af657775814c44";
 
   karakeepMeilisearch = "getmeili/meilisearch:v1.49.0@sha256:bdc7d7e7939911c40d88d6bcd01f9c72c81f7293135916d48bce241569f721bd";
 
   audiomuse = "ghcr.io/neptunehub/audiomuse-ai:3.5.2@sha256:726d30981a601cb4556c6caece162ac15df247a7e7f09e36b64e8afd2f8f0b60";
 
-  redis7Alpine = "docker.io/library/redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99";
+  redis7Alpine = "docker.io/library/redis:8-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0";
 
   guacd = "docker.io/guacamole/guacd:1.6.0@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f";
 
@@ -31,7 +31,7 @@
 
   docsMcpServer = "ghcr.io/arabold/docs-mcp-server:3.1.0@sha256:5bf22439746680e064db7cd1979fc192f9733f312ab9ce1c98ea0e7aa453a1f7";
 
-  hindsight = "ghcr.io/vectorize-io/hindsight:0.10.0-slim@sha256:f6ce417777a2034a71e25df0093b28092f689a4f991eca4e2954c8b6aec2fad1";
+  hindsight = "ghcr.io/vectorize-io/hindsight:1.1.0-slim@sha256:fbc37d194bce007b6cce2fd9f66cd7f8c050bd18b80e662090a92835d9cb191d";
 
   tududi = "docker.io/chrisvel/tududi:1.9.1@sha256:e3496f2d68c6cfb69e85bd779ae30da2f3e81b78a8b0e7595e6dc97ef9cb71ef";
 

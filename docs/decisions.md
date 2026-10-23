@@ -3075,3 +3075,19 @@ There is **no consumer registry**, which is the one place this deliberately diff
 - Leaving the permission fix and restart trigger in the consumer and adding only an assertion was rejected as a half-measure: the assertion fixes the silent failure, but the substrate would still be edited in a consumer's file.
 
 **Consequences:** `services.clickhouse` is now enabled by aspect selection, so a host that runs a consumer without the substrate fails evaluation by name instead of starting with a fragment for a server nobody enabled. The `ExecStartPre` chmod now carries a `-` prefix, because the substrate cannot know whether any consumer has rendered a template yet. The scaffold contract's package-provenance pin moved from the Langfuse module to `modules/database/clickhouse.nix`. Langfuse's users fragment moved from nixpkgs' `extraUsersConfig` (rendered as `users.d/200-nixos-module-extra-config.xml`) to an explicit `users.d/250-langfuse.xml`, so both consumers are now shaped alike — a filename change only; the XML is identical.
+
+## D-114: Equal source trees must yield reusable host outputs
+
+**Status:** Accepted; live PR/main reuse pending.
+
+**Evidence:** Confirmed by the fleet-controller reuse requirement and the host module's explicit dependency on `self.rev`/`self.dirtyRev`.
+
+**Supersedes:** Only D-057's revision-stamping consequence. Its Git-tree source boundary and index-integrity guard remain unchanged.
+
+**Context:** A merge commit can have exactly the built PR's source tree but a different commit ID. Stamping that ID into `system.configurationRevision` changes the host derivation and prevents equal-tree build reuse without changing configuration behavior.
+
+**Decision:** Stop stamping the flake revision into host outputs. Keep `/etc/nixos-source` pointing at the tracked `self.outPath`, so hosts retain the evaluated configuration without importing VCS metadata or plaintext working-directory files. Use nixbot's build metadata for commit attribution.
+
+**Rejected:** Keeping commit-dependent outputs and assuming a matching tree guarantees reuse, or dropping the tracked source copy to hide the dependency. The source copy is useful provenance and is already content-addressed.
+
+**Consequences:** `system.configurationRevision` is no longer supplied by this repository. Validate equal-tree derivations independently of the later observed PR/main reuse test; neither result substitutes for the other.

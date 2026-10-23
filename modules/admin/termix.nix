@@ -1,7 +1,5 @@
-# Termix deployment aspect: selection imports the leaf and owns the shared
-# composition (OIDC endpoint wiring, state-backup registration,
-# dedicated Tailscale serve unit). It consumes only public contracts — the
-# canonical OIDC client record and the canonical web-policy route.
+# Termix: selection imports the leaf and owns the shared composition (OIDC wiring, backup
+# registration, Tailscale serve). It consumes only public contracts.
 _: {
   flake.modules.nixos.termix =
     {
@@ -83,9 +81,8 @@ _: {
             serviceConfig = {
               Type = "oneshot";
               RemainAfterExit = true;
-              # Recover if tailscaled is slow to reach Running; stop after 3
-              # tries so a genuinely logged-out node fails loudly instead of
-              # spinning.
+              # Recover if tailscaled is slow to reach Running; stop after 3 tries so a genuinely
+              # logged-out node fails loudly instead of spinning.
               Restart = "on-failure";
               RestartSec = "10s";
               ExecStart = ''

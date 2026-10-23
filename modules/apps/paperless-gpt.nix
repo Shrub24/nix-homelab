@@ -15,7 +15,7 @@ _: {
       hasDocling = cfg.docling.enable;
     in
     {
-      imports = [ ../../backups/state-backups/_consumer.nix ];
+      imports = [ ../backups/state-backups/_consumer.nix ];
       options.services.paperless.paperless-gpt = {
         docling = {
           enable = lib.mkEnableOption "the docling-serve OCR service shared across paperless-gpt instances";
@@ -34,7 +34,7 @@ _: {
         };
 
         secretFiles.host =
-          (import ../../../lib/secrets.nix { inherit lib; }).mkSecretFileOption
+          (import ../../lib/secrets.nix { inherit lib; }).mkSecretFileOption
             "paperless-gpt-host-secrets";
 
         instances = lib.mkOption {
@@ -88,7 +88,7 @@ _: {
 
       config = lib.mkIf (hasDocling || enabledInstances != { }) {
         sops.secrets =
-          (import ../../../lib/secrets.nix { inherit lib; }).mkSecretsFromMap cfg.secretFiles.host
+          (import ../../lib/secrets.nix { inherit lib; }).mkSecretsFromMap cfg.secretFiles.host
             {
               paperless_gpt_api_token = {
                 key = "paperless-gpt/api_token";

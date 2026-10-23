@@ -1,26 +1,5 @@
-# Victoria stack: the fleet's metrics, logs and traces store with its Grafana
-# front end, placed on one host by aspect selection — the aspect has no enable
-# gate, so importing it selects it.
-#
-# This file owns the store and its reader. What writes to it is the fleet
-# collector contract's business; the interim producer is the node exporter the
-# observability-agent aspect enables, plus the scrape job rendered below.
-#
-# Every listener port closes over its own web-policy declaration: the three
-# ingest endpoints are private tailscale-only routes, the Grafana route is
-# published behind Cloudflare Access, so a provider move is one policy edit and
-# a port cannot drift from what a consumer dials.
-#
-# Grafana reads a provisional surface that Nix owns end to end: datasources, a
-# small upstream dashboard collection, and — opt-in, because it needs the host's
-# OIDC secret file and the canonical oauth2 client to exist first — Kanidm
-# OIDC sign-in. Until it is opted in, Cloudflare Access stays the whole gate and
-# Grafana serves read-only anonymous viewers.
-#
-# Data lives in the modules' StateDirectory under /var/lib, on the host's root
-# filesystem: these units run as dynamic users under ProtectSystem=full, so a
-# relocation to a bulk mount is a bind mount in front of that state directory
-# rather than a storage-path flag. Retention is the volume control.
+# Metrics, logs and traces store with its Grafana front end. Ports close over their
+# web-policy declarations; state lives on the root filesystem, bounded by retention.
 { inputs, ... }:
 {
   flake.modules.nixos.victoria =
@@ -47,40 +26,17 @@
 
       listenAddress = port: "${cfg.listenAddress}:${toString port}";
 
-      # Per-client endpoints come from the intrinsic OIDC contract, so no
-      # provider path is restated here; the client resolves only once the
-      # identity policy enables it.
+      # Per-client OIDC endpoints come from the intrinsic contract and resolve once identity enables the client.
       oidcClient = config.services.identity.oidc.clients.grafana or null;
 
-      # Datasource identity is declared once, here: the dashboards below address
-      # these uids, and a provisioned dashboard that cannot resolve its
-      # datasource is worse than no dashboard at all.
+      # Datasource uids are declared once: dashboards address them, and an unresolvable one fails provisioning.
       prometheusUid = "victoriametrics";
       metricsqlUid = "victoriametrics-metricsql";
       logsUid = "victorialogs";
       tracesUid = "victoriatraces";
 
-      # Upstream dashboards pinned to the releases that match the versions
-      # nixpkgs ships (VictoriaMetrics 1.152.0, VictoriaLogs 1.52.0,
-      # VictoriaTraces 0.11.1); the node board is grafana.com 1860 revision 45.
-      # A board a flake input already ships is read from the input (`file`)
-      # rather than fetched, so it moves with the pin that ships the server it
-      # describes: the niks3 board is `inputs.niks3.dashboards.niks3`.
-      #
-      # Every board is rewritten on the way in so that it addresses *our*
-      # datasources, never the ones its author had:
-      #   - each panel's `datasource` gets both halves bound to the board's own
-      #     store: the uid (upstream boards hardcode one — the logs board says
-      #     "victoriametrics" throughout) *and* the type (upstream marks every
-      #     panel `prometheus`, including the logs and traces ones, because that
-      #     is the import placeholder they expect to be replaced);
-      #   - each board's datasource *template variable* gets that uid as its
-      #     selection, so the `$ds` / `${ds_prometheus}` references inside panels
-      #     resolve there (the node board's variable is deliberately left named
-      #     as upstream wrote it — it is a variable, not a placeholder);
-      #   - grafana.com import placeholders (`$DS_PROMETHEUS`, `${DS_PROMETHEUS}`,
-      #     the bare name) are substituted, since the file provider does not;
-      #   - import metadata is dropped and each board gets a stable uid of its own.
+      # Boards are rewritten to address this store's datasources: uid and type bound, template
+      # variables selected, grafana.com placeholders substituted, import metadata dropped.
       dashboardSources = [
         {
           slug = "node-exporter-full";
@@ -120,18 +76,8 @@
           datasourceUid = prometheusUid;
           datasourceType = "prometheus";
           file = inputs.niks3.dashboards.niks3;
-          # Written for an `instance` label; this fleet's scrape job labels every
-          # series with the canonical host ID instead (`host`), so the variable,
-          # its query, every selector and every aggregation move to that name.
-          #
-          # The `Last GC` panel subtracts a comparison from the clock
-          # (`time() - (gauge > 0)`), which on a server that has not collected yet
-          # renders the epoch age — about 55 years — while the panel's own
-          # description says it should read "none yet". A 1.15.0 server reports
-          # the gauge as 0 rather than omitting it, so the mask has to divide:
-          # the corrected form yields no data until a run completes, and the age
-          # itself afterwards. Exact-string, so an upstream rewrite simply stops
-          # matching instead of corrupting the query.
+          # Labelled by the canonical `host`, not `instance`, so the variable and every query move with it.
+          # The `Last GC` mask divides: a 1.15.0 server reports 0 before any GC, and subtracting renders the epoch.
           extraJq = ''
             | (.templating.list[]? | select(.name == "instance")) |= (.name = "host" | .label = "host")
             | walk(if type == "string" then gsub("\\binstance\\b"; "host") else . end)
@@ -151,10 +97,7 @@
           datasourceType = "prometheus";
           url = "https://grafana.com/api/dashboards/24178/revisions/7/download";
           hash = "sha256-gJ3x0LeXxPJ1dhUf7MPNu4E4A8h2Bp8WUAQBaT0FxSg=";
-          # Written for the tailscale-mixin label set: its `cluster` dimension and
-          # `tailscale_machine` label do not exist in this fleet, whose scrape job
-          # labels every series with `host`. Both are rewritten here, not at the
-          # producer, so the store keeps the one canonical machine label.
+          # Rewritten to this fleet's `host` label; the tailscale-mixin dimensions do not exist here.
           extraJq = ''
             | del(.templating.list[]? | select(.name == "cluster"))
             | walk(if type == "string" then gsub("cluster=\"\\$cluster\"\\s*,?\\s*"; "") | gsub("tailscale_machine"; "host") else . end)
@@ -163,8 +106,7 @@
         }
       ];
 
-      # Dashboard folders are provisioned as one file provider each, so a board's
-      # folder is the directory it is staged into; `dir` is the staging name.
+      # A folder is the directory a board is staged into.
       dashboardFolders = [
         {
           title = "Fleet";
@@ -180,8 +122,7 @@
         }
       ];
 
-      # Boards authored in this repository. They are copied verbatim: they already
-      # address the store's datasource uid and carry their own stable uid.
+      # Authored boards are copied verbatim: they already address this store's datasource.
       authoredDashboards = [
         {
           slug = "fleet-overview";
@@ -321,10 +262,7 @@
           listenAddress = listenAddress metricsPort;
           retentionPeriod = cfg.metrics.retentionPeriod;
 
-          # Scrape the store's own endpoints, so the pipeline reports on itself
-          # into the store it writes. Every producer host pushes its own metrics
-          # through the telemetry aspect's collector instead — the store never
-          # reaches into another host.
+          # The store scrapes its own endpoints; producers push theirs through the telemetry collector.
           prometheusConfig = {
             global.scrape_interval = cfg.scrapeInterval;
             scrape_configs = [
@@ -347,8 +285,7 @@
         services.victorialogs = {
           enable = true;
           listenAddress = listenAddress logsPort;
-          # VictoriaLogs exposes no retention option in the module, and its
-          # 7-day default is too short for the store to answer an investigation.
+          # VictoriaLogs' 7-day default is too short to investigate with.
           extraOptions = [ "-retentionPeriod=${cfg.logs.retentionPeriod}" ];
         };
 
@@ -361,10 +298,7 @@
         services.grafana = {
           enable = true;
 
-          # Datasources are declared here rather than clicked into a database:
-          # the Victoria plugins, the plain Prometheus type upstream dashboards
-          # and the drilldown app expect, and the built-in Jaeger datasource
-          # against VictoriaTraces' Jaeger-compatible API.
+          # Datasources are declared here: the Victoria plugins, the Prometheus type upstream boards expect, and the built-in Jaeger datasource.
           declarativePlugins = [
             pkgs.grafanaPlugins.victoriametrics-metrics-datasource
             pkgs.grafanaPlugins.victoriametrics-logs-datasource
@@ -376,14 +310,11 @@
             server = {
               http_addr = cfg.listenAddress;
               http_port = route.upstreamPort;
-              # The edge terminates TLS and Access. Public identity stays
-              # literal so links and redirects never leave it.
+              # Public identity stays literal, so links and redirects never leave it.
               domain = route.publicHost;
               root_url = route.publicUrl;
             };
-            # Without OIDC, Cloudflare Access is the whole gate and Grafana
-            # serves read-only anonymous viewers. With it, every request carries
-            # a real Kanidm identity and the role comes from group membership.
+            # Without OIDC, Access is the gate and anonymous viewers are read-only.
             "auth.anonymous" = {
               enabled = !cfg.oidc.enable;
               org_role = "Viewer";
@@ -399,19 +330,13 @@
               api_url = oidcClient.userinfoUrl;
               use_pkce = true;
               allow_sign_up = true;
-              # Kanidm releases group names through the `groups` claim; the
-              # strict role leaves every non-admin without a role, so the
-              # provider refuses the sign-in even if a request reaches the
-              # origin directly over the tailnet.
+              # The strict role refuses sign-in for non-admins even when reached directly over the tailnet.
               groups_attribute_path = "groups";
               role_attribute_path = "contains(groups, 'admins') && 'Admin' || ''";
               role_attribute_strict = true;
             };
             security = {
-              # Grafana's own cookie and datasource encryption material. With
-              # anonymous viewers there is nothing to protect, so the documented
-              # pre-26.05 default is stated deliberately; with OIDC sign-in the
-              # value comes from the host's secret file.
+              # Anonymous viewers have nothing to protect; with OIDC the value comes from the host's secret file.
               secret_key =
                 if cfg.oidc.enable then
                   "$__file{/run/secrets/victoria_grafana_secret_key}"

@@ -39,9 +39,8 @@ _: {
       };
 
       config = lib.mkIf (cfg.secretFiles.host != null) {
-        # Fleet-stable identity: download state moves between hosts, so the
-        # numeric UID/GID is pinned instead of left to per-host dynamic
-        # allocation (NixOS descends from 999, host-dependent).
+        # Fleet-stable identity: download state moves between hosts, so the numeric UID/GID is pinned
+        # instead of left to per-host dynamic allocation (NixOS descends from 999, host-dependent).
         users.users.slskd.uid = lib.mkDefault 975;
         users.groups.slskd.gid = lib.mkDefault 975;
 

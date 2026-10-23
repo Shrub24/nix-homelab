@@ -1,6 +1,5 @@
-# Runtime sibling of the `termix` aspect: the two halves cross-reference option
-# values (OIDC client wiring reads the sops template defined here), so they stay
-# separate files contributing to the same aspect name.
+# Runtime sibling of the termix aspect: the halves cross-reference option values, so they
+# stay separate files.
 _: {
   flake.modules.nixos.termix =
     {

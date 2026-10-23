@@ -1,8 +1,5 @@
-# tududi deployment aspect: selection supplies enablement; the image comes from
-# the image policy, the loopback port and public origin from the canonical
-# `tududi` route, the OpenID client from the identity contract, and the app's
-# own secrets from its service file. The container publishes to loopback only,
-# so the edge reaches it through the `direct` exposure mode.
+# tududi: image from policy, port and origin from the canonical route, OpenID from the
+# identity contract. Loopback only, so the edge reaches it through `direct`.
 _: {
   flake.modules.nixos.tududi =
     {
@@ -157,10 +154,8 @@ _: {
             };
           };
 
-          # The live database runs in WAL mode, so it is exported through sqlite3's
-          # backup API. The uploads and the app's own pre-migration copies are static
-          # files and are captured as they stand. `-readonly` keeps a missing database
-          # from being created empty, which the app would then adopt as its own state.
+          # WAL mode, so the database is exported through sqlite3's backup API; uploads are static
+          # and captured as they stand. `-readonly` stops a missing database being created empty.
           services.state-backups.services.tududi = {
             enable = true;
             mode = "export";

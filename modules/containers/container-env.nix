@@ -1,31 +1,5 @@
-# Container environment revisions: one all-host invariant.
-#
-# `virtualisation.oci-containers` hands `podman run` a *stable* env-file path -- a sops
-# template renders to /run/secrets/rendered/<name>, a secret used directly sits at
-# /run/secrets/<name> -- and that file's content never appears in the unit definition.
-# A changed environment therefore leaves the unit byte-identical: systemd does not
-# restart it, and the running container keeps the variables it was created with. The
-# failure is silent -- a deploy reports success while the container serves the old
-# environment. (oci-melb-1, 2026-10-01: a deploy that added an OIDC variable left
-# Langfuse running the container it had created eight hours earlier, so the fix stayed
-# inert until something unrelated changed the unit. Only a unit change recreates the
-# container: the generated start script is `podman run --replace` behind a
-# `podman rm -f` pre-start, so a restart is enough once it happens.
-# `restartTriggers = [ environmentFile ]` cannot help -- the path is constant, only
-# what it points at changes.)
-#
-# This contributor derives a revision per container from everything its environment
-# depends on, so the unit differs exactly when the environment would:
-#
-#   * the env-file paths themselves, so a container re-pointed at another file moves;
-#   * every sops template's content -- the variable set, the part evaluation can see;
-#   * the ciphertext of each sops file whose secrets a template interpolates, and of an
-#     env file that is itself a secret. Values are decrypted at activation and never
-#     reachable from evaluation, but any edit re-encrypts the file, so a rotated value
-#     recreates the container too.
-#
-# Selected by every host that runs containers; a host without them gets an empty
-# service set.
+# The env path is stable and its content never enters the unit, so a changed environment
+# leaves it byte-identical and the container keeps old variables, silently. Derive a revision.
 { ... }:
 {
   flake.modules.nixos.container-env =
@@ -35,10 +9,8 @@
       templates = config.sops.templates;
       secrets = config.sops.secrets;
 
-      # sops-nix renders `${config.sops.placeholder.<name>}` into a template as
-      # `<SOPS:sha256(<secret name>):PLACEHOLDER>`, which is how the activation-time
-      # renderer finds the value to substitute. That marker is the only thing in a
-      # template naming its secrets, so the mapping runs back through the hash.
+      # Templates name their secrets only through `<SOPS:sha256(<name>):PLACEHOLDER>`, so
+      # the mapping runs back through that hash.
       secretNameByHash = lib.foldl' (
         acc: name:
         acc

@@ -1,5 +1,4 @@
 {
-  lib,
   fetchFromGitHub,
 }:
 # The GeoPulse release pin. The backend and the frontend build from this one

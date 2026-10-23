@@ -1,7 +1,5 @@
-# Actual Budget deployment aspect: selection supplies enablement; the listener
-# port and public URL come from the canonical `actual` route, the OpenID client
-# from the identity contract, and the client secret from the host-scoped OIDC
-# source. A static account keeps the state path owned on its own mount.
+# Actual Budget: port and public URL from the canonical route, OpenID client from the
+# identity contract, secret from the host-scoped OIDC source.
 _: {
   flake.modules.nixos.actual =
     {
@@ -93,9 +91,8 @@ _: {
             };
           };
 
-          # account.sqlite is a live database: it is exported with sqlite's online
-          # backup API, never copied raw. The per-budget user files are captured
-          # as they are on disk.
+          # account.sqlite is a live database: it is exported with sqlite's online backup API, never
+          # copied raw. The per-budget user files are captured as they are on disk.
           services.state-backups.services.actual = {
             enable = true;
             mode = "export";

@@ -1,6 +1,4 @@
-# Host-private NixOS composition for home-forge: ./default.nix imports it as the
-# record's deferred composition, and the underscore prefix keeps it (and every
-# sibling fragment) out of discovery.
+# Host-private composition; the underscore prefix keeps it out of discovery.
 {
   config,
   lib,
@@ -82,9 +80,7 @@ in
     };
   };
 
-  # AudioMuse's database is co-located with its compute: the container reaches
-  # this cluster over the Podman bridge, so no cross-host transport is involved
-  # and both sides read the password from the music secrets file.
+  # AudioMuse's database is co-located: the container reaches it over the Podman bridge.
   services.postgres.instances.forge = {
     port = 5432;
     dataDir = "/srv/data/postgres";
@@ -110,35 +106,25 @@ in
 
   services.hindsight = {
     secretFiles.host = ../../../secrets/services/hindsight.yaml;
-    # LLM calls go to the fleet gateway (module default: this host's gateway
-    # listener, since bifrost runs here; the fleet text alias names the model).
-    # The per-operation knobs (llm.retainModel / reflectModel / consolidationModel)
-    # stay null until the gateway aliases exist.
-    # Embeddings dial Voyage directly (module default): the voyage/ prefix
-    # gives hindsight's litellm-sdk client input_type query/document per side.
+    # Defaults: LLM dials this host's gateway (bifrost runs here); embeddings dial Voyage
+    # directly, where the voyage/ prefix sets input_type per side.
   };
 
-  # Grafana sign-in through the fleet's Kanidm provider (admins only). The
-  # client's secret lives in this host's oidc file — the provider reads it from
-  # the file of the host that runs the client.
+  # Grafana SSO via Kanidm (admins only); the secret lives in this host's oidc file.
   services.victoria = {
     oidc.enable = true;
     secretFiles.oidc = ../../../secrets/hosts/home-forge/oidc.yaml;
   };
 
-  # LLM observability backends colocated with the telemetry stores. Langfuse's
-  # OIDC client secret lives in this host's oidc file — the provider reads it
-  # from the file of the host that runs the client.
+  # LLM observability backends; their OIDC secrets live in this host's oidc file.
   services.langfuse = {
     secretFiles.host = ../../../secrets/services/langfuse.yaml;
     secretFiles.oidc = ../../../secrets/hosts/home-forge/oidc.yaml;
     oidc.enable = config.repo.web.catalog.langfuse.access.oidc.enabled;
   };
 
-  # The gateway's provider credentials are service-scoped and shared with the
-  # oci-melb-1 instance: one encrypted file that both hosts may read, so the
-  # provider keys are not duplicated per host. Each host runs its own gateway
-  # process with its own state; no gateway dials another.
+  # Provider credentials are service-scoped: both gateway hosts read one encrypted file.
+  # Each host runs its own process and state; no gateway dials another.
   services.bifrost.secretFiles.host = ../../../secrets/services/bifrost.yaml;
 
   services.latitude = {
@@ -148,12 +134,8 @@ in
     smtp.from = "latitude@send.shrublab.xyz";
   };
 
-  # Gateway role of the host-local telemetry contract, colocated with the
-  # stores and the LLM-observability backends so every export leg is a loopback
-  # dial. Producers elsewhere in the fleet (and instrumented workstation
-  # clients) push OTLP to this host's canonical tailnet endpoint; the
-  # network-facing listener binds the tailnet address explicitly. Admission is
-  # explicit: a signal with no admission has no route.
+  # Gateway role: producers push OTLP to this host's tailnet endpoint, so every export leg is
+  # a loopback dial. Admission is explicit — a signal with no admission has no route.
   services.telemetry.otlp = {
     signals = [
       "traces"
@@ -162,13 +144,8 @@ in
     ingress.host = "100.126.123.74";
   };
 
-  # The AI lane: a second, explicitly selected OTLP input for agent harnesses
-  # and future AI producers. The general ingress above reaches the trace store
-  # only, so the LLM-observability backends are reachable exclusively from this
-  # listener. Route pipelines inherit nothing, hence VictoriaTraces is named
-  # explicitly: an enrolled session belongs in the fleet store too. This is
-  # routing separation only — the listener carries no authentication, and a
-  # tailnet peer that can reach it can publish to both backends.
+  # AI lane: route pipelines inherit nothing, hence VictoriaTraces is named explicitly.
+  # Routing separation only — the listener authenticates nothing.
   services.telemetry.routes.ai = {
     signals = [
       "traces"

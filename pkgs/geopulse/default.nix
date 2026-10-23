@@ -31,10 +31,8 @@ let
     '';
   };
 in
-# The coupled release, and the family's registered owner: the package-update
-# batch keys a package's write set on the registered output name (`pkgs/<name>`),
-# so the release is published as `geopulse` and the two halves stay derived
-# outputs of the same pin.
+# The registered owner: the batch keys a package's write set on the registered output name,
+# so the release is `geopulse` and both halves stay derived from one pin.
 symlinkJoin {
   pname = "geopulse";
   inherit version;

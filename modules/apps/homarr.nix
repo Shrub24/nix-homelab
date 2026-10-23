@@ -13,13 +13,8 @@ _: {
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       route = config.repo.web.catalog.homarr or null;
       oidcClient = config.services.identity.oidc.clients.homarr or null;
-      # Whether this route is served is a policy posture, not progress the module
-      # tracks: the same `publish` field the edge filter reads decides the
-      # browser's origin and whether local credentials remain reachable. A
-      # withheld route is a tailnet-only instance, so it keeps the private
-      # origin and the credentials provider; a published one is public and
-      # OIDC-only. Re-asserting `publish = false` in policy is therefore also the
-      # way back in if identity breaks (D-104).
+      # `publish` is a posture the module reads, not progress it tracks: withheld keeps the
+      # private origin and credentials login, published is OIDC-only.
       published = if route == null then true else route.publish;
 
       dataDir = "/srv/data/homarr";
@@ -75,10 +70,7 @@ _: {
             })
           ];
 
-          # BASE_URL follows the route's posture: the private Tailscale Serve
-          # origin while it is withheld, Homarr's public origin once published.
-          # Leave NEXTAUTH_URL unset so Auth.js derives its OIDC callback from
-          # forwarded headers.
+          # NEXTAUTH_URL stays unset so Auth.js derives the callback from forwarded headers.
           sops.templates."homarr.environment" = {
             owner = "root";
             group = "root";
@@ -93,33 +85,18 @@ _: {
                 else
                   "https://${route.endpoint.host}:${toString route.endpoint.port}"
               }
-              # Local credentials exist only while the route is withheld: they are
-              # how the first administrator is created on a private instance. A
-              # published instance authenticates through Kanidm alone.
+              # Only while withheld: they create the first administrator.
               AUTH_PROVIDERS=${if published then "oidc" else "credentials,oidc"}
               AUTH_OIDC_ISSUER=${oidcClient.issuerUrl}
               AUTH_OIDC_CLIENT_ID=${oidcClient.clientId}
               AUTH_OIDC_CLIENT_NAME=Kanidm
               AUTH_OIDC_CLIENT_SECRET=${config.sops.placeholder.homarr_oidc_client_secret}
-              # Unquoted on purpose. This file is consumed as a container env
-              # file, whose parser keeps quotes as part of the value, so a quoted
-              # list reaches Kanidm as `scope="openid email profile"` and is
-              # rejected with invalid_scope: the leading and trailing quote fail
-              # its per-token scope regex.
-              #
-              # `groups_name` asks Kanidm for the built-in groups scope in its
-              # name-only form. Kanidm always emits that claim under the key
-              # `groups`, with the values depending on which variant was
-              # requested — `groups` gives uuid+spn pairs, `groups_name` gives the
-              # bare names Homarr matches on.
+              # Unquoted on purpose: the env-file parser keeps quotes in the value, and a quoted
+              # list fails Kanidm's scope regex as invalid_scope. groups_name yields bare names.
               AUTH_OIDC_SCOPE_OVERWRITE=openid email profile groups_name
               AUTH_OIDC_GROUPS_ATTRIBUTE=groups
-              # false: memberships follow the claim. With local management on,
-              # Homarr ignores the claim and an idp-side admin group would never
-              # grant anything (D-103). Sync is authoritative in both directions:
-              # an OIDC user is removed from Homarr groups the claim does not name,
-              # so every group an OIDC user should keep must exist in Kanidm under
-              # the same name.
+              # false: memberships follow the claim. Sync is authoritative both ways, so every
+              # group an OIDC user keeps must exist in Kanidm under the same name.
               AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false
               AUTH_OIDC_ENABLE_DANGEROUS_CREDENTIALS_LINKING=false
             '';
@@ -166,9 +143,7 @@ _: {
             ];
 
             services."podman-homarr" = {
-              # The environment file is a sops template, which the fleet's systemd
-              # activation installs before this unit starts. The container module
-              # already orders on network-online.target.
+              # sops-install-secrets installs the template before this unit starts.
               wants = [ "sops-install-secrets.service" ];
               after = [ "sops-install-secrets.service" ];
               unitConfig.RequiresMountsFor = [ dataDir ];
@@ -178,9 +153,8 @@ _: {
           # Keep the same SQLite CLI available to verify a staged restore.
           environment.systemPackages = [ pkgs.sqlite ];
 
-          # Homarr uses SQLite. Export with SQLite's online backup API instead of
-          # copying the live database file; exclude its entire directory so WAL or
-          # journal sidecars can never enter the raw restic capture.
+          # SQLite: export through the online backup API, and exclude the directory so WAL
+          # sidecars stay out of the raw capture.
           services.state-backups.services.homarr = {
             enable = true;
             mode = "export";

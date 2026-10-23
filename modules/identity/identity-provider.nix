@@ -1,10 +1,5 @@
-# Identity-provider deployment aspect: owns the Kanidm server/provisioning
-# composition, the Kanidm top-level enablement, and the provider's identity and
-# OIDC provisioning secret sources. The provider derives its public URL from
-# canonical web policy, owns its TLS material locally, and never writes the OIDC
-# contract namespace (`services.identity.oidc.*` is only asserted to agree, in
-# the Kanidm leaf, which imports that contract intrinsically); selecting this
-# aspect does not require any client capability to be selected as well.
+# Kanidm provider: server and provisioning composition plus the identity and OIDC secret
+# sources. It reads the OIDC contract but never writes it, and needs no client aspect.
 _: {
   flake.modules.nixos.identity-provider =
     {
@@ -44,11 +39,8 @@ _: {
             secretFiles = {
               identity = ../../secrets/identity/kanidm.yaml;
               provisioning = ../../secrets/identity/provisioning.json;
-              # Provider-owned OIDC provisioning secret-source map keyed by
-              # canonical oauth2 client id. Paths stay explicit — they encode
-              # SOPS readership and blast radius and are never inferred from
-              # logical client metadata. Missing or extra keys fail the leaf's
-              # key assertions.
+              # Paths stay explicit because they encode SOPS readership; the leaf asserts the
+              # key set.
               oauth2Clients = {
                 beszel = ../../secrets/hosts/la-admin-1/oidc.yaml;
                 termix = ../../secrets/hosts/la-admin-1/oidc.yaml;

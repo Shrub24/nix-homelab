@@ -10,7 +10,7 @@ _: {
     }:
     let
       cfg = config.services.paperless;
-      secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
+      secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       repoPackages = config.repo.packages;
       oidcEnabled = cfg.oidc.enable;
       # This application's canonical client record is the single source for its
@@ -67,8 +67,8 @@ _: {
     in
     {
       imports = [
-        ../../backups/state-backups/_consumer.nix
-        ../../identity/_oidc.nix
+        ../backups/state-backups/_consumer.nix
+        ../identity/_oidc.nix
       ];
       options.services.paperless = {
         dataRoot = lib.mkOption {
@@ -114,10 +114,8 @@ _: {
         { services.paperless.enable = true; }
 
         (lib.mkIf cfg.enable {
-          # The post-consume hook runs as the paperless service user, so that user
-          # is the one non-root `notify` CLI caller on this host: it joins the
-          # daemon's group, whose unix socket (mode 0660) is the dispatch gate.
-          # services.notify.cliGroup stays null — notifier access is per caller.
+          # The post-consume hook is the one non-root notify caller here, so it joins the daemon's
+          # group; services.notify.cliGroup stays null because access is per caller.
           users.users.paperless.extraGroups = lib.mkAfter (
             lib.optionals (config.users.groups ? notify) [ "notify" ]
           );

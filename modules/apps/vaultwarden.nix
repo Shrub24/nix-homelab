@@ -1,6 +1,4 @@
-# Vaultwarden deployment aspect: selection imports the leaf and owns its
-# enablement; the leaf reads only the canonical web-policy route, has no OIDC,
-# and is direct edge-proxied (no Tailscale serve unit).
+# Vaultwarden: selection imports the leaf and owns its enablement. No OIDC; direct edge proxy.
 _: {
   flake.modules.nixos.vaultwarden =
     {

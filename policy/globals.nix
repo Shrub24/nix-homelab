@@ -1,21 +1,12 @@
 {
-  # The fleet Tailscale tailnet DNS suffix is written once, here. Canonical
-  # host records set
-  # `tailscale.tailnetSuffix = globals.tailnet.suffix` and derive their
-  # `tailscale.fqdn` from it; the web policy composes host-backed FQDNs as
-  # `"${hostId}.${globals.tailnet.suffix}"` in policy/web-services.nix, so a
-  # renamed tailnet or changed host set can only disagree loudly, never drift.
+  # The tailnet suffix, written once: host records derive their FQDN from it and the
+  # web policy composes host-backed FQDNs with it.
   tailnet = {
     suffix = "tail0fe19b.ts.net";
   };
 
-  # The host's stable, container-facing service address: a NixOS-owned dummy
-  # interface that exists from boot, independent of every Podman network. A
-  # container cannot reach a native host service over the bridge it sits on — the
-  # host owns that bridge but is not a member of it — so every native service a
-  # container must reach binds this address, and containers dial the stable name
-  # below. The address is advertised nowhere: containers reach it through their own
-  # bridge gateway, and neither the tailnet nor the provider network routes it.
+  # Container-facing service address: a dummy interface on from boot. A container cannot
+  # reach a native service over its own bridge, so such services bind this address.
   serviceNetwork = {
     interface = "svc0";
     address = "10.255.0.1";
@@ -28,19 +19,14 @@
     containerSourceCIDR = "10.89.0.0/16";
   };
 
-  # ClickHouse's HTTP interface, away from its conventional 8123: home-forge
-  # runs Home Assistant there, sharing the host network namespace, so the two
-  # cannot both hold the port. Declared once because the server's own config and
-  # every consumer's URL must agree — and because a port chosen in two files is
-  # how this collision happened (D-102).
+  # ClickHouse HTTP, off its conventional 8123 because home-forge runs Home Assistant
+  # there on the host network. Declared once so the server and every consumer agree.
   observability = {
     clickhouseHttpPort = 8124;
   };
 
-  # Beszel's agent credential is the hub's SSH public key: every agent accepts
-  # the hub's connection only against it, and the matching private half never
-  # leaves the hub's data directory. Public data, delivered as plain
-  # configuration — no sops, no per-host secret, no bootstrap gate.
+  # Beszel's agent credential is the hub's public SSH key: public data, so plain
+  # configuration rather than a secret.
   beszel = {
     hubKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILETioYsZkau/yIH2LocWZP3d7z0nZAKIMb2POQNEhst";
   };

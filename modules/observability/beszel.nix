@@ -1,7 +1,5 @@
-# Beszel hub deployment aspect: selection imports the leaf and owns its
-# enablement; the runtime composition (policy public URL, origin host/port, and
-# the state-backups registration) stays in the leaf, which reads only the
-# canonical web policy.
+# Beszel hub: selection imports the leaf and owns its enablement; the runtime composition
+# reads only the canonical web policy.
 _: {
   flake.modules.nixos.beszel =
     { lib, config, ... }:

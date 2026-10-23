@@ -1,8 +1,5 @@
-# Physical deployment topology facts, separated from deploy-rs node definitions.
-#
-# Only `nodes` feeds deploy-rs node generation (see lib/deploy/default.nix).
-# `edgeHost` and `deployOrder` are physical-host facts for scripts, tests, and
-# deployment sequencing; they must never be interpreted as NixOS nodes.
+# Physical deployment topology, separate from deploy-rs node definitions. Only `nodes`
+# feeds node generation; `edgeHost` and `deployOrder` are scheduling facts, never nodes.
 {
   # Active public edge host: the only host that projects the route catalog and
   # terminates public TLS.

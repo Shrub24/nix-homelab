@@ -1,6 +1,4 @@
-# Host-recovery contributor of the base aspect: break-glass policy is part of
-# the base foundation, not an independently selected capability. It contributes
-# to the same `flake.modules.nixos.base` publication as ./foundation.nix.
+# Break-glass policy, part of the base foundation rather than a selected capability.
 {
   flake.modules.nixos.base =
     {
@@ -101,13 +99,8 @@
           host_recovery_rescue_password_hash = {
             sopsFile = cfg.secretFile;
             key = cfg.secretKeys.rescuePasswordHash;
-            # No `path` override: a `neededForUsers` secret belongs at sops-nix's
-            # default, `/run/secrets-for-users/<name>`. A path under
-            # `/run/secrets` is discarded — the regular installer swaps that
-            # directory for its own generation directory, and on the systemd
-            # activation path that swap runs *after* the activation step which
-            # installs this file, so the symlink disappears once users exist and
-            # only the users step's ordering saves the password (D-094).
+            # No `path` override: a `neededForUsers` secret belongs at the default /run/secrets-for-
+            # users/, and one under /run/secrets is discarded by the installer after this step.
             neededForUsers = true;
             owner = "root";
             group = "root";

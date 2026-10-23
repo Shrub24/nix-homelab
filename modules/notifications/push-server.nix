@@ -1,25 +1,7 @@
-# ntfy push-server deployment aspect: the ntfy server leaf is the intrinsic
-# implementation and selection supplies the top-level enablement. Host-scoped
-# variants (Firebase key, auth secret file, and the loopback server URL consumed
-# by the notification daemon) stay host-set.
-#
-# Publisher authorization is fleet policy, not an LA machine fact, so it lives
-# here. Publishers are explicit ntfy principals: fleet host daemons, dotfiles
-# machines, CLIs, or scripts. The canonical host registry is not the authority.
-# The module derives ntfy `auth-access` from this map; the matching
-# `auth-users`/`auth-tokens` credentials stay in the encrypted
-# `auth.secretFiles.auth`, which must not carry an `auth-access` key of its own.
-# The activation preStart validates the decrypted file against this policy: it
-# rejects a secret-owned `auth-access` or a malformed `auth-users` entry, and it
-# fails by name when a declared publisher has no credential. ntfy's underscore
-# key spelling is accepted, but a file declaring both forms of one key is
-# rejected because ntfy's loader would silently keep just one of them. Other
-# auth users (for example an administrator or a read-only client) may exist
-# without being publishers.
+# ntfy server. Publisher authorization is fleet policy: `auth-access` is derived here while
+# the credentials stay in the encrypted auth file, which must not carry `auth-access` itself.
 
-# The file-level policy stays at flake-parts level because it is shared
-# notification policy, independent of any host's NixOS evaluation. The aspect
-# passes the map into the NixOS module by value.
+# Flake-level because the policy is shared; the aspect passes the map in by value.
 { ... }:
 let
   publishers = {
@@ -53,10 +35,7 @@ in
         "none"
       ];
 
-      # ntfy auth-users entries are `<username>:<bcrypt-hash>:<role>`; even
-      # token-only accounts need a real `ntfy user hash` (username::role is
-      # invalid). The allowed hashes and roles are enforced against the decrypted
-      # file at activation; this list is the role half of that check.
+      # Even token-only accounts need a real hash (`user::role` is invalid); this is the role half of the check.
       rolePattern = "^(${lib.concatStringsSep "|" validRoles})$";
 
       publisherNames = builtins.attrNames cfg.auth.publishers;
@@ -248,11 +227,8 @@ in
               };
 
               systemd.services.ntfy-sh = {
-                # The activation validator shells out to yq (mikefarah's yq-go, not
-                # the jq-syntax wrapper) and grep. Give the unit a PATH instead of
-                # baking store paths into the script, so the same script is
-                # runnable out of context (the contract suite executes it against
-                # synthetic fixtures).
+                # PATH, not baked store paths, so the contract suite can run this against fixtures.
+                # yq here is mikefarah's yq-go, not the jq-syntax wrapper.
                 path = [
                   pkgs.coreutils
                   pkgs.gnugrep
@@ -272,9 +248,7 @@ in
                   base_config=${config.sops.templates."ntfy-base-config".path}
                   auth_config=/run/secrets/ntfy/auth.yml
 
-                  # ntfy documents `auth-users`/`auth-tokens` and accepts the
-                  # underscore spelling as an alias, so either form is valid here;
-                  # declaring both would let ntfy's loader pick one silently.
+                  # Either spelling is valid; declaring both would let ntfy's loader pick one silently.
                   if [ "$(yq -r 'has("auth-users") and has("auth_users")' "$auth_config")" = true ] \
                     || [ "$(yq -r 'has("auth-tokens") and has("auth_tokens")' "$auth_config")" = true ]; then
                     echo "ntfy: the auth secret file must use one spelling per key (auth-users or auth_users, auth-tokens or auth_tokens), not both" >&2
@@ -296,9 +270,7 @@ in
                     exit 1
                   fi
 
-                  # Every declared publisher needs both credential forms in the
-                  # encrypted file. Extra users (an administrator, a read-only
-                  # client) are allowed; missing publishers are not.
+                  # Missing publishers are fatal; extra users are allowed.
                   users="$(yq -r '(.["auth-users"] // .auth_users // [])[] | split(":")[0]' "$auth_config")"
                   tokens="$(yq -r '(.["auth-tokens"] // .auth_tokens // [])[] | split(":")[0]' "$auth_config")"
                   for publisher in ${lib.concatStringsSep " " publisherNames}; do
@@ -342,9 +314,6 @@ in
         {
           services.ntfy.enable = true;
 
-          # Publisher authorization is fleet policy validated against the canonical
-          # host records at flake level (the aspect's own let); the map is passed into
-          # the module by value.
           services.ntfy.auth.publishers = publishers;
         }
       ];

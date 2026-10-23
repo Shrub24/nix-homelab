@@ -1091,7 +1091,7 @@ PYEOF
 
 # 16. GeoPulse client policy (add-geopulse task 3.1). The canonical client is
 # users-only, carries the legacy RSA algorithm the backend's RS256-only verifier
-# requires, and declares the PKCE exemption the unpatched backend needs (D-108:
+# requires, and declares the PKCE exemption the unpatched backend needs:
 # upstream sends no challenge, so Kanidm must not require one).
 # Its callback is the documented public origin: the web-policy route for GeoPulse
 # is still private, so the policy carries the callback directly until the

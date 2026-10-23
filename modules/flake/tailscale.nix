@@ -1,10 +1,5 @@
-# Tailscale foundation aspect. nix-fleet owns the mechanism (service wiring,
-# the debugMtu override, the auth-key registration); this contributor supplies
-# the fleet's conventions around it: the host-scoped secret file
-# (secrets/hosts/${networking.hostName}/system.yaml, key tailscale/auth_key) and
-# its two-step sops bootstrap, so a host whose scope does not exist yet
-# registers nothing and tailscaled stays unauthenticated until the operator
-# adds it.
+# nix-fleet owns the mechanism; this binds the host-scoped auth key at
+# secrets/hosts/<host>/system.yaml:tailscale/auth_key. An absent scope registers nothing.
 { inputs, ... }:
 {
   flake.modules.nixos.tailscale =

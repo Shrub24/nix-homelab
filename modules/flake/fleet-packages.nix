@@ -1,12 +1,5 @@
-# Repository packages consumable by service modules, resolved for the evaluated
-# host's target system. Explicit allowlist: host-* convenience packages embed
-# deploy-node profile paths that depend on nixosConfigurations, so projecting
-# the full perSystem attrset would recurse back into the module space.
-#
-# The `notify` CLI is a shipped implementation, not a repository package: the
-# notification mechanism moved to nix-fleet (D-061), so the bus re-exports the
-# fleet's package instead of building a local copy. Consumers that only need the
-# CLI keep resolving it here.
+# Packages service modules consume, for the evaluated host's system. An explicit
+# allowlist: host-* packages embed deploy-node profiles and would recurse into the module space.
 {
   inputs,
   lib,

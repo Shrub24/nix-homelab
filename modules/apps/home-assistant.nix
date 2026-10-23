@@ -1,11 +1,5 @@
-# Home Assistant deployment aspect: the container installation the project
-# supports, bound to the host network so discovery works, and with a
-# configuration directory the operator owns rather than one Nix renders.
-#
-# The option namespace is `services.hass`, not `services.home-assistant`:
-# nixpkgs already owns that path for its native Core module, and one option name
-# meaning two different installations depending on which module a host imported
-# is a trap. This module never imports the native one.
+# Home Assistant container, on the host network for discovery, with an operator-owned
+# config directory. Options live under `services.hass`: nixpkgs owns `services.home-assistant`.
 _: {
   flake.modules.nixos.home-assistant =
     {
@@ -77,12 +71,8 @@ _: {
               message = "services.hass: the route's upstream port must match services.hass.port, or the edge dials a port nothing listens on.";
             }
             {
-              # A host-networked container shares the host's port space, so a
-              # native listener on the same port wins the bind and Home Assistant
-              # falls into recovery mode with no frontend. ClickHouse's HTTP
-              # interface was the first collision: 8123 is its default and
-              # home-forge runs both (D-102). Fail closed here rather than at
-              # activation, where the symptom is a bare recovery page.
+              # A native listener on this port wins the bind and Home Assistant drops into
+              # recovery mode with no frontend. Fail closed here, not at activation.
               assertion =
                 !(config.services ? clickhouse)
                 || !(config.services.clickhouse.enable or false)
@@ -91,11 +81,8 @@ _: {
             }
           ];
 
-          # Host networking, not a published port: discovery integrations
-          # (HomeKit, Chromecast, Hue, Matter, ESPHome) need the container on the
-          # LAN's own namespace, and this is the shape upstream and the nixpkgs
-          # wiki both document. Nothing is published, so the listener is whatever
-          # Home Assistant binds — 8123 by default.
+          # Host networking for discovery (HomeKit, Chromecast, Hue, Matter, ESPHome);
+          # nothing is published, so the listener is whatever Home Assistant binds.
           virtualisation.oci-containers.containers.home-assistant = {
             inherit (cfg) image;
             autoStart = true;
@@ -107,15 +94,10 @@ _: {
             environment.TZ = cfg.timeZone;
           };
 
-          # Home Assistant creates a minimal configuration.yaml itself when the
-          # directory is empty, so Nix seeds nothing here — the operator owns
-          # /config. Mode 0700 because the directory holds the auth store
-          # (.storage) with every token and integration credential.
+          # The operator owns /config. 0700 because .storage holds every token.
           systemd.tmpfiles.rules = [ "d ${cfg.dataDir} 0700 root root -" ];
 
-          # The container carries nixpkgs' widened limit already (5 starts per
-          # hour, not per 10 seconds), which a crash loop actually crosses, so a
-          # failing instance reaches `failed` and this registration fires.
+          # nixpkgs already widens the start limit enough for a crash loop to reach `failed`.
           services.notify.events."podman-home-assistant".failure = { };
 
           services.state-backups.services.home-assistant = {

@@ -1,7 +1,5 @@
-# OCI platform aspect: selecting it is the host's provider-placement statement;
-# the serial console, GRUB device, and provider boot defaults are nested in the
-# publication itself, so there is no private leaf. It also owns this host's
-# podman storage prune and its notification registration.
+# OCI platform defaults (serial console, GRUB, boot) plus this host's podman prune and
+# its notification registration.
 { ... }:
 {
   flake.modules.nixos.oci =
@@ -18,12 +16,8 @@
           wantedBy = [ "multi-user.target" ];
         };
 
-        # nixpkgs' podman module defines the `podman-prune` unit unconditionally
-        # (its ExecStart is not gated on autoPrune.enable), so nix-fleet's
-        # `podman-prune` aspect cannot coexist with it. The platform unit is the
-        # mechanism here: nixpkgs owns the unit and timer, our retention flags
-        # match what this host pruned before, and the failure event is registered
-        # below through the notify contract.
+        # nixpkgs defines `podman-prune` unconditionally, so nix-fleet's prune aspect
+        # cannot coexist with it; these are that unit's retention flags.
         virtualisation.podman.autoPrune = {
           enable = true;
           dates = "weekly";

@@ -1,8 +1,5 @@
-# Host entry point: the canonical typed record (deferred NixOS composition,
-# reimage facts) whose identity derives from nix-fleet's fleet inventory. The
-# NixOS composition stays host-private in `_nixos.nix` and its `_disko-*.nix` /
-# `_cockpit-auth.nix` siblings, so a host assembly can never be selected as a
-# public aspect.
+# Host entry point: the typed record whose identity derives from the fleet inventory, with
+# the NixOS composition host-private beside it.
 {
   config,
   inputs,
@@ -13,9 +10,8 @@ let
   identity = config.fleet.hosts.oci-melb-1;
 in
 {
-  # Canonical machine identity (target system, Tailscale hostname, host key)
-  # lives in nix-fleet's fleet inventory; this record derives from it and
-  # declares only what is ours — composition, disks, reimage facts.
+  # Identity comes from the inventory; this record declares only composition, disks and
+  # reimage facts.
   nixos.hosts.oci-melb-1 = {
     system = identity.system;
 
@@ -62,9 +58,8 @@ in
         aspects.builder-access
         aspects.build-account
         aspects.observability-agent
-        # Telemetry: the contract's vocabulary plus our fleet policy, then the
-        # signals this host ships — metrics and logs; OTLP is admitted by the
-        # gateway host, not here.
+        # Telemetry: the contract's vocabulary plus our fleet policy, then the signals this host ships
+        # — metrics and logs; OTLP is admitted by the gateway host, not here.
         aspects.telemetry
         aspects.telemetry-metrics
         aspects.telemetry-logs

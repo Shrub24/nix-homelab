@@ -1,6 +1,4 @@
-# Host-private NixOS composition for oci-melb-1: ./default.nix imports it as the
-# record's deferred composition, and the underscore prefix keeps it (and every
-# sibling fragment) out of discovery.
+# Host-private composition; the underscore prefix keeps it out of discovery.
 {
   config,
   lib,
@@ -20,22 +18,6 @@ in
   ];
 
   hardware.facter.reportPath = ./facter.json;
-
-  networking = {
-    firewall.interfaces = {
-      podman0.allowedTCPPorts = [
-        5030
-        4533
-      ];
-      podman2.allowedTCPPorts = [
-        5432
-        4533
-      ];
-      audiomuse0.allowedTCPPorts = [
-        5432
-      ];
-    };
-  };
 
   fleet.foundation = {
     bootLoader = "grub";
@@ -151,9 +133,7 @@ in
       # Consumers register themselves from their own modules.
     };
 
-    # The cache server runs locally; the catalog endpoint is the colocated
-    # loopback dial for it (host and port come from nix-fleet's canonical
-    # niks3-write record, never restated here).
+    # The cache server runs here, so the catalog endpoint is the colocated loopback dial.
     niks3-publisher.serverUrl = config.repo.web.catalog."niks3-write".endpoint.url;
 
     notify = {
@@ -190,13 +170,8 @@ in
     ];
   };
 
-  # Container image storage belongs on the heavy-app partition: the 20G root
-  # filled to 100% under /var/lib/containers and killed a pull mid-deploy.
-  # Footgun: podman 5.8.6 refuses a relocated graphroot — its database
-  # static-dir check still demands the default path, so a storage.conf
-  # graphroot hard-fails every invocation with "database configuration
-  # mismatch" (reproduced from a clean state). The bind mount keeps podman on
-  # its default config while the bytes live on /srv/storage.
+  # Image storage lives on /srv/storage: the 20G root filled and killed a pull, and podman
+  # 5.8.6 refuses a relocated graphroot, hence a bind mount.
   fileSystems."/var/lib/containers" = {
     device = "/srv/storage/containers";
     fsType = "none";

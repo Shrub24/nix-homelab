@@ -5,7 +5,6 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 SECRET_FILE="${ROOT_DIR}/secrets/opentofu/cloudflare.yaml"
 OIDC_SECRET_FILE="${ROOT_DIR}/secrets/opentofu/oidc.yaml"
 TOFU_DIR="${ROOT_DIR}/opentofu/cloudflare"
-BACKEND_FILE="${TOFU_DIR}/backend.hcl"
 SECRETS_VARS_FILE="${TOFU_DIR}/secrets.auto.tfvars"
 
 if [[ ! -f "${SECRET_FILE}" ]]; then

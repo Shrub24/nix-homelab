@@ -190,7 +190,7 @@ Before release, the operator verifies private callback login, two distinct Kanid
 
 ## App bookmarks are synced from the web policy
 
-`modules/apps/homarr/apps.nix` keeps Homarr's app inventory in step with
+`modules/apps/homarr-apps.nix` keeps Homarr's app inventory in step with
 `policy/web-services.nix`. Apps are the tedious part — a name, a URL and an icon
 that go stale whenever a route is renamed or a service moves — so they are
 derived. Boards are taste: build them in the UI out of the synced apps.

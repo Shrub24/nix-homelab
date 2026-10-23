@@ -1,8 +1,5 @@
-# Canonical fleet host registry: one typed record per stable host ID, each
-# declared by its discovered contributor (modules/hosts/<host>/default.nix) and
-# materialized generically into nixosConfigurations. Records stay deferred data,
-# so validation and materialization run only after option merging — placement is
-# never derived from an evaluated NixOS config, which would recurse.
+# Canonical fleet host registry: one typed record per host ID, materialized generically.
+# Records stay deferred data; deriving placement from an evaluated config would recurse.
 {
   inputs,
   config,
@@ -136,9 +133,8 @@ let
 
   hosts = config.nixos.hosts;
   hostKeys = builtins.attrNames hosts;
-  # nix-fleet's canonical inventory, when the fleet feature is part of this
-  # evaluation (it always is in the real tree; the isolated registry harness
-  # declares synthetic hosts and imports nothing else).
+  # nix-fleet's canonical inventory, when the fleet feature is part of this evaluation
+  # (always in the real tree; the isolated harness declares synthetic hosts).
   canonicalHosts = (config.fleet or { }).hosts or { };
   declaredIds = map (key: hosts.${key}.hostId) hostKeys;
   countId = id: length (filter (x: x == id) declaredIds);
@@ -165,11 +161,8 @@ let
     ++ map (key: "host-registry: host '${key}' is missing required system or tailscale.hostname") (
       filter (key: hosts.${key}.system == null || hosts.${key}.tailscale.hostname == null) hostKeys
     )
-    # Join-key rule (nix-fleet hosts contract): the canonical ID is the registry
-    # key everywhere, so a host record may only exist for an ID the canonical
-    # inventory declares. Enforced whenever that inventory is present; deriving
-    # identity from a record that is not there otherwise fails with a bare
-    # missing-attribute error.
+    # Join-key rule: the registry key is the canonical ID everywhere, so a record may only
+    # exist for an ID the inventory declares, or identity fails on a bare missing attribute.
     ++ optionals (canonicalHosts != { }) (
       map (key: "host-registry: host '${key}' has no canonical record in nix-fleet's fleet inventory") (
         filter (key: !(canonicalHosts ? ${key})) hostKeys

@@ -1,11 +1,5 @@
-# PostgreSQL consumer contract.
-#
-# Declaration-only fragment: the options a consumer feature writes
-# (`services.postgres.consumers.<name>`) and the host facts the provider
-# consumes (`instances.<name>`, `localEndpoint`). No configuration here.
-#
-# Import this where a feature registers a consumer; the postgres aspect
-# imports it too, so both sides share one declaration surface.
+# Declaration-only: the consumer registry features write and the host facts the provider
+# reads. Both the aspect and every registering feature import it.
 { lib, ... }:
 {
   options.services.postgres = {
@@ -37,10 +31,8 @@
 
     localEndpoint = lib.mkOption {
       readOnly = true;
-      # Deliberately not nix-fleet's `lib.localEndpoint` shape: that helper exists
-      # for HTTP(S) services and throws on any other scheme, so its `url` would be
-      # a lie for a database port. A consumer here composes its own DSN from the
-      # port, and the Unix-socket consumers (`auth = "peer"`) are not a URL at all.
+      # Not nix-fleet's `lib.localEndpoint` shape: that helper is HTTP(S)-only and
+      # throws on other schemes, while peer-auth consumers are not a URL at all.
       type = lib.types.nullOr (
         lib.types.submodule {
           options.port = lib.mkOption {

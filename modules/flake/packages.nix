@@ -1,20 +1,16 @@
-# Repository packages (perSystem). The host-* entries are the addressable form
-# of the deploy-profiles published as `checks.<system>.host-*`: published
-# unfiltered so `nix build .#host-<host>` resolves the activatable profile from
-# any evaluating system, including a cross-system prebuild.
+# Repository packages. host-* are the addressable form of the deploy-profile checks,
+# published unfiltered so `nix build .#host-<host>` resolves from any system.
 top@{ inputs, ... }:
 {
   perSystem =
     {
       pkgs,
-      config,
       system,
       ...
     }:
     let
-      # GeoPulse is BUSL-1.1, which nixpkgs marks unfree. This package set admits
-      # those names and nothing else; every other output stays on the default
-      # refusal.
+      # GeoPulse is BUSL-1.1, which nixpkgs marks unfree. This package set admits those names and
+      # nothing else; every other output stays on the default refusal.
       geopulsePkgs = import pkgs.path {
         inherit system;
         overlays = pkgs.overlays;

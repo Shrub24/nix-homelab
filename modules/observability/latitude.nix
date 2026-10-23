@@ -1,27 +1,12 @@
-# Latitude placement aspect: the agent-failure triage console (observability and
-# signal discovery), colocated with langfuse on home-forge (trialed beside it
-# on oci-melb-1).
-#
-# Shape (D-071): every stateful role that has a native equivalent runs on the host
-# — the fleet PostgreSQL substrate (with pgvector), native ClickHouse in its own
-# database, and two native Redis instances (cache plus a BullMQ queue that needs
-# its own append-only, no-eviction policy). Temporal has no native equivalent, so
-# it is a container like the six digest-pinned application images. Object storage
-# is the `fs` driver on the heavy-app mount instead of a bundled SeaweedFS.
-#
-# Containers share the host network namespace, so each listener is an ordinary
-# host socket filtered by the firewall; nothing is published.
+# Agent-failure triage console (Latitude), beside langfuse on home-forge.
+# Stateful roles are native; Temporal and the application roles are digest-pinned containers, with no published ports.
 {
   config,
   inputs,
   ...
 }:
 let
-  # The gateway's canonical OpenAI-compatible route, resolved from nix-fleet's
-  # service inventory against this flake's fleet (the same resolution docs-mcp
-  # uses). The record's base path already carries /v1. This is the fallback for a
-  # host that does not run the gateway itself; the host-local choice is made in
-  # the module body, where `config` is the consuming host's own.
+  # Fallback for hosts without the gateway; the local listener wins in the module body.
   bifrostCanonicalUrl =
     (inputs.nix-fleet.lib.serviceEndpoints.resolveEndpoint config.fleet {
       service = "bifrost";
@@ -49,50 +34,28 @@ in
       serviceAddress = globals.serviceNetwork.address;
       serviceHost = globals.serviceNetwork.hostName;
       containerSourceCIDR = globals.serviceNetwork.containerSourceCIDR;
-      # The fs object-store root (LAT_STORAGE_FS_ROOT) is this host directory,
-      # bind-mounted at the same path inside every stateless application container.
+      # Mounted at the same path in every application container.
       storageMount = "--volume=${cfg.dataDir}/storage:/state/storage";
       netHelpers = import ../../lib/networking.nix { inherit lib; };
 
-      # The gateway dial. Placement in the web policy names the provider host
-      # (oci-melb-1), so nothing else makes a co-located consumer dial the socket
-      # on its own machine; a host that runs the aspect publishes its listener as
-      # `localEndpoint`, and these containers share the host network namespace,
-      # so loopback is reachable from them. The local record is a bare origin —
-      # the version prefix is ours to append.
+      # Bare origin from the local listener; the /v1 prefix is appended here.
       hasLocalBifrost = lib.hasAttrByPath [ "services" "bifrost" "localEndpoint" ] options;
       bifrostBaseUrl =
         if hasLocalBifrost then "${config.services.bifrost.localEndpoint.url}/v1" else bifrostCanonicalUrl;
 
-      # The web app is a Vite SPA and the browser calls the API on its own origin
-      # (upstream ships separate LAT_WEB_URL/LAT_API_URL values plus a CORS
-      # allowlist, so nothing proxies the API). Ingest has no public route: it is
-      # a machine endpoint on the tailnet, which is why it is read from the
-      # catalog's tailscale-only endpoint rather than a public URL.
+      # The browser calls the API origin directly; upstream has no proxy.
       catalog = config.repo.web.catalog;
       webUrl = catalog.latitude.publicUrl or null;
       apiUrl = catalog."latitude-api".publicUrl or null;
-      # Ingest has no route: it is a machine endpoint exporters dial over the
-      # tailnet. On the co-located host the catalog's `endpoint` resolves to
-      # loopback, which is useless in the address the UI shows operators, so the
-      # tailnet name is composed around the port that one declaration owns.
+      # Ingest is a tailnet machine endpoint: the catalog endpoint is loopback on its own host, so the tailnet name is composed here.
       ingestPort = catalog."latitude-ingest".endpoint.port or cfg.ingestPort;
       ingestUrl = "http://${config.networking.hostName}.${globals.tailnet.suffix}:${toString ingestPort}";
 
-      # ClickHouse: HTTP for queries, native 9000 for the goose migrations. Both
-      # are reached through the stable service name, which every container gets
-      # as an /etc/hosts entry. The HTTP port is fleet policy because Home
-      # Assistant owns 8123 on this host (D-102).
+      # HTTP port is fleet policy: Home Assistant owns 8123 on this host.
       clickhouseUrl = "http://${serviceHost}:${toString globals.observability.clickhouseHttpPort}";
 
-      # The users fragment is its own file (each consumer owns one), and
-      # latitude deliberately needs no substitution file: its user is
-      # passwordless over the scoped networks (the openlit posture).
-      # Footgun: a second separately-loaded substitution file shadows the
-      # first file's variables in ClickHouse >= 26.8, so langfuse's auth
-      # parsed empty whenever latitude rendered its own file.
-      # It doubles as the unit's restart trigger because ClickHouse
-      # does not watch users.d.
+      # No substitution file: a second one shadows the first's variables on ClickHouse >= 26.8.
+      # Also the unit's restart trigger, since ClickHouse does not watch users.d.
       clickhouseUsers = lib.optionalString hasSecretFile ''
         <clickhouse>
           <users>
@@ -106,9 +69,7 @@ in
         </clickhouse>
       '';
 
-      # The application roles that talk to a database and a queue. Temporal is
-      # excluded: it fronts its own Postgres databases and needs no application
-      # environment.
+      # Temporal reads no LAT_* variables, so it is excluded.
       appServices = [
         "web"
         "api"
@@ -117,16 +78,12 @@ in
         "workflows"
       ];
 
-      # Every application role reads the same environment: they share one database,
-      # one ClickHouse database, one queue and one object-store root, and upstream
-      # ships a single variable set for the whole stack. Absent during the two-step
-      # bootstrap window, when the path is bound but nothing is encrypted yet.
+      # One shared set for the whole stack; absent until the secret file is encrypted.
       appEnv = lib.optionalAttrs hasSecretFile {
         environmentFiles = [ config.sops.templates."latitude.environment".path ];
       };
 
-      # Temporal's auto-setup reads the standard POSTGRES_* names, not the LAT_*
-      # ones, so it gets its own small rendered file.
+      # Temporal's auto-setup reads POSTGRES_* names, so it gets its own file.
       temporalEnv = lib.optionalAttrs hasSecretFile {
         environmentFiles = [ config.sops.templates."latitude-temporal.environment".path ];
       };
@@ -148,12 +105,8 @@ in
         "latitude-migrations.service"
       ];
 
-      # Every application role aborts on the first refused connection, and its
-      # dependencies start in the same activation: switch-to-configuration
-      # enqueues its own restart jobs, which no `after` edge can order against.
-      # Wait for the endpoints a role dials instead of spending the restart
-      # budget on a dependency that is seconds behind. PostgreSQL and ClickHouse
-      # ports are the ones the environment file already names.
+      # Roles abort on refused connections and switch-to-configuration cannot order their restarts;
+      # wait for the endpoints they dial instead.
       waitForDeps = pkgs.writeShellScript "latitude-wait-for-deps" ''
         set -u
         deadline=$(( SECONDS + 120 ))
@@ -313,7 +266,6 @@ in
       };
 
       config = lib.mkMerge [
-        # Selection is enablement.
         { services.latitude.enable = true; }
 
         (lib.mkIf cfg.enable {
@@ -337,10 +289,8 @@ in
               message = "services.latitude.smtp.from must be set: sign-in is a magic link and no mail is sent without a sender.";
             }
             {
-              # nixpkgs gives each redis instance a per-instance system user
-              # (redis-<instance>), and an undeclared tmpfiles owner fails at
-              # activation with 'Unknown user' — the dirs are silently never
-              # created and redis exits on a missing `dir`.
+              # Redis instances get per-instance users; an undeclared tmpfiles owner fails activation
+              # with 'Unknown user', and redis exits on a missing dir.
               assertion = lib.all (u: config.users.users ? ${u}) [
                 "root"
                 "redis-latitude"
@@ -350,15 +300,8 @@ in
             }
           ];
 
-          # Self-registration (D-058): the database, role, extension and credential
-          # Latitude needs live next to Latitude. One consumer is one database and
-          # one role, and upstream's two URLs (RLS-bound runtime plus schema-owning
-          # admin) collapse onto that single role: BYPASSRLS makes it satisfy the
-          # admin URL. CREATEDB lets Temporal's auto-setup create the `temporal` and
-          # `temporal_visibility` databases it owns. Upstream's bundled compose runs
-          # `wal_level=logical`, but its bring-your-own-infrastructure checklist
-          # requires only the vector extension and a schema-create admin; this
-          # cluster stays on `replica`, which is flagged to the operator.
+          # BYPASSRLS satisfies the schema-owning admin URL; CREATEDB lets Temporal create its databases.
+          # Stays on wal_level=replica: upstream's checklist needs only the vector extension.
           services.postgres.consumers.latitude = lib.mkIf hasSecretFile {
             database = "latitude";
             role = "latitude";
@@ -373,10 +316,7 @@ in
               serviceAddress
               containerSourceCIDR
             ];
-            # pg_hba is database-scoped: without these the role's rows never
-            # match a `temporal`/`temporal_visibility` connection and the
-            # catch-all reject kills auto-setup (and every unit that requires
-            # it). `postgres` is where auto-setup connects to create them.
+            # pg_hba is database-scoped: without these, Temporal's auto-setup hits the catch-all reject.
             extraDatabases = [
               "temporal"
               "temporal_visibility"
@@ -390,32 +330,24 @@ in
             '';
           };
 
-          # Each consumer owns its own fragment file; langfuse's stays untouched.
           environment.etc."clickhouse-server/users.d/300-latitude.xml" = lib.mkIf hasSecretFile {
             text = clickhouseUsers;
           };
 
-          # Cache: locks, rate limiters and budgets. Ephemeral by design (no RDB,
-          # no AOF) — upstream ships no password variable for this role, and the
-          # listener is scoped to loopback plus the container-facing service address.
+          # Ephemeral (no RDB or AOF); upstream has no password for this role, so loopback plus the service address scope it.
           services.redis.servers.latitude = {
             enable = true;
             bind = "${loopback} ${serviceAddress}";
             port = cfg.redisPort;
             save = [ ];
             appendOnly = false;
-            # With no password, Redis protected mode rejects every non-loopback
-            # SOURCE before the first command — the host-networked containers
-            # dial from the service address itself, so the handshake dies with
-            # EPIPE. The bind above is the scoping; disable it explicitly.
+            # Without a password, protected mode rejects the service-address dial with EPIPE; the bind is the scope.
             settings.protected-mode = "no";
-            # nixpkgs' redis module derives the default dir from the instance
-            # name; ours is a fleet policy (state under the storage mount).
+            # State lives on the storage mount, not nixpkgs' default.
             settings.dir = lib.mkForce "${cfg.dataDir}/redis-cache";
           };
 
-          # Queue: BullMQ requires append-only persistence and no eviction, so it
-          # cannot share the cache instance's policy.
+          # BullMQ needs append-only persistence and no eviction; it cannot share the cache policy.
           services.redis.servers.latitude-queue = {
             enable = true;
             bind = "${loopback} ${serviceAddress}";
@@ -432,13 +364,10 @@ in
             owner = "root";
             group = "root";
             mode = "0400";
-            # The containers read this file at start and their unit text does not
-            # carry it, so a content change has to restart them.
+            # Read at container start, not from the unit text: a content change must restart.
             restartUnits = map (name: "podman-latitude-${name}.service") appServices;
             content = ''
-              # --- public origins: the browser loads the web origin and calls the
-              # API origin directly. The edge gates the web route; the API route
-              # carries no interactive gate, and Latitude's own auth authorizes it.
+              # The web origin is gated by Access; the API carries no gate, Latitude's own auth applies.
               LAT_WEB_URL=${webUrl}
               LAT_WEB_PORT=${toString cfg.webPort}
               LAT_API_URL=${apiUrl}
@@ -448,60 +377,38 @@ in
               LAT_TRUSTED_ORIGINS=${webUrl}
               LAT_CORS_ALLOWED_ORIGINS=${webUrl}
 
-              # --- authoritative metadata (PostgreSQL substrate) ---
-              # One lineage for both URLs: the role carries BYPASSRLS, so the
-              # runtime URL behaves like the admin URL (see the consumer's setupSQL).
               LAT_DATABASE_URL=postgres://latitude:${config.sops.placeholder.latitude_postgres_password}@${serviceHost}:5432/latitude
               LAT_ADMIN_DATABASE_URL=postgres://latitude:${config.sops.placeholder.latitude_postgres_password}@${serviceHost}:5432/latitude
 
-              # --- ClickHouse (spans and traces) ---
               LAT_CLICKHOUSE_URL=${clickhouseUrl}
               LAT_CLICKHOUSE_USER=${cfg.clickhouseUser}
               LAT_CLICKHOUSE_PASSWORD=${config.sops.placeholder.latitude_clickhouse_password}
               LAT_CLICKHOUSE_DB=${cfg.clickhouseDatabase}
-              # The migrations script strips the scheme and rebuilds
-              # user:password@host:port/db itself — credentials or a db path
-              # here get appended again (observed: goose asked for the
-              # database `latitude/latitude`).
+              # The migrations script rebuilds user:password@host:port/db itself; credentials or a db path here get appended again.
               LAT_CLICKHOUSE_MIGRATION_URL=clickhouse://${serviceHost}:9000
               LAT_CLICKHOUSE_CLUSTER_ENABLED=false
 
-              # --- Redis: cache plus the durable BullMQ queue ---
               LAT_REDIS_HOST=${serviceHost}
               LAT_REDIS_PORT=${toString cfg.redisPort}
               LAT_BULLMQ_HOST=${serviceHost}
               LAT_BULLMQ_PORT=${toString cfg.redisQueuePort}
               LAT_BULLMQ_PASSWORD=${config.sops.placeholder.latitude_redis_queue_password}
 
-              # --- Temporal ---
               LAT_TEMPORAL_ADDRESS=${serviceHost}:${toString cfg.temporalPort}
               LAT_TEMPORAL_NAMESPACE=default
               LAT_TEMPORAL_TASK_QUEUE=latitude-workflows
 
-              # --- object storage: the fs driver on the heavy-app mount, shared by
-              # every stateless service through the same bind mount ---
               LAT_STORAGE_DRIVER=fs
               LAT_STORAGE_FS_ROOT=/state/storage
 
-              # --- application secrets ---
               LAT_MASTER_ENCRYPTION_KEY=${config.sops.placeholder.latitude_master_encryption_key}
               LAT_BETTER_AUTH_SECRET=${config.sops.placeholder.latitude_better_auth_secret}
 
-              # --- GitHub OAuth sign-in (Better Auth social provider). Upstream
-              # enables it only when BOTH values are non-empty, and derives the
-              # callback from LAT_WEB_URL: the OAuth app's registered callback
-              # must be ${webUrl}/api/auth/callback/github, exact match.
+              # Enabled only when both values are set; the OAuth callback must be ${webUrl}/api/auth/callback/github exactly.
               LAT_GITHUB_CLIENT_ID=${config.sops.placeholder.latitude_github_client_id}
               LAT_GITHUB_CLIENT_SECRET=${config.sops.placeholder.latitude_github_client_secret}
 
-              # --- GitHub App integration (repo connect + signal auto-resolve).
-              # A different app from the sign-in OAuth one above: upstream's
-              # loader is all-or-nothing across these six, so a partial set — or
-              # empty values — leaves the integration hidden rather than half-on.
-              # Register the App with the setup/callback URL on the web host and
-              # the webhook on the API host, subscribe to Pull request + Push,
-              # and put the base64 of the .pem in the private key (upstream
-              # decodes it and rejects a raw PEM).
+              # All six or none: a partial set hides the integration. The private key is the base64 of the .pem.
               LAT_GITHUB_APP_ID=${config.sops.placeholder.latitude_github_app_id}
               LAT_GITHUB_APP_SLUG=${config.sops.placeholder.latitude_github_app_slug}
               LAT_GITHUB_APP_PRIVATE_KEY=${config.sops.placeholder.latitude_github_app_private_key}
@@ -509,22 +416,15 @@ in
               LAT_GITHUB_APP_CLIENT_ID=${config.sops.placeholder.latitude_github_app_client_id}
               LAT_GITHUB_APP_CLIENT_SECRET=${config.sops.placeholder.latitude_github_app_client_secret}
 
-              # --- email: sign-in is a magic link, so this transport is required ---
+              # Magic-link sign-in: this transport is required.
               LAT_SMTP_HOST=${cfg.smtp.host}
               LAT_SMTP_PORT=${toString cfg.smtp.port}
               LAT_SMTP_USER=${cfg.smtp.username}
               LAT_SMTP_PASS=${config.sops.placeholder.latitude_smtp_password}
               LAT_SMTP_FROM=${cfg.smtp.from}
 
-              # --- AI: generation and embeddings go through the fleet gateway, which
-              # owns the provider keys. Latitude's custom provider sends `dimensions`
-              # on embedding calls; the gateway's Voyage normalizer maps it to
-              # output_dimension, so voyage-4 returns the 2048-dim vectors the schema
-              # requires. The embedding model is a one-time choice: switching later
-              # breaks semantic search because existing rows are never re-embedded.
-              # Reranking is left unset: its providers are voyage and amazon-bedrock
-              # only, so discovery falls back to embedding order. The gateway takes
-              # no client credential; this is the placeholder its other consumers pass. ---
+              # Embeddings go through the fleet gateway; the voyage-4 dimension mapping is the normalizer's job.
+              # The embedding model is fixed: switching later breaks semantic search, since rows are never re-embedded.
               LAT_CUSTOM_AI_BASE_URL=${bifrostBaseUrl}
               LAT_CUSTOM_AI_API_KEY=bifrost-local
               LAT_AI_GENERATION_PROVIDER=custom
@@ -532,9 +432,7 @@ in
               LAT_AI_EMBEDDING_PROVIDER=custom
               LAT_AI_EMBEDDING_MODEL=${globals.bifrost.aliases.embedding}
 
-              # --- health listeners: host sockets beside the three public ones,
-              # pinned because upstream's worker default (9090) is cockpit's
-              # socket on this host and a collision is a silent exit(0) ---
+              # Pinned: upstream's default 9090 is cockpit's socket on this host, and a collision exits silently.
               LAT_WORKERS_HEALTH_PORT=${toString cfg.workersHealthPort}
               LAT_WORKFLOWS_HEALTH_PORT=${toString cfg.workflowsHealthPort}
 
@@ -546,8 +444,7 @@ in
             owner = "root";
             group = "root";
             mode = "0400";
-            # The container reads this file at start and the unit text does not
-            # carry it, so a content change has to restart it.
+            # Read at container start, not from the unit text: a content change must restart.
             restartUnits = [ "podman-latitude-temporal.service" ];
             content = ''
               DB=postgres12
@@ -590,8 +487,6 @@ in
                 key = "github/client_secret";
                 path = "/run/secrets/latitude.github_client_secret";
               };
-              # GitHub App integration: upstream enables it only when all six are
-              # non-empty, so empty values in the encrypted file keep it hidden.
               latitude_github_app_id = {
                 key = "github/app_id";
                 path = "/run/secrets/latitude.github_app_id";
@@ -626,18 +521,11 @@ in
           virtualisation.podman.enable = true;
 
           virtualisation.oci-containers.containers = {
-            # Web (UI), api (browser and MCP clients) and ingest (OTLP/HTTP from
-            # exporters) are the roles with public listeners; workers and
-            # workflows serve health endpoints only, pinned beside them because
-            # upstream's defaults collide (9090 is cockpit's socket). Every
-            # listener is a host socket, so the firewall keeps them
-            # tailnet-scoped.
+            # Public listeners are host sockets, so the firewall keeps them tailnet-scoped; workers serve health only.
             latitude-web = {
               autoStart = true;
               image = cfg.images.web;
-              # The app ignores LAT_WEB_PORT and defaults to 3000 — which
-              # langfuse-web owns on this host — so under host networking it
-              # exits silently on the port collision. Nitro honours PORT.
+              # Ignores LAT_WEB_PORT and defaults to 3000, which langfuse-web owns here; Nitro honours PORT.
               environment.PORT = toString cfg.webPort;
               extraOptions = [
                 "--network=host"
@@ -691,18 +579,12 @@ in
             }
             // appEnv;
 
-            # Temporal: Postgres-backed workflow engine. Auto-setup creates and
-            # migrates the two databases it owns, which is why the consumer role
-            # carries CREATEDB.
+            # Auto-setup creates and migrates two databases, hence CREATEDB on the consumer role.
             latitude-temporal = {
               autoStart = true;
               image = cfg.images.temporal;
-              # Auto-setup derives its bind address from `getent hosts $(hostname)`
-              # and NixOS maps the static hostname to 127.0.0.2 — an address no
-              # client dials, so the engine came up unreachable. Keep it in the
-              # unit text (not the environment file, whose changes do not restart
-              # a running container). Deliberately the service address, not
-              # 0.0.0.0: this gRPC frontend authenticates nobody.
+              # getent maps the hostname to 127.0.0.2 on NixOS, so bind the service address; 0.0.0.0 would expose
+              # this unauthenticated gRPC frontend.
               environment.BIND_ON_IP = serviceAddress;
               extraOptions = [
                 "--network=host"
@@ -730,8 +612,7 @@ in
                   name = "podman-latitude-${name}";
                   value =
                     let
-                      # A unit must not require itself: the shared dep lists
-                      # name the temporal unit, and temporal is in the map too.
+                      # Exclude temporal from its own dependency lists.
                       dropSelf = lib.filter (u: u != "podman-latitude-${name}.service");
                     in
                     {
@@ -746,18 +627,13 @@ in
                 }) (appServices ++ [ "temporal" ])
               )
               // {
-                # The clickhouse unit reloads its users fragment when the substitution
-                # changes; ClickHouse does not watch users.d on its own.
+                # ClickHouse does not watch users.d; reload on substitution change.
                 clickhouse.restartTriggers = lib.optional hasSecretFile clickhouseUsers;
 
-                # Footgun: nixpkgs' redis unit runs ProtectSystem=strict and only
-                # StateDirectory (/var/lib/redis-<instance>) is exempt, so an AOF
-                # write to the storage-mount dir fails with EROFS. The cache
-                # instance writes nothing (save=[], no AOF) and needs no exemption.
+                # ProtectSystem=strict exempts only StateDirectory, so AOF writes to the storage mount fail with EROFS.
                 redis-latitude-queue.serviceConfig.ReadWritePaths = [ cfg.dataDir ];
 
-                # Upstream's migrations create neither the ClickHouse database nor
-                # the Postgres schema, so the database is created first.
+                # Upstream migrations create neither the ClickHouse database nor the Postgres schema.
                 latitude-db-init = lib.mkIf hasSecretFile {
                   description = "Create the Latitude ClickHouse database";
                   wantedBy = [ "multi-user.target" ];
@@ -768,11 +644,7 @@ in
                     RemainAfterExit = true;
                   };
                   script = ''
-                    # The client comes from the same host package set as the
-                    # server (D-093).
-                    # Bound the wait: After=clickhouse.service orders against
-                    # the start job completing, not the port accepting — a
-                    # graceful CH start is still loading config when this runs.
+                    # Client from the same package set as the server. Bound the wait: After= orders on the start job, not the port.
                     for ((i=0; i<30; i++)); do
                       if ${pkgs.clickhouse}/bin/clickhouse-client --query "CREATE DATABASE IF NOT EXISTS ${cfg.clickhouseDatabase}"; then
                         exit 0
@@ -784,9 +656,7 @@ in
                   '';
                 };
 
-                # Migrations apply PostgreSQL and ClickHouse schema changes before the
-                # application roles start. The unit text carries the image reference,
-                # so an image bump re-runs it (the migrations are idempotent).
+                # Re-runs on image bump (the unit text carries the reference); migrations are idempotent.
                 latitude-migrations = lib.mkIf hasSecretFile {
                   description = "Latitude database migrations (PostgreSQL + ClickHouse)";
                   wantedBy = [ "multi-user.target" ];
@@ -813,10 +683,7 @@ in
                   '';
                 };
 
-                # The cost dashboard, Agent Score and custom behaviors are feature
-                # flagged upstream: a `feature_flags` row with `enabled_for_all` is
-                # what turns them on, and there is no supported self-host switch for
-                # that, so the rows are written directly (idempotent).
+                # Cost dashboard and agent score sit behind upstream feature flags with no self-host switch; rows are written directly.
                 latitude-seed-flags = lib.mkIf hasSecretFile {
                   description = "Enable Latitude's cost dashboard, Agent Score and custom behaviors";
                   wantedBy = [ "multi-user.target" ];
@@ -838,9 +705,7 @@ in
                   '';
                 };
 
-                # svc0 exists only once systemd-networkd has applied it — an ordering
-                # no unit dependency can express — so a start that races the address
-                # retries.
+                # svc0 appears only after networkd applies it; retry the start.
                 "redis-latitude".serviceConfig = {
                   Restart = "on-failure";
                   RestartSec = 5;
@@ -856,8 +721,7 @@ in
               };
           };
 
-          # Native stateful roles reachable from the host itself and from containers
-          # through the service address; scoped to the Podman pool, not to a bridge.
+          # Stateful roles are reachable from the host and containers through the service address only.
           networking.firewall.extraCommands = lib.concatStringsSep "\n" [
             (netHelpers.mkServiceIngressRule {
               sourceCIDR = containerSourceCIDR;
@@ -874,10 +738,7 @@ in
             })
           ];
 
-          # No state-backups registration: the durable roles are covered elsewhere —
-          # PostgreSQL rides the substrate's export-first dump contract, ClickHouse
-          # traces are regenerable under retention, and the object store holds
-          # payloads whose loss does not lose a trace.
+          # No state-backups registration: Postgres rides the substrate's export, ClickHouse is regenerable, and object payloads are not traces.
         })
       ];
     };

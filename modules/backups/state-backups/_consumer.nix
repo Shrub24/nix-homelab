@@ -1,13 +1,5 @@
-# State-backup declaration surface.
-#
-# Declaration-only fragment: the options a participant writes or reads — the
-# per-service registry a feature registers its mutable state in, plus the
-# host-level capture settings a producer needs to place its export. No
-# configuration here.
-#
-# Import this where a feature registers state; the state-backups mechanism
-# imports it too, so both sides share one declaration surface and a host that
-# does not run backups still evaluates its features.
+# Declaration-only: the registry a feature registers state in and the capture settings a
+# producer reads. Participants import it, so a host without backups still evaluates.
 { lib, ... }:
 let
   globals = import ../../../policy/globals.nix;

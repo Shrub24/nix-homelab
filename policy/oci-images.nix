@@ -38,17 +38,15 @@
   # Multi-arch manifest index, including the OCI host's aarch64-linux platform.
   homarr = "ghcr.io/homarr-labs/homarr:v2.5.2@sha256:025471efe0735b6bb89953ea4e141c984a171c1781bc8ca404163d3c26d0e26d";
 
-  # Home Assistant's own image: the container is the installation method
-  # upstream supports (ADR-0012), and the multi-arch index keeps the pin valid
-  # on either architecture.
+  # Home Assistant's own image: the container is the installation method upstream supports (ADR-0012),
+  # and the multi-arch index keeps the pin valid on either architecture.
   homeAssistant = "ghcr.io/home-assistant/home-assistant:2026.10.1@sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0";
 
   # Multi-arch index digest: the arm64 manifest is selected on oci-melb-1.
   inboxZero = "ghcr.io/elie222/inbox-zero:2.30.0@sha256:e9970c499a79b8a15bbab21363d1b87ea247c75b2721f036c7cee0e2c78d1fcc";
 
-  # Latitude ships one release tag across all six application images, so the
-  # versions move together; digests are the multi-arch index digests, which is
-  # what keeps the pins valid on both aarch64 and x86_64 hosts.
+  # Latitude ships one release tag across all six images, so they move together; the digests
+  # are multi-arch index digests, valid on both architectures.
   latitude = {
     web = "docker.io/latitudedata/web:0.3.118@sha256:4c2ff898d14ba693f5f17e88bf2f02bfa6c1aa94b30deb88d36f888cb0c050b3";
     api = "docker.io/latitudedata/api:0.3.118@sha256:ae7a7cc4f788962eaa03c040f62f63f38ed33b8f31e781804923b8302d72035a";

@@ -58,7 +58,6 @@ if errs:
 PYEOF
 CONFIG_PATH="$WORK/server.toml"
 DB_PATH="$WORK/kanidm.db"
-OWNER="$(id -un):$(id -gn)"
 
 render_script() {
   # $1 output; optional $2 systemctl stub, $3 kanidmd stub, $4 chown stub,

@@ -88,13 +88,13 @@ test -f modules/hosts/home-forge/_disko-two-disk.nix || fail "modules/hosts/home
 
 # --- 3. Typed registry materialized into nixosConfigurations (DS-2) ----------
 
-# PostgreSQL provisioning ordering (D-058). nixpkgs creates databases and roles
+# PostgreSQL provisioning ordering. nixpkgs creates databases and roles
 # in `postgresql-setup.service`, which runs *after* `postgresql.service`; a
 # consumer's credential or setup SQL therefore cannot live in `postStart` — on a
 # fresh cluster the role does not exist yet and the unit fails (start-limit-hit,
 # deploy rollback). Provisioning is its own unit, ordered after setup, and it
 # converges consumer roles and databases itself from a script rendered per
-# generation under /etc (D-069), so a unit definition systemd already had loaded
+# generation under /etc, so a unit definition systemd already had loaded
 # can never provision a stale consumer set.
 # Project only the fields under test: serialising a whole systemd unit forces
 # every option, including ones with no default (startLimitBurst).
@@ -230,10 +230,10 @@ done
 # addressable form of the deploy profiles, published unfiltered so a
 # cross-system prebuild resolves them from any evaluating system; the same
 # derivations are the `checks.<system>.host-<host>` entries asserted below, and
-# only on the host's own system. `write-flake`/`write-inputs`/`write-lock` are flake-file's generator tooling
-# (D-060): the packages that render the generated flake.nix. The fleet's CI
+# only on the host's own system. `write-flake`/`write-inputs`/`write-lock` are flake-file's generator tooling.
+# The packages that render the generated flake.nix, and the fleet's CI
 # builder bundles (`packages.<profile>`) arrive with the fleet feature import,
-# one per declared build profile; the CI adoption itself is TD-30. `ci` and
+# one per declared build profile. `ci` and
 # `arm-expensive` are the canonical profiles, and `cache-api-url` is the same
 # feature's resolved niks3 write-API coordinate — what the build-push-cache
 # workflow's `cache_api_url` input falls back to when it is not passed.
@@ -246,7 +246,7 @@ done
 # and `nix run` reach the same package.
 # `ci-tailscale` is nix-fleet's build/cache CI identity (client id and audience), published by the same feature as `ci`.
 # `bifrost` and `bifrost-voyage-plugin` are nix-fleet's gateway runtime and its
-# Voyage request normalizer: the gateway is a native service now (D-078), so the
+# Voyage request normalizer: the gateway is a native service now, so the
 # binary is a first-class repository package and the plugin is its paired build.
 for system in x86_64-linux aarch64-linux; do
   pkgs="$(ne --raw --apply 'p: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames p))' "path:.#packages.${system}")" ||
@@ -708,10 +708,7 @@ if not got["beszelKeySops"]:
     errs.append("beszel_agent_key: beszel must register no sops secret")
 if not any(c.endswith("restic-backups-state.service") for c in got["onFailure"]):
     errs.append(f"onFailure: missing the notify aspect handler for restic-backups-state ({got['onFailure']!r})")
-# Trust renders for every inventory record carrying a key: the three fleet
-# hosts (bound upstream, D-066) plus the external builder with its own key.
-# Trust renders for the hosts that offer build capability (D-066 + nix-fleet
-# v2: the projection is derived from the capability, never a restated list).
+# Trust renders for every inventory record carrying a key; the list is derived, never restated.
 if got["knownHosts"] != ["host-home-forge", "host-la-admin-1", "host-oci-melb-1"]:
     errs.append(f"knownHosts: {got['knownHosts']!r}, want the fleet's builder hosts")
 if got["buildMachines"] != 0:
@@ -1469,7 +1466,7 @@ in {
   # observable is whether the aspect placed the service on this host at all.
   bifrostEnable = (c.services.bifrost or { }) != { };
   # The gateway treats its own spans as an AI producer, so the destination is
-  # the AI lane, resolved from the canonical nix-fleet inventory (D-083).
+  # the AI lane, resolved from the canonical nix-fleet inventory.
   bifrostCollector = c.services.bifrost.plugins.otel.config.collector_url or "";
   karakeepEnable = c.services.karakeep-pod.enable or false;
   niks3CacheAspect = (c.services.niks3-cache or { }) != { };
@@ -1485,7 +1482,7 @@ in {
   grafanaListener = if (c.services.grafana.enable or false) then (c.services.grafana.settings.server.http_port or (c.services.grafana.port or 0)) else 0;
   langfuseCollector = (c.services.telemetry.destinations or { }).langfuse.endpoint or "";
   latitudeCollector = (c.services.telemetry.destinations or { }).latitude.endpoint or "";
-  # D-083/D-086 route separation: pin effective general and AI pipeline
+  # Route separation: pin effective general and AI pipeline
   # exporters for every OTLP signal. Route declarations are membership; this
   # observes rendered routing. Hosts without a collector render empty maps.
   signalPipelines = builtins.listToAttrs (map (signal: {
@@ -1538,7 +1535,7 @@ assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHa
 
 # 7n-2b. ClickHouse comes from the host package set. The dedicated nixpkgs pin
 # and its `repo.packages.clickhouse` projection were retired once this baseline
-# pinned LLVM 22 for the build (D-080 → D-093), so nothing may reintroduce a
+# pinned LLVM 22 for the build, so nothing may reintroduce a
 # second source and the deployed server must be the host's own package.
 if grep -RnE --include='*.nix' 'nixpkgs-clickhouse|repo\.packages\.clickhouse' modules policy flake.nix; then
   fail "7n-2b: the ClickHouse pin and its projection must be gone"
@@ -1546,7 +1543,7 @@ fi
 if grep -q 'nixpkgs-clickhouse' renovate.json; then
   fail "7n-2b: renovate must not carry a rule for the retired ClickHouse pin"
 fi
-grep -q 'package = pkgs.clickhouse;' modules/observability/langfuse/service.nix ||
+grep -q 'package = pkgs.clickhouse;' modules/observability/langfuse.nix ||
   fail "7n-2b: the Langfuse ClickHouse server must bind the host package set"
 grep -qF '${pkgs.clickhouse}/bin/clickhouse-client' modules/observability/latitude.nix ||
   fail "7n-2b: the Latitude init client must come from the host package set"
@@ -1622,8 +1619,7 @@ if "tamper-unit" in got["monitorUnits"]:
     raise SystemExit(f"unselected host activated the aspect: {got['monitorUnits']!r}")
 PYEOF
 
-# --- 7n-4. Host observability the pin move delivers (D-085) -----------------
-# (openspec change telemetry-host-observability, tasks 2.1-2.3.)
+# --- Host observability -----------------
 # The pin move adds two producers fleet-wide: the tailscale aspect publishes a
 # `100.100.100.100:80` scrape source that every metrics-selected host realizes,
 # and the node-exporter aspect contributes the systemd unit-state collector. The

@@ -62,7 +62,7 @@ Host keys are the machine's decryption identity for sops-nix; the anchor becomes
 | Identity | Ownership | Purpose |
 |---|---|---|
 | Host age key | existing persistent SSH ed25519 host key, converted to the age recipient | machine decryption identity |
-| Operator auth keys | `base` foundation aspect (`modules/flake/base/foundation.nix`) | human SSH login |
+| Operator auth keys | `base` foundation aspect (`modules/flake/base.nix`) | human SSH login |
 | Outbound identity | new per-host `identity/ssh_private_key` secret; public half added once to the central fleet trust set | `dev` reaching fleet peers |
 
 The three identities are separate. Never reuse another host's outbound identity; two live hosts sharing a principal is not acceptable.

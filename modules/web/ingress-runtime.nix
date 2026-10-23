@@ -45,9 +45,8 @@ _: {
               ''
             else
               "";
-          # Ordered route-scoped refusal: a denied path is answered before the proxy
-          # runs, so the surface stays closed at the published edge even though the
-          # listener behind it still serves that path on loopback.
+          # Answered before the proxy runs: the route stays closed at the edge even though
+          # the loopback listener still serves it.
           denyGuard =
             if route.deniedPaths == [ ] then
               ""
@@ -361,10 +360,8 @@ _: {
                     "app"
                     "admin"
                     "sensitive"
-                    # Private transports (`tailscale-only` with `declarePublic =
-                    # false`) pass through the edge route map even though no
-                    # policy publishes them, so their category names what they
-                    # are rather than defaulting to "app".
+                    # Private transports pass through the edge route map despite no
+                    # publication, so their category is explicit rather than "app".
                     "infra"
                   ];
                   default = "app";
@@ -505,16 +502,11 @@ _: {
             dnsProvider = "cloudflare";
             environmentFile = cfg.cloudflareCredentialsFile;
             group = "caddy";
-            # Caddy loads these files at config load, so a cert written after a
-            # reload is not served until the next one. Without this the postrun
-            # never fires and the edge keeps serving whatever it loaded last.
+            # Caddy loads certs at config load, so a postrun is required or the edge keeps
+            # serving what it loaded last.
             reloadServices = [ "caddy.service" ];
-            # lego checks propagation twice: against the zone's authoritative
-            # nameservers, which it queries directly, and against the recursive
-            # resolvers this host uses, which answer from cache. The recursive
-            # check runs first, so a cached pre-challenge answer fails the order
-            # even though the record is already live. The authoritative check is
-            # the one ACME validation itself performs, so drop the cached one.
+            # lego's recursive check runs first and answers from cache, failing the order on a
+            # stale pre-challenge answer; ACME validates against the authoritative servers anyway.
             extraLegoFlags = [ "--dns.propagation.disable-rns" ];
           };
         };

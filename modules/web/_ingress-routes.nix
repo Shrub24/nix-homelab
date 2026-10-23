@@ -1,8 +1,5 @@
-# Project a resolved service record onto the ingress route option shape.
-#
-# The edge renders one route per published service, and a test that needs to
-# render a route the policy withholds has to reach the same projection: keeping
-# it here means the release path and the proof of it cannot drift.
+# Project a resolved service record onto the ingress route shape. The edge and the
+# tests share it, so the release path and the proof of it cannot drift.
 { lib }:
 routes:
 lib.mapAttrs (_: svc: {

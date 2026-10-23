@@ -1543,8 +1543,8 @@ fi
 if grep -q 'nixpkgs-clickhouse' renovate.json; then
   fail "7n-2b: renovate must not carry a rule for the retired ClickHouse pin"
 fi
-grep -q 'package = pkgs.clickhouse;' modules/observability/langfuse.nix ||
-  fail "7n-2b: the Langfuse ClickHouse server must bind the host package set"
+grep -q 'package = pkgs.clickhouse;' modules/database/clickhouse.nix ||
+  fail "7n-2b: the ClickHouse substrate must bind the host package set"
 grep -qF '${pkgs.clickhouse}/bin/clickhouse-client' modules/observability/latitude.nix ||
   fail "7n-2b: the Latitude init client must come from the host package set"
 clickhouse_json="$(ne --raw --apply 'c: builtins.toJSON {

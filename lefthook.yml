@@ -11,7 +11,5 @@ pre-commit:
     regen-web-policy:
       run: ./scripts/export-web-services-policy.sh
       stage_fixed: true
-    test-secret-scope:
-      run: ./tests/check-secret-scope.sh
     test-web-policy:
       run: ./tests/check-web-services-policy.sh

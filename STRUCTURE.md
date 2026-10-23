@@ -216,8 +216,8 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 **`tests/`:**
 
 - Purpose: Contract validation scripts
-- Contains: `check-secret-scope.sh`, `check-web-services-policy.sh`, phase contract tests (`phase-*.sh`), `fixtures/` (test fixture data including `secret-scope.nix` — canonical scope definitions for secret scope validation)
-- Key files: `tests/check-secret-scope.sh`, `tests/check-web-services-policy.sh`
+- Contains: `check-web-services-policy.sh`, phase contract tests (`phase-*.sh`), contract checks for hosts and modules
+- Key files: `tests/check-web-services-policy.sh`, `tests/check-dendritic-scaffold-contract.sh`
 
 **`opentofu/`:**
 

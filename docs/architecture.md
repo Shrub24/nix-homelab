@@ -115,7 +115,6 @@ The exact file tree can evolve, but the intended shape is:
 - `generated/policy/web-services.json` for the committed exported web-policy artifact consumed by OpenTofu
 - `lib/secrets.nix` for reusable secret-contract helpers
 - `scripts/*.sh` for operator-facing repo utilities and export/render helpers
-- `tests/fixtures/secret-scope.nix` for secret-scope contract expectations used by validation checks
 - `tests/*.sh` for repo-owned validation checks that verify committed artifacts and policy contracts
 - `lib/deploy/` for deploy-rs host wiring
 - `secrets/applications/<name>.yaml` for application-scoped encrypted values
@@ -164,8 +163,6 @@ Fleet-shared scope:
 
 - `lib/secrets.nix` provides reusable helpers: `mkSecretFileOption`, `mkSecretKeyOption`, `mkRequiredSecretAssertion`, `mkSecretsFromMap`
 - `.sops.yaml` remains the source of truth for recipient policy; validation lives separately so tests do not read as authoritative configuration
-- `tests/fixtures/secret-scope.nix` defines the expected recipient contract used by secret-scope validation
-- `tests/check-secret-scope.sh` verifies `.sops.yaml` matches the intended topology and blast-radius rules
 - `tests/check-web-services-policy.sh` verifies the committed exported web-services JSON matches `policy/web-services.nix`
 
 ### Operational implications

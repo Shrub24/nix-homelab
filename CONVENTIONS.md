@@ -133,3 +133,11 @@ Name-based home-path tmpfiles rules cannot resolve on the very first boot pass (
 - A comment longer than two lines needs a stated reason; a two-line comment needs a purpose. Prefer a clearer name or structure to an explanation.
 - Do not record process history (stage, task, decision or change IDs, migration names, observed incidents) in source comments. Rationale belongs in `docs/decisions.md`; a code comment may point there only when the reasoning is needed to change the code safely.
 - A folder beside an aspect file exists only for underscore-private helpers, declaration-only contracts, or assets (Python, data, prompt themes). A second Nix contributor to the same aspect is a sibling file named for its role, not a sub-folder.
+
+### Checks
+
+- A flake check is declared by a discovered contributor's `perSystem`, never in a hand-written output.
+- A small check of one aspect (a single comparison or build, roughly a screenful) lives in that aspect's own file, beside what it verifies.
+- A larger aspect check is a sibling file named `<aspect>-check.nix` in the aspect's domain directory, publishing `checks.<system>.<aspect>-contract` or a name that states what it proves.
+- A check that spans no single aspect (formatting, the repository shell contracts, flake freshness) lives in `modules/flake/`.
+- A flake output that is not a check (a package, an effect) lives with its owning aspect, not in `modules/flake/`.

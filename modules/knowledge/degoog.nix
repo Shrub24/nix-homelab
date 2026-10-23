@@ -1,6 +1,10 @@
 # degoog: private search front end. The pinned upstream module owns the
 # `services.degoog.*` runtime surface; this aspect adds the fleet contract.
-{ inputs, ... }:
+{
+  inputs,
+  lib,
+  ...
+}:
 {
   flake-file.inputs.degoog = {
     # A release, not a branch: the tag is what Renovate's custom regex manager
@@ -10,6 +14,28 @@
     inputs.nixpkgs.follows = "nixpkgs";
     inputs.flake-parts.follows = "flake-parts";
   };
+
+  # `pkgs/degoog/bun.nix` is generated data: a lock bump without a regenerated
+  # expression builds the previous package set, so the file and the pin it
+  # derives from are compared. Both sides are formatted first, so `nix fmt`
+  # over the repository cannot invalidate the comparison.
+  perSystem =
+    { pkgs, system, ... }:
+    {
+      checks.check-degoog-bun-deps = pkgs.runCommandLocal "check-degoog-bun-deps" { } ''
+        ${lib.getExe inputs.bun2nix.packages.${system}.default} \
+          --lock-file ${inputs.degoog}/bun.lock --output-file bun.nix
+        ${lib.getExe pkgs.nixfmt} bun.nix
+
+        if ! diff -u ${../../pkgs/degoog/bun.nix} bun.nix; then
+          echo "degoog: pkgs/degoog/bun.nix does not match the pinned lockfile" >&2
+          echo "regenerate with: nix run .#update-packages -- degoog" >&2
+          exit 1
+        fi
+
+        touch $out
+      '';
+    };
 
   flake.modules.nixos.degoog =
     {

@@ -35,6 +35,11 @@ in
         aspects.music
         aspects.omniroute
         aspects.postgres
+        # ClickHouse substrate for the observability backends; each consumer
+        # contributes only its own users.d fragment.
+        aspects.clickhouse
+        # ClickHouse substrate for the observability backends; each consumer
+        # contributes only its own users.d fragment.
         # The fleet's model gateway, placed here as well as on oci-melb-1 so
         # this host's inference consumers dial loopback instead of the tailnet.
         aspects.bifrost

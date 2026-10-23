@@ -193,6 +193,10 @@
               message = "services.langfuse.enable is true but this host runs no PostgreSQL cluster (select the postgres aspect and declare services.postgres.instances.<name>).";
             }
             {
+              assertion = !cfg.enable || config.services.clickhouse.enable;
+              message = "services.langfuse.enable is true but the ClickHouse substrate is not selected (select the clickhouse aspect): its trace store has no server otherwise.";
+            }
+            {
               assertion = !cfg.oidc.enable || oidcClient != null;
               message = "services.langfuse.oidc: canonical OIDC client 'langfuse' is missing from services.identity.oidc.clients; check systems.oauth2.langfuse in policy/identity.json and the host's kanidm-admin web-policy route.";
             }
@@ -229,32 +233,12 @@
             ];
           };
 
-          # The password reaches ClickHouse via a sops-rendered substitution, never the Nix store. It must stay
-          # in the user fragment's include_from: a second global substitution file shadows the first's variables.
-          services.clickhouse = {
-            enable = true;
-            # Substitutes from the shared baseline; the dedicated pin was retired.
-            package = pkgs.clickhouse;
-            serverConfig = {
-              listen_host = [
-                loopback
-                serviceAddress
-              ];
-              http_port = clickhouseHttpPort;
-              tcp_port = 9000;
-            };
-            usersConfig = { };
-            extraUsersConfig = clickhouseUsers;
+          # ClickHouse is the substrate, not this stack: the users fragment is
+          # this consumer's whole contribution to the server.
+          environment.etc."clickhouse-server/users.d/250-langfuse.xml" = lib.mkIf hasSecretFile {
+            text = clickhouseUsers;
           };
-          # ClickHouse reads its config through a stable path, so a serverConfig
-          # change leaves the unit identical and would never reach the server.
-          systemd.services.clickhouse.restartTriggers = [
-            config.environment.etc."clickhouse-server/config.d/100-nixos-module-config.yaml".source
-          ]
-          ++ lib.optional hasSecretFile clickhouseUsers;
-          # sops-install-secrets can leave /run/secrets/rendered untraversable for ClickHouse; NixOS has no /bin, so use the store path.
-          systemd.services.clickhouse.serviceConfig.ExecStartPre =
-            lib.optional hasSecretFile "+${pkgs.coreutils}/bin/chmod 0755 /run/secrets/rendered";
+          systemd.services.clickhouse.restartTriggers = lib.optional hasSecretFile clickhouseUsers;
 
           # Queue + cache only: no persistence, loopback + service address.
           services.redis.servers.langfuse = {
@@ -268,10 +252,6 @@
           };
 
           # svc0 appears only after networkd applies it, which no unit ordering expresses; retry the start.
-          systemd.services.clickhouse.serviceConfig = {
-            Restart = "on-failure";
-            RestartSec = 5;
-          };
           systemd.services."redis-langfuse".serviceConfig = {
             Restart = "on-failure";
             RestartSec = 5;

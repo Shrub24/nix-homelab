@@ -289,6 +289,10 @@ in
               message = "services.latitude.smtp.from must be set: sign-in is a magic link and no mail is sent without a sender.";
             }
             {
+              assertion = !cfg.enable || config.services.clickhouse.enable;
+              message = "services.latitude.enable is true but the ClickHouse substrate is not selected (select the clickhouse aspect): its trace store has no server otherwise.";
+            }
+            {
               # Redis instances get per-instance users; an undeclared tmpfiles owner fails activation
               # with 'Unknown user', and redis exits on a missing dir.
               assertion = lib.all (u: config.users.users ? ${u}) [

@@ -1,21 +1,21 @@
 # Canonical OCI image refs (registry/repo:tag@sha256:digest).
 # Service modules import these; Renovate keeps the full ref current.
 {
-  tagr = "ghcr.io/suitux/tagr:1.9.0@sha256:668d19ca5c403813e4052b5257dff19563035ffe508832c9cf62b034362f57d9";
+  tagr = "ghcr.io/suitux/tagr:1.16.1@sha256:d2419831a215e3c1fae9aba9b04463394b2ba7b558deeec936218338e9186087";
 
-  trek = "docker.io/mauriceboe/trek:latest@sha256:e1611b225e4401a7bd03b9cd6763ff5ba3c18c9f93bc972a8c2b0de4353275db";
+  trek = "docker.io/mauriceboe/trek:latest@sha256:ea5318f44cc989799848ec17e9b135611a87f2b073a035ea9b1b599830a12dfd";
 
-  doclingServe = "quay.io/docling-project/docling-serve:v1.26.0@sha256:56189f190892cc03a4a5c10ba9e56c421ac2524554aa2d36f0f4bb6564132524";
+  doclingServe = "quay.io/docling-project/docling-serve:v1.38.1@sha256:c632ab38b69a923c33b4d0c7dea4b8d3b8128bd19b94f710c3ee7db89dde8d34";
 
-  paperlessGpt = "ghcr.io/icereed/paperless-gpt:latest@sha256:c0ce6186028911101a2cfe68353f14a9dbb2653596f3f1cff94de4b6db3114ff";
+  paperlessGpt = "ghcr.io/icereed/paperless-gpt:latest@sha256:d668941a829552cc0eddbc7c22506b3480dfbf61bd0d6eae881ad9fcfe2de70c";
 
-  karakeepWeb = "ghcr.io/karakeep-app/karakeep:0.33.2@sha256:b069e4307dec06ea06d16989c6861c30a1ff208568be44ed5fb5d422cd3e950c";
+  karakeepWeb = "ghcr.io/karakeep-app/karakeep:0.34.1@sha256:69ae5315c618b7c14c1af3e34c6e211acdb231793af424ecd1cab0b70691d987";
 
   karakeepChrome = "ghcr.io/karakeep-app/karakeep-chrome:156.0.8078.47-r1@sha256:4ad61127638dd27bfe685222787c5780dd1d083d23a7658c39af657775814c44";
 
-  karakeepMeilisearch = "getmeili/meilisearch:v1.49.0@sha256:bdc7d7e7939911c40d88d6bcd01f9c72c81f7293135916d48bce241569f721bd";
+  karakeepMeilisearch = "getmeili/meilisearch:v1.55.0@sha256:ff546679970126f8822e15d1b6a06bfbff1f2ce2e43f810cfb5258012f92de5c";
 
-  audiomuse = "ghcr.io/neptunehub/audiomuse-ai:3.5.2@sha256:726d30981a601cb4556c6caece162ac15df247a7e7f09e36b64e8afd2f8f0b60";
+  audiomuse = "ghcr.io/neptunehub/audiomuse-ai:3.6.4@sha256:811f1f0bd0de97a1b4ab6601898297010da18fc957312b1ed3bb62990683630c";
 
   redis7Alpine = "docker.io/library/redis:8-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0";
 
@@ -25,22 +25,22 @@
 
   omniroute = "ghcr.io/shrub24/omniroute:sha-sha-25965d5@sha256:12d7cf563a5de174f13c32fded4e58c35f841f2a94d97b7af024323a82c78674";
 
-  langfuse = "docker.langfuse.com/langfuse/langfuse:4.43.0@sha256:d6165b4ef72027c128c6132a4d87a4643945f6ba01f9cb5d6e4af7e5e3bf5316";
+  langfuse = "docker.langfuse.com/langfuse/langfuse:4.70.0@sha256:932a46dfab770f89ecb2ec35258b6b80d3be8773403981a64d271ff0a408deef";
 
-  langfuseWorker = "docker.langfuse.com/langfuse/langfuse-worker:4.43.0@sha256:59be62f49978b656b27656cba7314097c6e9ca8d63ed6ef6f66394f6aaeede1b";
+  langfuseWorker = "docker.langfuse.com/langfuse/langfuse-worker:4.70.0@sha256:3b3b204fa72fd02d010ab90c667d07281e4b9ec3b5b0b1d21470ac2624b8a564";
 
-  docsMcpServer = "ghcr.io/arabold/docs-mcp-server:3.1.0@sha256:5bf22439746680e064db7cd1979fc192f9733f312ab9ce1c98ea0e7aa453a1f7";
+  docsMcpServer = "ghcr.io/arabold/docs-mcp-server:3.4.0@sha256:9e54b534cc2f34610a03d4d2e40b18a10fc71365a8e3148fe4a48dcb6eb0089b";
 
   hindsight = "ghcr.io/vectorize-io/hindsight:1.1.0-slim@sha256:fbc37d194bce007b6cce2fd9f66cd7f8c050bd18b80e662090a92835d9cb191d";
 
-  tududi = "docker.io/chrisvel/tududi:1.9.1@sha256:e3496f2d68c6cfb69e85bd779ae30da2f3e81b78a8b0e7595e6dc97ef9cb71ef";
+  tududi = "docker.io/chrisvel/tududi:1.9.7@sha256:bd1191e04b1c4b32fb8fa68199bd6982520f89eed9445cc91f886fbbebd2086c";
 
   # Multi-arch manifest index, including the OCI host's aarch64-linux platform.
-  homarr = "ghcr.io/homarr-labs/homarr:v2.5.2@sha256:025471efe0735b6bb89953ea4e141c984a171c1781bc8ca404163d3c26d0e26d";
+  homarr = "ghcr.io/homarr-labs/homarr:v2.9.1@sha256:9421086c541f0e83057eaac7b6181c6d3044835227017bea9fc4d0fffee49aa6";
 
   # Home Assistant's own image: the container is the installation method upstream supports (ADR-0012),
   # and the multi-arch index keeps the pin valid on either architecture.
-  homeAssistant = "ghcr.io/home-assistant/home-assistant:2026.10.1@sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0";
+  homeAssistant = "ghcr.io/home-assistant/home-assistant:2026.10.4@sha256:23f4dfbb69ce76315dbc4de7915504f1c2dcecd7ca2648113a493a385972e133";
 
   # Multi-arch index digest: the arm64 manifest is selected on oci-melb-1.
   inboxZero = "ghcr.io/elie222/inbox-zero:2.30.0@sha256:e9970c499a79b8a15bbab21363d1b87ea247c75b2721f036c7cee0e2c78d1fcc";
@@ -48,13 +48,13 @@
   # Latitude ships one release tag across all six images, so they move together; the digests
   # are multi-arch index digests, valid on both architectures.
   latitude = {
-    web = "docker.io/latitudedata/web:0.3.118@sha256:4c2ff898d14ba693f5f17e88bf2f02bfa6c1aa94b30deb88d36f888cb0c050b3";
-    api = "docker.io/latitudedata/api:0.3.118@sha256:ae7a7cc4f788962eaa03c040f62f63f38ed33b8f31e781804923b8302d72035a";
-    ingest = "docker.io/latitudedata/ingest:0.3.118@sha256:f35134928d7fbf412306125220bf8d27190c47b2d7cbd1ad432688dcfd7107a4";
-    workers = "docker.io/latitudedata/workers:0.3.118@sha256:2ddbe608fe026777f380032737f19f936e81695a4386153a264db2a1d6ed5db9";
-    workflows = "docker.io/latitudedata/workflows:0.3.118@sha256:8075a750955653acc08c984c556ebead7d787b66bebdac65b0e8e348ec28d4ca";
-    migrations = "docker.io/latitudedata/migrations:0.3.118@sha256:b7729edfb4649df1cd9b6ae4b8505f7ec92abe253cced776426c2a0cb4b959ea";
+    web = "docker.io/latitudedata/web:0.3.124@sha256:b63ab7fb323732efea294d2fdffd14a91242e471478fae550578c786ef4a39ed";
+    api = "docker.io/latitudedata/api:0.3.124@sha256:9ad756af5d43c8ac1f72ee6d7a1f3cfad0949d912bb1e677b4c5d8ce65c403ae";
+    ingest = "docker.io/latitudedata/ingest:0.3.124@sha256:35915bd49b686a50fc6ecf2bcc2b0b775df22a9a3091b77cc6fb1e170f058cb5";
+    workers = "docker.io/latitudedata/workers:0.3.124@sha256:13ed197736b42d42e6cc3c772d0368f706146f5db14437f4c23249032d30f4d8";
+    workflows = "docker.io/latitudedata/workflows:0.3.124@sha256:c3130fc36dafd0fe4585d858143d6627ef56cfb6233b08aac4c31cd43a43dae9";
+    migrations = "docker.io/latitudedata/migrations:0.3.124@sha256:8751f8a7a078eb2351c35db3eab9e70a0752ddccb33c2dfec1063b1e9a0b4988";
   };
 
-  latitudeTemporal = "docker.io/temporalio/auto-setup:1.27.2@sha256:b44cbfeb43dbeae42db113b44fb8414c3452f05643b3d6b1592f955277d73526";
+  latitudeTemporal = "docker.io/temporalio/auto-setup:1.29.7@sha256:f14912b699cf73015ad5c4fc18d522d4b014db90e794039214dfb7c022c2644f";
 }

@@ -46,6 +46,8 @@ in
         # Knowledge domain (search, agent memory, documentation index).
         aspects.degoog
         aspects.hindsight
+        aspects.bookorbit
+        aspects.torrents
         aspects.docs-mcp
         # Home automation: the upstream container, host-networked for discovery.
         aspects.home-assistant

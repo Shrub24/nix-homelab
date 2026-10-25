@@ -274,34 +274,13 @@ variable "resend_send_enabled" {
   default     = false
 }
 
-variable "resend_spf_name" {
-  description = "SPF record name for the sending domain (e.g., 'send')"
-  type        = string
-  default     = "send"
-}
-
-variable "resend_spf_value" {
-  description = "Full SPF TXT value copied from the provider dashboard"
-  type        = string
-  default     = "v=spf1 include:amazonses.com ~all"
-}
-
-variable "resend_mx_name" {
-  description = "MX record name for the sending domain (e.g., 'send')"
-  type        = string
-  default     = "send"
-}
-
-variable "resend_mx_target" {
-  description = "MX record target copied from the provider dashboard"
-  type        = string
-  default     = "feedback-smtp.us-east-1.amazonses.com"
-}
-
-variable "resend_mx_priority" {
-  description = "MX priority copied from the provider dashboard"
-  type        = number
-  default     = 10
+variable "resend_cname_records" {
+  description = "CNAME records (return path and tracking) provided by the provider dashboard"
+  type = list(object({
+    name  = string
+    value = string
+  }))
+  default = []
 }
 
 variable "resend_dkim_records" {
@@ -314,7 +293,7 @@ variable "resend_dkim_records" {
 }
 
 variable "resend_dmarc_name" {
-  description = "DMARC record name for the sending domain (e.g., '_dmarc.send'). Leave empty to skip DMARC record creation."
+  description = "DMARC record name for the sending domain (e.g., '_dmarc'). Leave empty to skip DMARC record creation."
   type        = string
   default     = ""
 }

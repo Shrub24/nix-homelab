@@ -31,6 +31,7 @@ _: {
           callbackPath = clientPolicy.callbackPath or null;
           originUrl = clientPolicy.originUrl or null;
           includePrivateEndpointCallback = clientPolicy.includePrivateEndpointCallback or false;
+          additionalRedirectUrls = clientPolicy.additionalRedirectUrls or [ ];
           supplementaryScopeMaps = clientPolicy.supplementaryScopeMaps or { };
           claimMaps = clientPolicy.claimMaps or { };
         }
@@ -94,12 +95,15 @@ _: {
               "https://${client.route.endpoint.host}:${toString client.route.endpoint.port}${client.callbackPath}"
             else
               null;
+          extraUrls =
+            lib.optional (privateEndpointCallback != null) privateEndpointCallback
+            ++ client.additionalRedirectUrls;
           resolvedOriginUrl =
-            if privateEndpointCallback == null then
+            if extraUrls == [ ] then
               canonicalOriginUrl
             else
               (if builtins.isList canonicalOriginUrl then canonicalOriginUrl else [ canonicalOriginUrl ])
-              ++ [ privateEndpointCallback ];
+              ++ extraUrls;
         in
         {
           inherit (client) displayName;

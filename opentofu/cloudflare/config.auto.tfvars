@@ -18,20 +18,25 @@ rate_limit_requests_per_period     = 300
 rate_limit_requests_to_origin      = true
 navidrome_cache_bypass_enabled     = true
 
-# Resend email sending domain
+# Resend email sending domain (shrublab.xyz). Paste the dashboard name/value fields directly.
 resend_send_enabled = true
-resend_spf_name     = "send"
-resend_spf_value    = "v=spf1 include:amazonses.com ~all"
-resend_mx_name      = "send"
-resend_mx_target    = "feedback-smtp.eu-west-1.amazonses.com"
-resend_mx_priority  = 10
-resend_dmarc_name   = "_dmarc.send"
+resend_dmarc_name   = "_dmarc"
 resend_dmarc_value  = "v=DMARC1; p=none;"
 
-# Paste the dashboard name/value fields directly for DKIM TXT records.
+resend_cname_records = [
+  {
+    name  = "rsend"
+    value = "rsend-apne1.forge.rmta.net"
+  },
+  {
+    name  = "send"
+    value = "send.forge.rmta.net"
+  },
+]
+
 resend_dkim_records = [
   {
-    name  = "resend._domainkey.send"
-    value = "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDbsUBQchwSQk3gUAjstoK8Cpa0hAnukEsIy0KAcXKICnMkBmpTEY3KXyhX14P/eZsW/BJexjXmfMTgQhSQcBbIb+8KcAiShDe+ig8WROSrkmwC30MbeWRWXmHZ0jKmWHd5pRdi1H7T8pEUkm5p1xG9wO1wN6MB4k/tD66PsYC5iQIDAQAB"
+    name  = "resend._domainkey"
+    value = "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDWBeOoeZAktdJIVDMtb6W6oLBkMDQJdOXvXF4F/3TymtaT/f0eyU5TsZksDjBicQf3b4S6oZI9sFSmImEXZAI+aJkqOhnA4zuCPKG/jfkTO0qrZ9sJckZmtUMnSNlpiAKs7e0AZ0XgZT0W5m16wK9GSAjBLYosTcuzyXmhLOWaJwIDAQAB"
   },
 ]

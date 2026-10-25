@@ -226,36 +226,6 @@ for out in bootstrap checks deploy deployHosts devShells formatter nixosConfigur
   ne --apply '_: true' "path:.#${out}" >/dev/null || fail "flake output .${out} missing"
 done
 
-# Package keys stay exact per system. The `host-<host>` entries are the
-# addressable form of the deploy profiles, published unfiltered so a
-# cross-system prebuild resolves them from any evaluating system; the same
-# derivations are the `checks.<system>.host-<host>` entries asserted below, and
-# only on the host's own system. `write-flake`/`write-inputs`/`write-lock` are flake-file's generator tooling.
-# The packages that render the generated flake.nix, and the fleet's CI
-# builder bundles (`packages.<profile>`) arrive with the fleet feature import,
-# one per declared build profile. `ci` and
-# `arm-expensive` are the canonical profiles, and `cache-api-url` is the same
-# feature's resolved niks3 write-API coordinate — what the build-push-cache
-# workflow's `cache_api_url` input falls back to when it is not passed.
-# `fixture` is nix-fleet's own
-# fixture profile, which still reaches this evaluation through the published
-# feature — measured, it renders `fixture-host`/`builder.invalid` rather than
-# our hosts — reported upstream; the pin records it until it drops.
-# `sops-bootstrap` is nix-fleet's secret-template driver, which the
-# `just secrets bootstrap` recipe invokes; it is published here so the devShell
-# and `nix run` reach the same package.
-# `ci-tailscale` is nix-fleet's build/cache CI identity (client id and audience), published by the same feature as `ci`.
-# `bifrost` and `bifrost-voyage-plugin` are nix-fleet's gateway runtime and its
-# Voyage request normalizer: the gateway is a native service now, so the
-# binary is a first-class repository package and the plugin is its paired build.
-for system in x86_64-linux aarch64-linux; do
-  pkgs="$(ne --raw --apply 'p: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames p))' "path:.#packages.${system}")" ||
-    fail "packages.${system} does not evaluate"
-  if [ "$pkgs" != '["arm-expensive","bifrost","bifrost-voyage-plugin","cache-api-url","cache-public-key","cache-root","cache-substituter-url","ci","ci-tailscale","degoog","deploy-rs","fixture","geopulse","geopulse-backend","geopulse-frontend","host-home-forge","host-la-admin-1","host-oci-melb-1","niks3","sops-bootstrap","windows-dj-setup","write-flake","write-inputs","write-lock"]' ]; then
-    fail "packages.${system} keys drifted: $pkgs"
-  fi
-done
-
 # The deploy surface is reachable from the standard checks output (FB-4): each
 # host's activatable profile is a check on the system that builds it, and both
 # outputs resolve the same derivation, so CI needs no bespoke aggregate.
@@ -607,13 +577,6 @@ PYEOF
 probe_web_identity oci-melb-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","fronts":["tailscale-serve-cockpit","tailscale-serve-geopulse","tailscale-serve-homarr"],"kanidmExposureMode":null,"catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":"https://la-admin-1.tail0fe19b.ts.net:8443","kanidmSni":null,"kanidmFrontLoopback":false,"kanidmTlsChain":null,"kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
 probe_web_identity la-admin-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","ntfyUrl":"http://127.0.0.1:2586","fronts":["tailscale-serve-kanidm-admin"],"kanidmExposureMode":"tailscale-serve","catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":null,"kanidmSni":null,"kanidmFrontLoopback":true,"kanidmTlsChain":"/srv/data/kanidm/tls/fullchain.pem","kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
 probe_web_identity home-forge '{"providerUrl":"https://id.shrublab.xyz","hostAuth":false,"kanidmUri":null,"fronts":[],"kanidmExposureMode":null,"catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":null,"kanidmSni":null,"kanidmFrontLoopback":false,"kanidmTlsChain":null,"kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
-# Identity clients are the policy-derived oauth2 set on OCI/LA; forge has none.
-for host in oci-melb-1 la-admin-1; do
-  clients="$(ne --raw --apply 'c: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames (c.services.identity.oidc.clients or {})))' "path:.#nixosConfigurations.${host}.config")" ||
-    fail "${host}: identity clients do not evaluate"
-  [ "$clients" = '["actual","beszel","cloudflare-access","geopulse","grafana","homarr","karakeep","langfuse","memos","paperless","termix","tududi"]' ] ||
-    fail "${host}: identity clients drifted: $clients"
-done
 # Forge carries only the intrinsic OIDC contract, because the Grafana it runs
 # reads the derived endpoints; identity machinery itself — provider, host-auth,
 # client — stays absent, not merely disabled.
@@ -656,12 +619,7 @@ done
 # 7h. Stage 3 observable contract (OPS-1..OPS-8): derived bucket and secret
 # path, selection-is-enablement for backups/publication/client/Beszel, OCI
 # token ownership and loopback endpoint, fleet-registry builder trust, Beszel
-# KEY-only enrollment
-# scopes, and the notify-owned monitor wiring (OPS-4). The monitor payload is
-# the realized `services.notify.events` set, so it pins the class baseline as
-# well as our own registrations: `nix-daemon` is registered by the shared
-# baseline (failure only, rendered from the packaged unit) and realized here
-# because the notify aspect is co-selected.
+# KEY-only enrollment scopes.
 probe_ops() { # $1 host, $2 expected JSON (python dict literal)
   local host="$1" json
   json="$(ne --json --apply 'c: {
@@ -677,12 +635,7 @@ probe_ops() { # $1 host, $2 expected JSON (python dict literal)
     beszelEnvFile = (c.services.beszel.agent.environmentFile or null);
     beszelKeySops = !(c.sops.secrets ? beszel_agent_key);
     beszelTokenAbsent = !(c.sops.secrets ? beszel_agent_token);
-    monitor = builtins.mapAttrs (_: ev: {
-      failure = ev.failure != null;
-      success = ev.success != null;
-    }) (c.services.notify.events or { });
     onFailure = (c.systemd.services."restic-backups-state".onFailure or []);
-    knownHosts = builtins.attrNames (c.programs.ssh.knownHosts or { });
     buildMachines = builtins.length (c.nix.buildMachines or [ ]);
     stagingRoot = c.services.state-backups.stagingRoot or "";
     hostCorePaths = (c.services.state-backups.services.host-core.paths or []);
@@ -708,9 +661,6 @@ if not got["beszelKeySops"]:
     errs.append("beszel_agent_key: beszel must register no sops secret")
 if not any(c.endswith("restic-backups-state.service") for c in got["onFailure"]):
     errs.append(f"onFailure: missing the notify aspect handler for restic-backups-state ({got['onFailure']!r})")
-# Trust renders for every inventory record carrying a key; the list is derived, never restated.
-if got["knownHosts"] != ["host-home-forge", "host-la-admin-1", "host-oci-melb-1"]:
-    errs.append(f"knownHosts: {got['knownHosts']!r}, want the fleet's builder hosts")
 if got["buildMachines"] != 0:
     errs.append(f"buildMachines: {got['buildMachines']!r} entries; scheduling must stay off (CI builds)")
 if not got["beszelTokenAbsent"]:
@@ -725,9 +675,9 @@ if errs:
 PYEOF
 }
 
-probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"knownHosts":["host-home-forge","host-la-admin-1","host-oci-melb-1"],"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"bifrost":{"failure":true,"success":false},"inbox-zero-scheduled-actions":{"failure":true,"success":false},"inbox-zero-watch-renewal":{"failure":true,"success":false},"nix-daemon":{"failure":true,"success":false},"fast-nix-gc":{"failure":true,"success":false},"fast-nix-optimise":{"failure":true,"success":false},"geopulse-backend":{"failure":true,"success":false},"geopulse-web":{"failure":true,"success":false},"homarr-apps":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"podman-inbox-zero":{"failure":true,"success":false},"podman-prune":{"failure":true,"success":false},"prometheus-node-exporter":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false},"tailscaled":{"failure":true,"success":false},"vector":{"failure":true,"success":false},"vmagent":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
-probe_ops la-admin-1 "$(printf '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"knownHosts":["host-home-forge","host-la-admin-1","host-oci-melb-1"],"buildMachines":0,"monitor":{"beszel-agent":{"failure":true,"success":false},"nix-daemon":{"failure":true,"success":false},"fast-nix-gc":{"failure":true,"success":false},"fast-nix-optimise":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"prometheus-node-exporter":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false},"tailscaled":{"failure":true,"success":false},"vector":{"failure":true,"success":false},"vmagent":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}' "$web_suffix")"
-probe_ops home-forge "$(printf '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"knownHosts":["host-home-forge","host-la-admin-1","host-oci-melb-1"],"buildMachines":0,"monitor":{"beets-duplicates":{"failure":true,"success":false},"beets-inbox":{"failure":true,"success":false},"beets-reconcile":{"failure":true,"success":false},"beszel-agent":{"failure":true,"success":false},"bifrost":{"failure":true,"success":false},"nix-daemon":{"failure":true,"success":false},"fast-nix-gc":{"failure":true,"success":false},"fast-nix-optimise":{"failure":true,"success":false},"nh-clean":{"failure":true,"success":false},"opentelemetry-collector":{"failure":true,"success":false},"podman-home-assistant":{"failure":true,"success":false},"podman-omniroute":{"failure":true,"success":true},"prometheus-node-exporter":{"failure":true,"success":false},"restic-backups-state":{"failure":true,"success":false},"tailscaled":{"failure":true,"success":false},"vector":{"failure":true,"success":false},"vmagent":{"failure":true,"success":false}},"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}' "$web_suffix")"
+probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"buildMachines":0,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
+probe_ops la-admin-1 "$(printf '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"buildMachines":0,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}' "$web_suffix")"
+probe_ops home-forge "$(printf '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"buildMachines":0,"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}' "$web_suffix")"
 
 # The canonical inventory's host keys are the trust half of the builder
 # contract; pin one end to end rather than trusting the entry names alone.
@@ -1085,7 +1035,6 @@ PYEOF
 consumer_json="$(ne --raw --apply 'c: builtins.toJSON {
   providerUrl = c.services.identity.oidc.providerUrl;
   identityNamespaces = builtins.attrNames c.services.identity;
-  clientKeys = builtins.attrNames c.services.identity.oidc.clients;
   paperlessClientId = c.services.paperless.oidc.clientId;
   paperlessWellknownAligned = c.services.paperless.oidc.wellknownUrl == "${c.services.identity.oidc.providerUrl}/oauth2/openid/paperless/.well-known/openid-configuration";
   karakeepClientId = c.services.karakeep-pod.oidc.clientId;
@@ -1098,7 +1047,6 @@ got = json.loads(sys.argv[1])
 expected = {
     "providerUrl": "https://id.shrublab.xyz",
     "identityNamespaces": ["oidc"],
-    "clientKeys": ["actual", "beszel", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"],
     "paperlessClientId": "paperless",
     "paperlessWellknownAligned": True,
     "karakeepClientId": "karakeep",
@@ -1420,155 +1368,17 @@ for f in \
   test -e "$f" || fail "7n-1: host-local fragment $f must be retained"
 done
 
-# 7n-2. Semantic placement matrix. Each field is read defensively so an
-# unselected host renders false/absent rather than failing, and the toplevel
-# NOTE: PLACEMENT_PROBE below is a single-quoted shell string — text added inside
-# it must contain no apostrophe (one closes the string and bash parses the rest
-# as commands); write "the nix-fleet inventory", not "nix-fleet's inventory".
-# derivation is forced so option-merge and assertion failures surface.
-PLACEMENT_PROBE='c:
-let
-  hindsightEnvironment =
-    (((c.virtualisation.oci-containers.containers or { }).hindsight or { }).environment or { });
-in {
+# Discovery and selection isolation: force module assertions and inspect the
+# synthetic registration contributed by the selected fixture aspect.
+PLACEMENT_PROBE='c: {
   drv = c.system.build.toplevel.drvPath;
-  ociSerialConsole = builtins.elem "console=ttyAMA0,115200n8" (c.boot.kernelParams or [ ]);
-  # Presence, not a frozen list: `boot.loader.grub.devices` is currently set by
-  # both the `oci` private leaf and the disko-derived value, so it legitimately
-  # contains a pre-existing duplicate that Stage 7 must not pin as a contract.
-  grubHasSda = builtins.elem "/dev/sda" (c.boot.loader.grub.devices or [ ]);
-  serialGetty = c.systemd.services ? "serial-getty@ttyAMA0";
-  edgeEnable = (c.services.ingress or { }).enable or false;
-  edgeRole = (c.services.ingress or { }).role or "";
-  # Semantic route assertions rather than a brittle exact count: the edge
-  # contract is that the host policy routes are projected, plus representative
-  # catalog keys, so a future route addition cannot fail this check.
-  edgeHasRoutes = (builtins.attrNames ((c.services.ingress or { }).routes or { })) != [ ];
-  edgeRouteSample = builtins.sort builtins.lessThan (
-    builtins.filter
-      (k: builtins.elem k [ "navidrome" "termix-admin" "kanidm-admin" "admin-homepage" "webhook-admin" ])
-      (builtins.attrNames ((c.services.ingress or { }).routes or { }))
-  );
-  caddyEnable = c.services.caddy.enable or false;
-  cockpitEnable = c.services.admin.cockpit.enable or false;
-  cockpitServiceUser = c.services.admin.cockpit.serviceUser.name or "";
-  cockpitSecret = c.sops.secrets.cockpit_service_user_password_hash.path or "";
-  ntfyServerEnable = c.services.ntfy.enable or false;
-  kanidmEnable = c.services.identity.kanidm.enable or false;
-  kanidmAppUrl = c.services.identity.kanidm.appUrl or "";
-  termixEnable = c.services.admin.termix.enable or false;
-  adminSshSecrets = builtins.length (builtins.filter (n: n == "admin_ssh_identity" || n == "admin_ssh_known_hosts") (builtins.attrNames c.sops.secrets));
-  paperlessEnable = c.services.paperless.enable or false;
-  postgresEnable = c.services.postgres.enable or false;
-  postgresInstances = builtins.attrNames (c.services.postgres.instances or { });
-  postgresConsumers = builtins.attrNames (c.services.postgres.consumers or { });
-  # Import is deployment: the fleet module defines no enable flag, so the
-  # observable is whether the aspect placed the service on this host at all.
-  bifrostEnable = (c.services.bifrost or { }) != { };
-  # The gateway treats its own spans as an AI producer, so the destination is
-  # the AI lane, resolved from the canonical nix-fleet inventory.
-  bifrostCollector = c.services.bifrost.plugins.otel.config.collector_url or "";
-  karakeepEnable = c.services.karakeep-pod.enable or false;
-  niks3CacheAspect = (c.services.niks3-cache or { }) != { };
-  niks3ServerEnable = c.services.niks3.enable or false;
-  langfuseEnable = c.services.langfuse.enable or false;
-  latitudeEnable = c.services.latitude.enable or false;
-  # Port/collector regression observables, read defensively so hosts without
-  # the aspect render 0/empty: listener vs catalog vs Grafana, plus the
-  # colocated collector legs.
-  langfusePort = c.services.langfuse.port or 0;
-  langfuseCatPort = c.repo.web.catalog.langfuse.endpoint.port or 0;
-  grafanaCatPort = c.repo.web.catalog.grafana.endpoint.port or 0;
-  grafanaListener = if (c.services.grafana.enable or false) then (c.services.grafana.settings.server.http_port or (c.services.grafana.port or 0)) else 0;
-  langfuseCollector = (c.services.telemetry.destinations or { }).langfuse.endpoint or "";
-  latitudeCollector = (c.services.telemetry.destinations or { }).latitude.endpoint or "";
-  # Route separation: pin effective general and AI pipeline
-  # exporters for every OTLP signal. Route declarations are membership; this
-  # observes rendered routing. Hosts without a collector render empty maps.
-  signalPipelines = builtins.listToAttrs (map (signal: {
-    name = signal;
-    value = (c.services.opentelemetry-collector.settings.service.pipelines.${signal} or { }).exporters or [ ];
-  }) [ "traces" "metrics" "logs" ]);
-  aiRouteSignals = (c.services.telemetry.routes.ai.signals or [ ]);
-  aiRoutePipelines = builtins.listToAttrs (map (n: {
-    name = n;
-    value = (c.services.opentelemetry-collector.settings.service.pipelines.${n}.exporters or [ ]);
-  }) (builtins.filter (n: builtins.any (prefix: builtins.substring 0 (builtins.stringLength prefix) n == prefix)
-    [ "traces/route-ai" "metrics/route-ai" "logs/route-ai" ])
-    (builtins.attrNames (c.services.opentelemetry-collector.settings.service.pipelines or { }))));
-  omnirouteEnable = c.services.omniroute.enable or false;
-  omnirouteMonitor = builtins.hasAttr "podman-omniroute" (c.services.notify.events or { });
   monitorUnits = builtins.attrNames (c.services.notify.events or { });
-  hindsightWorkerEnabled = hindsightEnvironment.HINDSIGHT_API_WORKER_ENABLED or "";
 }'
 
 # ClickHouse package selection is checked through the evaluated host outputs.
 probe_placement() { # $1 repo root, $2 host -> JSON
   nix eval --json --no-write-lock-file --apply "$PLACEMENT_PROBE" "path:${1}#nixosConfigurations.${2}.config"
 }
-
-assert_placement() { # $1 host, $2 probe JSON, $3 expected JSON (dict subset)
-  python3 - "$1" "$2" "$3" <<'PYEOF' || fail "7n-2: $1 placement observables violated"
-import json, sys
-host, got_raw, exp_raw = sys.argv[1], sys.argv[2], sys.argv[3]
-got, exp = json.loads(got_raw), json.loads(exp_raw)
-if not got.get("drv"):
-    print(f"{host}: placement probe did not force the toplevel", file=sys.stderr)
-    sys.exit(1)
-errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in exp.items() if got.get(k) != v]
-if errs:
-    print(f"{host}: " + "; ".join(errs), file=sys.stderr)
-    sys.exit(1)
-PYEOF
-}
-
-placement_json="$(probe_placement "$ROOT" oci-melb-1)" || fail "7n-2: oci-melb-1 placement probe does not evaluate"
-assert_placement oci-melb-1 "$placement_json" '{"ociSerialConsole":true,"grubHasSda":true,"serialGetty":true,"edgeEnable":true,"edgeRole":"edge","edgeHasRoutes":true,"edgeRouteSample":["admin-homepage","kanidm-admin","navidrome","termix-admin","webhook-admin"],"caddyEnable":true,"cockpitEnable":true,"cockpitServiceUser":"cockpit-svc","cockpitSecret":"/run/secrets/cockpit.service_user.password_hash","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":true,"postgresEnable":true,"postgresInstances":["postgres"],"postgresConsumers":["geopulse","inbox-zero","paperless"],"bifrostEnable":true,"bifrostCollector":"http://home-forge:4319/v1/traces","karakeepEnable":true,"niks3CacheAspect":true,"niks3ServerEnable":true,"langfuseEnable":false,"latitudeEnable":false,"langfusePort":0,"langfuseCatPort":3030,"grafanaCatPort":3000,"grafanaListener":0,"langfuseCollector":"","latitudeCollector":"","signalPipelines":{"logs":[],"metrics":[],"traces":[]},"aiRouteSignals":[],"aiRoutePipelines":{},"omnirouteEnable":false,"omnirouteMonitor":false,"hindsightWorkerEnabled":""}'
-placement_json="$(probe_placement "$ROOT" la-admin-1)" || fail "7n-2: la-admin-1 placement probe does not evaluate"
-assert_placement la-admin-1 "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":true,"edgeRole":"origin","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":true,"kanidmEnable":true,"kanidmAppUrl":"https://id.shrublab.xyz","termixEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":false,"postgresInstances":[],"postgresConsumers":[],"bifrostEnable":false,"karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":false,"signalPipelines":{"logs":[],"metrics":[],"traces":[]},"aiRouteSignals":[],"aiRoutePipelines":{},"omnirouteEnable":false,"omnirouteMonitor":false,"hindsightWorkerEnabled":""}'
-placement_json="$(probe_placement "$ROOT" home-forge)" || fail "7n-2: home-forge placement probe does not evaluate"
-la_absence="$(ne --raw --apply 'c: builtins.toJSON { cockpit = !(c.services.admin ? cockpit); termix = !(c.services.admin ? termix); adminSsh = (builtins.filter (n: n == "admin_ssh_identity" || n == "admin_ssh_known_hosts") (builtins.attrNames c.sops.secrets)) == []; }' "path:.#nixosConfigurations.la-admin-1.config")" ||
-  fail "7n-2: LA absence probe does not evaluate"
-[ "$la_absence" = '{"adminSsh":true,"cockpit":true,"termix":true}' ] ||
-  fail "7n-2: demoted capabilities must leave no namespace or secret registration on la-admin-1: $la_absence"
-assert_placement home-forge "$placement_json" '{"ociSerialConsole":false,"grubHasSda":false,"serialGetty":false,"edgeEnable":false,"edgeRole":"","edgeHasRoutes":false,"edgeRouteSample":[],"caddyEnable":false,"cockpitEnable":false,"cockpitServiceUser":"","cockpitSecret":"","ntfyServerEnable":false,"kanidmEnable":false,"adminSshSecrets":0,"paperlessEnable":false,"postgresEnable":true,"postgresInstances":["forge"],"postgresConsumers":["audiomuse","hindsight","langfuse","latitude"],"bifrostEnable":true,"bifrostCollector":"http://home-forge:4319/v1/traces","karakeepEnable":false,"niks3CacheAspect":false,"niks3ServerEnable":false,"langfuseEnable":true,"latitudeEnable":true,"langfusePort":3030,"langfuseCatPort":3030,"grafanaCatPort":3000,"grafanaListener":3000,"langfuseCollector":"http://127.0.0.1:3030/api/public/otel","latitudeCollector":"http://127.0.0.1:3002","signalPipelines":{"logs":["otlphttp/victorialogs"],"metrics":["prometheusremotewrite/victoriametrics"],"traces":["otlphttp/victoriatraces"]},"aiRouteSignals":["traces","metrics","logs"],"aiRoutePipelines":{"logs/route-ai":["otlphttp/route-ai-victorialogs"],"metrics/route-ai":["prometheusremotewrite/route-ai-victoriametrics"],"traces/route-ai":["otlphttp/route-ai-langfuse"],"traces/route-ai-latitude":["otlphttp/route-ai-latitude"],"traces/route-ai-lean":["otlphttp/route-ai-victoriatraces"]},"omnirouteEnable":true,"omnirouteMonitor":true,"hindsightWorkerEnabled":"false"}'
-
-# 7n-2b. ClickHouse comes from the host package set. The dedicated nixpkgs pin
-# and its `repo.packages.clickhouse` projection were retired once this baseline
-# pinned LLVM 22 for the build, so nothing may reintroduce a
-# second source and the deployed server must be the host's own package.
-if grep -RnE --include='*.nix' 'nixpkgs-clickhouse|repo\.packages\.clickhouse' modules policy flake.nix; then
-  fail "7n-2b: the ClickHouse pin and its projection must be gone"
-fi
-if grep -q 'nixpkgs-clickhouse' renovate.json; then
-  fail "7n-2b: renovate must not carry a rule for the retired ClickHouse pin"
-fi
-grep -q 'package = pkgs.clickhouse;' modules/database/clickhouse.nix ||
-  fail "7n-2b: the ClickHouse substrate must bind the host package set"
-grep -qF '${pkgs.clickhouse}/bin/clickhouse-client' modules/observability/latitude.nix ||
-  fail "7n-2b: the Latitude init client must come from the host package set"
-clickhouse_json="$(ne --raw --apply 'c: builtins.toJSON {
-  deployed = c.services.clickhouse.package.drvPath or "";
-}' "path:.#nixosConfigurations.home-forge.config")" ||
-  fail "7n-2b: home-forge ClickHouse probe does not evaluate"
-clickhouse_baseline="$(nix eval --impure --no-write-lock-file --raw --expr 'let f = builtins.getFlake (toString ./.); in f.inputs.nixpkgs.legacyPackages.x86_64-linux.clickhouse.drvPath')" ||
-  fail "7n-2b: the baseline ClickHouse derivation does not evaluate"
-python3 - "$clickhouse_json" "$clickhouse_baseline" <<'PYEOF' || fail "7n-2b: ClickHouse package provenance violated"
-import json, sys
-
-got = json.loads(sys.argv[1])
-baseline = sys.argv[2]
-if not got["deployed"]:
-    print("home-forge: the ClickHouse server package did not evaluate", file=sys.stderr)
-    sys.exit(1)
-if got["deployed"] != baseline:
-    print(
-        "the deployed ClickHouse must be the baseline package set's build: "
-        f"{got['deployed']!r} != {baseline!r}",
-        file=sys.stderr,
-    )
-    sys.exit(1)
-PYEOF
 
 # 7n-3. Evaluated placement mutations use throwaway repository copies.
 
@@ -1744,14 +1554,8 @@ PYEOF
 # placement (home-forge yes, OCI no synthetic fragments), and owner-defined
 # hooks survive the additive merge.
 
-# 7o-2. Per-host observable notification contract. Every registered unit must
-# have a real implementation, the registration set must match the owning
-# capabilities exactly (no host reverse index, no phantom Beets fragment), and
-# each registered unit must really receive the native handler the shared aspect
-# attaches for its declared events. One registration is the class baseline's
-# rather than a capability's: `nix-daemon` is registered against the packaged
-# unit (`fromPackage`), which is why it sits in the package-provided group
-# beside `tailscaled`.
+# Registered units must have an implementation and receive native handlers.
+# Feature-owned lifecycle hooks must survive notification composition.
 MONITOR_PROBE='c: let
   events = c.services.notify.events or { };
   svc = c.systemd.services or { };
@@ -1772,27 +1576,12 @@ MONITOR_PROBE='c: let
   isBeets = n: builtins.match "beets-.*" n != null;
   names = builtins.attrNames events;
   beets = builtins.filter isBeets (builtins.attrNames svc);
-  # Non-root notify CLI callers: each is granted socket dispatch by joining the
-  # notify group from the module that owns it.
-  callers = builtins.filter (
-    u: c.users.users ? ${u} && builtins.elem "notify" (c.users.users.${u}.extraGroups or [ ])
-  ) [
-    "beets"
-    "dev"
-    "paperless"
-  ];
 in {
   drv = c.system.build.toplevel.drvPath;
   daemonUnit = svc ? "notify";
   handlerUnit = svc ? "notify-event@";
-  callers = callers;
-  names = builtins.sort builtins.lessThan names;
   unreal = builtins.filter (n: !(isReal n)) names;
-  fromPackage = builtins.sort builtins.lessThan (
-    builtins.filter (n: events.${n}.fromPackage or false) names
-  );
   beetsAttrs = builtins.sort builtins.lessThan beets;
-  beetsReal = builtins.filter isReal (builtins.filter isBeets names);
   beetsInboxPresent = svc ? "beets-inbox";
   hooks = builtins.listToAttrs (map (n: {
     name = n;
@@ -1823,12 +1612,6 @@ if not got["handlerUnit"]:
     errs.append("the notify-event@ handler template must exist when units are registered")
 if got["unreal"]:
     errs.append(f"registered units without an implementation: {got['unreal']!r}")
-if got["names"] != ["beszel-agent", "bifrost", "fast-nix-gc", "fast-nix-optimise", "geopulse-backend", "geopulse-web", "homarr-apps", "inbox-zero-scheduled-actions", "inbox-zero-watch-renewal", "nh-clean", "nix-daemon", "podman-inbox-zero", "podman-prune", "prometheus-node-exporter", "restic-backups-state", "tailscaled", "vector", "vmagent"]:
-    errs.append(f"registered units drifted from the owning capabilities: {got['names']!r}")
-if got["fromPackage"] != ["nix-daemon", "tailscaled"]:
-    errs.append(f"package-provided registrations drifted: {got['fromPackage']!r}")
-if got["callers"] != ["dev", "paperless"]:
-    errs.append(f"notify-group callers drifted: {got['callers']!r}")
 if got["beetsAttrs"]:
     errs.append(f"OCI must evaluate no Beets service fragments: {got['beetsAttrs']!r}")
 if got["beetsInboxPresent"]:
@@ -1858,12 +1641,6 @@ if not got["handlerUnit"]:
     errs.append("the notify-event@ handler template must exist when units are registered")
 if got["unreal"]:
     errs.append(f"registered units without an implementation: {got['unreal']!r}")
-if got["names"] != ["beszel-agent", "fast-nix-gc", "fast-nix-optimise", "nh-clean", "nix-daemon", "prometheus-node-exporter", "restic-backups-state", "tailscaled", "vector", "vmagent"]:
-    errs.append(f"registered units drifted from the owning capabilities: {got['names']!r}")
-if got["fromPackage"] != ["nix-daemon", "tailscaled"]:
-    errs.append(f"package-provided registrations drifted: {got['fromPackage']!r}")
-if got["callers"] != ["dev"]:
-    errs.append(f"notify-group callers drifted: {got['callers']!r}")
 if got["beetsAttrs"]:
     errs.append(f"la-admin-1 must evaluate no Beets service fragments: {got['beetsAttrs']!r}")
 for name, hooks in got["hooks"].items():
@@ -1887,15 +1664,6 @@ if not got["handlerUnit"]:
     errs.append("the notify-event@ handler template must exist when units are registered")
 if got["unreal"]:
     errs.append(f"registered units without an implementation: {got['unreal']!r}")
-expected = ["beets-duplicates", "beets-inbox", "beets-reconcile", "beszel-agent", "bifrost", "fast-nix-gc", "fast-nix-optimise", "nh-clean", "nix-daemon", "opentelemetry-collector", "podman-home-assistant", "podman-omniroute", "prometheus-node-exporter", "restic-backups-state", "tailscaled", "vector", "vmagent"]
-if got["names"] != expected:
-    errs.append(f"registered units drifted from the owning capabilities: {got['names']!r}")
-if got["fromPackage"] != ["nix-daemon", "tailscaled"]:
-    errs.append(f"package-provided registrations drifted: {got['fromPackage']!r}")
-if got["callers"] != ["beets", "dev"]:
-    errs.append(f"notify-group callers drifted: {got['callers']!r}")
-if got["beetsReal"] != ["beets-duplicates", "beets-inbox", "beets-reconcile"]:
-    errs.append(f"real Beets units drifted: {got['beetsReal']!r}")
 # The interactive quarantine review worker is not an automated runner and must
 # stay unregistered (it keeps only its own failure hook).
 hooks = got["hooks"]

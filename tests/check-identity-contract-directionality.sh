@@ -58,6 +58,7 @@ expected = {
     "oauth2ClientSecrets": [
         "kanidm_oauth2_actual_basic_secret",
         "kanidm_oauth2_beszel_basic_secret",
+        "kanidm_oauth2_bookorbit_basic_secret",
         "kanidm_oauth2_cloudflare-access_basic_secret",
         "kanidm_oauth2_geopulse_basic_secret",
         "kanidm_oauth2_grafana_basic_secret",
@@ -168,7 +169,7 @@ expected = {
     "webhookServiceEnable": False,
     "webhookLeafAbsent": True,
     # Twelve provider-owned client secrets, including Homarr.
-    "oauth2SecretCount": 12,
+    "oauth2SecretCount": 13,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
 if errs:
@@ -981,9 +982,9 @@ expected = {
     "kanidmProvisionEnable": True,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
-if got.get("provisionClientKeys") != ["actual", "beszel", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"]:
+if got.get("provisionClientKeys") != ["actual", "beszel", "bookorbit", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"]:
     errs.append(f"provisionClientKeys: got {got.get('provisionClientKeys')!r}")
-if got.get("oauth2SecretSourceKeys") != ["actual", "beszel", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"]:
+if got.get("oauth2SecretSourceKeys") != ["actual", "beszel", "bookorbit", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"]:
     errs.append(f"oauth2SecretSourceKeys: got {got.get('oauth2SecretSourceKeys')!r}")
 if errs:
     print("; ".join(errs), file=sys.stderr)
@@ -1071,7 +1072,7 @@ expected = {
     "kanidmProvisionEnable": False,
 }
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
-if got.get("clientKeys") != ["actual", "beszel", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"]:
+if got.get("clientKeys") != ["actual", "beszel", "bookorbit", "cloudflare-access", "geopulse", "grafana", "homarr", "karakeep", "langfuse", "memos", "paperless", "termix", "tududi"]:
     errs.append(f"clientKeys: got {got.get('clientKeys')!r}")
 beszel = got.get("beszel") or {}
 for field, want in {

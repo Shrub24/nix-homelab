@@ -378,25 +378,15 @@ resource "cloudflare_ruleset" "service_cache_bypass" {
 # Resend email sending domain DNS
 # ---------------------------------------------------------------------------
 
-resource "cloudflare_dns_record" "resend_send_spf" {
-  count   = var.resend_send_enabled ? 1 : 0
-  zone_id = var.cloudflare_zone_id
-  name    = var.resend_spf_name
-  type    = "TXT"
-  ttl     = 1
-  content = var.resend_spf_value
-  comment = "Managed by OpenTofu: Resend SPF for send.shrublab.xyz"
-}
-
-resource "cloudflare_dns_record" "resend_send_mx" {
-  count    = var.resend_send_enabled ? 1 : 0
+resource "cloudflare_dns_record" "resend_send_cname" {
+  for_each = var.resend_send_enabled ? { for k in var.resend_cname_records : k.name => k } : {}
   zone_id  = var.cloudflare_zone_id
-  name     = var.resend_mx_name
-  type     = "MX"
+  name     = each.value.name
+  type     = "CNAME"
   ttl      = 1
-  content  = var.resend_mx_target
-  priority = var.resend_mx_priority
-  comment  = "Managed by OpenTofu: Resend return-path MX for send.shrublab.xyz"
+  content  = each.value.value
+  proxied  = false
+  comment  = "Managed by OpenTofu: Resend return-path record ${each.key}"
 }
 
 resource "cloudflare_dns_record" "resend_send_dkim" {
@@ -416,5 +406,5 @@ resource "cloudflare_dns_record" "resend_send_dmarc" {
   type    = "TXT"
   ttl     = 1
   content = var.resend_dmarc_value
-  comment = "Managed by OpenTofu: Resend DMARC for send.shrublab.xyz"
+  comment = "Managed by OpenTofu: Resend DMARC"
 }

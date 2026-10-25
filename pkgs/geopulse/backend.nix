@@ -12,8 +12,10 @@ maven.buildMavenPackage {
   # Sources build unmodified: the client opts out of PKCE in policy/identity.json. The
   # repeatable migration stays because Flyway records it by checksum.
   postPatch = ''
-    cp ${./migrations/R__Add_oidc_session_code_verifier.sql} \
-      backend/src/main/resources/db/migration/
+    # The destination name is explicit: `cp` from a store path would keep the
+    # hash prefix Nix adds, and Flyway then rejects the file as non-conforming.
+    install -Dm644 ${./migrations/R__Add_oidc_session_code_verifier.sql} \
+      backend/src/main/resources/db/migration/R__Add_oidc_session_code_verifier.sql
   '';
 
   mvnJdk = jdk25;

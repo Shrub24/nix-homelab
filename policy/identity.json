@@ -89,6 +89,29 @@
           "users": ["openid", "profile", "email"]
         }
       },
+      "bookorbit": {
+        "enable": true,
+        "displayName": "BookOrbit",
+        "secretKeyPrefix": "bookorbit",
+        "routeKey": "bookorbit",
+        "callbackPath": "/oauth2-callback",
+        "additionalRedirectUrls": ["bookorbit://oauth2-callback"],
+        "preferShortUsername": true,
+        "scopeMaps": {
+          "service-admins": [
+            "openid",
+            "profile",
+            "email",
+            "groups_name"
+          ],
+          "users": [
+            "openid",
+            "profile",
+            "email",
+            "groups_name"
+          ]
+        }
+      },
       "tududi": {
         "enable": true,
         "displayName": "tududi",

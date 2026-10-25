@@ -133,6 +133,16 @@ _: {
               };
               environmentFiles = [ config.sops.templates."homarr.environment".path ];
               volumes = [ "${dataDir}:/appdata" ];
+              # No HEALTHCHECK in the image; sdnotify=healthy makes After= mean "listening".
+              # The probe dials containerPort inside the container, never the host-mapped port.
+              podman.sdnotify = "healthy";
+              extraOptions = [
+                "--health-cmd=wget -q --spider http://127.0.0.1:${toString containerPort}/api/health/ready"
+                "--health-interval=5s"
+                "--health-timeout=3s"
+                "--health-retries=10"
+                "--health-start-period=5s"
+              ];
             };
           };
 
@@ -147,6 +157,10 @@ _: {
               wants = [ "sops-install-secrets.service" ];
               after = [ "sops-install-secrets.service" ];
               unitConfig.RequiresMountsFor = [ dataDir ];
+              # The container module sets TimeoutStartSec=0 and readiness now blocks on the
+              # healthcheck, so bound the wait: an app that never becomes healthy fails the
+              # unit instead of hanging the switch.
+              serviceConfig.TimeoutStartSec = lib.mkForce 120;
             };
           };
 

@@ -74,7 +74,7 @@
       reboot.onCalendar = "weekly";
     };
 
-    admin.vaultwarden.smtpFrom = "admin@send.shrublab.xyz";
+    admin.vaultwarden.smtpFrom = "admin@shrublab.xyz";
   };
 
   sops.defaultSopsFile = ../../../secrets/common.yaml;

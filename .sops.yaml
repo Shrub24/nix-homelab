@@ -118,6 +118,11 @@ creation_rules:
       - age:
           - *owner_age
           - *home_forge_age
+  - path_regex: ^secrets/services/bookorbit\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *home_forge_age
   - path_regex: ^secrets/services/langfuse\.ya?ml$
     key_groups:
       - age:

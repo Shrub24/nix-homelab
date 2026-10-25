@@ -332,6 +332,25 @@ in
           access.requireCloudflareAccess = false;
         };
 
+        # Kanidm OIDC gates the web app; Access is off because OPDS and e-reader clients cannot pass it.
+        bookorbit = {
+          subdomain = "books";
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 8086;
+          };
+          exposureMode = "tailscale-upstream";
+          category = "app";
+          access.oidc.enabled = true;
+          access.requireCloudflareAccess = false;
+          cloudflare = {
+            proxied = true;
+            authenticatedOriginPulls = true;
+          };
+          health.path = "/api/v1/health";
+        };
+
         # Private until Homarr is bootstrapped; the apex is a permanent redirect with no application behind it.
         # No login or Access application: the redirect carries no data, and Access would block arrivals.
         apex = {
@@ -493,6 +512,34 @@ in
           subdomain = null;
           # Provider and transport are the canonical niks3-write record's.
           origin = canonicalOrigin "niks3-write" "api";
+          exposureMode = "tailscale-only";
+          declarePublic = false;
+          category = "infra";
+          health.path = "/";
+        };
+
+        # Tailnet-only WebUI with no public route; the listener is reached through the trusted tailscale0 interface.
+        qbittorrent = {
+          subdomain = null;
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 8091;
+          };
+          exposureMode = "tailscale-only";
+          declarePublic = false;
+          category = "infra";
+          health.path = "/";
+        };
+
+        # Tailnet-only indexer UI with no public route; the listener is reached through the trusted tailscale0 interface.
+        prowlarr = {
+          subdomain = null;
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 9696;
+          };
           exposureMode = "tailscale-only";
           declarePublic = false;
           category = "infra";

@@ -104,6 +104,9 @@ in
     secretFiles.host = ../../../secrets/services/degoog.yaml;
   };
 
+  services.bookorbit.secretFiles.host = ../../../secrets/services/bookorbit.yaml;
+  services.torrents.secretFiles.host = ../../../secrets/hosts/home-forge/system.yaml;
+
   services.hindsight = {
     secretFiles.host = ../../../secrets/services/hindsight.yaml;
     # Defaults: LLM dials this host's gateway (bifrost runs here); embeddings dial Voyage
@@ -131,7 +134,7 @@ in
     secretFiles.host = ../../../secrets/services/latitude.yaml;
     # Same Resend relay and verified sending domain as Vaultwarden; sign-in is a
     # magic link, so this address has to be one Resend may send from.
-    smtp.from = "latitude@send.shrublab.xyz";
+    smtp.from = "latitude@shrublab.xyz";
   };
 
   # Gateway role: producers push OTLP to this host's tailnet endpoint, so every export leg is

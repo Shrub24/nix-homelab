@@ -36,6 +36,7 @@ top@{ inputs, ... }:
           src = inputs.degoog;
         };
         windows-dj-setup = pkgs.callPackage ../../pkgs/windows-dj-setup { };
+        bookorbit-plugins = pkgs.callPackage ../../pkgs/bookorbit-plugins { };
         inherit (geopulsePkgs.callPackage ../../pkgs { })
           geopulse
           geopulse-backend

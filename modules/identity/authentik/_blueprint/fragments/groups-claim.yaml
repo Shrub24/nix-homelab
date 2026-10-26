@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+version: 1
+metadata:
+  name: homelab-groups-claim
+entries:
+  - attrs:
+      description: Group names for fleet applications
+      expression: |
+        groups = [group.name for group in request.user.all_groups()]
+        entitlements = [
+            entitlement.name
+            for entitlement in request.user.app_entitlements(provider.application)
+        ]
+        return {
+            "groups": sorted(set(groups) | set(entitlements)),
+            "entitlements": entitlements,
+            "roles": entitlements,
+        }
+      name: homelab-groups
+      scope_name: groups
+    id: scope-homelab-groups
+    identifiers:
+      name: homelab-groups
+    model: authentik_providers_oauth2.scopemapping

@@ -10,9 +10,9 @@ _: {
       ...
     }:
     let
+      globals = import ../../policy/globals.nix;
       cfg = config.services.karakeep-pod;
       envDir = builtins.dirOf cfg.environmentFile;
-      globals = import ../../policy/globals.nix;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       # This application's canonical client record is the single source for its
       # issuer endpoints; the host supplies enablement and credentials only.
@@ -24,8 +24,6 @@ _: {
         ../identity/_oidc.nix
       ];
       options.services.karakeep-pod = {
-        enable = lib.mkEnableOption "Karakeep bookmark and read-later service";
-
         webImage = lib.mkOption {
           type = lib.types.str;
           default = config.repo.ociImages.karakeepWeb;
@@ -70,7 +68,7 @@ _: {
 
         publicUrl = lib.mkOption {
           type = lib.types.str;
-          default = "https://keep.shrublab.xyz";
+          default = "https://keep.${globals.domain}";
           description = "Public-facing base URL for Karakeep (NEXTAUTH_URL).";
         };
 
@@ -102,13 +100,15 @@ _: {
 
           providerName = lib.mkOption {
             type = lib.types.str;
-            default = "Kanidm";
+            default = if oidcClient == null then "" else oidcClient.providerName;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.karakeep.providerName";
             description = "Display name for OIDC provider (OAUTH_PROVIDER_NAME).";
           };
 
           scope = lib.mkOption {
             type = lib.types.str;
-            default = "openid email profile";
+            default = if oidcClient == null then "" else builtins.concatStringsSep " " oidcClient.scopes;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.karakeep.scopes";
             description = "OIDC scope string (OAUTH_SCOPE).";
           };
 
@@ -150,11 +150,12 @@ _: {
         };
       };
       config = lib.mkMerge [
-        (lib.mkIf cfg.enable {
+        {
+
           assertions = [
             {
               assertion = !cfg.oidc.enable || oidcClient != null;
-              message = "services.karakeep-pod.oidc: canonical OIDC client 'karakeep' is missing from services.identity.oidc.clients; check systems.oauth2.karakeep in policy/identity.json and the host's kanidm-admin web-policy route.";
+              message = "services.karakeep-pod.oidc: canonical OIDC client 'karakeep' is missing from services.identity.oidc.clients; check clients.karakeep in policy/identity.nix and the identity provider's published route.";
             }
             {
               assertion = !cfg.oidc.enable || cfg.oidc.clientId != null;
@@ -164,18 +165,6 @@ _: {
               assertion = !cfg.oidc.enable || cfg.oidc.wellknownUrl != "";
               message = "services.karakeep-pod.oidc.wellknownUrl must be set when OIDC is enabled.";
             }
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.karakeep-pod";
-              label = "secretFiles.host";
-            })
-            (secretHelpers.mkRequiredSecretAssertion {
-              enable = cfg.oidc.enable;
-              file = cfg.secretFiles.oidc;
-              feature = "services.karakeep-pod.oidc";
-              label = "secretFiles.oidc";
-            })
           ];
 
           sops.templates."karakeep.environment" = {
@@ -246,6 +235,10 @@ _: {
                 ];
                 environment = {
                   MEILI_NO_ANALYTICS = "true";
+                  # Meilisearch refuses to open a database written by an older release unless the upgrade is
+                  # requested. The upgrade is one-way, so a rollback past this generation leaves the old
+                  # server unable to read its own database.
+                  MEILI_UPGRADE_DB = "true";
                 };
                 environmentFiles = [
                   cfg.environmentFile
@@ -395,9 +388,8 @@ _: {
               "f ${cfg.environmentFile} 0640 root root - -"
             ];
           };
-        })
+        }
         {
-          services.karakeep-pod.enable = true;
         }
       ];
     };

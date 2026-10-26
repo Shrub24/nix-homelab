@@ -66,7 +66,7 @@ _: {
 
                   if [ ! -s "$ca_key" ] || [ ! -s "$ca_crt" ]; then
                     ${pkgs.openssl}/bin/openssl req -x509 -newkey rsa:4096 -nodes -sha256 -days 3650 \
-                      -subj "/CN=Shrublab Cockpit Loopback CA/" \
+                      -subj "/CN=shrublab Cockpit Loopback CA/" \
                       -keyout "$ca_key" \
                       -out "$ca_crt"
                   fi

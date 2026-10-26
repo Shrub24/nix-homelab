@@ -13,10 +13,10 @@
       inherit (cfg) engine;
 
       # Read-only music library/storage contract. Null when the music aspect is
-      # not selected or not enabled; never an import edge.
+      # not selected; never an import edge.
       musicContract = config.applications.music.contract or null;
 
-      engineEnabled = cfg.enable && engine.enable;
+      engineEnabled = engine.enable;
       vmUnit = "windows-vm-${engine.vmName}.service";
 
       playlistSyncFetch = pkgs.writeShellApplication {
@@ -317,7 +317,13 @@
           targets.dj-library-writers = {
             description = "Engine DJ library Linux-side writers (mutually exclusive with ${vmUnit})";
           };
-          services."windows-vm-${engine.vmName}".conflicts = [ "dj-library-writers.target" ];
+          services."windows-vm-${engine.vmName}" = {
+            conflicts = [ "dj-library-writers.target" ];
+            # qemu does not power down inside an activation window, so a switch that stops
+            # this unit stalls until the stop timeout and rolls the deploy back.
+            stopIfChanged = false;
+            restartIfChanged = false;
+          };
           services.restic-backups-state.conflicts = [ "dj-library-writers.target" ];
           # Both writers touch the Engine DB, so each BindsTo the other (BindsTo implies Requires +
           # After, which conflicts with the VM unit).

@@ -60,6 +60,7 @@ top: {
             (svc.upstreamTlsServerName or null) != null
             || (svc.upstreamTlsInsecure or false)
             || (svc.upstreamTlsCaCertFile or null) != null;
+          originPort = (svc.origin or { }).port or null;
         }) (policyHosts.${hostName}.services or { })
       ) (builtins.attrNames policyHosts);
 
@@ -70,6 +71,38 @@ top: {
         lib.optional (route.isRedirect && route.subdomain != null)
           "web-policy: route '${route.where}' declares redirectTo with a subdomain; a redirect is the apex only"
       ) routeExposures;
+
+      # Two routes on one host cannot share a listening port: the loser's bind fails
+      # after activation has already reported the unit started.
+      duplicatePortViolations =
+        let
+          slots = builtins.filter (slot: slot.provider != null && slot.port != null) (
+            map (route: {
+              inherit (route) where;
+              provider = route.originProvider;
+              port = route.originPort;
+            }) routeExposures
+          );
+          grouped = lib.foldl' (
+            acc: slot:
+            let
+              key = "${slot.provider}:${toString slot.port}";
+            in
+            acc // { ${key} = (acc.${key} or [ ]) ++ [ slot.where ]; }
+          ) { } slots;
+        in
+        lib.concatMap (
+          key:
+          let
+            names = grouped.${key};
+            provider = lib.head (lib.splitString ":" key);
+            port = lib.last (lib.splitString ":" key);
+          in
+          lib.optional (builtins.length names > 1)
+            "web-policy: routes ${
+              lib.concatStringsSep ", " (map (name: "'${name}'") names)
+            } share port ${port} on host '${provider}'"
+        ) (builtins.attrNames grouped);
 
       exposureViolations = lib.concatMap (
         route:
@@ -106,9 +139,11 @@ top: {
                 provider: "web-policy: origin provider '${provider}' is not a declared canonical host ID"
               ) unknownOrigins)
               (
-                lib.throwIf (exposureViolations ++ redirectViolations != [ ]) (lib.concatStringsSep "; " (
-                  exposureViolations ++ redirectViolations
-                )) webServicesPolicy
+                lib.throwIf (exposureViolations ++ redirectViolations ++ duplicatePortViolations != [ ]) (
+                  lib.concatStringsSep
+                    "; "
+                    (exposureViolations ++ redirectViolations ++ duplicatePortViolations)
+                ) webServicesPolicy
               )
           );
 

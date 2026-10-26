@@ -43,12 +43,12 @@
           endpoint = lib.mkDefault s3Host;
           region = lib.mkDefault (s3.region or "");
         };
-        cacheUrl = lib.mkDefault "https://cache.shrublab.xyz";
+        cacheUrl = lib.mkDefault "https://cache.${globals.domain}";
         # CI federation: GitHub OIDC tokens push, R2 serves reads. Claims are bound, not `sub`, and
         # one rule per repository reserves its pin namespace because a pin is not scoped.
         oidc.providers.github = {
           issuer = "https://token.actions.githubusercontent.com";
-          audience = "https://cache.shrublab.xyz";
+          audience = "https://cache.${globals.domain}";
           rules = lib.concatMap (
             repository:
             let

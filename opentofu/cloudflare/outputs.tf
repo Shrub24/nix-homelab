@@ -55,7 +55,16 @@ output "access_policies_allow_approved" {
 output "access_policy_assignments" {
   description = "Policy names assigned per Access-managed service from canonical policy"
   value = {
-    for name, svc in local.access_app_service_records : name => svc.access.policies
+    for name, svc in local.access_app_service_records : name => concat(svc.access.policies, ["allow_machine"])
+  }
+}
+
+output "machine_access_token" {
+  description = "Cloudflare Access service token for machine clients; write it to secrets/services/gatus.yaml"
+  sensitive   = true
+  value = {
+    client_id     = cloudflare_zero_trust_access_service_token.monitoring.client_id
+    client_secret = cloudflare_zero_trust_access_service_token.monitoring.client_secret
   }
 }
 

@@ -509,17 +509,22 @@ in
 {
   # Vocabulary plus policy; starts nothing. A host ships a signal by selecting its lane.
   flake.modules.nixos.telemetry =
-    { config, lib, ... }:
+    {
+      config,
+      lib,
+      options,
+      ...
+    }:
     let
       catalog = config.repo.web.catalog;
       tracesUrl = catalog."victoriatraces".endpoint.url;
-      # Legs are gated on the backend's sops file (headers throw on an unbound secret) and on colocation,
-      # since a remote host must not dial the loopback endpoint.
-      hasLangfuseSecrets = builtins.pathExists ../../secrets/services/langfuse.yaml;
-      hasLatitudeSecrets = builtins.pathExists ../../secrets/services/telemetry.yaml;
+      # Legs are gated on the backend being placed here (its header secret exists only then) and on
+      # colocation, since a remote host must not dial the loopback endpoint.
+      runsLangfuse = lib.hasAttrByPath [ "services" "langfuse" ] options;
+      runsLatitude = lib.hasAttrByPath [ "services" "latitude" ] options;
       colocatedWithBackends = lib.hasPrefix "http://127.0.0.1" catalog.langfuse.endpoint.url;
-      langfuseActive = hasLangfuseSecrets && colocatedWithBackends;
-      latitudeActive = hasLatitudeSecrets && colocatedWithBackends;
+      langfuseActive = runsLangfuse && colocatedWithBackends;
+      latitudeActive = runsLatitude && colocatedWithBackends;
       fanoutDestinations =
         lib.optionalAttrs langfuseActive {
           langfuse = {

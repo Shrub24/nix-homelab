@@ -38,6 +38,8 @@
   services = {
     admin.vaultwarden.secretFiles.host = ../../../secrets/applications/admin.yaml;
 
+    admin.gatus.secretFiles.accessToken = ../../../secrets/services/gatus.yaml;
+
     admin.homepage.secretFiles.host = ../../../secrets/applications/admin.yaml;
 
     tailscale.debugMtu = 1200;
@@ -61,12 +63,6 @@
       };
     };
 
-    identity.hostAuth = {
-      enable = true;
-      sshIntegration = true;
-      pamAllowedLoginGroups = [ "admins" ];
-    };
-
     hostRecovery = {
       enable = true;
       secretFile = ../../../secrets/hosts/la-admin-1/system.yaml;
@@ -74,7 +70,6 @@
       reboot.onCalendar = "weekly";
     };
 
-    admin.vaultwarden.smtpFrom = "admin@shrublab.xyz";
   };
 
   sops.defaultSopsFile = ../../../secrets/common.yaml;

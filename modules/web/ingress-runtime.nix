@@ -165,6 +165,13 @@ _: {
                 trusted_proxies static ${trustedProxyArgs}
                 client_ip_headers CF-Connecting-IP X-Forwarded-For
               }
+              log {
+                format filter {
+                  wrap json
+                  request>headers>Cf-Access-Client-Secret delete
+                  request>headers>Cf-Access-Jwt-Assertion delete
+                }
+              }
             }
           ''
         else
@@ -203,11 +210,8 @@ _: {
         ${lib.concatStringsSep "\n\n" (map renderSite siteHosts)}
       '';
 
-      # The wildcard does not cover the apex, which is a separate name in the certificate.
-      certExtraDomains = [
-        "*.${cfg.primaryDomain}"
-        cfg.primaryDomain
-      ];
+      # The apex is already `domain`; repeating it here forces a re-issue on every activation.
+      certExtraDomains = [ "*.${cfg.primaryDomain}" ];
 
       routeAssertions =
         lib.map (
@@ -337,7 +341,6 @@ _: {
                   default = null;
                   description = "Absolute URL the apex answers with a permanent redirect. Mutually exclusive with upstream.";
                 };
-
                 exposureMode = lib.mkOption {
                   type = lib.types.enum [
                     "direct"
@@ -440,12 +443,6 @@ _: {
 
       config = {
         assertions = [
-          (secretHelpers.mkRequiredSecretAssertion {
-            enable = cfg.enable && cfg.role == "edge";
-            file = cfg.secretFiles.host;
-            feature = "services.ingress";
-            label = "secretFiles.host";
-          })
           {
             assertion = cfg.role != "edge" || cfg.primaryDomain != "";
             message = "services.ingress requires primaryDomain when role=edge.";
@@ -499,6 +496,9 @@ _: {
           certs.${cfg.primaryDomain} = {
             domain = cfg.primaryDomain;
             extraDomainNames = certExtraDomains;
+            # Per certificate: the option does not inherit from `defaults`, and without it a rejected
+            # renewal fails the unit instead of being ignored.
+            validMinDays = 30;
             dnsProvider = "cloudflare";
             environmentFile = cfg.cloudflareCredentialsFile;
             group = "caddy";

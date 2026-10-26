@@ -6,6 +6,7 @@
   ...
 }:
 let
+  globals = import ../../policy/globals.nix;
   # Fallback for hosts without the gateway; the local listener wins in the module body.
   bifrostCanonicalUrl =
     (inputs.nix-fleet.lib.serviceEndpoints.resolveEndpoint config.fleet {
@@ -27,7 +28,7 @@ in
       cfg = config.services.latitude;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
-      hasSecretFile = cfg.secretFiles.host != null && builtins.pathExists cfg.secretFiles.host;
+      hasSecretFile = cfg.secretFiles.host != null;
 
       globals = import ../../policy/globals.nix;
       loopback = "127.0.0.1";
@@ -133,8 +134,6 @@ in
       imports = [ ../database/postgres/_consumer.nix ];
 
       options.services.latitude = {
-        enable = lib.mkEnableOption "Latitude agent observability";
-
         images = {
           web = lib.mkOption {
             type = lib.types.str;
@@ -257,8 +256,8 @@ in
           };
           from = lib.mkOption {
             type = lib.types.str;
-            default = "";
-            description = "From address on magic-link mail; set per host.";
+            default = "latitude@${globals.domain}";
+            description = "From address on magic-link mail.";
           };
         };
 
@@ -266,16 +265,9 @@ in
       };
 
       config = lib.mkMerge [
-        { services.latitude.enable = true; }
 
-        (lib.mkIf cfg.enable {
+        {
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.latitude";
-              label = "secretFiles.host";
-            })
             {
               assertion = webUrl != null;
               message = "services.latitude: the web catalog entry 'latitude' is missing from policy/web-services.nix; magic-link sign-in mints its redirect from that public URL.";
@@ -285,11 +277,7 @@ in
               message = "services.latitude: the web catalog entry 'latitude-api' is missing from policy/web-services.nix; the browser calls the API on that origin.";
             }
             {
-              assertion = hasSecretFile -> cfg.smtp.from != "";
-              message = "services.latitude.smtp.from must be set: sign-in is a magic link and no mail is sent without a sender.";
-            }
-            {
-              assertion = !cfg.enable || config.services.clickhouse.enable;
+              assertion = config.services.clickhouse.enable;
               message = "services.latitude.enable is true but the ClickHouse substrate is not selected (select the clickhouse aspect): its trace store has no server otherwise.";
             }
             {
@@ -743,7 +731,7 @@ in
           ];
 
           # No state-backups registration: Postgres rides the substrate's export, ClickHouse is regenerable, and object payloads are not traces.
-        })
+        }
       ];
     };
 }

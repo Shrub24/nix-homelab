@@ -1,3 +1,6 @@
+# Kanidm-backed Unix/PAM/SSH integration. It resolves the Kanidm service from its own
+# policy route, so application SSO may move to another provider without retargeting
+# host login, and it selects no application identity client.
 _: {
   flake.modules.nixos.kanidm-host-auth =
     {
@@ -8,11 +11,22 @@ _: {
     }:
     let
       cfg = config.services.identity.hostAuth;
-      kanidmPackages = import ./_kanidm-packages.nix { inherit pkgs; };
+      kanidmPackages = import ./_packages.nix { inherit pkgs; };
+      identityPolicy = import ../../../policy/identity.nix;
+      kanidmRouteKey = identityPolicy.providers.kanidm.route or null;
+      kanidmUrl =
+        if kanidmRouteKey == null then
+          null
+        else
+          lib.attrByPath [
+            "repo"
+            "web"
+            "catalog"
+            kanidmRouteKey
+            "publicUrl"
+          ] null config;
     in
     {
-      imports = [ ./_oidc.nix ];
-
       options.services.identity.hostAuth = {
         enable = lib.mkEnableOption "Kanidm-backed host auth integration";
 
@@ -35,7 +49,7 @@ _: {
 
           client = {
             enable = true;
-            settings.uri = config.services.identity.oidc.providerUrl;
+            settings.uri = kanidmUrl;
           };
 
           unix = {
@@ -47,8 +61,8 @@ _: {
 
         assertions = [
           {
-            assertion = config.services.identity.oidc.providerUrl != null;
-            message = "services.identity.hostAuth.enable requires services.identity.oidc.providerUrl to be set.";
+            assertion = kanidmUrl != null;
+            message = "services.identity.hostAuth.enable requires a published Kanidm route; policy/identity.nix names '${toString kanidmRouteKey}' and the host's web policy must publish it.";
           }
           {
             assertion = cfg.pamAllowedLoginGroups != [ ];

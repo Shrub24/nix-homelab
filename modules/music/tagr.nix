@@ -63,12 +63,6 @@ _: {
 
       config = lib.mkIf cfg.enable {
         assertions = [
-          (secretHelpers.mkRequiredSecretAssertion {
-            inherit (cfg) enable;
-            file = cfg.secretFiles.host;
-            feature = "services.tagr";
-            label = "secretFiles.host";
-          })
         ];
 
         sops.templates."tagr.env" = {

@@ -6,6 +6,7 @@ _: {
       config,
       lib,
       pkgs,
+      options,
       ...
     }:
     let
@@ -146,13 +147,12 @@ _: {
 
       config = lib.mkMerge [
         {
-          services.postgres.enable = true;
 
-          # Read by co-located consumers to detect a local cluster, even where the mechanism is disabled.
+          # Read by co-located consumers to detect a local cluster.
           services.postgres.localEndpoint = if instance == null then null else { inherit (instance) port; };
         }
 
-        (lib.mkIf cfg.enable {
+        {
           assertions = map (message: {
             inherit message;
             assertion = false;
@@ -248,16 +248,20 @@ _: {
           ];
 
           # Export-first: restic captures a pg_dumpall export, not the data directory; the timer is disabled.
-          services.postgresqlBackup = lib.mkIf (consumers != [ ] && config.services.state-backups.enable) {
-            enable = true;
-            backupAll = true;
-            location = "${config.services.state-backups.stagingRoot}/postgres";
-            pgdumpAllOptions = "--clean --if-exists -w";
-            startAt = [ ];
-          };
+          services.postgresqlBackup =
+            lib.mkIf
+              (consumers != [ ] && lib.hasAttrByPath [ "services" "state-backups" "restoreStagePackage" ] options)
+              {
+                enable = true;
+                backupAll = true;
+                location = "${config.services.state-backups.stagingRoot}/postgres";
+                pgdumpAllOptions = "--clean --if-exists -w";
+                startAt = [ ];
+              };
 
           systemd.services."restic-backups-${config.services.state-backups.backupName}" =
-            lib.mkIf (consumers != [ ] && config.services.state-backups.enable)
+            lib.mkIf
+              (consumers != [ ] && lib.hasAttrByPath [ "services" "state-backups" "restoreStagePackage" ] options)
               {
                 requires = [ "postgresqlBackup.service" ];
                 after = [ "postgresqlBackup.service" ];
@@ -266,7 +270,8 @@ _: {
           # The dump directory is created with `+` (root) while the dump stays postgres-owned, so the first run after a cleanup works.
           # The post-restic cleanup removes it, so no plaintext export outlives its run.
           systemd.services.postgresqlBackup =
-            lib.mkIf (consumers != [ ] && config.services.state-backups.enable)
+            lib.mkIf
+              (consumers != [ ] && lib.hasAttrByPath [ "services" "state-backups" "restoreStagePackage" ] options)
               {
                 serviceConfig.ExecStartPre = [
                   "+${pkgs.coreutils}/bin/install -d -m 0700 -o postgres -g postgres ${config.services.state-backups.stagingRoot}/postgres"
@@ -290,7 +295,7 @@ _: {
               ports = [ instance.port ];
             }
           );
-        })
+        }
       ];
     };
 }

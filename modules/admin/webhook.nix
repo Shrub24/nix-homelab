@@ -12,9 +12,8 @@ _: {
       cfg = config.services.admin.webhook;
     in
     {
-      options.services.admin.webhook.enable = lib.mkEnableOption "the Webhook service wiring";
       config = lib.mkMerge [
-        (lib.mkIf cfg.enable {
+        {
           services.webhook = {
             enable = true;
             ip = "127.0.0.1";
@@ -26,8 +25,7 @@ _: {
               };
             };
           };
-        })
-        { services.admin.webhook.enable = true; }
+        }
       ];
     };
 }

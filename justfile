@@ -32,7 +32,7 @@ bootstrap host target:
 deploy host="la-admin-1" rollback="true" verbose="false":
     @HOST="{{ host }}"; ROLLBACK="{{ rollback }}"; VERBOSE="{{ verbose }}"; EXIT=0; \
     if [[ -z "$HOST" ]]; then echo "Error: host required (use --host <nixosConfiguration>)"; exit 1; fi; \
-    STRICT="$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' ".#deployHosts.nodes.\"$HOST\".strictSubstituteOnly")"; \
+    STRICT="$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' ".#fleet.hosts.\"$HOST\".strictSubstituteOnly")"; \
     ARGS=(--skip-checks); \
     NIX_ARGS=(); \
     [[ "$ROLLBACK" != "false" ]] || ARGS+=(--auto-rollback false); \

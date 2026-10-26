@@ -119,7 +119,7 @@ Homarr does not decide group membership. `AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=fals
 `groups_name` scope: Kanidm always emits it under the key `groups`, and the `_name` variant
 gives bare group names rather than `name@domain` service principal names. Both halves are
 required — Kanidm checks requested scopes against the client's *scope maps*, so the scope is
-granted to `service-admins` and `users` in `policy/identity.json`, and Homarr names the claim
+granted to `service-admins` and `users` in `policy/identity.nix`, and Homarr names the claim
 with `AUTH_OIDC_GROUPS_ATTRIBUTE=groups`.
 
 Membership is then automatic in one direction and manual in the other:

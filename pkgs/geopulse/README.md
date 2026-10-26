@@ -7,7 +7,7 @@ outputs come from it:
   owner.
 - `geopulse-backend` — Quarkus fast-jar on JDK 25, built from unmodified upstream
   sources; the one file we add is the repeatable migration under `migrations/`.
-- `geopulse-frontend` — Vite build on Node 24 (2.0's `engines.node >= 24.15`).
+- `geopulse-frontend` — Vite build on Node 24 (upstream requires `engines.node >= 24.15`).
 
 `source.nix` holds the single release pin — `version`, `rev`, `hash` — and the
 two derivations take their version from it.
@@ -45,7 +45,26 @@ The backend's Maven fixed-output hash is one value for both Linux
 architectures. brotli4j selects its native jar through OS/arch-activated
 profiles, so `backend.nix` resolves both profiles into the one repository
 (`mvnFetchExtraArgs.postBuild`); the hash is the union and is identical on
-x86_64 and aarch64. `nix-update` regenerates it on any updater host.
+x86_64 and aarch64. `nix-update` regenerates it on any updater host. The loop
+spoofs `os.arch` to select the other architecture's profile, which is also why it
+pins JLine's stream terminal provider: JLine's FFM provider would otherwise
+resolve the linker of the platform being impersonated and abort the JVM before
+Maven reads a pom.
+
+A fixed-output derivation is identified by its hash alone, so a nixpkgs bump that
+moves Maven leaves this repository "already fetched" while the offline build
+resolves the new Maven's *default* lifecycle plugins from it — 3.10.0 wants
+`maven-resources-plugin` 3.5.0, which a repository fetched by 3.9.x does not
+carry. The hash is therefore only valid for the Maven that produced it,
+`backend.nix` binds the two (`mvnToolchain`) and fails at evaluation with the
+repair when nixpkgs moves Maven. Nothing else notices: not evaluation, not
+substitution. A Maven bump is not a release bump, so the batch never reaches it —
+the binding has to be set by hand and `nix-update` re-run. `update.py` refreshes
+the binding before regenerating the hash it is bound to, reading the current
+value from the flake's own surface (`packages.geopulse-maven-toolchain`, published
+by `modules/flake/packages.nix` from the package set the derivation is
+instantiated from) so the read survives the evaluation failure it exists to
+repair.
 
 ## License
 

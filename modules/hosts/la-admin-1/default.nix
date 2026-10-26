@@ -28,11 +28,9 @@ in
         aspects.oci-images
         aspects.fleet-packages
         aspects.web-policy
-        aspects.kanidm-host-auth
         # Selection is enablement; no host imports an implementation.
         aspects.ingress
         aspects.push-server
-        aspects.identity-provider
         aspects.vaultwarden
         aspects.gatus
         aspects.beszel

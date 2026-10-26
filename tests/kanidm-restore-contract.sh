@@ -8,6 +8,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# The helper exists only where the provider is selected. Reading that from the tree keeps
+# this check armed for the day the aspect returns, rather than failing on a dormant
+# capability or silently asserting a unit that no longer exists.
+if ! grep -rq "aspects\.kanidm-identity" modules/hosts/; then
+  echo "kanidm-restore-contract: SKIP (no host selects kanidm-identity)"
+  exit 0
+fi
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 

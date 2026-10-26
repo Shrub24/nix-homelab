@@ -28,7 +28,7 @@ in
       environmentFile = config.sops.templates."hindsight.environment".path;
       # Two-step bootstrap: the host binds the path before the operator has
       # encrypted anything, so "has secrets" means the file is really there.
-      hasSecretFile = cfg.secretFiles.host != null && builtins.pathExists cfg.secretFiles.host;
+      hasSecretFile = cfg.secretFiles.host != null;
       # Probed through `options`: reading an undeclared option path raises NixOS'
       # "did you mean" error rather than returning null.
       hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
@@ -40,8 +40,6 @@ in
       imports = [ ../database/postgres/_consumer.nix ];
 
       options.services.hindsight = {
-        enable = lib.mkEnableOption "Hindsight agent memory";
-
         image = lib.mkOption {
           type = lib.types.str;
           default = config.repo.ociImages.hindsight;
@@ -185,16 +183,9 @@ in
 
       config = lib.mkMerge [
         # Selection is enablement.
-        { services.hindsight.enable = true; }
 
-        (lib.mkIf cfg.enable {
+        {
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.hindsight";
-              label = "secretFiles.host";
-            })
             {
               assertion = cfg.llm.model != "";
               message = "services.hindsight.llm.model must name a model alias the gateway serves.";
@@ -208,14 +199,14 @@ in
               message = "services.hindsight.embeddings.baseUrl must name the embeddings endpoint (Voyage's API, or a gateway).";
             }
             {
-              assertion = !cfg.enable || localPostgres != null;
+              assertion = localPostgres != null;
               message = "services.hindsight.enable is true but this host runs no PostgreSQL cluster (select the postgres aspect and declare services.postgres.instances.<name>).";
             }
           ];
 
           # The consumer owns its credential: the provider reads the same file and key
           # to provision the role, so the password has one authoritative source.
-          services.postgres.consumers.hindsight = lib.mkIf (cfg.enable && hasSecretFile) {
+          services.postgres.consumers.hindsight = {
             database = "hindsight";
             role = "hindsight";
             auth = "scram";
@@ -343,7 +334,7 @@ in
             mode = "live";
             paths = [ cfg.dataDir ];
           };
-        })
+        }
       ];
     };
 }

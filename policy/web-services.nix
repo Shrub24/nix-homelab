@@ -2,6 +2,8 @@
 # lib/policy.nix and identity stays literal. exposureMode has no default.
 { canonicalServices }:
 let
+  globals = import ./globals.nix;
+
   # Origin derives from the canonical record; named errors keep a missing service from becoming an attribute error.
   canonicalOrigin =
     service: endpoint:
@@ -24,7 +26,7 @@ let
 in
 {
   defaults = {
-    primaryDomain = "shrublab.xyz";
+    primaryDomain = globals.domain;
     category = "app";
     path = "/";
     declarePublic = true;
@@ -49,6 +51,7 @@ in
       path = "/";
       expectedStatus = 200;
     };
+
   };
 
   hosts = {
@@ -87,16 +90,19 @@ in
           access.requireCloudflareAccess = false;
         };
 
-        kanidm-admin = {
-          subdomain = "id";
-          # Loopback, TLS-only socket: the providing host renders the front the edge dials.
-          exposureMode = "tailscale-serve";
+        # Published for the client cutover: the provider now issues application identity,
+        # and its issuer URL has to resolve before any client can be pointed at it.
+        authentik-admin = {
+          subdomain = "auth";
+          exposureMode = "direct";
           origin = {
-            scheme = "https";
-            provider = "la-admin-1";
-            port = 8443;
+            scheme = "http";
+            provider = "oci-melb-1";
+            port = 9002;
           };
           category = "admin";
+          declarePublic = true;
+          publish = true;
           access.requireCloudflareAccess = false;
           cloudflare = {
             proxied = true;
@@ -337,11 +343,11 @@ in
           health.path = "/api/v1/health";
         };
 
-        # Private until Homarr is bootstrapped; the apex is a permanent redirect with no application behind it.
+        # The apex is a permanent redirect with no application behind it.
         # No login or Access application: the redirect carries no data, and Access would block arrivals.
         apex = {
           subdomain = null;
-          redirectTo = "https://home.shrublab.xyz";
+          redirectTo = "https://auth.${globals.domain}";
           exposureMode = "direct";
           access.oidc.enabled = false;
           access.requireCloudflareAccess = false;
@@ -387,7 +393,7 @@ in
           # tailscale-serve: the front binds loopback, and the provider renders the private front for the OIDC callback.
           exposureMode = "tailscale-serve";
           declarePublic = true;
-          publish = false;
+          publish = true;
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;

@@ -31,12 +31,12 @@ in
         aspects.oci-images
         aspects.fleet-packages
         aspects.web-policy
-        aspects.kanidm-host-auth
         # Selection is enablement; no host imports an implementation.
         aspects.oci
         aspects.ingress
         aspects.paperless
         aspects.postgres
+        aspects.identity-provider
         aspects.bifrost
         aspects.karakeep
         aspects.actual
@@ -52,6 +52,9 @@ in
         aspects.networking
         aspects.tailscale
         aspects.notify
+        # Publishes the tracked brand objects and rotates the wallpaper: bucket writes, so
+        # one host owns them rather than every host that references the published URLs.
+        aspects.assets-publisher
         aspects.state-backups
         aspects.cache-publisher
         aspects.builder-access

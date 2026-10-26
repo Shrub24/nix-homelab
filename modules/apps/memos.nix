@@ -1,5 +1,5 @@
-# Memos: listener and public URL from the canonical route; its OpenID provider lives in
-# instance settings in Memos' own database.
+# Memos: listener and public URL from the canonical route; its OpenID provider and its
+# instance access policy are deployment-managed files, which Memos reads at startup.
 _: {
   flake.modules.nixos.memos =
     {
@@ -12,7 +12,12 @@ _: {
       cfg = config.services.memos;
       route = config.repo.web.catalog.memos or null;
       oidcClient = config.services.identity.oidc.clients.memos or null;
-      providerName = "memos-idp-kanidm.json";
+      # Memos scans /etc/secrets for `memos-idp-<label>.json`; the label is the client id.
+      providerFile = "memos-idp-${if oidcClient == null then "idp" else oidcClient.clientId}.json";
+      # Deployment-managed instance settings. Memos merges these files over its stored settings
+      # at every startup, so the instance posture is declared here rather than clicked in the UI.
+      accessFile = "memos-instance-setting-access.json";
+      generalFile = "memos-instance-setting-general.json";
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       dataDir = "/srv/data/memos";
       # Upstream opens "<MEMOS_DATA>/memos_<MEMOS_MODE>.db" in WAL mode (store/db/sqlite),
@@ -22,14 +27,16 @@ _: {
       exportDir = "${config.services.state-backups.stagingRoot}/memos";
     in
     {
-      imports = [ ../backups/state-backups/_consumer.nix ];
+      imports = [
+        ../backups/state-backups/_consumer.nix
+      ];
 
       options.services.memos.secretFiles.oidc = secretHelpers.mkSecretFileOption "memos-oidc-secrets";
 
       config = lib.mkMerge [
-        { services.memos.enable = true; }
 
-        (lib.mkIf cfg.enable {
+        {
+
           assertions = [
             {
               assertion = route != null;
@@ -37,7 +44,7 @@ _: {
             }
             {
               assertion = oidcClient != null;
-              message = "services.memos: identity client 'memos' is missing; declare it in policy/identity.json.";
+              message = "services.memos: identity client 'memos' is missing; declare it in policy/identity.nix.";
             }
           ];
 
@@ -50,11 +57,11 @@ _: {
 
           # Memos reads providers only from /etc/secrets at startup. The shared directory stays
           # root-owned, so the unit gets a credential copy bound over it in its namespace.
-          sops.templates.${providerName} = {
+          sops.templates.${providerFile} = {
             restartUnits = [ "memos.service" ];
             content = builtins.toJSON {
-              uid = "kanidm";
-              name = "Kanidm";
+              uid = oidcClient.clientId;
+              name = oidcClient.providerName;
               type = "OAUTH2";
               config.oauth2Config = {
                 clientId = oidcClient.clientId;
@@ -62,11 +69,7 @@ _: {
                 authUrl = oidcClient.authorizationUrl;
                 tokenUrl = oidcClient.tokenUrl;
                 userInfoUrl = oidcClient.userinfoUrl;
-                scopes = [
-                  "openid"
-                  "profile"
-                  "email"
-                ];
+                scopes = oidcClient.scopes;
                 fieldMapping = {
                   identifier = "sub";
                   displayName = "name";
@@ -77,15 +80,38 @@ _: {
             };
           };
 
+          # The instance is private: anonymous browsing is denied, while an explicit memo
+          # share link keeps its own share policy. Only the admin role may fall back to a
+          # password, which is the break-glass path if the provider is unreachable.
+          sops.templates.${accessFile} = {
+            restartUnits = [ "memos.service" ];
+            content = builtins.toJSON {
+              key = "ACCESS";
+              accessSetting.accessMode = "INSTANCE_ACCESS_MODE_PRIVATE";
+            };
+          };
+
+          sops.templates.${generalFile} = {
+            restartUnits = [ "memos.service" ];
+            content = builtins.toJSON {
+              key = "GENERAL";
+              generalSetting.disallowPasswordAuth = true;
+            };
+          };
+
           systemd.services.memos = {
-            # The provider template is rendered by sops, which the fleet's systemd
-            # activation installs as its own unit, so the service orders after it.
+            # The templates are rendered by sops, which the fleet's systemd activation
+            # installs as its own unit, so the service orders after it.
             wants = [ "sops-install-secrets.service" ];
             after = [ "sops-install-secrets.service" ];
             serviceConfig = {
-              LoadCredential = [ "${providerName}:${config.sops.templates.${providerName}.path}" ];
+              LoadCredential = [
+                "${providerFile}:${config.sops.templates.${providerFile}.path}"
+                "${accessFile}:${config.sops.templates.${accessFile}.path}"
+                "${generalFile}:${config.sops.templates.${generalFile}.path}"
+              ];
               # Literal path: %d is rejected in BindReadOnlyPaths. The credential
-              # directory holds only the provider file, so this exposes nothing else.
+              # directory holds only these three files, so this exposes nothing else.
               BindReadOnlyPaths = [ "/run/credentials/memos.service:/etc/secrets" ];
             };
           };
@@ -94,6 +120,8 @@ _: {
           # and the upstream firewall branch reads an option the module never defines.
           services.memos = {
             inherit dataDir;
+            enable = true;
+
             settings = {
               MEMOS_MODE = "prod";
               MEMOS_ADDR = "127.0.0.1";
@@ -122,7 +150,7 @@ _: {
             ];
             cleanupCommands = [ "${pkgs.coreutils}/bin/rm -rf ${exportDir}" ];
           };
-        })
+        }
       ];
     };
 }

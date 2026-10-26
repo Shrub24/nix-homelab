@@ -49,10 +49,6 @@ in
     {
 
       options.services.ntfy = {
-        enable = lib.mkEnableOption "ntfy push notification server" // {
-          default = false;
-        };
-
         dataDir = lib.mkOption {
           type = lib.types.path;
           default = "/srv/data/ntfy";
@@ -140,179 +136,176 @@ in
         };
       };
       config = lib.mkMerge [
-        (lib.mkIf cfg.enable (
-          lib.mkMerge [
-            # Shared across both paths: tmpfiles, mount dependency
-            {
-              users.users.ntfy-sh = {
-                isSystemUser = true;
-                group = "ntfy-sh";
-                description = "ntfy push notification server";
-              };
-              users.groups.ntfy-sh = { };
+        (lib.mkMerge [
+          # Shared across both paths: tmpfiles, mount dependency
+          {
+            users.users.ntfy-sh = {
+              isSystemUser = true;
+              group = "ntfy-sh";
+              description = "ntfy push notification server";
+            };
+            users.groups.ntfy-sh = { };
 
-              systemd.tmpfiles.rules = [
-                "d ${dataDir} 0750 ntfy-sh ntfy-sh - -"
-                "d ${dataDir}/attachments 0750 ntfy-sh ntfy-sh - -"
+            systemd.tmpfiles.rules = [
+              "d ${dataDir} 0750 ntfy-sh ntfy-sh - -"
+              "d ${dataDir}/attachments 0750 ntfy-sh ntfy-sh - -"
+            ];
+
+            systemd.services.ntfy-sh = {
+              unitConfig.RequiresMountsFor = [ dataDir ];
+              serviceConfig = {
+                DynamicUser = lib.mkForce false;
+                User = "ntfy-sh";
+                Group = "ntfy-sh";
+                StateDirectory = lib.mkForce "";
+                RuntimeDirectory = "ntfy-sh";
+                RuntimeDirectoryMode = "0755";
+                ReadWritePaths = [ dataDir ];
+              };
+            };
+          }
+
+          # Path B: Auth enabled — module settings for upstream deps, template for full config
+          (lib.mkIf cfg.auth.enable {
+            assertions =
+              lib.optional (cfg.auth.file == null) {
+                assertion = false;
+                message = "services.ntfy.auth.file must be set when auth is enabled.";
+              }
+              ++ lib.optional (cfg.auth.secretFiles.auth == null) {
+                assertion = false;
+                message = "services.ntfy.auth.secretFiles.auth must be set when auth is enabled.";
+              }
+              ++ lib.optional (invalidPublisherNames != [ ]) {
+                assertion = false;
+                message =
+                  "services.ntfy.auth.publishers contains invalid ntfy usernames: "
+                  + builtins.concatStringsSep ", " invalidPublisherNames;
+              };
+
+            services.ntfy-sh = {
+              enable = true;
+              settings = {
+                base-url = publicBaseUrl;
+              };
+            };
+
+            sops.secrets."ntfy/auth" = {
+              sopsFile = cfg.auth.secretFiles.auth;
+              key = "";
+              path = "/run/secrets/ntfy/auth.yml";
+              owner = "ntfy-sh";
+              group = "ntfy-sh";
+              mode = "0400";
+            };
+
+            sops.templates."ntfy-base-config" = {
+              content = ''
+                base-url: ${publicBaseUrl}
+                behind-proxy: true
+                proxy-forwarded-header: X-Forwarded-For
+                listen-http: ${listenAddress}
+                cache-file: ${dataDir}/cache.db
+                attachment-cache-dir: ${dataDir}/attachments
+                enable-login: true
+                enable-signup: false
+                auth-file: ${toString cfg.auth.file}
+                auth-default-access: ${cfg.auth.defaultAccess}
+                auth-access: ${builtins.toJSON publisherAccessEntries}
+              ''
+              + lib.optionalString (cfg.secretFiles.firebase != null) ''
+                firebase-key-file: /run/secrets/ntfy/firebase-key.json
+              '';
+              owner = "ntfy-sh";
+              group = "ntfy-sh";
+              mode = "0440";
+            };
+
+            systemd.services.ntfy-sh = {
+              # PATH, not baked store paths, so the contract suite can run this against fixtures.
+              # yq here is mikefarah's yq-go, not the jq-syntax wrapper.
+              path = [
+                pkgs.coreutils
+                pkgs.gnugrep
+                pkgs.yq-go
               ];
+              restartTriggers = [
+                config.sops.templates."ntfy-base-config".path
+              ]
+              ++ lib.optionals (cfg.auth.secretFiles.auth != null) [
+                cfg.auth.secretFiles.auth
+              ]
+              ++ lib.optionals (cfg.secretFiles.firebase != null) [
+                cfg.secretFiles.firebase
+              ];
+              preStart = ''
+                tmp=$(mktemp) && trap 'rm -f "$tmp"' EXIT
+                base_config=${config.sops.templates."ntfy-base-config".path}
+                auth_config=/run/secrets/ntfy/auth.yml
 
-              systemd.services.ntfy-sh = {
-                unitConfig.RequiresMountsFor = [ dataDir ];
-                serviceConfig = {
-                  DynamicUser = lib.mkForce false;
-                  User = "ntfy-sh";
-                  Group = "ntfy-sh";
-                  StateDirectory = lib.mkForce "";
-                  RuntimeDirectory = "ntfy-sh";
-                  RuntimeDirectoryMode = "0755";
-                  ReadWritePaths = [ dataDir ];
-                };
-              };
-            }
+                # Either spelling is valid; declaring both would let ntfy's loader pick one silently.
+                if [ "$(yq -r 'has("auth-users") and has("auth_users")' "$auth_config")" = true ] \
+                  || [ "$(yq -r 'has("auth-tokens") and has("auth_tokens")' "$auth_config")" = true ]; then
+                  echo "ntfy: the auth secret file must use one spelling per key (auth-users or auth_users, auth-tokens or auth_tokens), not both" >&2
+                  exit 1
+                fi
 
-            # Path B: Auth enabled — module settings for upstream deps, template for full config
-            (lib.mkIf cfg.auth.enable {
-              assertions =
-                lib.optional (cfg.auth.file == null) {
-                  assertion = false;
-                  message = "services.ntfy.auth.file must be set when auth is enabled.";
-                }
-                ++ lib.optional (cfg.auth.secretFiles.auth == null) {
-                  assertion = false;
-                  message = "services.ntfy.auth.secretFiles.auth must be set when auth is enabled.";
-                }
-                ++ lib.optional (invalidPublisherNames != [ ]) {
-                  assertion = false;
-                  message =
-                    "services.ntfy.auth.publishers contains invalid ntfy usernames: "
-                    + builtins.concatStringsSep ", " invalidPublisherNames;
-                };
+                # auth-access is policy-owned; the encrypted file carries only
+                # credentials. Reject the ownership error instead of masking it.
+                if [ "$(yq -r 'has("auth-access") or has("auth_access")' "$auth_config")" = true ]; then
+                  echo "ntfy: auth-access must be owned by push-server policy, not the auth secret file" >&2
+                  exit 1
+                fi
 
-              services.ntfy-sh = {
-                enable = true;
-                settings = {
-                  base-url = publicBaseUrl;
-                };
-              };
+                # auth-users entries must be `<username>:<bcrypt-hash>:<role>`;
+                # ntfy rejects empty-hash entries even for token-only accounts.
+                bad_users="$(yq -r '(.["auth-users"] // .auth_users // [])[] | select((split(":") | length) != 3 or (split(":")[1] | length) == 0 or (split(":")[2] | test("${rolePattern}") | not))' "$auth_config")"
+                if [ -n "$bad_users" ]; then
+                  echo "ntfy: auth-users entries must be <username>:<bcrypt-hash>:<role>; offending: $bad_users" >&2
+                  exit 1
+                fi
 
-              sops.secrets."ntfy/auth" = {
-                sopsFile = cfg.auth.secretFiles.auth;
-                key = "";
-                path = "/run/secrets/ntfy/auth.yml";
-                owner = "ntfy-sh";
-                group = "ntfy-sh";
-                mode = "0400";
-              };
-
-              sops.templates."ntfy-base-config" = {
-                content = ''
-                  base-url: ${publicBaseUrl}
-                  behind-proxy: true
-                  proxy-forwarded-header: X-Forwarded-For
-                  listen-http: ${listenAddress}
-                  cache-file: ${dataDir}/cache.db
-                  attachment-cache-dir: ${dataDir}/attachments
-                  enable-login: true
-                  enable-signup: false
-                  auth-file: ${toString cfg.auth.file}
-                  auth-default-access: ${cfg.auth.defaultAccess}
-                  auth-access: ${builtins.toJSON publisherAccessEntries}
-                ''
-                + lib.optionalString (cfg.secretFiles.firebase != null) ''
-                  firebase-key-file: /run/secrets/ntfy/firebase-key.json
-                '';
-                owner = "ntfy-sh";
-                group = "ntfy-sh";
-                mode = "0440";
-              };
-
-              systemd.services.ntfy-sh = {
-                # PATH, not baked store paths, so the contract suite can run this against fixtures.
-                # yq here is mikefarah's yq-go, not the jq-syntax wrapper.
-                path = [
-                  pkgs.coreutils
-                  pkgs.gnugrep
-                  pkgs.yq-go
-                ];
-                restartTriggers = [
-                  config.sops.templates."ntfy-base-config".path
-                ]
-                ++ lib.optionals (cfg.auth.secretFiles.auth != null) [
-                  cfg.auth.secretFiles.auth
-                ]
-                ++ lib.optionals (cfg.secretFiles.firebase != null) [
-                  cfg.secretFiles.firebase
-                ];
-                preStart = ''
-                  tmp=$(mktemp) && trap 'rm -f "$tmp"' EXIT
-                  base_config=${config.sops.templates."ntfy-base-config".path}
-                  auth_config=/run/secrets/ntfy/auth.yml
-
-                  # Either spelling is valid; declaring both would let ntfy's loader pick one silently.
-                  if [ "$(yq -r 'has("auth-users") and has("auth_users")' "$auth_config")" = true ] \
-                    || [ "$(yq -r 'has("auth-tokens") and has("auth_tokens")' "$auth_config")" = true ]; then
-                    echo "ntfy: the auth secret file must use one spelling per key (auth-users or auth_users, auth-tokens or auth_tokens), not both" >&2
+                # Missing publishers are fatal; extra users are allowed.
+                users="$(yq -r '(.["auth-users"] // .auth_users // [])[] | split(":")[0]' "$auth_config")"
+                tokens="$(yq -r '(.["auth-tokens"] // .auth_tokens // [])[] | split(":")[0]' "$auth_config")"
+                for publisher in ${lib.concatStringsSep " " publisherNames}; do
+                  if ! printf '%s\n' "$users" | grep -Fqx "$publisher"; then
+                    echo "ntfy: publisher '$publisher' has no auth-users credential" >&2
                     exit 1
                   fi
-
-                  # auth-access is policy-owned; the encrypted file carries only
-                  # credentials. Reject the ownership error instead of masking it.
-                  if [ "$(yq -r 'has("auth-access") or has("auth_access")' "$auth_config")" = true ]; then
-                    echo "ntfy: auth-access must be owned by push-server policy, not the auth secret file" >&2
+                  if ! printf '%s\n' "$tokens" | grep -Fqx "$publisher"; then
+                    echo "ntfy: publisher '$publisher' has no auth-tokens credential" >&2
                     exit 1
                   fi
+                done
 
-                  # auth-users entries must be `<username>:<bcrypt-hash>:<role>`;
-                  # ntfy rejects empty-hash entries even for token-only accounts.
-                  bad_users="$(yq -r '(.["auth-users"] // .auth_users // [])[] | select((split(":") | length) != 3 or (split(":")[1] | length) == 0 or (split(":")[2] | test("${rolePattern}") | not))' "$auth_config")"
-                  if [ -n "$bad_users" ]; then
-                    echo "ntfy: auth-users entries must be <username>:<bcrypt-hash>:<role>; offending: $bad_users" >&2
-                    exit 1
-                  fi
+                # Merge the credentials, then the policy again: the rendered
+                # auth-access is this module's map regardless of the secret file.
+                yq eval-all '. as $item ireduce ({}; . * $item)' \
+                  "$base_config" "$auth_config" "$base_config" > "$tmp"
+                install -m 0440 "$tmp" /run/ntfy-sh/server.yml
+              '';
+              serviceConfig.ExecStart = lib.mkForce [
+                ""
+                "${pkgs.ntfy-sh}/bin/ntfy serve -c /run/ntfy-sh/server.yml --log-level ${cfg.logLevel}"
+              ];
+            };
+          })
 
-                  # Missing publishers are fatal; extra users are allowed.
-                  users="$(yq -r '(.["auth-users"] // .auth_users // [])[] | split(":")[0]' "$auth_config")"
-                  tokens="$(yq -r '(.["auth-tokens"] // .auth_tokens // [])[] | split(":")[0]' "$auth_config")"
-                  for publisher in ${lib.concatStringsSep " " publisherNames}; do
-                    if ! printf '%s\n' "$users" | grep -Fqx "$publisher"; then
-                      echo "ntfy: publisher '$publisher' has no auth-users credential" >&2
-                      exit 1
-                    fi
-                    if ! printf '%s\n' "$tokens" | grep -Fqx "$publisher"; then
-                      echo "ntfy: publisher '$publisher' has no auth-tokens credential" >&2
-                      exit 1
-                    fi
-                  done
-
-                  # Merge the credentials, then the policy again: the rendered
-                  # auth-access is this module's map regardless of the secret file.
-                  yq eval-all '. as $item ireduce ({}; . * $item)' \
-                    "$base_config" "$auth_config" "$base_config" > "$tmp"
-                  install -m 0440 "$tmp" /run/ntfy-sh/server.yml
-                '';
-                serviceConfig.ExecStart = lib.mkForce [
-                  ""
-                  "${pkgs.ntfy-sh}/bin/ntfy serve -c /run/ntfy-sh/server.yml --log-level ${cfg.logLevel}"
-                ];
-              };
-            })
-
-            # Firebase FCM key (shared across both paths)
-            (lib.mkIf (cfg.secretFiles.firebase != null) {
-              sops.secrets."ntfy-firebase-key" = {
-                sopsFile = cfg.secretFiles.firebase;
-                format = "json";
-                key = "";
-                path = "/run/secrets/ntfy/firebase-key.json";
-                owner = "ntfy-sh";
-                group = "ntfy-sh";
-                mode = "0400";
-              };
-            })
-          ]
-        ))
+          # Firebase FCM key (shared across both paths)
+          (lib.mkIf (cfg.secretFiles.firebase != null) {
+            sops.secrets."ntfy-firebase-key" = {
+              sopsFile = cfg.secretFiles.firebase;
+              format = "json";
+              key = "";
+              path = "/run/secrets/ntfy/firebase-key.json";
+              owner = "ntfy-sh";
+              group = "ntfy-sh";
+              mode = "0400";
+            };
+          })
+        ])
         {
-          services.ntfy.enable = true;
 
           services.ntfy.auth.publishers = publishers;
         }

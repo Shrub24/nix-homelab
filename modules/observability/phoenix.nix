@@ -19,8 +19,6 @@ _: {
     {
       imports = [ ../backups/state-backups/_consumer.nix ];
       options.services.phoenix = {
-        enable = lib.mkEnableOption "Arize Phoenix LLM observability collector";
-
         image = lib.mkOption {
           type = lib.types.str;
           default = config.repo.ociImages.phoenix;
@@ -87,7 +85,7 @@ _: {
         };
       };
       config = lib.mkMerge [
-        (lib.mkIf cfg.enable {
+        {
           virtualisation.podman.enable = true;
 
           virtualisation.oci-containers.containers.phoenix = {
@@ -177,9 +175,8 @@ _: {
             mode = "live";
             paths = [ cfg.dataDir ];
           };
-        })
+        }
         {
-          services.phoenix.enable = true;
         }
       ];
     };

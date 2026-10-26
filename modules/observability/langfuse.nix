@@ -14,7 +14,7 @@
       cfg = config.services.langfuse;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
-      hasSecretFile = cfg.secretFiles.host != null && builtins.pathExists cfg.secretFiles.host;
+      hasSecretFile = cfg.secretFiles.host != null;
 
       oidcClient = config.services.identity.oidc.clients.langfuse or null;
 
@@ -29,6 +29,10 @@
         AUTH_CUSTOM_NAME=${cfg.oidc.providerName}
         AUTH_CUSTOM_SCOPE=${cfg.oidc.scope}
         AUTH_CUSTOM_ID_TOKEN_SIGNED_RESPONSE_ALG=${cfg.oidc.idTokenSignedResponseAlg}
+        # Attaches the identity to an account that already exists under the same verified
+        # address. Without it NextAuth refuses the sign-in (OAuthAccountNotLinked) instead
+        # of reaching the account the person already owns.
+        AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING=true
       '';
 
       # Probed through `options`: reading an undeclared option path throws instead of returning null.
@@ -70,8 +74,6 @@
       ];
 
       options.services.langfuse = {
-        enable = lib.mkEnableOption "Langfuse LLM observability";
-
         image = lib.mkOption {
           type = lib.types.str;
           default = config.repo.ociImages.langfuse;
@@ -143,13 +145,15 @@
 
           providerName = lib.mkOption {
             type = lib.types.str;
-            default = "Kanidm";
+            default = if oidcClient == null then "" else oidcClient.providerName;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.langfuse.providerName";
             description = "Display name for the OIDC provider button (AUTH_CUSTOM_NAME).";
           };
 
           scope = lib.mkOption {
             type = lib.types.str;
-            default = "openid email profile";
+            default = if oidcClient == null then "" else builtins.concatStringsSep " " oidcClient.scopes;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.langfuse.scopes";
             description = "OIDC scope string (AUTH_CUSTOM_SCOPE).";
           };
 
@@ -179,26 +183,20 @@
       };
 
       config = lib.mkMerge [
-        { services.langfuse.enable = true; }
-        (lib.mkIf cfg.enable {
+        {
+
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.langfuse";
-              label = "secretFiles.host";
-            })
             {
-              assertion = !cfg.enable || localPostgres != null;
+              assertion = localPostgres != null;
               message = "services.langfuse.enable is true but this host runs no PostgreSQL cluster (select the postgres aspect and declare services.postgres.instances.<name>).";
             }
             {
-              assertion = !cfg.enable || config.services.clickhouse.enable;
+              assertion = config.services.clickhouse.enable;
               message = "services.langfuse.enable is true but the ClickHouse substrate is not selected (select the clickhouse aspect): its trace store has no server otherwise.";
             }
             {
               assertion = !cfg.oidc.enable || oidcClient != null;
-              message = "services.langfuse.oidc: canonical OIDC client 'langfuse' is missing from services.identity.oidc.clients; check systems.oauth2.langfuse in policy/identity.json and the host's kanidm-admin web-policy route.";
+              message = "services.langfuse.oidc: canonical OIDC client 'langfuse' is missing from services.identity.oidc.clients; check clients.langfuse in policy/identity.nix and the identity provider's published route.";
             }
             {
               assertion = !cfg.oidc.enable || cfg.oidc.clientId != null;
@@ -208,12 +206,6 @@
               assertion = !cfg.oidc.enable || cfg.oidc.issuerUrl != "";
               message = "services.langfuse.oidc.issuerUrl must be set when OIDC is enabled.";
             }
-            (secretHelpers.mkRequiredSecretAssertion {
-              enable = cfg.oidc.enable;
-              file = cfg.secretFiles.oidc;
-              feature = "services.langfuse.oidc";
-              label = "secretFiles.oidc";
-            })
           ];
 
           # Gated on the secret file: the two-step bootstrap binds the path before the operator encrypts it.
@@ -307,9 +299,9 @@
 
               # LANGFUSE_INIT_ORG_ID gates the whole seed block; without it upstream silently skips the user seed.
               LANGFUSE_INIT_ORG_ID=shrublab
-              LANGFUSE_INIT_ORG_NAME=Shrublab
+              LANGFUSE_INIT_ORG_NAME=shrublab
               LANGFUSE_INIT_PROJECT_ID=shrublab
-              LANGFUSE_INIT_PROJECT_NAME=Shrublab
+              LANGFUSE_INIT_PROJECT_NAME=shrublab
               LANGFUSE_INIT_PROJECT_PUBLIC_KEY=${config.sops.placeholder.langfuse_otel_public_key}
               LANGFUSE_INIT_PROJECT_SECRET_KEY=${config.sops.placeholder.langfuse_otel_secret_key}
               LANGFUSE_INIT_USER_EMAIL=${config.sops.placeholder.langfuse_initial_admin_email}
@@ -489,7 +481,7 @@
           };
 
           # Container grants only: the Podman pool, not a bridge interface.
-          networking.firewall.extraCommands = lib.mkIf cfg.enable (
+          networking.firewall.extraCommands = (
             lib.concatStringsSep "\n" [
               (netHelpers.mkServiceIngressRule {
                 sourceCIDR = containerSourceCIDR;
@@ -508,7 +500,7 @@
           );
 
           # No state-backups registration: ClickHouse is regenerable, Redis is ephemeral, and the PostgreSQL database rides the substrate's export.
-        })
+        }
       ];
     };
 }

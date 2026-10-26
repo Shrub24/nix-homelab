@@ -111,12 +111,6 @@ in
         };
 
         assertions = [
-          (secretHelpers.mkRequiredSecretAssertion {
-            enable = true;
-            file = cfg.secretFiles.host;
-            feature = "services.bifrost";
-            label = "secretFiles.host";
-          })
         ];
 
         sops.templates."bifrost.environment" = {

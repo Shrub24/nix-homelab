@@ -17,6 +17,9 @@ import sys
 from urllib.request import Request, urlopen
 
 SOURCE = Path("pkgs/geopulse/source.nix")
+BACKEND = Path("pkgs/geopulse/backend.nix")
+# Published by `modules/flake/packages.nix`; the same Maven `backend.nix` builds with.
+TOOLCHAIN_ATTR = "geopulse-maven-toolchain"
 # Each derived output owns one dependency hash, which nix-update regenerates
 # from the pinned revision: maven for the backend, npm for the frontend.
 DERIVED_PACKAGES = ("geopulse-backend", "geopulse-frontend")
@@ -118,6 +121,38 @@ def assert_source_hash():
     )
 
 
+def maven_version():
+    """The Maven the geopulse derivation is built with.
+
+    Read from the flake's own output, published by `modules/flake/packages.nix` from
+    the package set the derivation is instantiated from. Not through the package:
+    `backend.nix` refuses to evaluate on a toolchain mismatch, which is the
+    condition this exists to repair.
+    """
+    system = checked(
+        ["nix", "eval", "--raw", "--impure", "--expr", "builtins.currentSystem"],
+        "resolving the current system",
+    ).stdout.strip()
+    return checked(
+        ["nix", "eval", "--raw", f".#packages.{system}.{TOOLCHAIN_ATTR}.version"],
+        "resolving the Maven version",
+    ).stdout.strip()
+
+
+def bind_maven_toolchain():
+    """Keep `mvnToolchain` equal to the Maven the hash is regenerated with."""
+    version = maven_version()
+    text = BACKEND.read_text()
+    if capture(text, r'^  mvnToolchain = "([^"]+)";') == version:
+        return
+    BACKEND.write_text(
+        replace_one(
+            text, r'^  mvnToolchain = "[^"]+";', f'  mvnToolchain = "{version}";'
+        )
+    )
+    print(f"geopulse-update: mvnToolchain -> {version}", flush=True)
+
+
 def main():
     if "--check" in sys.argv[1:]:
         print(newest_release(), flush=True)
@@ -152,6 +187,12 @@ def main():
 
     if tree is not None:
         assert_source_hash()
+
+    # The guard in backend.nix refuses to evaluate on a Maven mismatch, and
+    # nix-update evaluates the package to reach the fetch derivation, so settle the
+    # binding before regenerating the hash it is bound to.
+    bind_maven_toolchain()
+    checked(["git", "add", "-A"], "staging the Maven binding")
 
     for name in DERIVED_PACKAGES:
         print(f"geopulse-update: regenerating the {name} dependency hash", flush=True)

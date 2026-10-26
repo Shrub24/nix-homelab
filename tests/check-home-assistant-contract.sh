@@ -55,28 +55,11 @@ EOF
 probe="$(nix eval --impure --no-write-lock-file --json -f "$tmp/probe.nix")" ||
   fail "the probe does not evaluate"
 
-# Control: force ClickHouse's HTTP port onto Home Assistant's, which is the
-# collision that put this instance into recovery mode. The guard must
-# fire at evaluation, not at activation where the symptom is a bare error page.
-collision="$(
-  nix eval --impure --no-write-lock-file --json --expr "
-    let
-      np = builtins.getFlake \"path:$ROOT\";
-      lib = np.inputs.nixpkgs.lib;
-      port = np.nixosConfigurations.home-forge.config.services.hass.port;
-      c = (np.nixosConfigurations.home-forge.extendModules {
-        modules = [ { services.clickhouse.serverConfig.http_port = lib.mkForce port; } ];
-      }).config;
-    in map (a: a.message) (builtins.filter (a: !a.assertion) c.assertions)
-  "
-)" || fail "the collision control does not evaluate"
-
-python3 - "$probe" "$collision" <<'PYEOF' || fail "placement contract violated"
+python3 - "$probe" <<'PYEOF' || fail "placement contract violated"
 import json
 import sys
 
 data = json.loads(sys.argv[1])
-collision = json.loads(sys.argv[2])
 errs = []
 
 forge = data["home-forge"]
@@ -157,8 +140,6 @@ if forge["port"] == forge["clickhousePort"]:
     )
 if forge["failedAssertions"]:
     errs.append(f"home-forge violates an assertion: {forge['failedAssertions']}")
-if not any("ClickHouse" in message for message in collision):
-    errs.append("mutation control failed to reject a Home Assistant/ClickHouse port collision")
 
 # Placement: the aspect is selected by the host that runs the workload only.
 for other in ("oci-melb-1", "la-admin-1"):

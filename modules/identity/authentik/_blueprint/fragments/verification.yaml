@@ -1,0 +1,190 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+version: 1
+metadata:
+  name: homelab-verification
+entries:
+  - attrs:
+      expression: |
+        from django.db import transaction
+        from authentik.stages.authenticator_email.models import EmailDevice
+
+        user = request.context.get("pending_user") or request.user
+        if not user or not user.pk:
+            return False
+        user.refresh_from_db()
+        with transaction.atomic():
+            proof = EmailDevice.objects.filter(
+                user=user, stage__name="verify-email-code",
+                email=user.email, confirmed=True,
+            ).first()
+            if proof:
+                user.attributes["email_verified_address"] = proof.email
+                user.is_active = True
+                user.save(update_fields=["attributes", "is_active"])
+                proof.delete()
+        return not user.email or user.attributes.get("email_verified_address") == user.email
+    id: policy-email-verified
+    identifiers:
+      name: homelab-email-verification
+    model: authentik_policies_expression.expressionpolicy
+  - attrs:
+      expression: |
+        from django.db import transaction
+        from authentik.core.models import User
+        from authentik.stages.authenticator_email.models import EmailDevice
+
+        pending = request.context.get("pending_user") or request.user
+        if not pending or not pending.pk:
+            return True
+        user = User.objects.get(pk=pending.pk)
+        with transaction.atomic():
+            proof = EmailDevice.objects.filter(
+                user=user, stage__name="verify-email-code",
+                email=user.email, confirmed=True,
+            ).first()
+            if proof:
+                user.attributes["email_verified_address"] = proof.email
+                user.is_active = True
+                user.save(update_fields=["attributes", "is_active"])
+                proof.delete()
+        return bool(user.email) and user.attributes.get("email_verified_address") != user.email
+    id: policy-email-gate
+    identifiers:
+      name: homelab-email-gate
+    model: authentik_policies_expression.expressionpolicy
+  - attrs:
+      expression: |
+        from authentik.core.models import User
+
+        pending = request.context.get("pending_user") or request.user
+        if not pending or not pending.pk:
+            return True
+        user = User.objects.get(pk=pending.pk)
+        return bool(user.email) and user.attributes.get("email_verified_address") != user.email
+    id: policy-email-unverified
+    identifiers:
+      name: homelab-email-unverified
+    model: authentik_policies_expression.expressionpolicy
+  - attrs:
+      authentication: require_authenticated
+      designation: stage_configuration
+      name: Email verification
+      title: Verify your email address
+      background: !Context flow-background
+    id: verify-flow
+    identifiers:
+      slug: verify-email
+    model: authentik_flows.flow
+  - attrs:
+      subject: Verify your shrublab email address
+      token_expiry: minutes=10
+      use_global_settings: true
+    id: verify-email
+    identifiers:
+      name: verify-email-code
+    model: authentik_stages_authenticator_email.authenticatoremailstage
+  - id: verify-user-login
+    identifiers:
+      name: verify-email-user-login
+    model: authentik_stages_user_login.userloginstage
+  - attrs:
+      field_key: email-verified
+      label: Email verified
+      order: 0
+      placeholder: Your email address is confirmed.
+      placeholder_expression: false
+      required: false
+      type: alert_info
+    id: verify-confirmed-field
+    identifiers:
+      name: verify-email-confirmed
+    model: authentik_stages_prompt.prompt
+  - attrs:
+      fields:
+        - !KeyOf verify-confirmed-field
+    id: verify-confirmed
+    identifiers:
+      name: verify-email-confirmed
+    model: authentik_stages_prompt.promptstage
+  - attrs:
+      order: 10
+      re_evaluate_policies: true
+      stage: !KeyOf verify-email
+      target: !KeyOf verify-flow
+    id: binding-verify-email
+    identifiers:
+      stage: !KeyOf verify-email
+      target: !KeyOf verify-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 0
+      policy: !KeyOf policy-email-unverified
+      target: !KeyOf binding-verify-email
+    id: policybinding-verify-unverified
+    identifiers:
+      order: 0
+      policy: !KeyOf policy-email-unverified
+      target: !KeyOf binding-verify-email
+    model: authentik_policies.policybinding
+  - attrs:
+      order: 100
+      re_evaluate_policies: true
+      stage: !KeyOf verify-user-login
+      target: !KeyOf verify-flow
+    id: binding-verify-user-login
+    identifiers:
+      stage: !KeyOf verify-user-login
+      target: !KeyOf verify-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 0
+      policy: !KeyOf policy-email-verified
+      target: !KeyOf binding-verify-user-login
+    id: policybinding-verify-user-login
+    identifiers:
+      order: 0
+      policy: !KeyOf policy-email-verified
+      target: !KeyOf binding-verify-user-login
+    model: authentik_policies.policybinding
+  - attrs:
+      order: 200
+      re_evaluate_policies: true
+      stage: !KeyOf verify-confirmed
+      target: !KeyOf verify-flow
+    id: binding-verify-confirmed
+    identifiers:
+      stage: !KeyOf verify-confirmed
+      target: !KeyOf verify-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 40
+      re_evaluate_policies: true
+      stage: !KeyOf verify-email
+      target: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+    id: binding-login-email-confirmation
+    identifiers:
+      stage: !KeyOf verify-email
+      target: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 0
+      policy: !KeyOf policy-email-gate
+      target: !KeyOf binding-login-email-confirmation
+    id: policybinding-login-gate
+    identifiers:
+      order: 0
+      policy: !KeyOf policy-email-gate
+      target: !KeyOf binding-login-email-confirmation
+    model: authentik_policies.policybinding
+  - identifiers:
+      name: verify-email-email
+    model: authentik_stages_email.emailstage
+    state: absent
+  - identifiers:
+      name: verify-email-identification
+    model: authentik_stages_identification.identificationstage
+    state: absent
+  - identifiers:
+      name: verify-email-redirect
+    model: authentik_stages_redirect.redirectstage
+    state: absent

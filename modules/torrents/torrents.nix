@@ -34,12 +34,6 @@ _: {
 
       config = {
         assertions = [
-          (secretHelpers.mkRequiredSecretAssertion {
-            enable = true;
-            file = cfg.secretFiles.host;
-            feature = "services.torrents";
-            label = "secretFiles.host";
-          })
         ];
 
         sops.secrets.qbittorrent_webui_password = {

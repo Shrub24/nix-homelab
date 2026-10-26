@@ -122,7 +122,7 @@ _: {
         };
       };
       config = lib.mkMerge [
-        (lib.mkIf cfg.enable {
+        {
           services = {
             cockpit = {
               enable = true;
@@ -198,7 +198,7 @@ _: {
               message = "Set services.admin.cockpit.serviceUser.hashedPasswordFile when serviceUser.enable=true.";
             }
           ];
-        })
+        }
         {
           services.admin.cockpit = {
             serviceUser = {

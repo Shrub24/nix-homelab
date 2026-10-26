@@ -25,9 +25,9 @@ _: {
       options.services.actual.secretFiles.oidc = secretHelpers.mkSecretFileOption "actual-oidc";
 
       config = lib.mkMerge [
-        { services.actual.enable = true; }
 
-        (lib.mkIf cfg.enable {
+        {
+
           assertions = [
             {
               assertion = route != null;
@@ -35,14 +35,8 @@ _: {
             }
             {
               assertion = oidcClient != null;
-              message = "services.actual: canonical OIDC client 'actual' is missing from services.identity.oidc.clients; check systems.oauth2.actual in policy/identity.json.";
+              message = "services.actual: canonical OIDC client 'actual' is missing from services.identity.oidc.clients; check clients.actual in policy/identity.nix.";
             }
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.oidc;
-              feature = "services.actual";
-              label = "secretFiles.oidc";
-            })
           ];
 
           sops.secrets = secretHelpers.mkSecretsFromMap cfg.secretFiles.oidc {
@@ -52,6 +46,8 @@ _: {
               # The unit's preStart renders config.json as the service user.
               owner = "actual";
               group = "actual";
+              # config.json is rendered once at start, so a rotated secret needs a restart.
+              restartUnits = [ "actual.service" ];
             };
           };
 
@@ -67,6 +63,7 @@ _: {
           ];
 
           services.actual = {
+            enable = true;
             user = "actual";
             group = "actual";
 
@@ -75,11 +72,10 @@ _: {
               hostname = "127.0.0.1";
               port = route.upstreamPort;
               loginMethod = "openid";
-              # OpenID is upstream-preview, so password stays available.
-              allowedLoginMethods = [
-                "password"
-                "openid"
-              ];
+              # Upstream builds the account from the `preferred_username` claim, so the OIDC
+              # identity owns the account. Password login would authenticate a separate local
+              # credential, so it is not offered.
+              allowedLoginMethods = [ "openid" ];
               openId = {
                 discoveryURL = oidcClient.wellknownUrl;
                 client_id = oidcClient.clientId;
@@ -104,7 +100,7 @@ _: {
             ];
             cleanupCommands = [ "${pkgs.coreutils}/bin/rm -rf ${exportDir}" ];
           };
-        })
+        }
       ];
     };
 }

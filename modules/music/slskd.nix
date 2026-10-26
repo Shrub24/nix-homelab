@@ -45,12 +45,6 @@ _: {
         users.groups.slskd.gid = lib.mkDefault 975;
 
         assertions = [
-          (secretHelpers.mkRequiredSecretAssertion {
-            enable = cfg.secretFiles.host != null;
-            file = cfg.secretFiles.host;
-            feature = "services.slskd";
-            label = "secretFiles.host";
-          })
         ];
 
         sops.templates."slskd.env" = lib.mkIf (cfg.secretFiles.host != null) {

@@ -26,10 +26,11 @@ _: {
       exportDir = "${config.services.state-backups.stagingRoot}/tududi";
     in
     {
-      imports = [ ../backups/state-backups/_consumer.nix ];
+      imports = [
+        ../backups/state-backups/_consumer.nix
+      ];
 
       options.services.tududi = {
-        enable = lib.mkEnableOption "tududi task manager";
 
         secretFiles = {
           host = secretHelpers.mkSecretFileOption "tududi-host-secrets";
@@ -39,9 +40,9 @@ _: {
 
       config = lib.mkMerge [
         # Selection is enablement.
-        { services.tududi.enable = true; }
 
-        (lib.mkIf cfg.enable {
+        {
+
           assertions = [
             {
               assertion = route != null;
@@ -49,20 +50,8 @@ _: {
             }
             {
               assertion = oidcClient != null;
-              message = "services.tududi: canonical OIDC client 'tududi' is missing from services.identity.oidc.clients; check systems.oauth2.tududi in policy/identity.json.";
+              message = "services.tududi: canonical OIDC client 'tududi' is missing from services.identity.oidc.clients; check clients.tududi in policy/identity.nix.";
             }
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.tududi";
-              label = "secretFiles.host";
-            })
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.oidc;
-              feature = "services.tududi";
-              label = "secretFiles.oidc";
-            })
           ];
 
           sops.templates."tududi.environment" = {
@@ -117,13 +106,12 @@ _: {
                 # The only hop in front is the edge's proxy on this host.
                 TUDUDI_TRUST_PROXY = "true";
                 OIDC_ENABLED = "true";
-                OIDC_PROVIDER_NAME = "Kanidm";
-                # The slug is part of the callback path, /api/oidc/callback/<slug>,
-                # which the identity client registers.
-                OIDC_PROVIDER_SLUG = "kanidm";
+                OIDC_PROVIDER_NAME = oidcClient.providerName;
+                # The slug is the client id and forms its own callback path.
+                OIDC_PROVIDER_SLUG = oidcClient.clientId;
                 OIDC_ISSUER_URL = oidcClient.issuerUrl;
                 OIDC_CLIENT_ID = oidcClient.clientId;
-                OIDC_SCOPE = "openid profile email";
+                OIDC_SCOPE = builtins.concatStringsSep " " oidcClient.scopes;
               };
               environmentFiles = [ config.sops.templates."tududi.environment".path ];
               volumes = [
@@ -170,7 +158,7 @@ _: {
             ];
             cleanupCommands = [ "${pkgs.coreutils}/bin/rm -rf ${exportDir}" ];
           };
-        })
+        }
       ];
     };
 }

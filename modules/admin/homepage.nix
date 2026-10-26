@@ -22,19 +22,12 @@ _: {
       };
     in
     {
-      options.services.admin.homepage.enable = lib.mkEnableOption "the Homepage Dashboard wiring";
 
       options.services.admin.homepage.secretFiles.host =
         secretHelpers.mkSecretFileOption "homepage-host-secrets";
       config = lib.mkMerge [
-        (lib.mkIf cfg.enable {
+        {
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.admin.homepage";
-              label = "secretFiles.host";
-            })
           ];
 
           sops.templates."homepage-auth.env" = {
@@ -119,9 +112,8 @@ _: {
               bookmarks
               ;
           };
-        })
+        }
         {
-          services.admin.homepage.enable = true;
         }
       ];
     };

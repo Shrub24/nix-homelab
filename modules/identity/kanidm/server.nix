@@ -1,7 +1,7 @@
 # Kanidm provider runtime: state paths, bootstrap/provisioning secret sources, and the
-# per-client OIDC secret map. Endpoints come from web policy; the URL from ./_oidc.nix.
+# per-client OIDC secret map. Endpoints come from web policy; the URL from ../_oidc.nix.
 _: {
-  flake.modules.nixos.identity-provider =
+  flake.modules.nixos.kanidm-identity =
     {
       lib,
       config,
@@ -10,10 +10,29 @@ _: {
     }:
     let
       cfg = config.services.identity.kanidm;
-      secretHelpers = import ../../lib/secrets.nix { inherit lib; };
-      kanidmPackages = import ./_kanidm-packages.nix { inherit pkgs; };
-      identityPolicy = builtins.fromJSON (builtins.readFile ../../policy/identity.json);
-      oauth2Policy = identityPolicy.systems.oauth2;
+      secretHelpers = import ../../../lib/secrets.nix { inherit lib; };
+      secretSources = import ../_secret-sources.nix;
+      identityRedirects = import ../_redirects.nix;
+      kanidmPackages = import ./_packages.nix { inherit pkgs; };
+      identityPolicy = import ../../../policy/identity.nix;
+      # The provider's own route, independent of whichever provider serves application
+      # SSO: retaining Kanidm for host authentication must not point it elsewhere.
+      kanidmRouteKey = identityPolicy.providers.kanidm.route or null;
+      kanidmRoute =
+        if kanidmRouteKey == null then
+          throw "kanidm-identity: policy/identity.nix declares no route for the Kanidm provider"
+        else
+          config.repo.web.catalog.${kanidmRouteKey} or null;
+      # Placed here rather than bound per host: the provider owns its placement facts.
+      providerPublicUrl =
+        if kanidmRoute == null then
+          throw "kanidm-identity: required canonical route 'repo.web.catalog.\"${kanidmRouteKey}\"' is missing on host '${
+            config.networking.hostName or "?"
+          }'; publish it in policy/web-services.nix"
+        else
+          kanidmRoute.publicUrl;
+      kanidmNativeScope = (import ./_client.nix { providerUrl = cfg.appUrl; }).nativeScope;
+      oauth2Policy = identityPolicy.clients;
       oauth2ClientPolicies = lib.filterAttrs (
         _name: clientPolicy: clientPolicy.enable or true
       ) oauth2Policy;
@@ -25,33 +44,38 @@ _: {
       # because they encode SOPS readership and are never inferred from client metadata.
       oauth2Clients = lib.mapAttrs (
         _name: clientPolicy:
+        let
+          kanidmExt = clientPolicy.kanidm or { };
+        in
         {
-          secretFile = cfg.secretFiles.oauth2Clients.${clientPolicy.clientId or _name};
-          inherit (clientPolicy) displayName secretKeyPrefix scopeMaps;
+          secretFile = cfg.secretFiles.oauth2Clients.${_name};
+          inherit (clientPolicy) displayName;
+          secretKeyPrefix = clientPolicy.secretKeyPrefix or _name;
+          scopeMaps = lib.mapAttrs (_group: scopes: map kanidmNativeScope scopes) clientPolicy.access;
           callbackPath = clientPolicy.callbackPath or null;
           originUrl = clientPolicy.originUrl or null;
           includePrivateEndpointCallback = clientPolicy.includePrivateEndpointCallback or false;
           additionalRedirectUrls = clientPolicy.additionalRedirectUrls or [ ];
-          supplementaryScopeMaps = clientPolicy.supplementaryScopeMaps or { };
-          claimMaps = clientPolicy.claimMaps or { };
+          supplementaryScopeMaps = kanidmExt.supplementaryScopeMaps or { };
+          claimMaps = kanidmExt.claimMaps or { };
         }
-        // lib.optionalAttrs (clientPolicy ? routeKey) {
-          route = policyServices.${clientPolicy.routeKey} or null;
-          originLanding = (policyServices.${clientPolicy.routeKey} or { }).publicUrl or null;
+        // lib.optionalAttrs (clientPolicy ? route) {
+          route = policyServices.${clientPolicy.route} or null;
+          originLanding = (policyServices.${clientPolicy.route} or { }).publicUrl or null;
         }
-        // lib.optionalAttrs (clientPolicy ? allowInsecureClientDisablePkce) {
-          inherit (clientPolicy) allowInsecureClientDisablePkce;
+        // lib.optionalAttrs (kanidmExt ? allowInsecureClientDisablePkce) {
+          inherit (kanidmExt) allowInsecureClientDisablePkce;
         }
-        // lib.optionalAttrs (clientPolicy ? enableLegacyCrypto) {
-          inherit (clientPolicy) enableLegacyCrypto;
+        // lib.optionalAttrs (kanidmExt ? enableLegacyCrypto) {
+          inherit (kanidmExt) enableLegacyCrypto;
         }
-        // lib.optionalAttrs (clientPolicy ? enableLocalhostRedirects) {
-          inherit (clientPolicy) enableLocalhostRedirects;
+        // lib.optionalAttrs (kanidmExt ? enableLocalhostRedirects) {
+          inherit (kanidmExt) enableLocalhostRedirects;
         }
-        // lib.optionalAttrs (clientPolicy ? preferShortUsername) {
-          inherit (clientPolicy) preferShortUsername;
+        // lib.optionalAttrs (kanidmExt ? preferShortUsername) {
+          inherit (kanidmExt) preferShortUsername;
         }
-        // lib.optionalAttrs (clientPolicy ? public) { inherit (clientPolicy) public; }
+        // lib.optionalAttrs (kanidmExt ? public) { inherit (kanidmExt) public; }
       ) oauth2ClientPolicies;
 
       hasIdentitySecrets = cfg.secretFiles.identity != null;
@@ -84,37 +108,19 @@ _: {
       oauth2Provisioning = lib.mapAttrs (
         name: client:
         let
-          canonicalOriginUrl =
-            if client.originUrl != null then
-              client.originUrl
-            else
-              "${client.route.publicUrl}${client.callbackPath}";
-          # Tailscale Serve terminates HTTPS on the bootstrap callback socket.
-          privateEndpointCallback =
-            if client.includePrivateEndpointCallback then
-              "https://${client.route.endpoint.host}:${toString client.route.endpoint.port}${client.callbackPath}"
-            else
-              null;
-          extraUrls =
-            lib.optional (privateEndpointCallback != null) privateEndpointCallback
-            ++ client.additionalRedirectUrls;
-          resolvedOriginUrl =
-            if extraUrls == [ ] then
-              canonicalOriginUrl
-            else
-              (if builtins.isList canonicalOriginUrl then canonicalOriginUrl else [ canonicalOriginUrl ])
-              ++ extraUrls;
+          redirects = identityRedirects {
+            clientPolicy = client;
+            route = client.route or null;
+          };
         in
         {
           inherit (client) displayName;
-          originUrl = resolvedOriginUrl;
+          originUrl = redirects;
           originLanding =
             if client ? originLanding && client.originLanding != null then
               client.originLanding
-            else if builtins.isList resolvedOriginUrl then
-              builtins.head resolvedOriginUrl
             else
-              resolvedOriginUrl;
+              builtins.head redirects;
           basicSecretFile = config.sops.secrets."kanidm_oauth2_${name}_basic_secret".path;
           public = client.public or false;
           preferShortUsername = client.preferShortUsername or false;
@@ -228,8 +234,8 @@ _: {
     in
     {
       imports = [
-        ../backups/state-backups/_consumer.nix
-        ./_oidc.nix
+        ../../backups/state-backups/_consumer.nix
+        ../_oidc.nix
       ];
       options.services.identity.kanidm = {
         enable = lib.mkEnableOption "Kanidm identity-provider runtime and provisioning";
@@ -328,180 +334,199 @@ _: {
         };
       };
 
-      config = lib.mkIf cfg.enable {
-        assertions = [
-          {
-            assertion = originHost != null;
-            message = "services.identity.kanidm.appUrl must be a valid https URL.";
-          }
-          {
-            assertion = config.services.identity.oidc.providerUrl == cfg.appUrl;
-            message = "services.identity.kanidm.appUrl must stay aligned with services.identity.oidc.providerUrl.";
-          }
-        ]
-        ++ lib.mapAttrsToList (name: _client: {
-          assertion = builtins.hasAttr name cfg.secretFiles.oauth2Clients;
-          message = "services.identity.kanidm.secretFiles.oauth2Clients.${name} must be set when system.oauth2.${name}.enable=true.";
-        }) oauth2Clients
-        ++ (
-          let
-            extraKeys = lib.subtractLists (builtins.attrNames oauth2ClientPolicies) (
-              builtins.attrNames cfg.secretFiles.oauth2Clients
-            );
-          in
-          [
+      config = lib.mkMerge [
+        {
+          services.identity.kanidm = {
+            enable = true;
+            appUrl = providerPublicUrl;
+
+            secretFiles = {
+              identity = ../../../secrets/identity/kanidm.yaml;
+              provisioning = ../../../secrets/identity/provisioning.json;
+              # One map of encrypted client credential sources, shared with every other
+              # provider projection; the leaf asserts the key set.
+              oauth2Clients = secretSources.clients;
+            };
+          };
+        }
+
+        (lib.mkIf cfg.enable {
+          assertions = [
             {
-              assertion = extraKeys == [ ];
-              message = "services.identity.kanidm.secretFiles.oauth2Clients has keys that are not enabled canonical identity clients: ${lib.concatStringsSep ", " extraKeys}.";
+              assertion = originHost != null;
+              message = "services.identity.kanidm.appUrl must be a valid https URL.";
+            }
+            {
+              assertion =
+                identityPolicy.provider != "kanidm" || config.services.identity.oidc.providerUrl == cfg.appUrl;
+              message = "services.identity.kanidm.appUrl must stay aligned with services.identity.oidc.providerUrl while Kanidm serves application SSO.";
+            }
+            {
+              # The front the edge dials binds the published port; a drift is a silent outage.
+              assertion = lib.hasSuffix ":${toString kanidmRoute.upstreamPort}" cfg.bindAddress;
+              message = "kanidm-identity: bind address '${cfg.bindAddress}' must listen on the published route port '${toString kanidmRoute.upstreamPort}' declared by repo.web.catalog.\"kanidm-admin\"";
             }
           ]
-        )
-        ++ lib.mapAttrsToList (name: client: {
-          assertion = client.originUrl != null || ((client.route != null) && (client.callbackPath != null));
-          message = "system.oauth2.${name} must define originUrl directly or provide both routeKey and callbackPath.";
-        }) oauth2Clients;
+          ++ lib.mapAttrsToList (name: _client: {
+            assertion = builtins.hasAttr name cfg.secretFiles.oauth2Clients;
+            message = "services.identity.kanidm.secretFiles.oauth2Clients.${name} must be set when system.oauth2.${name}.enable=true.";
+          }) oauth2Clients
+          ++ (
+            let
+              extraKeys = lib.subtractLists (builtins.attrNames oauth2ClientPolicies) (
+                builtins.attrNames cfg.secretFiles.oauth2Clients
+              );
+            in
+            [
+              {
+                assertion = extraKeys == [ ];
+                message = "services.identity.kanidm.secretFiles.oauth2Clients has keys that are not enabled canonical identity clients: ${lib.concatStringsSep ", " extraKeys}.";
+              }
+            ]
+          );
 
-        sops.secrets =
-          (lib.optionalAttrs hasIdentitySecrets (
-            secretHelpers.mkSecretsFromMap cfg.secretFiles.identity {
-              kanidm_admin_password = {
-                key = "kanidm/admin_password";
-                path = "/run/secrets/kanidm.admin_password";
+          sops.secrets =
+            (lib.optionalAttrs hasIdentitySecrets (
+              secretHelpers.mkSecretsFromMap cfg.secretFiles.identity {
+                kanidm_admin_password = {
+                  key = "kanidm/admin_password";
+                  path = "/run/secrets/kanidm.admin_password";
+                  owner = "kanidm";
+                  group = "kanidm";
+                };
+                kanidm_idm_admin_password = {
+                  key = "kanidm/idm_admin_password";
+                  path = "/run/secrets/kanidm.idm_admin_password";
+                  owner = "kanidm";
+                  group = "kanidm";
+                };
+              }
+            ))
+            // (lib.optionalAttrs hasProvisioningSecrets {
+              kanidm_provisioning_overlay = {
+                sopsFile = cfg.secretFiles.provisioning;
+                format = "json";
+                key = "";
+                path = "/run/secrets/kanidm.provisioning.json";
                 owner = "kanidm";
                 group = "kanidm";
+                mode = "0400";
               };
-              kanidm_idm_admin_password = {
-                key = "kanidm/idm_admin_password";
-                path = "/run/secrets/kanidm.idm_admin_password";
-                owner = "kanidm";
-                group = "kanidm";
+            })
+            // oauth2SecretSpecs;
+
+          services = {
+            kanidm = {
+              package = kanidmPackages.server;
+
+              client = {
+                enable = true;
+                settings.uri = cfg.appUrl;
               };
-            }
-          ))
-          // (lib.optionalAttrs hasProvisioningSecrets {
-            kanidm_provisioning_overlay = {
-              sopsFile = cfg.secretFiles.provisioning;
-              format = "json";
-              key = "";
-              path = "/run/secrets/kanidm.provisioning.json";
-              owner = "kanidm";
-              group = "kanidm";
-              mode = "0400";
+
+              server = {
+                enable = true;
+                settings = {
+                  origin = cfg.appUrl;
+                  domain = if cfg.domain != null then cfg.domain else originHost;
+                  bindaddress = cfg.bindAddress;
+                  tls_chain = cfg.tlsChainFile;
+                  tls_key = cfg.tlsKeyFile;
+                  role = "WriteReplica";
+                  online_backup = {
+                    path = cfg.backup.exportDir;
+                    schedule = cfg.backup.schedule;
+                    versions = cfg.backup.versions;
+                  };
+                };
+              };
+
+              provision = lib.mkIf (hasIdentitySecrets || hasOauth2Clients || hasProvisioningSecrets) (
+                {
+                  enable = true;
+                  systems.oauth2 = oauth2Provisioning;
+                }
+                // lib.optionalAttrs hasIdentitySecrets {
+                  adminPasswordFile = config.sops.secrets.kanidm_admin_password.path;
+                  idmAdminPasswordFile = config.sops.secrets.kanidm_idm_admin_password.path;
+                }
+                // lib.optionalAttrs hasProvisioningSecrets {
+                  extraJsonFile = config.sops.secrets.kanidm_provisioning_overlay.path;
+                }
+              );
             };
-          })
-          // oauth2SecretSpecs;
 
-        services = {
-          kanidm = {
-            package = kanidmPackages.server;
-
-            client = {
+            # Backup coverage is the authoritative portable export only; the live DB
+            # is /var/lib/kanidm/kanidm.db, not the data dir.
+            state-backups.services.kanidm = {
               enable = true;
-              settings.uri = cfg.appUrl;
+              mode = "export";
+              exportPaths = [ cfg.backup.exportDir ];
             };
+          };
 
-            server = {
-              enable = true;
-              settings = {
-                origin = cfg.appUrl;
-                domain = if cfg.domain != null then cfg.domain else originHost;
-                bindaddress = cfg.bindAddress;
-                tls_chain = cfg.tlsChainFile;
-                tls_key = cfg.tlsKeyFile;
-                role = "WriteReplica";
-                online_backup = {
-                  path = cfg.backup.exportDir;
-                  schedule = cfg.backup.schedule;
-                  versions = cfg.backup.versions;
+          environment.systemPackages = [ kanidmPackages.client ];
+
+          # Exposed under the conventional build namespace so a cold store can build it.
+          system.build.kanidm-restore = restoreScript;
+
+          systemd = {
+            services = {
+              kanidm = {
+                serviceConfig.SupplementaryGroups = cfg.tlsReaderGroups;
+              };
+
+              "kanidm-local-tls" = lib.mkIf usesGeneratedPair {
+                description = "Generate the provider-owned TLS pair for the Kanidm server";
+                wantedBy = [ "multi-user.target" ];
+                requiredBy = [ "kanidm.service" ];
+                before = [ "kanidm.service" ];
+                serviceConfig = {
+                  Type = "oneshot";
+                  RemainAfterExit = true;
+                  ExecStart = pkgs.writeShellScript "kanidm-local-tls" ''
+                    set -euo pipefail
+                    umask 077
+
+                    install -d -m 0750 -o kanidm -g kanidm "${cfg.tlsStateDir}"
+
+                    # Generate once and keep: the pair carries no identity anyone
+                    # depends on, so there is nothing to rotate against.
+                    if [ -s "${cfg.tlsChainFile}" ] && [ -s "${cfg.tlsKeyFile}" ]; then
+                      exit 0
+                    fi
+
+                    ${pkgs.openssl}/bin/openssl req -x509 -nodes -newkey rsa:4096 -sha256 -days 3650 \
+                      -subj "/CN=${originHost}" \
+                      -addext "subjectAltName=DNS:${originHost},DNS:localhost,IP:127.0.0.1" \
+                      -keyout "${cfg.tlsKeyFile}" \
+                      -out "${cfg.tlsChainFile}"
+
+                    chown kanidm:kanidm "${cfg.tlsChainFile}" "${cfg.tlsKeyFile}"
+                    chmod 0640 "${cfg.tlsChainFile}" "${cfg.tlsKeyFile}"
+                  '';
+                };
+              };
+
+              # Operator-invoked restore helper: no wantedBy, so it never starts at boot.
+              "kanidm-restore@" = {
+                description = "One-shot Kanidm portable backup restore and offline verify (operator-invoked while kanidm.service is stopped)";
+                serviceConfig = {
+                  Type = "oneshot";
+                  ExecStart = "${restoreScript} %I";
                 };
               };
             };
 
-            provision = lib.mkIf (hasIdentitySecrets || hasOauth2Clients || hasProvisioningSecrets) (
-              {
-                enable = true;
-                systems.oauth2 = oauth2Provisioning;
-              }
-              // lib.optionalAttrs hasIdentitySecrets {
-                adminPasswordFile = config.sops.secrets.kanidm_admin_password.path;
-                idmAdminPasswordFile = config.sops.secrets.kanidm_idm_admin_password.path;
-              }
-              // lib.optionalAttrs hasProvisioningSecrets {
-                extraJsonFile = config.sops.secrets.kanidm_provisioning_overlay.path;
-              }
-            );
+            tmpfiles.rules = [
+              "d ${cfg.dataDir} 0750 kanidm kanidm - -"
+              "z ${cfg.dataDir} 0750 kanidm kanidm - -"
+              (lib.mkIf usesGeneratedPair "d ${cfg.tlsStateDir} 0750 kanidm kanidm - -")
+              "d ${cfg.backup.exportDir} 0750 kanidm kanidm - -"
+              "z ${cfg.backup.exportDir} 0750 kanidm kanidm - -"
+            ];
           };
-
-          # Backup coverage is the authoritative portable export only; the live DB
-          # is /var/lib/kanidm/kanidm.db, not the data dir.
-          state-backups.services.kanidm = {
-            enable = true;
-            mode = "export";
-            exportPaths = [ cfg.backup.exportDir ];
-          };
-        };
-
-        environment.systemPackages = [ kanidmPackages.client ];
-
-        # Exposed under the conventional build namespace so a cold store can build it.
-        system.build.kanidm-restore = restoreScript;
-
-        systemd = {
-          services = {
-            kanidm = {
-              serviceConfig.SupplementaryGroups = cfg.tlsReaderGroups;
-            };
-
-            "kanidm-local-tls" = lib.mkIf usesGeneratedPair {
-              description = "Generate the provider-owned TLS pair for the Kanidm server";
-              wantedBy = [ "multi-user.target" ];
-              requiredBy = [ "kanidm.service" ];
-              before = [ "kanidm.service" ];
-              serviceConfig = {
-                Type = "oneshot";
-                RemainAfterExit = true;
-                ExecStart = pkgs.writeShellScript "kanidm-local-tls" ''
-                  set -euo pipefail
-                  umask 077
-
-                  install -d -m 0750 -o kanidm -g kanidm "${cfg.tlsStateDir}"
-
-                  # Generate once and keep: the pair carries no identity anyone
-                  # depends on, so there is nothing to rotate against.
-                  if [ -s "${cfg.tlsChainFile}" ] && [ -s "${cfg.tlsKeyFile}" ]; then
-                    exit 0
-                  fi
-
-                  ${pkgs.openssl}/bin/openssl req -x509 -nodes -newkey rsa:4096 -sha256 -days 3650 \
-                    -subj "/CN=${originHost}" \
-                    -addext "subjectAltName=DNS:${originHost},DNS:localhost,IP:127.0.0.1" \
-                    -keyout "${cfg.tlsKeyFile}" \
-                    -out "${cfg.tlsChainFile}"
-
-                  chown kanidm:kanidm "${cfg.tlsChainFile}" "${cfg.tlsKeyFile}"
-                  chmod 0640 "${cfg.tlsChainFile}" "${cfg.tlsKeyFile}"
-                '';
-              };
-            };
-
-            # Operator-invoked restore helper: no wantedBy, so it never starts at boot.
-            "kanidm-restore@" = {
-              description = "One-shot Kanidm portable backup restore and offline verify (operator-invoked while kanidm.service is stopped)";
-              serviceConfig = {
-                Type = "oneshot";
-                ExecStart = "${restoreScript} %I";
-              };
-            };
-          };
-
-          tmpfiles.rules = [
-            "d ${cfg.dataDir} 0750 kanidm kanidm - -"
-            "z ${cfg.dataDir} 0750 kanidm kanidm - -"
-            (lib.mkIf usesGeneratedPair "d ${cfg.tlsStateDir} 0750 kanidm kanidm - -")
-            "d ${cfg.backup.exportDir} 0750 kanidm kanidm - -"
-            "z ${cfg.backup.exportDir} 0750 kanidm kanidm - -"
-          ];
-        };
-      };
+        })
+      ];
     };
 }

@@ -1,13 +1,15 @@
-# Vaultwarden: selection imports the leaf and owns its enablement. No OIDC; direct edge proxy.
+# Vaultwarden: selection is enablement. No OIDC; direct edge proxy.
 _: {
   flake.modules.nixos.vaultwarden =
     {
-      lib,
       config,
+      lib,
+      options,
       pkgs,
       ...
     }:
     let
+      globals = import ../../policy/globals.nix;
       cfg = config.services.admin.vaultwarden;
       vaultRoute =
         let
@@ -25,18 +27,10 @@ _: {
     {
       imports = [ ../backups/state-backups/_consumer.nix ];
       options.services.admin.vaultwarden = {
-        enable = lib.mkOption {
-          type = lib.types.bool;
-          # The leaf default stays off so an unselected import cannot silently
-          # re-enable the service; the aspect selection turns it on.
-          default = false;
-          description = "Enable Vaultwarden service wiring.";
-        };
-
         smtpFrom = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = null;
-          description = "From address for Vaultwarden emails. Set per-host (e.g. you@gmail.com).";
+          type = lib.types.str;
+          default = "vault@${globals.domain}";
+          description = "From address for Vaultwarden emails.";
         };
 
         dataDir = lib.mkOption {
@@ -48,18 +42,8 @@ _: {
         secretFiles.host = secretHelpers.mkSecretFileOption "vaultwarden-host-secrets";
       };
       config = lib.mkMerge [
-        (lib.mkIf cfg.enable {
+        {
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.admin.vaultwarden";
-              label = "secretFiles.host";
-            })
-            {
-              assertion = cfg.smtpFrom != null;
-              message = "services.admin.vaultwarden.smtpFrom must be set (the email Vaultwarden sends from).";
-            }
           ];
 
           sops.templates."vaultwarden.env" = {
@@ -166,7 +150,7 @@ _: {
             "d ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
             "z ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
           ]
-          ++ lib.optionals config.services.state-backups.enable [
+          ++ lib.optionals (lib.hasAttrByPath [ "services" "state-backups" "restoreStagePackage" ] options) [
             # SQLite export parent: the export prepare command runs in the restic
             # backup unit as root, so the staging dir is root-owned 0700.
             "d ${builtins.dirOf vaultwardenExportFile} 0700 root root - -"
@@ -177,7 +161,7 @@ _: {
             serviceConfig.ReadWritePaths = [ cfg.dataDir ];
           };
 
-          services.state-backups.services.vaultwarden = lib.mkIf config.services.state-backups.enable {
+          services.state-backups.services.vaultwarden = {
             enable = true;
             mode = "export";
             paths = [ cfg.dataDir ];
@@ -191,9 +175,8 @@ _: {
               ''
             ];
           };
-        })
+        }
         {
-          services.admin.vaultwarden.enable = true;
         }
       ];
     };

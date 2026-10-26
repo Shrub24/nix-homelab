@@ -113,7 +113,7 @@ in
     # directly, where the voyage/ prefix sets input_type per side.
   };
 
-  # Grafana SSO via Kanidm (admins only); the secret lives in this host's oidc file.
+  # Grafana SSO via the fleet identity provider (admins only); the secret is host-scoped.
   services.victoria = {
     oidc.enable = true;
     secretFiles.oidc = ../../../secrets/hosts/home-forge/oidc.yaml;
@@ -132,9 +132,6 @@ in
 
   services.latitude = {
     secretFiles.host = ../../../secrets/services/latitude.yaml;
-    # Same Resend relay and verified sending domain as Vaultwarden; sign-in is a
-    # magic link, so this address has to be one Resend may send from.
-    smtp.from = "latitude@shrublab.xyz";
   };
 
   # Gateway role: producers push OTLP to this host's tailnet endpoint, so every export leg is

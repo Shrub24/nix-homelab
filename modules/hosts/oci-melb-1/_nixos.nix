@@ -41,6 +41,10 @@ in
     secretFiles.host = ../../../secrets/applications/edge-ingress.yaml;
   };
 
+  # One owner for the published wallpaper; rotation is a bucket copy, so it belongs where
+  # the branding is curated rather than on every host that publishes assets.
+  services.assets.wallpaper.enable = true;
+
   services = {
     paperless = {
       dataRoot = "/srv/data";
@@ -51,16 +55,6 @@ in
       # and its OCR split have to be settled before it earns a generation again.
     };
 
-    identity.oidc = {
-      providerUrl = config.repo.web.catalog."kanidm-admin".publicUrl;
-    };
-
-    identity.hostAuth = {
-      enable = true;
-      sshIntegration = true;
-      pamAllowedLoginGroups = [ "admins" ];
-    };
-
     # The aspect owns the state path and the settings document; the host binds
     # only the host-scoped secret file.
     bifrost.secretFiles.host = ../../../secrets/services/bifrost.yaml;
@@ -68,9 +62,10 @@ in
     karakeep-pod = {
       oidc = {
         enable = config.repo.web.catalog.karakeep.access.oidc.enabled;
-        providerName = "Kanidm";
         autoRedirect = true;
         disablePasswordAuth = true;
+        # Links the existing admin by email on the next OIDC login, so the provider swap keeps its role.
+        allowDangerousEmailAccountLinking = true;
       };
       storage.s3.enable = true;
       secretFiles.host = ../../../secrets/services/karakeep-pod.yaml;
@@ -95,6 +90,7 @@ in
       };
     };
     geopulse.secretFiles.host = ../../../secrets/services/geopulse.yaml;
+    geopulse.secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
 
     tailscale.debugMtu = 1200;
 

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+version: 1
+metadata:
+  name: homelab-wording
+entries:
+  - attrs:
+      title: Sign in
+      background: !Context flow-background
+    identifiers:
+      slug: default-authentication-flow
+    model: authentik_flows.flow
+  - attrs:
+      title: Set up a passkey
+      background: !Context flow-background
+    identifiers:
+      slug: default-authenticator-webauthn-setup
+    model: authentik_flows.flow
+  - attrs:
+      title: Set up an authenticator app
+      background: !Context flow-background
+    identifiers:
+      slug: default-authenticator-totp-setup
+    model: authentik_flows.flow

@@ -501,12 +501,6 @@ _: {
 
         (lib.mkIf (cfg.secretFiles.host != null) {
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              enable = cfg.secretFiles.host != null;
-              file = cfg.secretFiles.host;
-              feature = "services.beets";
-              label = "secretFiles.host";
-            })
           ];
 
           sops.templates = {

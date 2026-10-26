@@ -1,5 +1,6 @@
-# deploy-rs wiring over the physical topology in lib/deploy/hosts.nix. Host references and
-# each node's `system` are validated against the canonical records, both failing closed.
+# Deploy-rs wiring over the physical topology in lib/deploy/hosts.nix, and the published
+# `fleet` view of the same validated records. Host references and each node's `system` are
+# validated against the canonical records, both failing closed.
 top@{ inputs, lib, ... }:
 let
   deployTopology = import ../../lib/deploy/hosts.nix;
@@ -39,11 +40,30 @@ let
     nixosConfigurations = top.config.flake.nixosConfigurations;
     inherit (checkedDeployTopology) nodes;
   };
+
+  # Everything about a host under one key: the validated deploy facts plus the
+  # reimage metadata its canonical record declares. Adopted hosts carry no
+  # `bootstrap` attribute at all rather than an empty one.
+  fleetHosts = lib.mapAttrs (
+    name: node:
+    node
+    // lib.optionalAttrs ((top.config.nixos.hosts.${name}.bootstrap or null) != null) {
+      bootstrap = top.config.nixos.hosts.${name}.bootstrap // {
+        hostName = name;
+        flake = ".#${name}";
+      };
+    }
+  ) checkedDeployTopology.nodes;
 in
 {
   flake = {
+    # deploy-rs owns this schema; `deployChecks` and `nix run .#deploy-rs` read it.
     inherit (deployConfig) deploy;
-    deployHosts = checkedDeployTopology;
+
+    fleet = {
+      inherit (checkedDeployTopology) edgeHost deployOrder;
+      hosts = fleetHosts;
+    };
   };
 
   perSystem =
@@ -55,7 +75,7 @@ in
         lib.mapAttrs' (name: node: lib.nameValuePair "host-${name}" node.profiles.system.path)
           (
             lib.filterAttrs (
-              name: _: top.config.flake.deployHosts.nodes.${name}.system == system
+              name: _: checkedDeployTopology.nodes.${name}.system == system
             ) top.config.flake.deploy.nodes
           );
     in

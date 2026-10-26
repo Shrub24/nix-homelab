@@ -46,8 +46,6 @@ in
     in
     {
       options.services.docs-mcp = {
-        enable = lib.mkEnableOption "docs-mcp-server (grounded documentation index)";
-
         image = lib.mkOption {
           type = lib.types.str;
           default = config.repo.ociImages.docsMcpServer;
@@ -89,9 +87,8 @@ in
 
       config = lib.mkMerge [
         # Selection is enablement.
-        { services.docs-mcp.enable = true; }
 
-        (lib.mkIf cfg.enable {
+        {
           virtualisation = {
             podman.enable = true;
 
@@ -156,7 +153,7 @@ in
             ];
             cleanupCommands = [ "${pkgs.coreutils}/bin/rm -rf ${exportDir}" ];
           };
-        })
+        }
       ];
     };
 }

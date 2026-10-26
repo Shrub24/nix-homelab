@@ -234,7 +234,7 @@ Nothing in Nix declares that row, and no variable overrides a saved one.
 
 ### Kanidm client
 
-The client is declared once in `policy/identity.json` and reaches the provider
+The client is declared once in `policy/identity.nix` and reaches the provider
 through the rendered provisioning policy:
 
 | Field | Value |
@@ -243,7 +243,7 @@ through the rendered provisioning policy:
 | callback | `https://geo.shrublab.xyz/oidc/callback` |
 | scopes | `openid profile email`, mapped to `users` only |
 | signature algorithm | `enableLegacyCrypto` — Kanidm offers RS256 only in that mode, and the backend verifies RS256 |
-| PKCE | off: the backend sends no code challenge, so the client carries `allowInsecureClientDisablePkce`, declared in `policy/identity.json` and applied by Kanidm's own provisioning (D-108) |
+| PKCE | off: the backend sends no code challenge, so the client carries `allowInsecureClientDisablePkce`, declared in `policy/identity.nix` and applied by Kanidm's own provisioning (D-108) |
 
 The callback is written into the policy rather than derived from the route,
 because the GeoPulse web-policy route is still private and a private route

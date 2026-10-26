@@ -11,6 +11,7 @@ all:
   @./tests/check-host-age-anchor.sh
   @./tests/check-deploy-bootstrap-gate.sh
   @./tests/check-flake-source-tracking.sh
+  @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).assets-publisher"
   @./tests/check-dendritic-scaffold-contract.sh
   @./tests/check-web-services-policy.sh
   @./tests/check-web-service-catalog.sh

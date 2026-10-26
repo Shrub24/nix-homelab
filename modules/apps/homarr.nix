@@ -26,11 +26,11 @@ _: {
       exportDbFile = "${exportDir}/db.sqlite";
     in
     {
-      imports = [ ../backups/state-backups/_consumer.nix ];
+      imports = [
+        ../backups/state-backups/_consumer.nix
+      ];
 
       options.services.homarr = {
-        enable = lib.mkEnableOption "Homarr user-facing service dashboard";
-
         secretFiles = {
           host = secretHelpers.mkSecretFileOption "homarr-host-secrets";
           oidc = secretHelpers.mkSecretFileOption "homarr-oidc-secrets";
@@ -40,9 +40,9 @@ _: {
 
       config = lib.mkMerge [
         # Selection is enablement.
-        { services.homarr.enable = true; }
 
-        (lib.mkIf cfg.enable {
+        {
+
           assertions = [
             {
               assertion = route != null;
@@ -50,24 +50,12 @@ _: {
             }
             {
               assertion = oidcClient != null;
-              message = "services.homarr: canonical OIDC client 'homarr' is missing; check systems.oauth2.homarr in policy/identity.json.";
+              message = "services.homarr: canonical OIDC client 'homarr' is missing; check clients.homarr in policy/identity.nix.";
             }
             {
               assertion = route != null && route.exposureMode == "tailscale-serve";
               message = "services.homarr: route must use tailscale-serve so the private OIDC callback remains reachable.";
             }
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.homarr";
-              label = "secretFiles.host";
-            })
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.oidc;
-              feature = "services.homarr";
-              label = "secretFiles.oidc";
-            })
           ];
 
           # NEXTAUTH_URL stays unset so Auth.js derives the callback from forwarded headers.
@@ -89,16 +77,17 @@ _: {
               AUTH_PROVIDERS=${if published then "oidc" else "credentials,oidc"}
               AUTH_OIDC_ISSUER=${oidcClient.issuerUrl}
               AUTH_OIDC_CLIENT_ID=${oidcClient.clientId}
-              AUTH_OIDC_CLIENT_NAME=Kanidm
+              AUTH_OIDC_CLIENT_NAME=${oidcClient.providerName}
               AUTH_OIDC_CLIENT_SECRET=${config.sops.placeholder.homarr_oidc_client_secret}
-              # Unquoted on purpose: the env-file parser keeps quotes in the value, and a quoted
-              # list fails Kanidm's scope regex as invalid_scope. groups_name yields bare names.
-              AUTH_OIDC_SCOPE_OVERWRITE=openid email profile groups_name
-              AUTH_OIDC_GROUPS_ATTRIBUTE=groups
-              # false: memberships follow the claim. Sync is authoritative both ways, so every
-              # group an OIDC user keeps must exist in Kanidm under the same name.
+              # Unquoted on purpose: the env-file parser keeps quotes in the value.
+              AUTH_OIDC_SCOPE_OVERWRITE=${builtins.concatStringsSep " " oidcClient.scopes}
+              AUTH_OIDC_GROUPS_ATTRIBUTE=${oidcClient.groupsClaim}
+              # false: memberships follow the claim, so every group a user keeps must exist
+              # in the provider under the same name.
               AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false
-              AUTH_OIDC_ENABLE_DANGEROUS_CREDENTIALS_LINKING=false
+              # true: accounts that predate the OIDC provider hold the only admin role, and the
+              # IdP enforces a verified address, so a same-email link is the intended path.
+              AUTH_OIDC_ENABLE_DANGEROUS_CREDENTIALS_LINKING=true
             '';
           };
 
@@ -181,7 +170,7 @@ _: {
             ];
             cleanupCommands = [ "${pkgs.coreutils}/bin/rm -rf ${exportDir}" ];
           };
-        })
+        }
       ];
     };
 }

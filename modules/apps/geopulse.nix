@@ -60,7 +60,13 @@
           "${config.services.postgresql.finalPackage}/bin";
 
       # Projected only once the secret file exists, so an unbound path never reaches a path-typed option.
-      hasSecretFile = cfg.secretFiles.host != null && builtins.pathExists cfg.secretFiles.host;
+      hasSecretFile = cfg.secretFiles.host != null;
+
+      # Upstream reads its approved clients from the environment, but a database row of the same
+      # name shadows it: the row is the admin UI's copy, not state.
+      oidcClient = config.services.identity.oidc.clients.geopulse or null;
+      hasOidcSecret = cfg.secretFiles.oidc != null && builtins.pathExists cfg.secretFiles.oidc;
+      oidcEnabled = oidcClient != null && hasOidcSecret;
 
       # Owner-scoped file: a rendered template sits under a 0750 root directory a non-root service cannot traverse.
       secrets = {
@@ -87,7 +93,7 @@
       # Upstream's entrypoint wrote this file; index.html loads it from the web root.
       frontendConfig = pkgs.writeTextDir "config.js" ''
         window.VUE_APP_CONFIG = {
-          API_BASE_URL: '/api',
+          API_BASE_URL: '/api/v1',
         };
       '';
 
@@ -188,12 +194,13 @@
       imports = [
         ../database/postgres/_consumer.nix
         ../backups/state-backups/_consumer.nix
+        ../identity/_oidc.nix
       ];
 
       options.services.geopulse = {
-        enable = lib.mkEnableOption "the GeoPulse location-history platform";
-
         secretFiles.host = secretHelpers.mkSecretFileOption "geopulse-host-secrets";
+
+        secretFiles.oidc = secretHelpers.mkSecretFileOption "geopulse-oidc-secrets";
 
         adminEmail = lib.mkOption {
           type = lib.types.nullOr lib.types.str;
@@ -231,7 +238,6 @@
       };
 
       config = lib.mkMerge [
-        { services.geopulse.enable = true; }
 
         # BUSL-1.1 is admitted by name, so no unfree override is needed.
         {
@@ -245,13 +251,9 @@
 
         # Publication is one policy edit: `publish = false` in policy/web-services.nix until bootstrap finishes.
 
-        (lib.mkIf cfg.enable {
+        {
+
           assertions = [
-            {
-              # Fails here rather than starting without credentials, when the file is absent.
-              assertion = hasSecretFile;
-              message = "services.geopulse: secretFiles.host must be bound and be the encrypted secrets/services/geopulse.yaml; bootstrap it with 'just secrets bootstrap secrets/services/geopulse.yaml' before selecting the aspect.";
-            }
             {
               assertion = localPostgres != null;
               message = noClusterMessage;
@@ -321,11 +323,36 @@
             ];
           };
 
-          sops.secrets = lib.mkIf hasSecretFile (
-            builtins.mapAttrs (
-              _: entry: entry // { restartUnits = [ "geopulse-backend.service" ]; }
-            ) secretEntries
-          );
+          sops.secrets =
+            lib.optionalAttrs hasSecretFile (
+              builtins.mapAttrs (
+                _: entry: entry // { restartUnits = [ "geopulse-backend.service" ]; }
+              ) secretEntries
+            )
+            // lib.optionalAttrs oidcEnabled {
+              # The client secret stays out of the unit's environment, which lands in the store.
+              "geopulse/oidc-client-secret" = {
+                key = "geopulse/client_secret";
+                sopsFile = cfg.secretFiles.oidc;
+                mode = "0400";
+                owner = "geopulse";
+                group = "geopulse";
+                restartUnits = [ "geopulse-backend.service" ];
+              };
+            };
+
+          sops.templates = lib.mkIf oidcEnabled {
+            "geopulse.oidc.env" = {
+              owner = "geopulse";
+              group = "geopulse";
+              mode = "0400";
+              content = ''
+                GEOPULSE_OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET=${
+                  config.sops.placeholder."geopulse/oidc-client-secret"
+                }
+              '';
+            };
+          };
 
           # Five starts in five minutes end in `failed`, which fires OnFailure; the default start limit never trips at a 10s delay.
           services.notify.events = {
@@ -351,6 +378,11 @@
             environment = {
               QUARKUS_HTTP_HOST = "127.0.0.1";
               QUARKUS_HTTP_PORT = toString cfg.backendPort;
+              # Quarkus enables localhost-only host validation on its own when the listener binds a
+              # loopback address in prod, so any request carrying the front's forwarded public Host is
+              # answered 400 before routing. Nothing validates the Host here: the listener is loopback
+              # only and the front, not the client, is the sole reachable peer.
+              QUARKUS_HTTP_HOST_VALIDATION_REQUIRE_LOCALHOST = "false";
 
               GEOPULSE_POSTGRES_URL = localPostgresUrl;
               GEOPULSE_POSTGRES_USERNAME = "geopulse";
@@ -376,6 +408,17 @@
             // lib.optionalAttrs (cfg.adminEmail != null) {
               # 2.0 promotes this address on every login, so the administrator is declared, not claimed by first login.
               GEOPULSE_ADMIN_EMAIL = cfg.adminEmail;
+            }
+            // lib.optionalAttrs oidcEnabled {
+              GEOPULSE_OIDC_ENABLED = "true";
+              GEOPULSE_OIDC_CALLBACK_BASE_URL = browserOrigin;
+              # Address ownership is the provider's claim, so an existing account links on it.
+              GEOPULSE_OIDC_AUTO_LINK_ACCOUNTS = "true";
+
+              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_ENABLED = "true";
+              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_NAME = oidcClient.providerName;
+              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_CLIENT_ID = oidcClient.clientId;
+              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_DISCOVERY_URL = oidcClient.wellknownUrl;
             };
             unitConfig = {
               StartLimitIntervalSec = 300;
@@ -396,6 +439,9 @@
               ProtectKernelTunables = true;
               ProtectKernelModules = true;
               ProtectControlGroups = true;
+            }
+            // lib.optionalAttrs oidcEnabled {
+              EnvironmentFile = config.sops.templates."geopulse.oidc.env".path;
             };
           };
 
@@ -424,7 +470,7 @@
               ProtectControlGroups = true;
             };
           };
-        })
+        }
       ];
     };
 }

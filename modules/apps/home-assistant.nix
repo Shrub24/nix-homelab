@@ -22,8 +22,6 @@ _: {
       imports = [ ../backups/state-backups/_consumer.nix ];
 
       options.services.hass = {
-        enable = lib.mkEnableOption "Home Assistant (container)";
-
         image = lib.mkOption {
           type = lib.types.str;
           default = config.repo.ociImages.homeAssistant;
@@ -56,9 +54,8 @@ _: {
       };
 
       config = lib.mkMerge [
-        { services.hass.enable = true; }
 
-        (lib.mkIf cfg.enable {
+        {
           assertions = [
             {
               assertion = route != null;
@@ -118,7 +115,7 @@ _: {
             ];
             cleanupCommands = [ "${pkgs.coreutils}/bin/rm -rf ${exportDir}" ];
           };
-        })
+        }
       ];
     };
 }

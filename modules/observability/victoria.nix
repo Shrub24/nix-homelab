@@ -176,7 +176,9 @@
       );
     in
     {
-      imports = [ ../identity/_oidc.nix ];
+      imports = [
+        ../identity/_oidc.nix
+      ];
 
       options.services.victoria = {
         listenAddress = lib.mkOption {
@@ -218,7 +220,7 @@
           type = lib.types.bool;
           default = false;
           description = ''
-            Authenticate Grafana against the fleet's Kanidm provider instead of
+            Authenticate Grafana against the fleet identity provider instead of
             serving anonymous viewers. Requires both the canonical `grafana`
             oauth2 client in the identity policy and this host's OIDC secret
             file; the route stays behind Cloudflare Access either way.
@@ -226,9 +228,16 @@
         };
 
         secretFiles.oidc = secretHelpers.mkSecretFileOption "victoria-grafana-oidc-secrets";
+
+        # The local administrator's password, seeded at startup. OIDC hides the login form,
+        # so re-enabling it with this credential is the way back in when the provider is
+        # unreachable. Service-scoped and host-agnostic, so the module defaults it; a host
+        # overrides only to bind a different file.
+        secretFiles.admin = secretHelpers.mkSecretFileOptionWithDefault "victoria-grafana-admin-credential" ../../secrets/services/grafana.yaml;
       };
 
       config = {
+
         assertions = [
           {
             assertion = !cfg.oidc.enable || cfg.secretFiles.oidc != null;
@@ -236,26 +245,37 @@
           }
           {
             assertion = !cfg.oidc.enable || oidcClient != null;
-            message = "services.victoria.oidc.enable requires the canonical 'grafana' oauth2 client in policy/identity.json.";
+            message = "services.victoria.oidc.enable requires the canonical 'grafana' oauth2 client in policy/identity.nix.";
           }
         ];
 
-        sops.secrets = lib.mkIf (cfg.oidc.enable && cfg.secretFiles.oidc != null) {
-          victoria_grafana_client_secret = {
-            sopsFile = cfg.secretFiles.oidc;
-            key = "grafana/client_secret";
-            owner = "grafana";
-            group = "grafana";
-            mode = "0400";
-          };
-          victoria_grafana_secret_key = {
-            sopsFile = cfg.secretFiles.oidc;
-            key = "grafana/secret_key";
-            owner = "grafana";
-            group = "grafana";
-            mode = "0400";
-          };
-        };
+        sops.secrets = lib.mkMerge [
+          (lib.mkIf (cfg.oidc.enable && cfg.secretFiles.oidc != null) {
+            victoria_grafana_client_secret = {
+              sopsFile = cfg.secretFiles.oidc;
+              key = "grafana/client_secret";
+              owner = "grafana";
+              group = "grafana";
+              mode = "0400";
+            };
+            victoria_grafana_secret_key = {
+              sopsFile = cfg.secretFiles.oidc;
+              key = "grafana/secret_key";
+              owner = "grafana";
+              group = "grafana";
+              mode = "0400";
+            };
+          })
+          (lib.optionalAttrs (cfg.secretFiles.admin != null) {
+            victoria_grafana_admin_password = {
+              sopsFile = cfg.secretFiles.admin;
+              key = "grafana/admin_password";
+              owner = "grafana";
+              group = "grafana";
+              mode = "0400";
+            };
+          })
+        ];
 
         services.victoriametrics = {
           enable = true;
@@ -319,20 +339,33 @@
               enabled = !cfg.oidc.enable;
               org_role = "Viewer";
             };
+            # With OIDC the provider is the only interactive sign-in: the local form is
+            # hidden and basic auth is off. Local accounts keep their data but cannot be
+            # used to sign in, and `disableAutoLogin=true` on the URL restores the form for
+            # one request if a configuration change ever breaks the provider path.
+            auth = lib.mkIf cfg.oidc.enable {
+              disable_login_form = true;
+            };
+            "auth.basic" = lib.mkIf cfg.oidc.enable {
+              enabled = false;
+            };
             "auth.generic_oauth" = lib.mkIf cfg.oidc.enable {
               enabled = true;
-              name = "Kanidm";
+              name = oidcClient.providerName;
               client_id = oidcClient.clientId;
               client_secret = "$__file{/run/secrets/victoria_grafana_client_secret}";
-              scopes = "openid profile email groups_name";
+              scopes = builtins.concatStringsSep " " oidcClient.scopes;
               auth_url = oidcClient.authorizationUrl;
               token_url = oidcClient.tokenUrl;
               api_url = oidcClient.userinfoUrl;
               use_pkce = true;
               allow_sign_up = true;
+              # Keeps the existing user (and its roles) across a provider swap; the email
+              # claim comes from the fleet's own identity provider.
+              oauth_allow_insecure_email_lookup = true;
               # The strict role refuses sign-in for non-admins even when reached directly over the tailnet.
-              groups_attribute_path = "groups";
-              role_attribute_path = "contains(groups, 'admins') && 'Admin' || ''";
+              groups_attribute_path = oidcClient.groupsClaim;
+              role_attribute_path = "contains(${oidcClient.groupsClaim}, 'admins') && 'Admin' || ''";
               role_attribute_strict = true;
             };
             security = {
@@ -342,6 +375,12 @@
                   "$__file{/run/secrets/victoria_grafana_secret_key}"
                 else
                   "SW2YcwTIb9zpOOhoPsMm";
+              # Seeded only while the account does not exist yet: a password already stored in
+              # Grafana's database is not overwritten, so rotating it needs
+              # `grafana cli admin reset-admin-password` on the host.
+              admin_password = lib.mkIf (
+                cfg.secretFiles.admin != null
+              ) "$__file{/run/secrets/victoria_grafana_admin_password}";
               cookie_secure = true;
             };
             analytics = {

@@ -6,6 +6,7 @@
   outputs = inputs: inputs.flake-parts.lib.mkFlake { inherit inputs; } (inputs.import-tree ./modules);
 
   inputs = {
+    authentik-nix.url = "github:nix-community/authentik-nix";
     bun2nix = {
       url = "github:nix-community/bun2nix/2.1.2";
       inputs = {
@@ -42,6 +43,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nixpkgs.follows = "nix-fleet/nixpkgs";
+    nixpkgs-paperless.url = "github:NixOS/nixpkgs/fe13242281a67641c0102cdb1087f0ebe586c7df";
     sops-nix.follows = "nix-fleet/sops-nix";
     traktor-m3u-sync = {
       url = "github:Shrub24/traktor-m3u-sync";

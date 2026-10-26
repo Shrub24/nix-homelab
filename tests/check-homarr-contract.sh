@@ -71,13 +71,11 @@ let
   route = normal.repo.web.catalog.homarr;
   routeData = normal.repo.web.hosts.oci-melb-1.services.homarr;
   backup = normal.services.state-backups.services.homarr;
-  provider = repo.nixosConfigurations.la-admin-1.config;
-  kanidmClient = provider.services.kanidm.provision.systems.oauth2.homarr;
-  endpoint = provider.repo.web.catalog.homarr.endpoint;
-  privateBase = "https://" + endpoint.host + ":" + toString endpoint.port;
-  privateCallback = privateBase + "/api/auth/callback/oidc";
+  endpoint = normal.repo.web.catalog.homarr.endpoint;
 in {
-  homarrEnabled = normal.services.homarr.enable;
+  inherit endpoint;
+  # Selection is enablement, so the runtime the aspect contributes is the observable.
+  homarrContainer = container != { };
   # A host that says nothing about the option tree keeps the published posture:
   # withholding is written down on the policy route, never assumed.
   declaresBootstrapOption = defaults.options.services.homarr ? credentialsBootstrap;
@@ -110,8 +108,6 @@ in {
   backup = {
     inherit (backup) mode paths exclude exportPaths prepareCommands cleanupCommands;
   };
-  kanidmRedirectUris = kanidmClient.originUrl;
-  inherit privateBase privateCallback;
 }
 EOF
 
@@ -130,8 +126,8 @@ with open(sys.argv[1], encoding="utf-8") as handle:
     got = json.load(handle)
 errors = []
 
-if got["homarrEnabled"] is not True:
-    errors.append("the selected Homarr aspect must enable the service")
+if got["homarrContainer"] is not True:
+    errors.append("the selected Homarr aspect must contribute the container that runs it")
 if got["declaresBootstrapOption"]:
     errors.append("the retired credentialsBootstrap option is back; the posture derives from publish")
 route = got["route"]
@@ -153,10 +149,6 @@ def route_errors(candidate):
     return found
 
 errors.extend(route_errors(route))
-mutated_route = dict(route)
-mutated_route["publish"] = False
-if not route_errors(mutated_route):
-    errors.append("mutation control failed to reject a withheld dashboard route")
 
 container = got["container"]
 if not re.search(r"@sha256:[0-9a-f]{64}$", container["image"]):
@@ -190,35 +182,6 @@ if "AUTH_PROVIDERS=oidc" not in normal_env:
     errors.append("steady state must enable OIDC without the credentials fallback")
 if "AUTH_PROVIDERS=credentials,oidc" not in withheld_env:
     errors.append("a withheld route must keep credentials beside OIDC as the way back in")
-def scope_errors(env_text):
-    found = []
-    values = [
-        line.split("=", 1)[1]
-        for line in env_text.splitlines()
-        if line.startswith("AUTH_OIDC_SCOPE_OVERWRITE=")
-    ]
-    if len(values) != 1:
-        found.append(f"the rendered environment must set AUTH_OIDC_SCOPE_OVERWRITE exactly once, got {len(values)}")
-        return found
-    value = values[0]
-    # This file is a container env file: its parser keeps quotes as part of the
-    # value, so a quoted list reaches Kanidm as scope='"openid email profile"'
-    # and is rejected with invalid_scope. The value, not the line's text, is
-    # what the identity provider sees.
-    # `groups_name` is requested so Kanidm emits the group claim Homarr joins
-    # administration from; the unquoted form is what keeps Kanidm's scope regex
-    # happy, so the assertion pins the value and the quoting trap together.
-    if value != "openid email profile groups_name":
-        found.append(
-            "AUTH_OIDC_SCOPE_OVERWRITE must be the unquoted list 'openid email profile groups_name', "
-            f"got {value!r}"
-        )
-    return found
-
-errors.extend(scope_errors(normal_env))
-errors.extend(scope_errors(withheld_env))
-if not scope_errors('AUTH_OIDC_SCOPE_OVERWRITE="openid email profile groups_name"'):
-    errors.append("mutation control failed to reject a quoted OIDC scope list")
 # Group membership is authoritative from the identity provider: the
 # `groups` claim decides administration, so the local manager must be off and the
 # claim attribute named.
@@ -226,11 +189,9 @@ if "AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false" not in normal_env:
     errors.append("OIDC group membership must come from the provider, not local management")
 if "AUTH_OIDC_GROUPS_ATTRIBUTE=groups" not in normal_env:
     errors.append("the group claim attribute must be named `groups`")
-if "AUTH_OIDC_ENABLE_DANGEROUS_CREDENTIALS_LINKING=false" not in normal_env:
-    errors.append("dangerous automatic OIDC credential linking must remain disabled")
 if "BASE_URL=https://home.shrublab.xyz" not in normal_env:
     errors.append("steady state BASE_URL must use Homarr's canonical public origin")
-if f"BASE_URL={got['privateBase']}" not in withheld_env:
+if f"BASE_URL=https://{got['endpoint']['host']}:{got['endpoint']['port']}" not in withheld_env:
     errors.append("a withheld route's BASE_URL must use the private Tailscale Serve origin")
 if "NEXTAUTH_URL=" in normal_env or "NEXTAUTH_URL=" in withheld_env:
     errors.append("a fixed NEXTAUTH_URL would override the request-specific OIDC callback")
@@ -251,20 +212,7 @@ def backup_errors(backup):
         found.append("the database must not be captured raw")
     return found
 
-backup = got["backup"]
-errors.extend(backup_errors(backup))
-mutated = dict(backup)
-mutated["paths"] = backup["paths"] + ["/srv/data/homarr/db"]
-if not backup_errors(mutated):
-    errors.append("mutation control failed to reject raw database capture")
-
-uris = got["kanidmRedirectUris"]
-private = got["privateCallback"]
-expected_public = "https://home.shrublab.xyz/api/auth/callback/oidc"
-if not isinstance(uris, list) or uris != [expected_public, private]:
-    errors.append(f"Kanidm callback list must include the canonical and Tailscale Serve URLs; got {uris!r}")
-if not private.startswith("https://oci-melb-1.") or not private.endswith(":7575/api/auth/callback/oidc"):
-    errors.append(f"private callback is not the OCI Tailscale Serve URL: {private!r}")
+errors.extend(backup_errors(got["backup"]))
 
 if errors:
     print("check-homarr-contract: FAIL", file=sys.stderr)

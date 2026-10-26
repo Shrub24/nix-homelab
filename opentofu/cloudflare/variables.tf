@@ -258,6 +258,35 @@ variable "rate_limit_requests_per_period" {
   default     = 200
 }
 
+variable "rate_limit_exempt_ips" {
+  description = "Source addresses excluded from zone rate limiting (operator or monitoring egress)"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for ip in var.rate_limit_exempt_ips : can(cidrhost(ip, 0)) || can(cidrhost("${ip}/32", 0))])
+    error_message = "rate_limit_exempt_ips entries must be IPv4 addresses or CIDR ranges."
+  }
+}
+
+variable "rate_limit_exempt_hosts" {
+  description = "Hosts excluded from the zone rate limit: static object delivery, where a limit protects nothing and breaks asset rendering."
+  type        = list(string)
+  default     = ["cache.shrublab.xyz", "build-cache.shrublab.xyz", "assets.shrublab.xyz"]
+}
+
+variable "assets_host" {
+  description = "Hostname serving the public assets bucket, cached as static content."
+  type        = string
+  default     = "assets.shrublab.xyz"
+}
+
+variable "assets_cache_enabled" {
+  description = "Hold published assets at the edge for a year. Rotation purges the object, so a long edge lifetime is safe while the browser lifetime stays short."
+  type        = bool
+  default     = true
+}
+
 variable "rate_limit_requests_to_origin" {
   description = "Whether to count only requests that reach origin"
   type        = bool

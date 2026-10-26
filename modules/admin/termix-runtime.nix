@@ -37,6 +37,12 @@ _: {
             description = "Canonical OIDC client ID for Termix.";
           };
 
+          providerName = lib.mkOption {
+            type = lib.types.nullOr lib.types.str;
+            default = null;
+            description = "Identity provider display name, recorded on the container for operators.";
+          };
+
           issuerUrl = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
             default = null;
@@ -71,14 +77,8 @@ _: {
         secretFiles.oidc = secretHelpers.mkSecretFileOption "termix-oidc-secrets";
       };
 
-      config = lib.mkIf cfg.enable {
+      config = {
         assertions = [
-          (secretHelpers.mkRequiredSecretAssertion {
-            enable = cfg.oidc.enabled;
-            file = cfg.secretFiles.oidc;
-            feature = "services.admin.termix";
-            label = "secretFiles.oidc";
-          })
           {
             assertion = !cfg.oidc.enabled || cfg.oidc.clientId != null;
             message = "services.admin.termix.oidc.clientId must be set when services.admin.termix.oidc.enabled=true.";
@@ -158,7 +158,7 @@ _: {
               cfg.oidc.environmentFile
             ];
             labels = lib.optionalAttrs cfg.oidc.enabled {
-              "io.shrublab.auth.oidc" = "kanidm";
+              "io.shrublab.auth.oidc" = cfg.oidc.providerName;
               "io.shrublab.auth.oidc.issuer" = toString cfg.oidc.issuerUrl;
             };
             ports = [

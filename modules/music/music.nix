@@ -1,4 +1,4 @@
-# Music aspect: composition only. Selection is enablement (`applications.music.enable`).
+# Music aspect: composition only. Selection is enablement.
 # Mechanisms are discovered aspects composed here; DJ consumes the read-only `applications.music.contract`.
 _: {
   flake.modules.nixos.music =
@@ -123,8 +123,6 @@ _: {
       imports = [ ../backups/state-backups/_consumer.nix ];
 
       options.applications.music = {
-        enable = lib.mkEnableOption "music application composition";
-
         dataRoot = lib.mkOption {
           type = lib.types.str;
           description = "Top-level data root for music application service state. Host-required: no fleet-wide default.";
@@ -283,10 +281,6 @@ _: {
 
       config = lib.mkMerge [
         {
-          applications.music.enable = true;
-        }
-
-        (lib.mkIf cfg.enable {
           applications.music.contract = {
             inherit (cfg) storageRoot;
             inherit (mediaPaths) libraryDir;
@@ -294,12 +288,6 @@ _: {
           };
 
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "applications.music";
-              label = "secretFiles.host";
-            })
             {
               assertion = !cfg.audiomuse.enable || localPostgres != null || cfg.audiomuse.postgresHost != null;
               message = "applications.music.audiomuse is enabled but no PostgreSQL endpoint is available: run the cluster on this host (select the postgres aspect) or set applications.music.audiomuse.postgresHost for a database that lives elsewhere.";
@@ -451,7 +439,7 @@ _: {
             quarantinePath = mediaPaths.quarantineDir;
             secretFiles.host = cfg.secretFiles.host;
           };
-        })
+        }
       ];
     };
 }

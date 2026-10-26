@@ -59,6 +59,10 @@ The recipe never writes live state; applying staged files to live paths is alway
 
 ## 4. Kanidm (la-admin-1)
 
+Applies only while a host selects `aspects.kanidm-identity`: the restore helper ships with
+the provider, so with Kanidm deselected there is no `kanidm-restore@` template to start. To
+arm the path for a rollback, select the aspect and deploy before starting this section.
+
 Artifact: portable export `backup-*.json.gz` from `/var/lib/kanidm/backups`. Export-only contract: the live DB (`/var/lib/kanidm/kanidm.db`) is not restic-covered.
 
 Stage (operator workstation):

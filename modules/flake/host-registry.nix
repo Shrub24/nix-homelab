@@ -105,7 +105,7 @@ let
         bootstrap = mkOption {
           type = types.nullOr (types.attrsOf types.str);
           default = null;
-          description = "Reimage-only metadata; the registry projects it to flake.bootstrap.nodes.<host>.";
+          description = "Reimage-only metadata; `modules/flake/deploy.nix` projects it into the published fleet output as `fleet.hosts.<host>.bootstrap`.";
         };
 
         configuration = mkOption {

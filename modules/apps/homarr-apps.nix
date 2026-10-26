@@ -34,7 +34,6 @@ _: {
         webhook-admin = "webhook";
         beszel-admin = "beszel";
         gatus-admin = "gatus";
-        kanidm-admin = "kanidm";
         syncthing-home-forge = "syncthing";
         syncthing-oci-melb-1 = "syncthing";
       };
@@ -58,7 +57,7 @@ _: {
       );
     in
     {
-      config = lib.mkIf cfg.enable {
+      config = {
         sops.secrets.homarr_api_key = {
           key = "api_key";
           path = "/run/secrets/homarr.api_key";

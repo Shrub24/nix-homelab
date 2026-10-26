@@ -11,7 +11,7 @@ let
 in
 {
   settings = {
-    title = "Shrublab Admin";
+    title = "shrublab Admin";
     headerStyle = "boxedWidgets";
     startUrl = "${serviceHref "admin-homepage"}#overview";
     layout = {

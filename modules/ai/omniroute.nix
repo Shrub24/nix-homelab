@@ -28,7 +28,6 @@ in
     }:
     let
       secretFile = ../../secrets/services/omniroute.yaml;
-      hasSecret = builtins.pathExists secretFile;
 
       cfg = config.services.omniroute;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
@@ -45,8 +44,6 @@ in
     {
       imports = [ ../backups/state-backups/_consumer.nix ];
       options.services.omniroute = {
-        enable = lib.mkEnableOption "OmniRoute LLM router";
-
         image = lib.mkOption {
           type = lib.types.str;
           default = config.repo.ociImages.omniroute;
@@ -86,14 +83,8 @@ in
         secretFiles.host = secretHelpers.mkSecretFileOption "omniroute-host-secrets";
       };
       config = lib.mkMerge [
-        (lib.mkIf cfg.enable {
+        {
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.omniroute";
-              label = "secretFiles.host";
-            })
           ];
 
           sops.templates."omniroute.environment" = {
@@ -252,10 +243,9 @@ in
               "z ${redisDir} 0775 ${toString redisUid} ${toString redisGid} - -"
             ];
           };
-        })
+        }
         {
-          services.omniroute = lib.mkIf hasSecret {
-            enable = true;
+          services.omniroute = {
             secretFiles.host = secretFile;
           };
 
@@ -264,7 +254,7 @@ in
           # co-selected `notify` foundation aspect. The container is long-running,
           # so a clean stop is an operator-visible event and is reported as
           # success alongside the failure registration.
-          services.notify.events."podman-omniroute" = lib.mkIf hasSecret {
+          services.notify.events."podman-omniroute" = {
             failure = { };
             success = { };
           };

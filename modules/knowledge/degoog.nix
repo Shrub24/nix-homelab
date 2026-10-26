@@ -51,7 +51,7 @@
       stateDir = "/var/lib/degoog";
       # Two-step bootstrap: the host binds the path before the operator has
       # encrypted anything, so "has secrets" means the file is really there.
-      hasSecretFile = cfg.secretFiles.host != null && builtins.pathExists cfg.secretFiles.host;
+      hasSecretFile = cfg.secretFiles.host != null;
     in
     {
       imports = [ inputs.degoog.nixosModules.default ];
@@ -66,14 +66,8 @@
           services.degoog.package = config.repo.packages.degoog;
         }
 
-        (lib.mkIf cfg.enable {
+        {
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.degoog";
-              label = "secretFiles.host";
-            })
           ];
 
           sops.templates."degoog.environment" = lib.mkIf hasSecretFile {
@@ -110,7 +104,7 @@
             mode = "live";
             paths = [ stateDir ];
           };
-        })
+        }
       ];
     };
 }

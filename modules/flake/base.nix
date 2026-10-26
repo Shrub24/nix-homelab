@@ -79,6 +79,12 @@
 
         time.timeZone = "UTC";
 
+        services.journald.settings.Journal = {
+          SystemMaxUse = "300M";
+          SystemKeepFree = "1G";
+          MaxRetentionSec = "7day";
+        };
+
         # A crash loop on a multi-second cycle never trips the default 5 starts / 10s and
         # blocks activation instead, so bound it at five an hour.
         systemd.services = lib.mapAttrs' (

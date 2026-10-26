@@ -147,14 +147,6 @@ in
     {
       Access = [
         {
-          "Cockpit (OCI)" = {
-            icon = "mdi-console-network";
-            description = "oci-melb-1 server administration";
-            href = serviceHref "cockpit-oci-melb-1";
-            siteMonitor = serviceHref "cockpit-oci-melb-1";
-          };
-        }
-        {
           Termix = {
             icon = "mdi-console";
             description = "Interactive admin shell";

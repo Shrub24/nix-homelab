@@ -28,7 +28,6 @@ _: {
         actual = "actual-budget";
         search = "degoog";
         admin-homepage = "homepage";
-        cockpit-oci-melb-1 = "cockpit";
         ntfy-admin = "ntfy";
         termix-admin = "termix";
         vaultwarden-admin = "vaultwarden";

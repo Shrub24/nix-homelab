@@ -115,20 +115,6 @@ in
           category = "admin";
         };
 
-        cockpit-oci-melb-1 = {
-          subdomain = "cockpit";
-          path = "/oci-melb-1";
-          forceTrailingSlash = true;
-          origin = {
-            scheme = "https";
-            provider = "oci-melb-1";
-            port = 9443;
-          };
-          # Tailnet-bound: the edge dials by provider name, never loopback, even when edge and provider coincide.
-          exposureMode = "tailscale-upstream";
-          category = "admin";
-        };
-
         beszel-admin = {
           subdomain = "beszel";
           exposureMode = "tailscale-upstream";

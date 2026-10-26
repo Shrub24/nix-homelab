@@ -15,20 +15,6 @@
           enable = true;
           wantedBy = [ "multi-user.target" ];
         };
-
-        # nixpkgs defines `podman-prune` unconditionally, so nix-fleet's prune aspect
-        # cannot coexist with it; these are that unit's retention flags.
-        virtualisation.podman.autoPrune = {
-          enable = true;
-          dates = "weekly";
-          flags = [
-            "--all"
-            "--force"
-            "--volumes"
-          ];
-        };
-
-        services.notify.events."podman-prune".failure = { };
       };
     };
 }

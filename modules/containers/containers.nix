@@ -1,8 +1,11 @@
+# The container runtime baseline: upstream's podman aspect (full-image prune, restart bound,
+# failure event), plus the unit revision derived below. Registry credentials join in
+# container-auth.nix.
 # The env path is stable and its content never enters the unit, so a changed environment
-# leaves it byte-identical and the container keeps old variables, silently. Derive a revision.
-{ ... }:
+# leaves it byte-identical and the container keeps old variables, silently.
+{ inputs, ... }:
 {
-  flake.modules.nixos.container-env =
+  flake.modules.nixos.containers =
     { config, lib, ... }:
     let
       containers = config.virtualisation.oci-containers.containers;
@@ -63,6 +66,8 @@
         );
     in
     {
+      imports = [ inputs.nix-fleet.modules.nixos.podman ];
+
       systemd.services = lib.mapAttrs' (
         name: container:
         lib.nameValuePair "podman-${name}" {

@@ -56,7 +56,6 @@ in
         aspects.telemetry-metrics
         aspects.telemetry-logs
         aspects.node-exporter
-        aspects.container-env
       ];
 
       fragments = [ ./_nixos.nix ];

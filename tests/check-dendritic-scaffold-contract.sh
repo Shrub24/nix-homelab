@@ -1716,7 +1716,7 @@ python3 - "$D/modules/oci/oci.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
-anchor = '        services.notify.events."podman-prune".failure = { };\n'
+anchor = '        boot.kernelParams = [ "console=ttyAMA0,115200n8" ];\n'
 assert anchor in s, "registration anchor drifted"
 s = s.replace(anchor, '        services.notify.events."phantom-unit".failure = { };\n' + anchor, 1)
 open(p, "w").write(s)
@@ -1731,7 +1731,7 @@ python3 - "$D/modules/oci/oci.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
-anchor = '        services.notify.events."podman-prune".failure = { };\n'
+anchor = '        boot.kernelParams = [ "console=ttyAMA0,115200n8" ];\n'
 assert anchor in s, "registration anchor drifted"
 s = s.replace(anchor, '        services.notify.events."beets-inbox".failure = { };\n' + anchor, 1)
 open(p, "w").write(s)

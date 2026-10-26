@@ -14,7 +14,6 @@ in
     (modulesPath + "/installer/scan/not-detected.nix")
     (modulesPath + "/profiles/qemu-guest.nix")
     ./_disko-single-disk-split.nix
-    ./_cockpit-auth.nix
   ];
 
   hardware.facter.reportPath = ./facter.json;
@@ -50,12 +49,6 @@ in
       oidc.enable = config.repo.web.catalog.paperless.access.oidc.enabled;
       # paperless-gpt is off pending re-evaluation: the stack's LLM/vision routing
       # and its OCR split have to be settled before it earns a generation again.
-    };
-
-    journald.settings.Journal = {
-      SystemMaxUse = "300M";
-      SystemKeepFree = "1G";
-      MaxRetentionSec = "7day";
     };
 
     identity.oidc = {

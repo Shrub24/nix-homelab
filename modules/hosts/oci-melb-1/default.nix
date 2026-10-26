@@ -35,7 +35,6 @@ in
         # Selection is enablement; no host imports an implementation.
         aspects.oci
         aspects.ingress
-        aspects.cockpit
         aspects.paperless
         aspects.postgres
         aspects.bifrost
@@ -64,7 +63,7 @@ in
         aspects.telemetry-metrics
         aspects.telemetry-logs
         aspects.node-exporter
-        aspects.container-env
+        aspects.containers
       ];
 
       fragments = [ ./_nixos.nix ];

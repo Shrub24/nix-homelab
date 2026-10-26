@@ -70,7 +70,7 @@ in
         aspects.telemetry-logs
         aspects.telemetry-otlp
         aspects.node-exporter
-        aspects.container-env
+        aspects.containers
         # Observability store: VictoriaMetrics/VictoriaLogs/VictoriaTraces
         # plus Grafana, placed on the host with the disks for it.
         aspects.victoria

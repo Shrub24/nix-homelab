@@ -15,9 +15,9 @@ homarr:
   client_secret: "test-only-not-a-secret"
 EOF
 
-# The withheld-posture control: a copy of the tree whose Homarr route says
-# publish = false. repo.web is read-only, so this is the only way to exercise the
-# recovery posture the runbook describes.
+# The withheld-posture control: a copy of the tree whose Homarr route declares the
+# private posture. repo.web is a read-only projection, so this is the only way to exercise
+# the recovery posture the runbook describes.
 CONTROL="$(mktemp -d "$tmp/control.XXXXXX")"
 tar -C "$ROOT" \
   --exclude=.git --exclude=.jj --exclude=./opentofu \
@@ -33,10 +33,10 @@ anchor = "        homarr = {"
 start = src.index(anchor)
 end = src.index("        inbox-zero = {", start)
 block = src[start:end]
-insert = '          publish = false;\n'
-if "publish =" in block:
-    sys.exit("the homarr route already declares publish; the control anchor drifted")
-mutated = block.replace(anchor + "\n", anchor + "\n" + insert, 1)
+if "posture" in block:
+    sys.exit("the homarr route already declares a posture; the control anchor drifted")
+# Publication is the posture, so withholding is one inserted line.
+mutated = block.replace(anchor + "\n", anchor + "\n          posture = \"private\";\n", 1)
 open(path, "w").write(src[:start] + mutated + src[end:])
 PYWITHHELD
 
@@ -44,27 +44,21 @@ cat >"$tmp/probe.nix" <<EOF
 let
   repo = builtins.getFlake "path:$ROOT";
   fixture = builtins.toPath "$tmp/homarr.yaml";
-  # The login posture is derived from the route's publish flag: a
-  # published route serves OIDC only, a withheld one keeps credentials as the
-  # way back in. The probes force the flag rather than an application option.
-  mkHomarr = publish: repo.nixosConfigurations.oci-melb-1.extendModules {
-    # oci-melb-1 selects the homarr aspect, so the module is already part of
-    # this configuration; importing it again would re-declare its options.
+  # The login posture is derived from the route's publication, which the resolver derives
+  # from the route's exposure mode. oci-melb-1 selects the homarr aspect, so the module is
+  # already part of this configuration; importing it again would re-declare its options.
+  mkHomarr = _: repo.nixosConfigurations.oci-melb-1.extendModules {
     modules = [
-      ({ lib, ... }:
-        {
-          services.homarr.secretFiles.host = fixture;
-          services.homarr.secretFiles.oidc = fixture;
-        }
-        // lib.optionalAttrs (publish != null) {
-          repo.web.hosts.oci-melb-1.services.homarr.publish = lib.mkForce publish;
-        })
+      {
+        services.homarr.secretFiles.host = fixture;
+        services.homarr.secretFiles.oidc = fixture;
+      }
     ];
   };
   defaults = mkHomarr null;
   normal = (mkHomarr null).config;
-  # A withheld route cannot be forced: repo.web is read-only. The recovery posture
-  # is therefore exercised on a throwaway copy of the tree whose policy withholds
+  # A withheld route cannot be forced: repo.web is a read-only projection. The recovery
+  # posture is therefore exercised on a throwaway copy of the tree whose policy withholds
   # it, which is the same edit an operator makes to reopen the credentials login.
   withheld = builtins.getFlake "path:${CONTROL}";
   container = normal.virtualisation.oci-containers.containers.homarr;
@@ -80,8 +74,9 @@ in {
   # withholding is written down on the policy route, never assumed.
   declaresBootstrapOption = defaults.options.services.homarr ? credentialsBootstrap;
   route = {
-    inherit (route) exposureMode upstreamPort publicUrl declarePublic;
-    publish = routeData.publish or true;
+    inherit (route) exposureMode upstreamPort publicUrl;
+    published = routeData.published;
+    catalogPublished = route.published;
     inherit (route.access) requireCloudflareAccess;
     oidcEnabled = route.access.oidc.enabled;
   };
@@ -104,6 +99,17 @@ in {
         })
       ];
     }).config.sops.templates."homarr.environment".content;
+  # The withheld copy changes the route's posture, so its dial is read from that copy
+  # rather than from this one.
+  controlEndpoint =
+    (withheld.nixosConfigurations.oci-melb-1.extendModules {
+      modules = [
+        ({ ... }: {
+          services.homarr.secretFiles.host = fixture;
+          services.homarr.secretFiles.oidc = fixture;
+        })
+      ];
+    }).config.repo.web.catalog.homarr.endpoint.url;
   sqliteRestoreToolAvailable = builtins.any (package: (package.pname or "") == "sqlite") normal.environment.systemPackages;
   backup = {
     inherit (backup) mode paths exclude exportPaths prepareCommands cleanupCommands;
@@ -129,7 +135,7 @@ errors = []
 if got["homarrContainer"] is not True:
     errors.append("the selected Homarr aspect must contribute the container that runs it")
 if got["declaresBootstrapOption"]:
-    errors.append("the retired credentialsBootstrap option is back; the posture derives from publish")
+    errors.append("the retired credentialsBootstrap option is back; the posture derives from the route")
 route = got["route"]
 
 def route_errors(candidate):
@@ -142,9 +148,9 @@ def route_errors(candidate):
         found.append("Cloudflare Access must stay off; Homarr owns browser authentication")
     if candidate["oidcEnabled"] is not True:
         found.append("the route must declare its application OIDC consumer")
-    if candidate["declarePublic"] is not True:
+    if candidate["published"] is not True:
         found.append("the withheld route must retain its public identity for eventual release")
-    if candidate["publish"] is not True:
+    if candidate["catalogPublished"] is not True:
         found.append("the route is published: Homarr is the fleet dashboard and its OIDC login is the gate")
     return found
 
@@ -191,8 +197,8 @@ if "AUTH_OIDC_GROUPS_ATTRIBUTE=groups" not in normal_env:
     errors.append("the group claim attribute must be named `groups`")
 if "BASE_URL=https://home.shrublab.xyz" not in normal_env:
     errors.append("steady state BASE_URL must use Homarr's canonical public origin")
-if f"BASE_URL=https://{got['endpoint']['host']}:{got['endpoint']['port']}" not in withheld_env:
-    errors.append("a withheld route's BASE_URL must use the private Tailscale Serve origin")
+if f"BASE_URL={got['controlEndpoint']}" not in withheld_env:
+    errors.append("a withheld route's BASE_URL must use the private origin its posture declares")
 if "NEXTAUTH_URL=" in normal_env or "NEXTAUTH_URL=" in withheld_env:
     errors.append("a fixed NEXTAUTH_URL would override the request-specific OIDC callback")
 

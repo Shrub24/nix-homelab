@@ -34,7 +34,7 @@
 
       # Published only: on a withheld route the first OIDC login would target an origin the
       # edge does not serve.
-      published = frontendRoute.publish == null || frontendRoute.publish;
+      published = frontendRoute.published;
       browserOrigin =
         if published then
           publicOrigin

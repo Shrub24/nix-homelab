@@ -12,7 +12,7 @@ _: {
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       route = config.repo.web.catalog.homarr or null;
       oidcClient = config.services.identity.oidc.clients.homarr or null;
-      published = if route == null then true else route.publish;
+      published = if route == null then true else route.published;
 
       dataDir = "/srv/data/homarr";
       containerPort = 7575;
@@ -62,12 +62,7 @@ _: {
             content = ''
               AUTH_SECRET=${config.sops.placeholder.homarr_auth_secret}
               SECRET_ENCRYPTION_KEY=${config.sops.placeholder.homarr_secret_encryption_key}
-              BASE_URL=${
-                if published then
-                  route.publicUrl
-                else
-                  "https://${route.endpoint.host}:${toString route.endpoint.port}"
-              }
+              BASE_URL=${if published then route.publicUrl else route.endpoint.url}
               AUTH_PROVIDERS=${if published then "oidc" else "credentials,oidc"}
               AUTH_OIDC_ISSUER=${oidcClient.issuerUrl}
               AUTH_OIDC_CLIENT_ID=${oidcClient.clientId}

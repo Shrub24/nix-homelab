@@ -81,7 +81,7 @@ in {
     upstream = r.upstream;
     publicUrl = r.publicUrl;
     category = r.category;
-    declarePublic = r.declarePublic;
+    published = r.published;
     originProvider = r.origin.provider or null;
     originPort = r.origin.port or null;
     requireAccess = r.access.requireCloudflareAccess;
@@ -131,7 +131,7 @@ for app in ("actual", "memos", "tududi"):
         errs.append(f"{app}: requireCloudflareAccess must be false (clients cannot carry an Access session)")
     if r["oidcEnabled"] is not True:
         errs.append(f"{app}: the route must be flagged an application-OIDC consumer")
-    if r["declarePublic"] is not True:
+    if r["published"] is not True:
         errs.append(f"{app}: the route must be published")
     # A loopback listener behind the edge is the only socket `direct` can dial.
     if r["exposureMode"] != "direct":

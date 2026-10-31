@@ -40,7 +40,7 @@ nix eval --impure --no-write-lock-file --expr '
     lib = flake.inputs.nixpkgs.lib;
     policyLib = import ./lib/policy.nix { inherit lib; };
     dupPolicy = {
-      defaults = { primaryDomain = "example.com"; exposureMode = "tailscale-only"; };
+      defaults = { primaryDomain = "example.com"; posture = "private"; };
       hosts = {
         a = {
           services.dup = {
@@ -153,7 +153,7 @@ nix eval --impure --no-write-lock-file --json --expr '
     lib = flake.inputs.nixpkgs.lib;
   in
   {
-    isPrivate = catalog.declarePublic == false && catalog.exposureMode == "tailscale-only";
+    isPrivate = catalog.published == false && catalog.posture == "private";
     noPublicIdentity = catalog.publicUrl == null && catalog.publicHost == null;
     providerListensOnDeclaredPort = provider.services.niks3.httpAddr
       == "0.0.0.0:${toString catalog.endpoint.port}";

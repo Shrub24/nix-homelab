@@ -96,15 +96,15 @@ let
   # The un-overridden runtime: the fixture guard below is only trustworthy if the
   # same detector fires on these.
   realFinishedExec = cfg.systemd.services.geopulse-web.serviceConfig.ExecStart;
-  # Publication is the policy route's own publish posture. The released variant
-  # renders that route through the same projection the edge uses, so the proof
-  # follows the release path instead of a host-side switch beside it.
+  # Publication is the policy route's own posture. The released variant renders that
+  # route through the same projection the edge uses, so the proof follows the release
+  # path instead of a host-side switch beside it.
   ingressRoutes = import $ROOT/modules/web/_ingress-routes.nix { inherit (f.inputs.nixpkgs) lib; };
   releasedRoutes =
     let
       services = cfg.repo.web.hosts.$HOST.services;
     in
-    ingressRoutes (services // { geopulse = services.geopulse // { publish = true; }; });
+    ingressRoutes (services // { geopulse = services.geopulse // { exposureMode = "tailscale-serve"; }; });
   # The live edge run below cannot dial a tailnet name from a workstation, so the
   # released route's upstream is pointed at the fixture listener. The transport
   # shape is asserted on releasedRoutes itself, above; only the dial moves.
@@ -129,7 +129,6 @@ let
       builtins.intersectAttrs {
         exposureMode = 1;
         subdomain = 1;
-        declarePublic = 1;
         upstream = 1;
         path = 1;
         stripPrefix = 1;
@@ -146,7 +145,6 @@ let
     if services ? geopulse then
       builtins.intersectAttrs {
         exposureMode = 1;
-        declarePublic = 1;
         access = 1;
       } services.geopulse
     else
@@ -433,8 +431,10 @@ start = src.index("        geopulse = {")
 end = src.index("        webhook-admin = {", start)
 block = src[start:end]
 assert 'subdomain = "geo";' in block and 'exposureMode = "tailscale-serve";' in block, "geopulse route anchor drifted"
+if "posture" in block:
+    raise SystemExit("the geopulse route already declares a posture; the control anchor drifted")
 mutated = block.replace('subdomain = "geo";', "subdomain = null;", 1).replace(
-    'exposureMode = "tailscale-serve";', 'exposureMode = "tailscale-only";', 1
+    "        geopulse = {\n", "        geopulse = {\n          posture = \"private\";\n", 1
 )
 open(path, "w").write(src[:start] + mutated + src[end:])
 PYEOF
@@ -959,7 +959,7 @@ let
   }).config;
   ingressRoutes = import $ROOT/modules/web/_ingress-routes.nix { inherit (np) lib; };
   closedCfg = withAspect base;
-  releasedRoute = closedCfg.repo.web.hosts.$HOST.services.geopulse // { publish = true; };
+  releasedRoute = closedCfg.repo.web.hosts.$HOST.services.geopulse // { exposureMode = "tailscale-serve"; };
   services0 = closedCfg.repo.web.hosts.$HOST.services;
   releasedRoutes = ingressRoutes (services0 // { geopulse = releasedRoute; });
   # The rendered config is exercised from a workstation, which cannot dial the

@@ -49,7 +49,7 @@ Direct public-aspect imports are not globally forbidden but require intrinsic-co
 
 **Private service endpoints** are policy declarations, not a second topology registry.
 
-- A private service is declared once in `policy/web-services.nix` with `exposureMode = "tailscale-only"` and `declarePublic = false`; the resolved catalog projects it as `endpoint` (scheme/host/port/url) with `publicUrl`/`publicHost = null`
+- A route declares publication once, as `posture = "private"`, and its dial separately as `exposureMode`. The edge route, the public identity and the Cloudflare record all read that one posture, so a route cannot be private on one surface and public on another (D-124). The resolved catalog projects a private service as `endpoint` (scheme/host/port/url) with `publicUrl`/`publicHost = null`
 - The provider and every consumer read that one declaration, so a port cannot drift between the listening side and the dialing side; `tests/check-web-service-catalog.sh` asserts the provider still listens on the declared port
 - A public service never exposes a dial address in the catalog — only its public identity and the published upstream shape (scheme + port). Routes declare placement (`origin.provider`, a canonical host ID); the ingress upstream derives from `exposureMode` and a private `endpoint` derives against the evaluating host (D-064). Only the edge reads the full `repo.web.hosts` resolution, which carries placements and derived dials
 

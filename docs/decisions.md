@@ -3281,3 +3281,37 @@ those names, so no collision. Three sops secrets lost their `victoria_` prefix
 under `/run/secrets/` changed with the settings that reference them; Grafana restarts on activation
 either way. Revisit if a second front end (another dashboard product) needs the same store, at which
 point the store, not one UI, is what a contract should describe.
+
+## D-124: A route declares its publication once, beside its dial
+
+**Context:** `policy/web-services.nix` carried three overlapping switches. `declarePublic` decided
+whether a route got a public identity, and `resolveCloudflareHosts` keyed its filter on it. `publish`
+decided whether the edge rendered the route, and `ingress.nix` filtered on it. `exposureMode` decided
+how the edge and the catalog dialed. Publication was therefore written twice, and a route withheld the
+other way — `publish = false` alone, as Home Assistant was — still produced a DNS record. The two
+surfaces could disagree, and for one live route they did.
+
+**Decision:** Publication is one field, `posture` (`public` by default, `private` when withheld), and
+`exposureMode` keeps only the dial it always described: `direct`, `tailscale-upstream`,
+`tailscale-serve`. `lib/policy.nix` computes `isPublished` once from the posture and uses it for three
+things — the resolved `published` field, the catalog's public identity (`publicUrl`/`publicHost`/
+`publicDomain`), and the Cloudflare export's host filter — so the edge, the identity fields and DNS
+cannot be out of step. `publish` and `declarePublic` are deleted everywhere, including the ingress route
+shape and the `exposureMode` enum, where `tailscale-only` had been standing in for the private posture.
+The ingress runtime no longer re-tests publication, because the projection hands it published routes
+only.
+
+**Rejected:** Deriving publication from the dial alone, which an earlier draft of this record did by
+treating `tailscale-only` as the private posture. A private route still needs a dial, and the collapsed
+form made one real state inexpressible: `tailscale-serve` plus privacy is Homarr's recovery posture —
+the provider keeps rendering its tailnet front, so an operator can reach the instance and reopen the
+credentials login, while the public hostname, the edge route and the DNS record are all gone. Also
+rejected: `declarePublic` as a separate draft flag, which needs a second question — who may serve a
+route that must not be reachable — that no consumer asks.
+
+**Consequences:** Withholding a route is one line, and `home-assistant` is withheld that way until its
+instance is accepted; it is absent from both the edge route map and the export. A private route whose
+dial names no front (`tailscale-upstream`) is reachable only on the tailnet, which is what the private
+machine endpoints want. `check-web-service-catalog.sh` asserts a private entry is unpublished. Revisit if
+a route must be served publicly with no DNS record — a staging front — at which point the case earns its
+own field rather than sharing one by accident.

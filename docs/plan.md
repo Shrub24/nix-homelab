@@ -301,7 +301,13 @@ change; publishers neither prune objects nor change Cloudflare Access.
 
 ### Follow-ups agreed in review
 
-- `publish` / `declarePublic` / `exposureMode` overlap: `resolveCloudflareHosts` ignores `publish`, so a draft route still emits a DNS record. Collapse into one `posture` value after the cutover. (Session note #275.)
+- `publish` / `declarePublic` / `exposureMode` collapsed — done (D-124). Publication is one field,
+  `posture`, and `exposureMode` keeps only the dial, so the edge filter, the public identity fields and
+  the Cloudflare export read the same value. The DNS defect this fixed: a route withheld with
+  `publish = false` still emitted a record, because the export keyed on `declarePublic`. `home-assistant`
+  is withheld by posture alone and is absent from both the edge routes and the export. A first attempt
+  derived publication from the dial instead and lost Homarr's recovery posture (tailnet-served but
+  unpublished); the homarr contract caught it before it shipped.
 - GeoPulse's source build is a historical default, not a decision. `pkgs/geopulse/` predates the OCI image policy and carries two hand-verified fixed-output hashes (`mvnHash`, `npmDepsHash`) plus a Maven-version assertion, so every nixpkgs Maven bump or upstream release is a manual hash regeneration across two ecosystems. Its original justification is gone: the PKCE patch was removed (D-108) and the last local artifact, `pkgs/geopulse/migrations/R__Add_oidc_session_code_verifier.sql`, installs a column the pinned 2.1.1 sources never read. Upstream publishes multi-arch images for the exact compose tags (`tess1o/geopulse-backend:<v>-native` and `tess1o/geopulse-ui:<v>` are both amd64+arm64), so `aarch64-linux` is first-class. Moving it to digest-pinned containers costs a two-container shape (backend + UI nginx, or our Caddy front proxying the UI container) and a mount rewrite (`/app/keys`, `/data/geopulse-import`, `/data/geopulse-backups`), while PostgreSQL stays ours. Worth doing as its own change.
 - Service-scoped secret defaults — done. Every `secrets/services/*.yaml` and `secrets/applications/*.yaml` path now defaults in its owning module through `secretHelpers.mkSecretFileOptionWithDefault`, and the two options nix-fleet declares (`services.notify.secretFiles.host`, `services.niks3-cache.secretFiles.host`) default from this repository's convention contributors with `lib.mkDefault`. The assertions that required a host to set them, and the `secretFiles.navidrome` and `services.ntfy.auth.secretFiles.auth` guards, are deleted: a default makes them unreachable. `services.ntfy.secretFiles.firebase` keeps its `nullOr` type so a public instance can opt out. Host records bind only host-scoped paths (`secrets/hosts/<host>/...`), so no `secrets/services` or `secrets/applications` path appears in a host composition.
 - Grafana split out of the `victoria` aspect — done (D-123). `modules/observability/grafana.nix` owns
@@ -310,7 +316,16 @@ change; publishers neither prune objects nor change Cloudflare Access.
   datasource URLs read their ports from the same policy entries the stores bind, so no read-only
   datasource contract was needed. The OIDC switch and its host-scoped binding moved with the option.
 - Route-derived module defaults: `karakeep.publicUrl`, Paperless' `PAPERLESS_URL`, `niks3-cache.cacheUrl` and Cockpit's `publicHost` restate a host a route already declares. Deriving them from `repo.web.catalog` needs a policy for a route that is not yet published (D-116).
-- Port collisions have no general check. The scaffold contract's duplicate-port case was removed during the Authentik cutover because it inferred listeners from option shapes and flagged Authentik's own `9002`; nothing replaced it, and the one remaining collision assertion (Home Assistant against ClickHouse) was removed because a placement fact is not the aspect's contract. The shape that survives that failure is a registry, not inference: each binding service declares `repo.listeners.<name> = { address, port; }`, the host collects them, and one assertion fails on a repeated `(address, port)` naming both sides. Opt-in declaration means no reverse-engineering of `bind` / `http_port` / `ports` attributes. The sweep touches every binding module.
+- Port collisions have no general check, and none is wanted (question, kept open). The scaffold
+  contract's duplicate-port case was removed during the Authentik cutover because it inferred
+  listeners from option shapes and flagged Authentik's own `9002`, and the last collision assertion
+  (Home Assistant against ClickHouse) was removed because a placement fact is not the aspect's
+  contract. A `repo.listeners` registry was proposed — each binding service declares its
+  `{ address, port; }`, the host asserts uniqueness — and rejected: a native listener that cannot bind
+  already fails its own unit and therefore the deploy, so the runtime failure surface covers it, and
+  the pair that must not collide is stated at the definition site (`policy/globals.nix`
+  `clickhouseHttpPort = 8124`, against Home Assistant's `8123`). Reopens only if a collision reaches a
+  deploy as a confusing rather than a named failure.
 - `tests/check-homarr-contract.sh` carries two posture mechanisms: a tar copy of the tree whose policy withholds the route, and an `extendModules` probe. The tar copy exists because `mkForce` on `repo.web.hosts.<host>.services.homarr.publish` cannot reach the module — `repo.web` is a read-only resolved projection, so the probe's `publish` parameter never had an effect. Deleting the copy needs the module to read its posture through an injectable seam first.
 - The blueprint gate's explicit `Importer.validate()` call duplicates what the applied-hash poll observes. Collapsing the two into one success-or-error report needs an experiment on the VM harness, not a deletion: the gate must still distinguish a rejected blueprint from a stale one.
 - Identity acceptance beyond plan-level assertions: the MFA invariant, the email-proof policy and the redirect allowlist are all checked against the assembled document, which proves the plan and not the deployment. End-to-end truth (a real passkey, a real authenticator code, email recovery) belongs in the Authentik VM harness, which currently exercises the blueprint gate only.

@@ -574,8 +574,8 @@ PYEOF
 # served). The private
 # origin transport is provider-side: the provider renders the front the edge
 # dials, the edge only dials the canonical private name.
-probe_web_identity oci-melb-1 '{"providerUrl":"https://auth.shrublab.xyz","frontsCoverRoutes":true,"catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"]}'
-probe_web_identity home-forge '{"providerUrl":"https://auth.shrublab.xyz","frontsCoverRoutes":true,"catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"]}'
+probe_web_identity oci-melb-1 '{"providerUrl":"https://auth.shrublab.xyz","frontsCoverRoutes":true,"catalogExposureModes":["direct","tailscale-serve","tailscale-upstream"]}'
+probe_web_identity home-forge '{"providerUrl":"https://auth.shrublab.xyz","frontsCoverRoutes":true,"catalogExposureModes":["direct","tailscale-serve","tailscale-upstream"]}'
 # Forge carries only the intrinsic OIDC contract, because the Grafana it runs
 # reads the derived endpoints; identity machinery itself — provider, host-auth,
 # client — stays absent, not merely disabled.

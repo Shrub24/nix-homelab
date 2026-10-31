@@ -36,7 +36,6 @@ top: {
         "direct"
         "tailscale-upstream"
         "tailscale-serve"
-        "tailscale-only"
       ];
 
       # Required on every route: a default would be one no consumer distinguishes. A

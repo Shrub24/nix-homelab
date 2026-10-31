@@ -15,7 +15,7 @@ _: {
       apps = lib.filterAttrs (
         name: service:
         (service.category == "app" || service.category == "admin")
-        && (service.publish or true)
+        && (service.published or true)
         && service.publicHost != null
       ) catalog;
 

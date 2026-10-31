@@ -3,10 +3,6 @@
 { lib, ... }:
 {
   options.services.postgres = {
-    enable = lib.mkEnableOption "the shared PostgreSQL mechanism" // {
-      default = false;
-    };
-
     instances = lib.mkOption {
       default = { };
       description = ''

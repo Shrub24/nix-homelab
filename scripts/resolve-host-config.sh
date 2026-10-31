@@ -3,15 +3,15 @@
 # sets: TARGET_HOST, BOOTSTRAP_USER, FLAKE, HARDWARE_CONFIG_GENERATOR,
 #       HARDWARE_CONFIG_PATH
 #
-# Every value resolves from the typed flake output `.#bootstrap.nodes.<host>`
+# Every value resolves from the typed flake output `.#fleet.hosts.<host>.bootstrap`
 # (Git-tree form: tracked content only)
 # (registry projection, design DS-6); nothing here parses Nix source text.
 set -euo pipefail
 
 HOST="$1"
 
-if ! nix eval --no-write-lock-file ".#bootstrap.nodes.${HOST}" >/dev/null 2>&1; then
-  echo "Error: no bootstrap metadata found for host '${HOST}' (flake.bootstrap.nodes.${HOST})" >&2
+if ! nix eval --no-write-lock-file ".#fleet.hosts.${HOST}.bootstrap" >/dev/null 2>&1; then
+  echo "Error: no bootstrap metadata found for host '${HOST}' (flake.fleet.hosts.${HOST}.bootstrap)" >&2
   exit 1
 fi
 
@@ -19,7 +19,7 @@ bootstrap_attr() {
   local attr="$1"
   nix eval --no-write-lock-file --raw \
     --apply "v: v.${attr} or \"\"" \
-    ".#bootstrap.nodes.${HOST}"
+    ".#fleet.hosts.${HOST}.bootstrap"
 }
 
 TARGET_HOST="$(bootstrap_attr hostName)"

@@ -54,6 +54,16 @@
               override conflict to differ from the common default.
             '';
           };
+
+          githubToken = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = ''
+              Authenticate Nix fetches with `github/token` from the fleet secret file.
+              The key must exist there; a fleet without one sets this false rather than
+              keep the anonymous budget in place.
+            '';
+          };
         };
 
         # Outbound dev SSH identity: the conventional host-scoped default is
@@ -77,7 +87,29 @@
           cores = 0;
         };
 
+        # nix.conf is world-readable, so the token reaches the daemon through an included file.
+        sops.secrets."github/token" = lib.mkIf foundation.githubToken { };
+
+        sops.templates."nix-access-tokens.conf" = lib.mkIf foundation.githubToken {
+          content = "access-tokens = github.com=${config.sops.placeholder."github/token"}\n";
+          restartUnits = [ "nix-daemon.service" ];
+        };
+
+        nix.extraOptions = lib.mkIf foundation.githubToken (
+          "!include ${config.sops.templates."nix-access-tokens.conf".path}"
+        );
+
         time.timeZone = "UTC";
+
+        # No host declares a swap device; compressed RAM absorbs a build or database
+        # spike without writing to the data disk.
+        zramSwap.enable = true;
+
+        services.journald.settings.Journal = {
+          SystemMaxUse = "300M";
+          SystemKeepFree = "1G";
+          MaxRetentionSec = "7day";
+        };
 
         # A crash loop on a multi-second cycle never trips the default 5 starts / 10s and
         # blocks activation instead, so bound it at five an hour.
@@ -210,12 +242,10 @@
           path = "/run/secrets/host.ssh_identity";
           mode = "0400";
         };
-        sops.secrets = lib.mkIf (hostIdentity.sshPrivateKeyFile != null) {
-          host_ssh_identity_raw = {
-            sopsFile = hostIdentity.sshPrivateKeyFile;
-            key = "identity/ssh_private_key";
-            mode = "0400";
-          };
+        sops.secrets.host_ssh_identity_raw = lib.mkIf (hostIdentity.sshPrivateKeyFile != null) {
+          sopsFile = hostIdentity.sshPrivateKeyFile;
+          key = "identity/ssh_private_key";
+          mode = "0400";
         };
       };
     };

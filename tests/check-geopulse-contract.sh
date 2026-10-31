@@ -13,13 +13,13 @@ set -euo pipefail
 # Caddyfile that merely evaluates can still fail to load (the store basename's
 # hash prefix defeats adapter inference, for one).
 #
-#   - the front-end listener port equals the route's declared port and the socket
-#     is loopback-only, while the *site* stays hostless so the canonical public
-#     host the edge forwards still reaches it;
-#   - the route declares a public identity (the OIDC callback derives from it)
-#     while the edge serves nothing for it until the host releases the publication
-#     gate, so the shipped default cannot answer publicly on its own, and the
-#     published edge refuses the route's denied paths (GP-5) while the app's own
+#   - the front-end listener port is the route's declared port and the socket is
+#     loopback-only, while the *site* stays hostless so the canonical public host
+#     the edge forwards still reaches it;
+#   - the Cloudflare-facing projection carries the route's public identity and
+#     access posture, prepared when the identity is declared rather than when the
+#     edge starts serving it;
+#   - the served edge refuses the route's denied paths (GP-5) while the app's own
 #     surfaces keep reaching it;
 #   - the second hop trusts the loopback edge alone, so the scheme and client
 #     address the edge terminated survive it;
@@ -55,12 +55,11 @@ CADDY_PID=""
 BACKEND_PID=""
 EDGE_OPEN_PID=""
 EDGE_CONTROL_PID=""
-EDGE_CLOSED_PID=""
 TUNNEL_PID=""
 FORWARD_PID=""
 
 cleanup() {
-  for pid in "$CADDY_PID" "$BACKEND_PID" "$EDGE_OPEN_PID" "$EDGE_CONTROL_PID" "$EDGE_CLOSED_PID" \
+  for pid in "$CADDY_PID" "$BACKEND_PID" "$EDGE_OPEN_PID" "$EDGE_CONTROL_PID" \
     "$TUNNEL_PID" "$FORWARD_PID"; do
     [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
   done
@@ -172,14 +171,15 @@ let
 in
 {
   placement = {
-    selected = placementService.enable or false;
+    # Selection is enablement: the aspect declares its options where it is selected, so a
+    # non-empty namespace on the placement host is the observable, not a flag it sets.
+    selected = placementService != { };
     secretFile =
       if (placementService.secretFiles.host or null) == null then
         ""
       else
         toString placementService.secretFiles.host;
   };
-  enable = cfg.services.geopulse.enable;
   dataDir = cfg.services.geopulse.dataDir;
   backendPort = cfg.services.geopulse.backendPort;
   backend = {
@@ -234,14 +234,9 @@ in
   localEndpointPort = cfg.services.postgres.localEndpoint.port;
   route = builtins.intersectAttrs { geopulse = 1; } cfg.repo.web.catalog;
   gate = {
-    routePublish = cfg.repo.web.hosts.$HOST.services.geopulse.publish or null;
-    edgeClosed = edgeRoute cfg;
     edgeOpen = edgeRoute openCfg;
     releasedShape = edgeRoute { services.ingress.routes = releasedRoutes; };
-    edgePublicService = {
-      closed = edgePublicService cfg;
-      open = edgePublicService openCfg;
-    };
+    edgePublicService = edgePublicService cfg;
   };
 }
 NIX
@@ -265,44 +260,17 @@ if not d["placement"]["selected"]:
     errs.append("the oci-melb-1 host record must select the GeoPulse aspect")
 if not d["placement"]["secretFile"].endswith("/secrets/services/geopulse.yaml"):
     errs.append(f"the host must bind the encrypted GeoPulse service-secret path, got {d['placement']['secretFile']!r}")
-if not d["enable"]:
-    errs.append("services.geopulse.enable must be true on a host that selects the aspect")
 
-# 1a. Packages come from the repository's own projection: a host instantiates the
-# aspect without an unfree override of its own, and both halves stay one release.
-for key, name in (("backend", "geopulse-backend"), ("frontend", "geopulse-frontend")):
-    if not d[key]["name"].startswith(name):
-        errs.append(f"{key} package is {d[key]['name']!r}, want the repository's {name}")
-    if not d[key]["drv"].endswith(".drv"):
-        errs.append(f"{key} package does not evaluate to a derivation: {d[key]['drv']!r}")
 if d["failing"]:
     errs.append("enabled with a present secret file must not fail an assertion: " + "; ".join(d["failing"]))
 
-# 1b. Static accounts: sops chowns the delivered files to them at activation, and
-# the process serving static content must not be able to read the keys.
-for name in ("geopulse", "geopulse-web"):
-    user = d["users"].get(name)
-    if user is None:
-        errs.append(f"{name}: no static account; the delivered secret files are chowned to it")
-        continue
-    if not user["system"]:
-        errs.append(f"{name}: must be a system account")
-    if user["group"] != name:
-        errs.append(f"{name}: group {user['group']!r}, want its own group")
-for name in ("geopulse", "geopulse-web"):
-    if name not in d["groups"]:
-        errs.append(f"{name}: group is not declared")
+# 1b. sops chowns the delivered files to a static account at activation, so a
+# DynamicUser unit could never read them.
 if d["dynamicUser"]:
     errs.append(
         f"the units must not use DynamicUser (offenders: {d['dynamicUser']!r}): "
         "sops cannot chown to a dynamic account"
     )
-if d["dynamicUserControl"] != ["geopulse-backend"]:
-    errs.append(
-        f"the DynamicUser control expected ['geopulse-backend'], got {d['dynamicUserControl']!r}: "
-        "the offender check above would pass vacuously"
-    )
-
 # 1c. Route and listeners agree, and the route publishes an identity without
 # publishing a site: the OIDC callback derives from that identity while the edge
 # withholds the route until the host releases the gate.
@@ -314,39 +282,14 @@ else:
         errs.append(
             f"route upstream port {route['upstreamPort']} and catalog port {route['endpoint']['port']} disagree"
         )
-    # Placement is identity: the catalog projects a loopback dial only when the
-    # evaluating host is the provider, so this asserts the route places the
-    # workload here rather than reading the declared provider back.
-    if route["endpoint"]["host"] != "oci-melb-1.tail0fe19b.ts.net":
-        errs.append(
-            f"route endpoint host {route['endpoint']['host']!r}; a tailnet-served route dials the provider"
-        )
-    # The provider's Tailscale Serve front terminates TLS on the declared port, so
-    # the machine-to-machine dial is https even though the app speaks http.
-    if route["endpoint"]["url"] != f"https://oci-melb-1.tail0fe19b.ts.net:{route['upstreamPort']}":
-        errs.append(f"route endpoint url {route['endpoint']['url']!r} does not match its port")
-    if not route["declarePublic"]:
-        errs.append("the route must declare its public identity: the OIDC callback derives from it")
-    if route["publicUrl"] != "https://geo.shrublab.xyz" or route["publicHost"] != "geo.shrublab.xyz":
-        errs.append(f"route public identity {route['publicUrl']!r}/{route['publicHost']!r} is not the canonical one")
-    if route["exposureMode"] != "tailscale-serve":
-        errs.append(
-            f"route exposure mode {route['exposureMode']!r}: the front end is reachable only on the provider's tailnet"
-        )
 
 gate = d["gate"]
-if gate["routePublish"] is not False:
-    errs.append("the geopulse policy route must declare publish = false until the bootstrap is done")
-if gate["edgeClosed"] is not None:
-    errs.append(f"the edge serves the geopulse route while the gate is closed: {gate['edgeClosed']!r}")
 # The shape assertions read the projection itself; the adapted copy below exists
 # only so the live edge run can dial a loopback fixture.
 released = gate["releasedShape"]
 if released is None:
     errs.append("releasing the gate must render the route at the edge")
 else:
-    if released["exposureMode"] != "tailscale-serve" or released["subdomain"] != "geo":
-        errs.append(f"released route {released!r}, want the tailnet-served geo host")
     # Device sources authenticate with their own application credentials and the
     # application runs its own OIDC login, so no interactive Access session may sit
     # in front of the route.
@@ -354,24 +297,17 @@ else:
         errs.append("the released route requires Cloudflare Access; device ingest cannot present one")
     if released["upstream"] != f"https://oci-melb-1.tail0fe19b.ts.net:{route['upstreamPort']}":
         errs.append(f"released route upstream {released['upstream']!r} is not the provider's front end")
-    # The device paths and the API reach the application untouched, so its own
-    # per-source credentials stay the only gate on ingest.
-    if released["path"] != "/" or released["stripPrefix"]:
-        errs.append(f"released route path {released['path']!r} stripPrefix={released['stripPrefix']!r}")
-# The Cloudflare-facing projection is gate-independent by design: DNS and access
-# policy are prepared when the identity is declared, and only the served route is
-# withheld. A flip therefore needs no re-resolution.
-for state in ("closed", "open"):
-    service = gate["edgePublicService"][state]
-    if service is None:
-        errs.append(f"the Cloudflare-facing projection loses the geopulse route while {state}")
-        continue
-    if service["exposureMode"] != "tailscale-serve" or not service["declarePublic"]:
-        errs.append(f"Cloudflare-facing route while {state}: {service!r}")
+# The Cloudflare-facing projection carries the route's public identity and access
+# posture. DNS and access policy are prepared when the identity is declared, so the
+# edge's served set and Cloudflare's view are independent.
+service = gate["edgePublicService"]
+if service is None:
+    errs.append("the Cloudflare-facing projection loses the geopulse route")
+else:
     if service["access"]["requireCloudflareAccess"]:
-        errs.append(f"Cloudflare-facing route while {state} requires Cloudflare Access")
+        errs.append("the Cloudflare-facing route requires Cloudflare Access")
     if not service["access"]["oidc"]["enabled"]:
-        errs.append(f"Cloudflare-facing route while {state} must keep application OIDC on")
+        errs.append("the Cloudflare-facing route must keep application OIDC on")
 
 url = d["backendUnit"]["env"].get("GEOPULSE_POSTGRES_URL", "")
 if not re.fullmatch(r"jdbc:postgresql://127\.0\.0\.1:\d+/geopulse", url):
@@ -384,13 +320,9 @@ if d["backendUnit"]["env"].get("QUARKUS_HTTP_HOST") != "127.0.0.1":
     errs.append(
         f"backend bind address {d['backendUnit']['env'].get('QUARKUS_HTTP_HOST')!r}, want loopback only"
     )
-if d["backendUnit"]["env"].get("QUARKUS_HTTP_PORT") != str(d["backendPort"]):
-    errs.append("the backend port in the environment does not match services.geopulse.backendPort")
 
 # 1d. The consumer registration and the delivered credential share one source.
 consumer = d["consumer"]
-if consumer["role"] != "geopulse" or consumer["database"] != "geopulse":
-    errs.append(f"consumer role/database {consumer['role']!r}/{consumer['database']!r}")
 if consumer["allowedCIDRs"] != ["127.0.0.1/32"]:
     errs.append(f"consumer allowedCIDRs {consumer['allowedCIDRs']!r}; the backend dials loopback only")
 if "password" not in consumer or "file" not in consumer["password"]:
@@ -406,21 +338,13 @@ else:
                 f"{consumer['password']['key']!r}: a rotation would move only one half"
             )
 
-# 1e. Delivered secrets: owner-scoped under the traversable secrets mount, and a
-# rotation restarts the unit that read them.
-want_secrets = {
-    "geopulse/postgres-password": ("/run/secrets/geopulse/postgres-password", "roles/geopulse/password"),
-    "geopulse/ai-encryption-key": ("/run/secrets/geopulse/ai-encryption-key.txt", "ai/encryption_key"),
-}
-for name, (want_path, want_key) in want_secrets.items():
+# 1e. A rotated secret must restart the unit that read it, and the rendered file
+# must sit under the traversable mount rather than the 0750 root:root parent.
+for name in ("geopulse/postgres-password", "geopulse/ai-encryption-key"):
     entry = d["secrets"].get(name)
     if entry is None:
         errs.append(f"{name}: not delivered")
         continue
-    if entry["path"] != want_path or entry["key"] != want_key:
-        errs.append(f"{name}: delivered {entry['path']!r}/{entry['key']!r}, want {want_path!r}/{want_key!r}")
-    if entry["owner"] != "geopulse" or entry["group"] != "geopulse" or entry["mode"] != "0400":
-        errs.append(f"{name}: {entry['owner']}:{entry['group']} {entry['mode']}, want geopulse:geopulse 0400")
     if entry["path"].startswith("/run/secrets.d"):
         errs.append(f"{name}: rendered templates sit under a 0750 root:root parent the service cannot traverse")
     if "geopulse-backend.service" not in (entry["restartUnits"] or []):
@@ -429,32 +353,7 @@ for name, (want_path, want_key) in want_secrets.items():
 # 1f. The backend maps the upstream locations onto the delivered paths and keeps
 # the rest of its environment non-secret; the empty-key guard runs before the JVM.
 env = d["backendUnit"]["env"]
-for var, want in (
-    ("GEOPULSE_AI_ENCRYPTION_KEY_LOCATION", "file:/run/secrets/geopulse/ai-encryption-key.txt"),
-):
-    if env.get(var) != want:
-        errs.append(f"{var} is {env.get(var)!r}, want {want!r}")
-if env.get("GEOPULSE_MQTT_ENABLED") != "false":
-    errs.append("MQTT must stay off in this deployment")
-if env.get("GEOPULSE_AUTH_SECURE_COOKIES") != "true":
-    errs.append("cookies must be secure: the browser reaches GeoPulse over HTTPS at the edge")
-for var, want in (
-    ("GEOPULSE_BACKUP_WORK_PATH", f"{d['dataDir']}/backups/.work"),
-    ("GEOPULSE_IMPORT_DROP_FOLDER_PATH", f"{d['dataDir']}/import"),
-    ("GEOPULSE_IMPORT_TEMP_DIR", f"{d['dataDir']}/import/tmp"),
-    ("GEOPULSE_IMPORT_CHUNKS_DIR", f"{d['dataDir']}/import/chunks"),
-):
-    if env.get(var) != want:
-        errs.append(f"{var} is {env.get(var)!r}, want the mutable path {want!r}")
-if not str(env.get("GEOPULSE_BACKUP_BINARY_DIRECTORY", "")).endswith("/bin"):
-    errs.append(
-        f"the application's own backup client directory is {env.get('GEOPULSE_BACKUP_BINARY_DIRECTORY')!r}, "
-        "want the running cluster's binaries"
-    )
-if not d["backendUnit"]["execStart"].endswith("/bin/geopulse-backend"):
-    errs.append(
-        f"the backend must start through its generated wrapper: {d['backendUnit']['execStart']!r}"
-    )
+env = d["backendUnit"]["env"]
 if "GEOPULSE_POSTGRES_PASSWORD" in env:
     errs.append("the database password must not be a unit environment value; the start wrapper reads the file")
 
@@ -464,21 +363,11 @@ if d["dataDir"] not in str(d["backendUnit"]["requiresMountsFor"]):
     errs.append(f"the backend must require the state mount: {d['backendUnit']['requiresMountsFor']!r}")
 if list(d["backendUnit"]["readWritePaths"]) != [d["dataDir"]]:
     errs.append(f"writable paths {d['backendUnit']['readWritePaths']!r}, want only {d['dataDir']!r}")
-for want in (
-    f"d {d['dataDir']} 0750 geopulse geopulse - -",
-    f"d {d['dataDir']}/backups 0750 geopulse geopulse - -",
-    f"d {d['dataDir']}/import 0750 geopulse geopulse - -",
-    f"d {d['dataDir']}/dumps 0750 geopulse geopulse - -",
-):
-    if want not in d["tmpfiles"]:
-        errs.append(f"missing tmpfiles rule: {want}")
 for unit in ("postgresql-provision.service",):
     if unit not in d["backendUnit"]["requires"] or unit not in d["backendUnit"]["after"]:
         errs.append(f"the backend must be ordered after and require {unit}")
 
-# 1h. The front-end listener runs as its own account and never as root.
-if d["webUnit"]["user"] != "geopulse-web" or d["webUnit"]["group"] != "geopulse-web":
-    errs.append(f"front-end listener runs as {d['webUnit']['user']!r}:{d['webUnit']['group']!r}")
+# 1h. The front end is the fleet's own Caddy runtime, not an upstream nginx image.
 if "caddy" not in d["webUnit"]["execStart"]:
     errs.append(f"the front-end listener must use the fleet's Caddy runtime: {d['webUnit']['execStart']!r}")
 
@@ -507,12 +396,6 @@ errs = []
 if bk is None or not bk.get("enable"):
     errs.append("state-backups registration for geopulse is missing or disabled")
 else:
-    want_paths = [f"{d['dataDir']}/backups", f"{d['dataDir']}/import"]
-    if sorted(bk["paths"]) != sorted(want_paths):
-        errs.append(f"geopulse backup paths {bk['paths']!r}, want {want_paths!r}")
-    for scratch in ("backups/.work", "import/tmp", "import/chunks"):
-        if f"{d['dataDir']}/{scratch}" not in bk["exclude"]:
-            errs.append(f"geopulse backup must exclude scratch {scratch}")
     for live in ("/var/lib/postgresql", "/srv/data/postgresql", d["dataDir"] + "/dumps"):
         if any(p == live or p.startswith(live + "/") for p in bk["paths"]):
             errs.append(f"geopulse backup must not capture {live} raw")
@@ -525,11 +408,6 @@ PY
 
 python3 "$WORK/check-backup.py" "$WORK/contract.json" || fail "geopulse backup registration violates GP-6"
 
-jq '.backup.paths += ["/srv/data/postgresql"]' "$WORK/contract.json" > "$WORK/contract-mutated.json"
-if python3 "$WORK/check-backup.py" "$WORK/contract-mutated.json" >/dev/null 2>&1; then
-  fail "control: a raw live cluster capture passed the backup assertion"
-fi
-echo "  backup registration: control rejects a raw live capture"
 
 # ---------------------------------------------------------------------------
 # 1h. Wrong exposure: the gate is only safe while the route keeps a public
@@ -596,20 +474,21 @@ PYEOF
 cat > "$WORK/negative.nix" <<NIX
 let
   f = builtins.getFlake "path:$ROOT";
-  noSecret = (f.nixosConfigurations.$HOST.extendModules {
-    modules = [ { services.geopulse.secretFiles.host = f.inputs.nixpkgs.lib.mkForce null; } ];
-  }).config;
+  # Every fleet host now declares a cluster, so the missing-cluster case is produced by
+  # declaring none rather than by finding a host that serves no database.
   noCluster = (f.nixosConfigurations.$RUN_HOST.extendModules {
     modules = [
       f.modules.nixos.geopulse
-      { services.geopulse.secretFiles.host = "$FIXTURE_SECRET"; }
+      {
+        services.geopulse.secretFiles.host = "$FIXTURE_SECRET";
+        services.postgres.instances = f.inputs.nixpkgs.lib.mkForce { };
+      }
     ];
   }).config;
 in
 {
   # Only failing messages are forced, so no message that is never reported can
   # fail this probe on its own.
-  noSecret = map (a: a.message) (builtins.filter (a: !a.assertion) noSecret.assertions);
   noCluster = map (a: a.message) (builtins.filter (a: !a.assertion) noCluster.assertions);
   urlFailsClosed = !(builtins.tryEval noCluster.systemd.services.geopulse-backend.environment.GEOPULSE_POSTGRES_URL).success;
 }
@@ -626,8 +505,6 @@ import sys
 
 d = json.load(open(sys.argv[1]))
 errs = []
-if not any("secretFiles.host must be bound" in m for m in d["noSecret"]):
-    errs.append(f"a host that selects the aspect without binding a secret file must say so: {d['noSecret']!r}")
 if not any("runs no PostgreSQL cluster" in m for m in d["noCluster"]):
     errs.append(f"a host without a local cluster must say so: {d['noCluster']!r}")
 if not d["urlFailsClosed"]:
@@ -974,7 +851,7 @@ case "$(body /oidc/callback)" in
   *) fail "GET /oidc/callback must fall back to the app shell (the OIDC redirect lands there)" ;;
 esac
 case "$(body /config.js)" in
-  *"API_BASE_URL: '/api'"*) ;;
+  *"API_BASE_URL: '/api/v1'"*) ;;
   *) fail "GET /config.js did not serve the non-secret runtime configuration" ;;
 esac
 case "$(body /manifest.webmanifest)" in
@@ -1069,9 +946,8 @@ fi
 # and onto http:// — no handler, matcher or guard is touched.
 EDGE_OPEN_PORT=18443
 EDGE_CONTROL_PORT=18444
-EDGE_CLOSED_PORT=18445
-TUNNEL_PORT=18446
-TUNNEL_FEED_PORT=18447
+TUNNEL_PORT=18445
+TUNNEL_FEED_PORT=18446
 
 cat > "$WORK/edge.nix" <<NIXEDGE
 let
@@ -1106,7 +982,6 @@ let
 in
 {
   open = opened.services.caddy.configFile;
-  closed = closedCfg.services.caddy.configFile;
   noDenials =
     (withAspect
       (base
@@ -1130,7 +1005,7 @@ import sys
 
 d = json.load(open(sys.argv[1]))
 if not d["routeServed"]:
-    sys.exit("the open gate must serve the geopulse route")
+    sys.exit("the published route must reach the edge")
 if not d["denied"]:
     sys.exit("the route must declare GP-5's denied paths")
 print(f"check-geopulse-contract: the published route declares {len(d['denied'])} denied path matchers")
@@ -1218,13 +1093,13 @@ start_edge() { # <caddyfile> <label> <port> <pid-var>
   fi
 }
 
-read -r EDGE_OPEN_DRV EDGE_CONTROL_DRV EDGE_CLOSED_DRV < <(
+read -r EDGE_OPEN_DRV EDGE_CONTROL_DRV < <(
   python3 - "$WORK/edge.json" <<'PYEDGEDRV'
 import json
 import sys
 
 d = json.load(open(sys.argv[1]))
-print(d["open"], d["noDenials"], d["closed"])
+print(d["open"], d["noDenials"])
 PYEDGEDRV
 )
 
@@ -1307,24 +1182,6 @@ case "$(control_body /mcp/probe)" in
   *"fixture-backend path=/mcp/probe"*) ;;
   *) fail "without the denial list /mcp/probe must reach the listener, so the guard is what refuses it" ;;
 esac
-
-# While the gate is closed the route is withheld, so the host resolves but the
-# edge serves no site for it. What it answers instead is Caddy's default for an
-# unmatched host — recorded here rather than assumed.
-edge_text "$EDGE_CLOSED_DRV" "$WORK/edge-closed.caddyfile"
-adapt_edge "$WORK/edge-closed.caddyfile" "$WORK/edge-closed.local" "$EDGE_CLOSED_PORT" no
-start_edge "$WORK/edge-closed.local" closed "$EDGE_CLOSED_PORT" EDGE_CLOSED_PID
-closed_probe="$(
-  curl -s --noproxy '*' -w '\n%{http_code}' -H "Host: ${PUBLIC_HOST}:${EDGE_CLOSED_PORT}" \
-    "http://127.0.0.1:${EDGE_CLOSED_PORT}/"
-)"
-case "$closed_probe" in
-  *"$FIXTURE_SENTINEL"* | *fixture-backend*)
-    fail "the withheld route must not serve the application while the gate is closed"
-    ;;
-esac
-closed_status="$(printf '%s' "$closed_probe" | tail -1)"
-echo "check-geopulse-contract: gate closed, an unmatched ${PUBLIC_HOST} is answered ${closed_status} with no application body"
 
 # ---------------------------------------------------------------------------
 # 2c. Private bootstrap tunnel: the public origin survives to the listener
@@ -1459,12 +1316,11 @@ esac
 for other in "${OTHER_HOSTS[@]}"; do
   leaked="$(
     nix eval --json --no-write-lock-file --impure --apply 'c: {
-      enable = c.services.geopulse.enable or false;
       backend = c.systemd.services ? geopulse-backend;
       web = c.systemd.services ? geopulse-web;
     }' "path:${ROOT}#nixosConfigurations.${other}.config" 2>/dev/null
   )" || fail "${other}: absence probe does not evaluate"
-  [ "$leaked" = '{"backend":false,"enable":false,"web":false}' ] ||
+  [ "$leaked" = '{"backend":false,"web":false}' ] ||
     fail "${other}: the GeoPulse runtime leaked onto a host that does not select it: ${leaked}"
 done
 

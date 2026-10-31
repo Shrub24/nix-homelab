@@ -14,7 +14,7 @@
       cfg = config.services.langfuse;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
-      hasSecretFile = cfg.secretFiles.host != null && builtins.pathExists cfg.secretFiles.host;
+      hasSecretFile = cfg.secretFiles.host != null;
 
       oidcClient = config.services.identity.oidc.clients.langfuse or null;
 
@@ -29,6 +29,10 @@
         AUTH_CUSTOM_NAME=${cfg.oidc.providerName}
         AUTH_CUSTOM_SCOPE=${cfg.oidc.scope}
         AUTH_CUSTOM_ID_TOKEN_SIGNED_RESPONSE_ALG=${cfg.oidc.idTokenSignedResponseAlg}
+        # Attaches the identity to an account that already exists under the same verified
+        # address. Without it NextAuth refuses the sign-in (OAuthAccountNotLinked) instead
+        # of reaching the account the person already owns.
+        AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING=true
       '';
 
       # Probed through `options`: reading an undeclared option path throws instead of returning null.
@@ -70,8 +74,6 @@
       ];
 
       options.services.langfuse = {
-        enable = lib.mkEnableOption "Langfuse LLM observability";
-
         image = lib.mkOption {
           type = lib.types.str;
           default = config.repo.ociImages.langfuse;
@@ -143,13 +145,15 @@
 
           providerName = lib.mkOption {
             type = lib.types.str;
-            default = "Kanidm";
+            default = if oidcClient == null then "" else oidcClient.providerName;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.langfuse.providerName";
             description = "Display name for the OIDC provider button (AUTH_CUSTOM_NAME).";
           };
 
           scope = lib.mkOption {
             type = lib.types.str;
-            default = "openid email profile";
+            default = if oidcClient == null then "" else builtins.concatStringsSep " " oidcClient.scopes;
+            defaultText = lib.literalExpression "services.identity.oidc.clients.langfuse.scopes";
             description = "OIDC scope string (AUTH_CUSTOM_SCOPE).";
           };
 
@@ -157,7 +161,7 @@
             type = lib.types.str;
             default = "ES256";
             description = ''
-              Expected id_token signing algorithm. Kanidm signs ES256; openid-client
+              Expected id_token signing algorithm. The provider signs ES256; openid-client
               defaults to RS256 and fails every callback when this is unset.
             '';
           };
@@ -178,337 +182,323 @@
         };
       };
 
-      config = lib.mkMerge [
-        { services.langfuse.enable = true; }
-        (lib.mkIf cfg.enable {
-          assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.langfuse";
-              label = "secretFiles.host";
-            })
-            {
-              assertion = !cfg.enable || localPostgres != null;
-              message = "services.langfuse.enable is true but this host runs no PostgreSQL cluster (select the postgres aspect and declare services.postgres.instances.<name>).";
+      config = {
+
+        assertions = [
+          {
+            assertion = localPostgres != null;
+            message = "services.langfuse.enable is true but this host runs no PostgreSQL cluster (select the postgres aspect and declare services.postgres.instances.<name>).";
+          }
+          {
+            assertion = config.services.clickhouse.enable;
+            message = "services.langfuse.enable is true but the ClickHouse substrate is not selected (select the clickhouse aspect): its trace store has no server otherwise.";
+          }
+          {
+            assertion = !cfg.oidc.enable || oidcClient != null;
+            message = "services.langfuse.oidc: canonical OIDC client 'langfuse' is missing from services.identity.oidc.clients; check clients.langfuse in policy/identity.nix and the identity provider's published route.";
+          }
+          {
+            assertion = !cfg.oidc.enable || cfg.oidc.clientId != null;
+            message = "services.langfuse.oidc.clientId must be set when OIDC is enabled.";
+          }
+          {
+            assertion = !cfg.oidc.enable || cfg.oidc.issuerUrl != "";
+            message = "services.langfuse.oidc.issuerUrl must be set when OIDC is enabled.";
+          }
+        ];
+
+        # Gated on the secret file: the two-step bootstrap binds the path before the operator encrypts it.
+        services.postgres.consumers.langfuse = lib.mkIf (localPostgres != null && hasSecretFile) {
+          database = "langfuse";
+          role = "langfuse";
+          auth = "scram";
+          password = {
+            file = cfg.secretFiles.host;
+            key = "database/password";
+          };
+          allowedCIDRs = [
+            "127.0.0.1/32"
+            "::1/128"
+            serviceAddress
+            containerSourceCIDR
+          ];
+        };
+
+        # ClickHouse is the substrate, not this stack: the users fragment is
+        # this consumer's whole contribution to the server.
+        environment.etc."clickhouse-server/users.d/250-langfuse.xml" = lib.mkIf hasSecretFile {
+          text = clickhouseUsers;
+        };
+        systemd.services.clickhouse.restartTriggers = lib.optional hasSecretFile clickhouseUsers;
+
+        # Queue + cache only: no persistence, loopback + service address.
+        services.redis.servers.langfuse = {
+          enable = true;
+          bind = "${loopback} ${serviceAddress}";
+          port = 6379;
+          # Passwordless only during evaluation: the required-secret assertion blocks deploy without the file.
+          requirePassFile = if hasSecretFile then config.sops.secrets.langfuse_redis_password.path else null;
+          save = [ ]; # no RDB snapshots: the queue is ephemeral
+          appendOnly = false;
+        };
+
+        # svc0 appears only after networkd applies it, which no unit ordering expresses; retry the start.
+        systemd.services."redis-langfuse".serviceConfig = {
+          Restart = "on-failure";
+          RestartSec = 5;
+        };
+
+        sops.templates."langfuse.environment" = lib.mkIf hasSecretFile {
+          owner = "root";
+          group = "root";
+          mode = "0400";
+          content = ''
+            DATABASE_URL=postgresql://langfuse:${config.sops.placeholder.langfuse_postgres_password}@${serviceHost}:${toString localPostgres.port}/langfuse
+
+            CLICKHOUSE_URL=${clickhouseUrl}
+            CLICKHOUSE_MIGRATION_URL=${clickhouseMigrationUrl}
+            CLICKHOUSE_USER=langfuse
+            CLICKHOUSE_PASSWORD=${config.sops.placeholder.langfuse_clickhouse_password}
+            CLICKHOUSE_CLUSTER_ENABLED=false
+
+            REDIS_HOST=${serviceHost}
+            REDIS_PORT=6379
+            REDIS_AUTH=${config.sops.placeholder.langfuse_redis_password}
+
+            LANGFUSE_S3_EVENT_UPLOAD_BUCKET=${cfg.buckets.events}
+            LANGFUSE_S3_EVENT_UPLOAD_REGION=${cfg.s3.region}
+            LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=${cfg.s3.endpoint}
+            LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=${config.sops.placeholder.langfuse_s3_access_key_id}
+            LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${config.sops.placeholder.langfuse_s3_secret_access_key}
+            LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
+            LANGFUSE_S3_EVENT_UPLOAD_PREFIX=events/
+            LANGFUSE_S3_MEDIA_UPLOAD_BUCKET=${cfg.buckets.media}
+            LANGFUSE_S3_MEDIA_UPLOAD_REGION=${cfg.s3.region}
+            LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=${cfg.s3.endpoint}
+            LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID=${config.sops.placeholder.langfuse_s3_access_key_id}
+            LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${config.sops.placeholder.langfuse_s3_secret_access_key}
+            LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE=true
+            LANGFUSE_S3_MEDIA_UPLOAD_PREFIX=media/
+            LANGFUSE_S3_BATCH_EXPORT_ENABLED=false
+            LANGFUSE_S3_BATCH_EXPORT_BUCKET=${cfg.buckets.exports}
+            LANGFUSE_S3_BATCH_EXPORT_REGION=${cfg.s3.region}
+            LANGFUSE_S3_BATCH_EXPORT_ENDPOINT=${cfg.s3.endpoint}
+            LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID=${config.sops.placeholder.langfuse_s3_access_key_id}
+            LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY=${config.sops.placeholder.langfuse_s3_secret_access_key}
+            LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE=true
+            LANGFUSE_S3_BATCH_EXPORT_PREFIX=exports/
+
+            ENCRYPTION_KEY=${config.sops.placeholder.langfuse_encryption_key}
+            SALT=${config.sops.placeholder.langfuse_salt}
+            NEXTAUTH_SECRET=${config.sops.placeholder.langfuse_nextauth_secret}
+            NEXTAUTH_URL=${if publicUrl != null then publicUrl else "http://127.0.0.1:${toString cfg.port}"}
+            TELEMETRY_ENABLED=false
+
+            ${oidcEnv}
+
+            # LANGFUSE_INIT_ORG_ID gates the whole seed block; without it upstream silently skips the user seed.
+            LANGFUSE_INIT_ORG_ID=shrublab
+            LANGFUSE_INIT_ORG_NAME=shrublab
+            LANGFUSE_INIT_PROJECT_ID=shrublab
+            LANGFUSE_INIT_PROJECT_NAME=shrublab
+            LANGFUSE_INIT_PROJECT_PUBLIC_KEY=${config.sops.placeholder.langfuse_otel_public_key}
+            LANGFUSE_INIT_PROJECT_SECRET_KEY=${config.sops.placeholder.langfuse_otel_secret_key}
+            LANGFUSE_INIT_USER_EMAIL=${config.sops.placeholder.langfuse_initial_admin_email}
+            LANGFUSE_INIT_USER_PASSWORD=${config.sops.placeholder.langfuse_initial_admin_password}
+          '';
+        };
+
+        sops.secrets = lib.mkIf hasSecretFile (
+          secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
+            langfuse_postgres_password = {
+              key = "database/password";
+              path = "/run/secrets/langfuse.postgres_password";
+            };
+            langfuse_clickhouse_password = {
+              key = "clickhouse/password";
+              path = "/run/secrets/langfuse.clickhouse_password";
+            };
+            # Digest of the same password, for the ClickHouse user fragment.
+            langfuse_clickhouse_password_sha256 = {
+              key = "clickhouse/password_sha256";
+              path = "/run/secrets/langfuse.clickhouse_password_sha256";
+            };
+            langfuse_redis_password = {
+              key = "redis/password";
+              path = "/run/secrets/langfuse.redis_password";
+            };
+            langfuse_s3_access_key_id = {
+              key = "s3/access_key_id";
+              path = "/run/secrets/langfuse.s3_access_key_id";
+            };
+            langfuse_s3_secret_access_key = {
+              key = "s3/secret_access_key";
+              path = "/run/secrets/langfuse.s3_secret_access_key";
+            };
+            langfuse_encryption_key = {
+              key = "encryption_key";
+              path = "/run/secrets/langfuse.encryption_key";
+            };
+            langfuse_salt = {
+              key = "salt";
+              path = "/run/secrets/langfuse.salt";
+            };
+            langfuse_nextauth_secret = {
+              key = "nextauth_secret";
+              path = "/run/secrets/langfuse.nextauth_secret";
+            };
+            langfuse_initial_admin_email = {
+              key = "initial_admin/email";
+              path = "/run/secrets/langfuse.initial_admin_email";
+            };
+            langfuse_initial_admin_password = {
+              key = "initial_admin/password";
+              path = "/run/secrets/langfuse.initial_admin_password";
+            };
+            langfuse_otel_public_key = {
+              key = "otel/public_key";
+              path = "/run/secrets/langfuse.otel_public_key";
+            };
+            langfuse_otel_secret_key = {
+              key = "otel/secret_key";
+              path = "/run/secrets/langfuse.otel_secret_key";
+            };
+          }
+          // lib.optionalAttrs cfg.oidc.enable (
+            secretHelpers.mkSecretsFromMap cfg.secretFiles.oidc {
+              langfuse_oidc_client_secret = {
+                key = "langfuse/client_secret";
+                path = "/run/secrets/langfuse.oidc_client_secret";
+              };
             }
-            {
-              assertion = !cfg.enable || config.services.clickhouse.enable;
-              message = "services.langfuse.enable is true but the ClickHouse substrate is not selected (select the clickhouse aspect): its trace store has no server otherwise.";
-            }
-            {
-              assertion = !cfg.oidc.enable || oidcClient != null;
-              message = "services.langfuse.oidc: canonical OIDC client 'langfuse' is missing from services.identity.oidc.clients; check systems.oauth2.langfuse in policy/identity.json and the host's kanidm-admin web-policy route.";
-            }
-            {
-              assertion = !cfg.oidc.enable || cfg.oidc.clientId != null;
-              message = "services.langfuse.oidc.clientId must be set when OIDC is enabled.";
-            }
-            {
-              assertion = !cfg.oidc.enable || cfg.oidc.issuerUrl != "";
-              message = "services.langfuse.oidc.issuerUrl must be set when OIDC is enabled.";
-            }
-            (secretHelpers.mkRequiredSecretAssertion {
-              enable = cfg.oidc.enable;
-              file = cfg.secretFiles.oidc;
-              feature = "services.langfuse.oidc";
-              label = "secretFiles.oidc";
-            })
+          )
+        );
+
+        # The operator stores both password forms in the secret file; ClickHouse references the digest by name.
+        sops.templates."langfuse-clickhouse-substitutions" = lib.mkIf hasSecretFile {
+          owner = "clickhouse";
+          group = "clickhouse";
+          mode = "0400";
+          # The digest is read once at startup, so a rotation reaches the
+          # running server only through this restart.
+          restartUnits = [ "clickhouse.service" ];
+          content = ''
+            <clickhouse>
+              <langfuse_ch_password>${config.sops.placeholder.langfuse_clickhouse_password_sha256}</langfuse_ch_password>
+            </clickhouse>
+          '';
+        };
+
+        # Restarting on rotation re-runs upstream's idempotent LANGFUSE_INIT seed.
+        systemd.services.podman-langfuse-web.restartTriggers =
+          lib.optional hasSecretFile
+            config.sops.templates."langfuse.environment".path;
+
+        virtualisation.podman.enable = true;
+
+        systemd.services."podman-network-${cfg.networkName}" = {
+          description = "Create Podman network ${cfg.networkName}";
+          wantedBy = [ "multi-user.target" ];
+          before = [ "podman-langfuse-worker.service" ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network exists ${cfg.networkName} || ${pkgs.podman}/bin/podman network create ${cfg.networkName}'";
+            ExecStop = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network rm -f ${cfg.networkName} || true'";
+          };
+        };
+
+        # Host network, not published ports: a published port would bypass the firewall on every interface.
+        virtualisation.oci-containers.containers.langfuse-web = {
+          autoStart = true;
+          image = cfg.image;
+          environment = {
+            PORT = toString cfg.port;
+            HOSTNAME = "0.0.0.0";
+          };
+          environmentFiles = lib.optionals hasSecretFile [
+            config.sops.templates."langfuse.environment".path
+          ];
+          extraOptions = [
+            "--network=host"
+            "--add-host=${serviceHost}:${serviceAddress}"
+          ];
+        };
+
+        # No inbound ports; reaches the native roles through the service address.
+        virtualisation.oci-containers.containers.langfuse-worker = {
+          autoStart = true;
+          image = cfg.workerImage;
+          environmentFiles = lib.optionals hasSecretFile [
+            config.sops.templates."langfuse.environment".path
+          ];
+          extraOptions = [
+            "--network=${cfg.networkName}"
+            "--add-host=${serviceHost}:${serviceAddress}"
+          ];
+          dependsOn = [ "langfuse-web" ];
+        };
+
+        systemd = {
+          tmpfiles.rules = [
+            "d ${cfg.dataDir} 0755 root root - -"
+            "z ${cfg.dataDir} 0755 root root - -"
           ];
 
-          # Gated on the secret file: the two-step bootstrap binds the path before the operator encrypts it.
-          services.postgres.consumers.langfuse = lib.mkIf (localPostgres != null && hasSecretFile) {
-            database = "langfuse";
-            role = "langfuse";
-            auth = "scram";
-            password = {
-              file = cfg.secretFiles.host;
-              key = "database/password";
+          services = {
+            "podman-langfuse-web" = {
+              description = "Langfuse web (UI, ingestion API, OTLP endpoint)";
+              wants = [ "network-online.target" ];
+              after = [
+                "network-online.target"
+                "clickhouse.service"
+                "redis-langfuse.service"
+                "postgresql.service"
+                "postgresql-provision.service"
+              ];
+              requires = [ "postgresql-provision.service" ];
+              unitConfig.RequiresMountsFor = [ cfg.dataDir ];
             };
-            allowedCIDRs = [
-              "127.0.0.1/32"
-              "::1/128"
-              serviceAddress
-              containerSourceCIDR
-            ];
-          };
 
-          # ClickHouse is the substrate, not this stack: the users fragment is
-          # this consumer's whole contribution to the server.
-          environment.etc."clickhouse-server/users.d/250-langfuse.xml" = lib.mkIf hasSecretFile {
-            text = clickhouseUsers;
-          };
-          systemd.services.clickhouse.restartTriggers = lib.optional hasSecretFile clickhouseUsers;
-
-          # Queue + cache only: no persistence, loopback + service address.
-          services.redis.servers.langfuse = {
-            enable = true;
-            bind = "${loopback} ${serviceAddress}";
-            port = 6379;
-            # Passwordless only during evaluation: the required-secret assertion blocks deploy without the file.
-            requirePassFile = if hasSecretFile then config.sops.secrets.langfuse_redis_password.path else null;
-            save = [ ]; # no RDB snapshots: the queue is ephemeral
-            appendOnly = false;
-          };
-
-          # svc0 appears only after networkd applies it, which no unit ordering expresses; retry the start.
-          systemd.services."redis-langfuse".serviceConfig = {
-            Restart = "on-failure";
-            RestartSec = 5;
-          };
-
-          sops.templates."langfuse.environment" = lib.mkIf hasSecretFile {
-            owner = "root";
-            group = "root";
-            mode = "0400";
-            content = ''
-              DATABASE_URL=postgresql://langfuse:${config.sops.placeholder.langfuse_postgres_password}@${serviceHost}:${toString localPostgres.port}/langfuse
-
-              CLICKHOUSE_URL=${clickhouseUrl}
-              CLICKHOUSE_MIGRATION_URL=${clickhouseMigrationUrl}
-              CLICKHOUSE_USER=langfuse
-              CLICKHOUSE_PASSWORD=${config.sops.placeholder.langfuse_clickhouse_password}
-              CLICKHOUSE_CLUSTER_ENABLED=false
-
-              REDIS_HOST=${serviceHost}
-              REDIS_PORT=6379
-              REDIS_AUTH=${config.sops.placeholder.langfuse_redis_password}
-
-              LANGFUSE_S3_EVENT_UPLOAD_BUCKET=${cfg.buckets.events}
-              LANGFUSE_S3_EVENT_UPLOAD_REGION=${cfg.s3.region}
-              LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=${cfg.s3.endpoint}
-              LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=${config.sops.placeholder.langfuse_s3_access_key_id}
-              LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${config.sops.placeholder.langfuse_s3_secret_access_key}
-              LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
-              LANGFUSE_S3_EVENT_UPLOAD_PREFIX=events/
-              LANGFUSE_S3_MEDIA_UPLOAD_BUCKET=${cfg.buckets.media}
-              LANGFUSE_S3_MEDIA_UPLOAD_REGION=${cfg.s3.region}
-              LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=${cfg.s3.endpoint}
-              LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID=${config.sops.placeholder.langfuse_s3_access_key_id}
-              LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${config.sops.placeholder.langfuse_s3_secret_access_key}
-              LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE=true
-              LANGFUSE_S3_MEDIA_UPLOAD_PREFIX=media/
-              LANGFUSE_S3_BATCH_EXPORT_ENABLED=false
-              LANGFUSE_S3_BATCH_EXPORT_BUCKET=${cfg.buckets.exports}
-              LANGFUSE_S3_BATCH_EXPORT_REGION=${cfg.s3.region}
-              LANGFUSE_S3_BATCH_EXPORT_ENDPOINT=${cfg.s3.endpoint}
-              LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID=${config.sops.placeholder.langfuse_s3_access_key_id}
-              LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY=${config.sops.placeholder.langfuse_s3_secret_access_key}
-              LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE=true
-              LANGFUSE_S3_BATCH_EXPORT_PREFIX=exports/
-
-              ENCRYPTION_KEY=${config.sops.placeholder.langfuse_encryption_key}
-              SALT=${config.sops.placeholder.langfuse_salt}
-              NEXTAUTH_SECRET=${config.sops.placeholder.langfuse_nextauth_secret}
-              NEXTAUTH_URL=${if publicUrl != null then publicUrl else "http://127.0.0.1:${toString cfg.port}"}
-              TELEMETRY_ENABLED=false
-
-              ${oidcEnv}
-
-              # LANGFUSE_INIT_ORG_ID gates the whole seed block; without it upstream silently skips the user seed.
-              LANGFUSE_INIT_ORG_ID=shrublab
-              LANGFUSE_INIT_ORG_NAME=Shrublab
-              LANGFUSE_INIT_PROJECT_ID=shrublab
-              LANGFUSE_INIT_PROJECT_NAME=Shrublab
-              LANGFUSE_INIT_PROJECT_PUBLIC_KEY=${config.sops.placeholder.langfuse_otel_public_key}
-              LANGFUSE_INIT_PROJECT_SECRET_KEY=${config.sops.placeholder.langfuse_otel_secret_key}
-              LANGFUSE_INIT_USER_EMAIL=${config.sops.placeholder.langfuse_initial_admin_email}
-              LANGFUSE_INIT_USER_PASSWORD=${config.sops.placeholder.langfuse_initial_admin_password}
-            '';
-          };
-
-          sops.secrets = lib.mkIf hasSecretFile (
-            secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
-              langfuse_postgres_password = {
-                key = "database/password";
-                path = "/run/secrets/langfuse.postgres_password";
-              };
-              langfuse_clickhouse_password = {
-                key = "clickhouse/password";
-                path = "/run/secrets/langfuse.clickhouse_password";
-              };
-              # Digest of the same password, for the ClickHouse user fragment.
-              langfuse_clickhouse_password_sha256 = {
-                key = "clickhouse/password_sha256";
-                path = "/run/secrets/langfuse.clickhouse_password_sha256";
-              };
-              langfuse_redis_password = {
-                key = "redis/password";
-                path = "/run/secrets/langfuse.redis_password";
-              };
-              langfuse_s3_access_key_id = {
-                key = "s3/access_key_id";
-                path = "/run/secrets/langfuse.s3_access_key_id";
-              };
-              langfuse_s3_secret_access_key = {
-                key = "s3/secret_access_key";
-                path = "/run/secrets/langfuse.s3_secret_access_key";
-              };
-              langfuse_encryption_key = {
-                key = "encryption_key";
-                path = "/run/secrets/langfuse.encryption_key";
-              };
-              langfuse_salt = {
-                key = "salt";
-                path = "/run/secrets/langfuse.salt";
-              };
-              langfuse_nextauth_secret = {
-                key = "nextauth_secret";
-                path = "/run/secrets/langfuse.nextauth_secret";
-              };
-              langfuse_initial_admin_email = {
-                key = "initial_admin/email";
-                path = "/run/secrets/langfuse.initial_admin_email";
-              };
-              langfuse_initial_admin_password = {
-                key = "initial_admin/password";
-                path = "/run/secrets/langfuse.initial_admin_password";
-              };
-              langfuse_otel_public_key = {
-                key = "otel/public_key";
-                path = "/run/secrets/langfuse.otel_public_key";
-              };
-              langfuse_otel_secret_key = {
-                key = "otel/secret_key";
-                path = "/run/secrets/langfuse.otel_secret_key";
-              };
-            }
-            // lib.optionalAttrs cfg.oidc.enable (
-              secretHelpers.mkSecretsFromMap cfg.secretFiles.oidc {
-                langfuse_oidc_client_secret = {
-                  key = "langfuse/client_secret";
-                  path = "/run/secrets/langfuse.oidc_client_secret";
-                };
-              }
-            )
-          );
-
-          # The operator stores both password forms in the secret file; ClickHouse references the digest by name.
-          sops.templates."langfuse-clickhouse-substitutions" = lib.mkIf hasSecretFile {
-            owner = "clickhouse";
-            group = "clickhouse";
-            mode = "0400";
-            # The digest is read once at startup, so a rotation reaches the
-            # running server only through this restart.
-            restartUnits = [ "clickhouse.service" ];
-            content = ''
-              <clickhouse>
-                <langfuse_ch_password>${config.sops.placeholder.langfuse_clickhouse_password_sha256}</langfuse_ch_password>
-              </clickhouse>
-            '';
-          };
-
-          # Restarting on rotation re-runs upstream's idempotent LANGFUSE_INIT seed.
-          systemd.services.podman-langfuse-web.restartTriggers =
-            lib.optional hasSecretFile
-              config.sops.templates."langfuse.environment".path;
-
-          virtualisation.podman.enable = true;
-
-          systemd.services."podman-network-${cfg.networkName}" = {
-            description = "Create Podman network ${cfg.networkName}";
-            wantedBy = [ "multi-user.target" ];
-            before = [ "podman-langfuse-worker.service" ];
-            serviceConfig = {
-              Type = "oneshot";
-              RemainAfterExit = true;
-              ExecStart = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network exists ${cfg.networkName} || ${pkgs.podman}/bin/podman network create ${cfg.networkName}'";
-              ExecStop = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network rm -f ${cfg.networkName} || true'";
+            "podman-langfuse-worker" = {
+              description = "Langfuse worker (ingestion queue drain into ClickHouse)";
+              wants = [ "network-online.target" ];
+              after = [
+                "network-online.target"
+                "podman-network-${cfg.networkName}.service"
+                "clickhouse.service"
+                "redis-langfuse.service"
+                "postgresql.service"
+                "postgresql-provision.service"
+              ];
+              requires = [
+                "podman-network-${cfg.networkName}.service"
+                "postgresql-provision.service"
+              ];
             };
           };
+        };
 
-          # Host network, not published ports: a published port would bypass the firewall on every interface.
-          virtualisation.oci-containers.containers.langfuse-web = {
-            autoStart = true;
-            image = cfg.image;
-            environment = {
-              PORT = toString cfg.port;
-              HOSTNAME = "0.0.0.0";
-            };
-            environmentFiles = lib.optionals hasSecretFile [
-              config.sops.templates."langfuse.environment".path
-            ];
-            extraOptions = [
-              "--network=host"
-              "--add-host=${serviceHost}:${serviceAddress}"
-            ];
-          };
+        # Container grants only: the Podman pool, not a bridge interface.
+        networking.firewall.extraCommands = (
+          lib.concatStringsSep "\n" [
+            (netHelpers.mkServiceIngressRule {
+              sourceCIDR = containerSourceCIDR;
+              address = serviceAddress;
+              ports = [
+                clickhouseHttpPort
+                9000
+              ];
+            })
+            (netHelpers.mkServiceIngressRule {
+              sourceCIDR = containerSourceCIDR;
+              address = serviceAddress;
+              ports = [ 6379 ];
+            })
+          ]
+        );
 
-          # No inbound ports; reaches the native roles through the service address.
-          virtualisation.oci-containers.containers.langfuse-worker = {
-            autoStart = true;
-            image = cfg.workerImage;
-            environmentFiles = lib.optionals hasSecretFile [
-              config.sops.templates."langfuse.environment".path
-            ];
-            extraOptions = [
-              "--network=${cfg.networkName}"
-              "--add-host=${serviceHost}:${serviceAddress}"
-            ];
-            dependsOn = [ "langfuse-web" ];
-          };
-
-          systemd = {
-            tmpfiles.rules = [
-              "d ${cfg.dataDir} 0755 root root - -"
-              "z ${cfg.dataDir} 0755 root root - -"
-            ];
-
-            services = {
-              "podman-langfuse-web" = {
-                description = "Langfuse web (UI, ingestion API, OTLP endpoint)";
-                wants = [ "network-online.target" ];
-                after = [
-                  "network-online.target"
-                  "clickhouse.service"
-                  "redis-langfuse.service"
-                  "postgresql.service"
-                  "postgresql-provision.service"
-                ];
-                requires = [ "postgresql-provision.service" ];
-                unitConfig.RequiresMountsFor = [ cfg.dataDir ];
-              };
-
-              "podman-langfuse-worker" = {
-                description = "Langfuse worker (ingestion queue drain into ClickHouse)";
-                wants = [ "network-online.target" ];
-                after = [
-                  "network-online.target"
-                  "podman-network-${cfg.networkName}.service"
-                  "clickhouse.service"
-                  "redis-langfuse.service"
-                  "postgresql.service"
-                  "postgresql-provision.service"
-                ];
-                requires = [
-                  "podman-network-${cfg.networkName}.service"
-                  "postgresql-provision.service"
-                ];
-              };
-            };
-          };
-
-          # Container grants only: the Podman pool, not a bridge interface.
-          networking.firewall.extraCommands = lib.mkIf cfg.enable (
-            lib.concatStringsSep "\n" [
-              (netHelpers.mkServiceIngressRule {
-                sourceCIDR = containerSourceCIDR;
-                address = serviceAddress;
-                ports = [
-                  clickhouseHttpPort
-                  9000
-                ];
-              })
-              (netHelpers.mkServiceIngressRule {
-                sourceCIDR = containerSourceCIDR;
-                address = serviceAddress;
-                ports = [ 6379 ];
-              })
-            ]
-          );
-
-          # No state-backups registration: ClickHouse is regenerable, Redis is ephemeral, and the PostgreSQL database rides the substrate's export.
-        })
-      ];
+        # No state-backups registration: ClickHouse is regenerable, Redis is ephemeral, and the PostgreSQL database rides the substrate's export.
+      };
     };
 }

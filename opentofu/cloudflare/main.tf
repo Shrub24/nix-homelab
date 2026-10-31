@@ -42,6 +42,10 @@ locals {
 
   cache_host_expression = "(http.host eq \"cache.shrublab.xyz\")"
 
+  rate_limit_exempt_hosts_expression = join(" or ", [
+    for host in var.rate_limit_exempt_hosts : format("http.host eq \"%s\"", host)
+  ])
+
   # Paths where niks3 serves a content-addressed object (`nar/`, `*.narinfo`,
   # `*.ls`, `realisations/`): a given object never changes after upload, so the
   # edge can hold it indefinitely. Everything else on the host keeps a short TTL.
@@ -63,6 +67,27 @@ locals {
     local.cache_host_expression,
     join(" or ", local.cache_immutable_object_conditions)
   )
+
+  assets_cache_rules = var.assets_cache_enabled ? [
+    {
+      ref         = "cache_published_assets"
+      description = "Hold published brand assets at the edge; rotation purges the replaced object"
+      expression  = format("http.host eq \"%s\"", var.assets_host)
+      action      = "set_cache_settings"
+      enabled     = true
+      action_parameters = {
+        cache = true
+        edge_ttl = {
+          mode    = "override_origin"
+          default = 31536000
+        }
+        browser_ttl = {
+          mode    = "override_origin"
+          default = 300
+        }
+      }
+    }
+  ] : []
 
   cache_bypass_rules = (var.navidrome_cache_bypass_enabled && local.navidrome_host != null) ? [
     {
@@ -130,12 +155,18 @@ resource "cloudflare_zero_trust_access_application" "service" {
   domain     = each.value.publicHost
   type       = "self_hosted"
 
-  policies = [
-    for idx, policy_name in each.value.access.policies : {
-      id         = local.policy_resources_by_name[policy_name]
-      precedence = idx + 1
-    }
-  ]
+  policies = concat(
+    [
+      for idx, policy_name in each.value.access.policies : {
+        id         = local.policy_resources_by_name[policy_name]
+        precedence = idx + 1
+      }
+    ],
+    [{
+      id         = cloudflare_zero_trust_access_policy.allow_machine.id
+      precedence = 100
+    }]
+  )
 
   allowed_idps = length(cloudflare_zero_trust_access_identity_provider.main) > 0 ? [
     cloudflare_zero_trust_access_identity_provider.main[0].id
@@ -152,6 +183,24 @@ resource "cloudflare_zero_trust_access_application" "service" {
 # ---------------------------------------------------------------------------
 # Access policies (standalone, reusable across applications)
 # ---------------------------------------------------------------------------
+
+# Machine client: monitoring probes every published route and has to reach the origin, not
+# the login page, so a service token stands in for a person on every Access application.
+resource "cloudflare_zero_trust_access_service_token" "monitoring" {
+  account_id = var.cloudflare_account_id
+  name       = "monitoring"
+  duration   = "8760h"
+}
+
+resource "cloudflare_zero_trust_access_policy" "allow_machine" {
+  account_id = var.cloudflare_account_id
+  name       = "allow_machine"
+  decision   = "non_identity"
+
+  include = [
+    { service_token = { token_id = cloudflare_zero_trust_access_service_token.monitoring.id } }
+  ]
+}
 
 resource "cloudflare_zero_trust_access_policy" "allow_admins" {
   account_id = var.cloudflare_account_id
@@ -194,11 +243,10 @@ resource "cloudflare_zero_trust_access_policy" "allow_users" {
   name       = "allow_users"
   decision   = "allow"
 
-  # Membership lives in Kanidm (the groups SSOT): the cloudflare-access client's
-  # scope-maps release group NAMES into the `groups` claim (Kanidm scope
-  # groups_name), and this rule matches the `users` group's name in that claim.
-  # Fail-closed: if the claim is absent the rule matches nobody and the route
-  # falls back to allow_admins only.
+  # Membership lives in the identity provider (the groups SSOT): the cloudflare-access
+  # client releases group NAMES into the `groups` claim, and this rule matches the `users`
+  # group's name in that claim. Fail-closed: if the claim is absent the rule matches nobody
+  # and the route falls back to allow_admins only.
   include = [
     {
       oidc = {
@@ -304,7 +352,7 @@ resource "cloudflare_ruleset" "zone_rate_limit" {
   rules = [{
     ref         = "rate_limit_public_services"
     description = "Apply rate limiting for all requests except the sovereign binary cache"
-    expression  = "not (http.host eq \"cache.shrublab.xyz\" or http.host eq \"build-cache.shrublab.xyz\")"
+    expression  = "not (${local.rate_limit_exempt_hosts_expression})${length(var.rate_limit_exempt_ips) > 0 ? " and not (ip.src in {${join(" ", var.rate_limit_exempt_ips)}})" : ""}"
     action      = "block"
     enabled     = var.rate_limit_enabled
     ratelimit = {
@@ -325,11 +373,12 @@ resource "cloudflare_ruleset" "service_cache_bypass" {
   kind        = "zone"
 
   rules = concat(
+    local.assets_cache_rules,
     local.cache_bypass_rules,
     [
       {
         ref         = "cache_immutable_nix_objects"
-        description = "Hold content-addressed Nix cache objects for a year and never store negative lookups"
+        description = "Hold content-addressed Nix cache objects for a year and cache negative lookups briefly"
         expression  = local.cache_immutable_expression
         action      = "set_cache_settings"
         enabled     = true
@@ -349,7 +398,7 @@ resource "cloudflare_ruleset" "service_cache_bypass" {
               # 3xx (including 304 revalidations) stays on the one-year default
               # above: a short 304 TTL would turn every revalidation into a
               # fresh origin round trip.
-              { status_code_range = { from = 400 }, value = -1 },
+              { status_code_range = { from = 400 }, value = 60 },
             ]
           }
         }

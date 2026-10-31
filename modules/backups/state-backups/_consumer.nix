@@ -7,8 +7,6 @@ let
 in
 {
   options.services.state-backups = {
-    enable = lib.mkEnableOption "host-scoped restic backups for mutable service state";
-
     backupName = lib.mkOption {
       type = lib.types.str;
       default = "state";
@@ -31,12 +29,6 @@ in
       type = lib.types.str;
       default = "/srv/data/state-backups";
       description = "Host-local staging root for generated export artifacts captured by restic.";
-    };
-
-    restoreStagePackage = lib.mkOption {
-      type = lib.types.package;
-      readOnly = true;
-      description = "Operator-invoked restic restore-staging helper (state-restore-stage) installed by this module.";
     };
 
     exclude = lib.mkOption {

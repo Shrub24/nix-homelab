@@ -1,6 +1,5 @@
-# Paperless runtime sibling of the `paperless` aspect: deferredModule values
-# merge across sibling files, so the host selects one aspect name.
-_: {
+{ inputs, ... }:
+{
   flake.modules.nixos.paperless =
     {
       lib,
@@ -13,22 +12,17 @@ _: {
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       repoPackages = config.repo.packages;
       oidcEnabled = cfg.oidc.enable;
-      # This application's canonical client record is the single source for its
-      # issuer endpoints; the host supplies enablement and credentials only.
       oidcClient = config.services.identity.oidc.clients.paperless or null;
       socialAccountProvidersJson = builtins.toJSON {
         openid_connect = {
-          SCOPE = [
-            "openid"
-            "profile"
-            "email"
-            "groups_name"
-          ];
+          SCOPE = if oidcClient == null then [ ] else oidcClient.scopes;
           OAUTH_PKCE_ENABLED = true;
+          VERIFIED_EMAIL = true;
+          EMAIL_AUTHENTICATION = true;
           APPS = [
             {
-              provider_id = "kanidm";
-              name = "Kanidm";
+              provider_id = if oidcClient == null then "" else oidcClient.clientId;
+              name = if oidcClient == null then "" else oidcClient.providerName;
               client_id = cfg.oidc.clientId;
               secret = config.sops.placeholder.paperless_oidc_client_secret;
               settings = {
@@ -82,7 +76,7 @@ _: {
         secretFiles.oidc = secretHelpers.mkSecretFileOption "paperless-oidc-secrets";
 
         oidc = {
-          enable = lib.mkEnableOption "Kanidm OIDC login for Paperless";
+          enable = lib.mkEnableOption "OIDC login for Paperless";
 
           wellknownUrl = lib.mkOption {
             type = lib.types.str;
@@ -105,31 +99,32 @@ _: {
             "service-admins"
             "users"
           ];
-          description = "Django groups to pre-seed for OIDC sync. Kanidm groups matching these names have membership synced.";
+          description = "Django groups to pre-seed for OIDC sync. Provider groups matching these names have membership synced.";
         };
       };
 
       config = lib.mkMerge [
-        # Selection is enablement: the aspect supplies the leaf's enable flag.
+        # The nixpkgs module applies its own override on top of this one.
+        {
+          nixpkgs.overlays = [
+            (_final: prev: {
+              paperless-ngx =
+                inputs.nixpkgs-paperless.legacyPackages.${prev.stdenv.hostPlatform.system}.paperless-ngx;
+            })
+          ];
+        }
         { services.paperless.enable = true; }
 
-        (lib.mkIf cfg.enable {
-          # The post-consume hook is the one non-root notify caller here, so it joins the daemon's
-          # group; services.notify.cliGroup stays null because access is per caller.
+        {
+
           users.users.paperless.extraGroups = lib.mkAfter (
             lib.optionals (config.users.groups ? notify) [ "notify" ]
           );
 
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.paperless";
-              label = "secretFiles.host";
-            })
             {
               assertion = !oidcEnabled || oidcClient != null;
-              message = "services.paperless.oidc: canonical OIDC client 'paperless' is missing from services.identity.oidc.clients; check systems.oauth2.paperless in policy/identity.json and the host's kanidm-admin web-policy route.";
+              message = "services.paperless.oidc: canonical OIDC client 'paperless' is missing from services.identity.oidc.clients; check clients.paperless in policy/identity.nix and the identity provider's published route.";
             }
             {
               assertion = !oidcEnabled || cfg.oidc.clientId != null;
@@ -169,6 +164,14 @@ _: {
             owner = "paperless";
             group = "paperless";
             mode = "0400";
+            # Every paperless unit reads this file, and switch-to-configuration cannot see a
+            # rendered-content change: without this a stale environment survives a deploy.
+            restartUnits = [
+              "paperless-web.service"
+              "paperless-consumer.service"
+              "paperless-task-queue.service"
+              "paperless-scheduler.service"
+            ];
             content = ''
               PAPERLESS_SECRET_KEY=${config.sops.placeholder.paperless_secret_key}
             ''
@@ -224,8 +227,6 @@ _: {
             passwordFile = lib.mkDefault config.sops.secrets.paperless_admin_pass.path;
 
             database.createLocally = lib.mkDefault false;
-            # Plain PDFs/images only: no Tika/Gotenberg sidecar for office and
-            # email documents.
             configureTika = lib.mkDefault false;
             openMPThreadingWorkaround = lib.mkDefault true;
 
@@ -240,7 +241,7 @@ _: {
 
               PAPERLESS_OCR_LANGUAGE = "eng";
               PAPERLESS_TIME_ZONE = config.time.timeZone;
-              PAPERLESS_URL = "https://paper.shrublab.xyz";
+              PAPERLESS_URL = "https://paper.${(import ../../policy/globals.nix).domain}";
               PAPERLESS_DATE_ORDER = "DMY";
               PAPERLESS_FILENAME_DATE_ORDER = "YMD";
 
@@ -259,7 +260,7 @@ _: {
             };
           };
 
-          services.postgres.consumers.paperless = lib.mkIf cfg.enable {
+          services.postgres.consumers.paperless = {
             database = "paperless";
           };
 
@@ -290,7 +291,7 @@ _: {
               exec /run/current-system/sw/bin/paperless-manage shell < ${groupSeedScript}
             '';
           };
-        })
+        }
       ];
     };
 }

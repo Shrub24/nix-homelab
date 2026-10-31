@@ -10,12 +10,6 @@ _: {
     }:
     let
       cfg = config.services.navidrome;
-
-      # Extism wasm: the plugin must come from the wasi32 cross set. Asking the host set
-      # links -buildmode=c-shared against the host, which the toolchain cannot link.
-      audiomuseaiPlugin = pkgs.pkgsCross.wasi32.navidromePlugins.audiomuseai;
-
-      # Post-install plugin steps: docs/runbooks/music.md.
     in
     {
       options.services.navidrome.dataDir = lib.mkOption {
@@ -57,8 +51,9 @@ _: {
 
         services.navidrome = {
           openFirewall = false;
-          # Symlinked via tmpfiles rather than set through services.navidrome.plugins, which
-          # would bake the plugin into the build and lose the cache-substitutable package.
+          # The plugin must be bundled for Plugins.Folder to exist: the folder is a fixed
+          # `${finalPackage}/share/plugins`, and the package ships it only with the plugin.
+          withPlugins = lib.mkIf cfg.audiomuse.enable (p: [ p.audiomuseai ]);
           settings = lib.mkMerge [
             {
               MusicFolder = lib.mkDefault cfg.libraryDir;
@@ -75,11 +70,11 @@ _: {
                 DefaultReportRealPath = true;
               };
             }
+            {
+              Plugins.Enabled = cfg.audiomuse.enable;
+            }
             (lib.mkIf cfg.audiomuse.enable {
-              Plugins = {
-                Enabled = true;
-                AutoReload = true;
-              };
+              Plugins.AutoReload = true;
               Agents = "audiomuseai";
               DevArtistInfoTimeToLive = cfg.audiomuse.devArtistInfoTimeToLive;
             })
@@ -98,20 +93,6 @@ _: {
             inherit (cfg) user;
             inherit (cfg) group;
           };
-
-        # The .ndp symlink keeps the stock package; see the note above.
-        systemd.tmpfiles.settings.navidromeDirs."${cfg.dataDir}/plugins" = {
-          "d" = {
-            mode = "700";
-            inherit (cfg) user;
-            inherit (cfg) group;
-          };
-        };
-        systemd.tmpfiles.settings.navidromeDirs."${cfg.dataDir}/plugins/audiomuseai.ndp" = {
-          "L+" = {
-            argument = "${audiomuseaiPlugin}/share/audiomuseai.ndp";
-          };
-        };
 
         systemd.services.navidrome = {
           unitConfig.RequiresMountsFor = [
@@ -133,14 +114,9 @@ _: {
             cfg.quarantineDir
           ];
           # RootDirectory=/run/navidrome means only bind-mounted paths exist, so MusicFolder,
-          # secondary libraries and Plugins.Folder all need binds.
-          serviceConfig.BindReadOnlyPaths = lib.mkAfter (
-            [
-              cfg.quarantineDir
-              "${cfg.dataDir}/plugins:${config.services.navidrome.finalPackage}/share/plugins"
-            ]
-            ++ cfg.extraDirs
-          );
+          # secondary libraries and the plugin folder need binds; the plugin folder reaches
+          # them through the read-only store mount.
+          serviceConfig.BindReadOnlyPaths = lib.mkAfter ([ cfg.quarantineDir ] ++ cfg.extraDirs);
           serviceConfig.PrivateMounts = lib.mkForce false;
           serviceConfig.SupplementaryGroups = lib.mkAfter [
             "media"

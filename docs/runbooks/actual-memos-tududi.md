@@ -8,7 +8,7 @@ All three applications are selected on `oci-melb-1`. Actual Budget and Memos use
 | --- | --- | --- | --- |
 | Actual Budget | https://budget.shrublab.xyz | 5006 | `/openid/callback` |
 | Memos | https://memos.shrublab.xyz | 5230 | `/auth/callback` |
-| tududi | https://tududi.shrublab.xyz | 3002 | `/api/oidc/callback/kanidm` |
+| tududi | https://tududi.shrublab.xyz | 3002 | `/api/oidc/callback/tududi` |
 
 Implementation is not deployment evidence. Initial login, Memos' provider-file access under its systemd sandbox, and client compatibility still need live verification. The missing tududi secret currently prevents the complete OCI host derivation from evaluating.
 
@@ -48,7 +48,7 @@ Check `actual.service`, `memos.service` and `podman-tududi.service` and their jo
 
 ## Memos provider-file acceptance
 
-The provider is delivered as a systemd credential. sops-nix renders `memos-idp-kanidm.json` root-owned under its default `/run/secrets/rendered` directory, and the unit loads it with `LoadCredential=` and binds its credential directory over `/etc/secrets` with `BindReadOnlyPaths=/run/credentials/memos.service:/etc/secrets`. Memos 0.31.0 scans `/etc/secrets` at startup and offers no configurable directory, so the fixed path is preserved inside the unit's namespace while the shared directory keeps its own permissions. The unit orders itself after sops installation, and template rotation requests a service restart.
+The provider is delivered as a systemd credential. sops-nix renders `memos-idp-<client id>.json` root-owned under its default `/run/secrets/rendered` directory, and the unit loads it with `LoadCredential=` and binds its credential directory over `/etc/secrets` with `BindReadOnlyPaths=/run/credentials/memos.service:/etc/secrets`. Memos 0.31.0 scans `/etc/secrets` at startup and offers no configurable directory, so the fixed path is preserved inside the unit's namespace while the shared directory keeps its own permissions. The unit orders itself after sops installation, and template rotation requests a service restart.
 
 This replaces an earlier delivery that rendered the provider directly into `/etc/secrets` owned `memos:memos` with mode `0400`. That failed on the first live deployment: `/run/secrets.d/2/rendered` is `root:root 0750`, so the `memos` account could not stat the file. Changing that shared directory's ownership or mode would widen access to every rendered secret, so it is left alone; the credential copy is the isolation boundary. The bind literal is fixed rather than `%d`-expanded because systemd rejected `%d` in `BindReadOnlyPaths` on the OCI host.
 

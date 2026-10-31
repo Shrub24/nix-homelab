@@ -20,8 +20,6 @@ nix eval --impure --no-write-lock-file --expr '
     # asserted (dial fields are host-relative and asserted per host below).
     catalog = policyLib.serviceCatalog policy "edge-invariant-nominal";
   in
-  assert builtins.hasAttr "kanidm-admin" catalog;
-  assert catalog."kanidm-admin".publicUrl == "https://id.shrublab.xyz";
   assert catalog.paperless.publicUrl == "https://paper.shrublab.xyz";
   assert catalog.karakeep.publicUrl == "https://keep.shrublab.xyz";
   assert catalog.paperless.access.oidc.enabled;
@@ -71,12 +69,12 @@ echo "web-service catalog duplicate-key: PASS"
 nix eval --impure --no-write-lock-file --expr '
   let
     flake = builtins.getFlake (toString ./.);
-    deploy = flake.deployHosts;
+    deploy = flake.fleet;
   in
   assert deploy.edgeHost == "oci-melb-1";
   assert builtins.elem deploy.edgeHost deploy.deployOrder;
-  assert builtins.hasAttr deploy.edgeHost deploy.nodes;
-  assert builtins.attrNames deploy == [ "deployOrder" "edgeHost" "nodes" ];
+  assert builtins.hasAttr deploy.edgeHost deploy.hosts;
+  assert builtins.attrNames deploy == [ "deployOrder" "edgeHost" "hosts" ];
   true
 ' > /dev/null
 echo "deploy default-target boundary: PASS"

@@ -1,5 +1,4 @@
-# Homarr's app bookmarks, projected from web policy. Homarr has no declarative format,
-# so a oneshot unit converges them through its HTTP API; boards stay the user's.
+# Homarr app bookmarks, converged from web policy through Homarr's HTTP API.
 _: {
   flake.modules.nixos.homarr =
     {
@@ -13,8 +12,6 @@ _: {
       route = config.repo.web.catalog.homarr or null;
       catalog = config.repo.web.catalog;
 
-      # `category` separates what a person opens from machine endpoints; `publish`
-      # separates a link from a placeholder for a withheld route.
       apps = lib.filterAttrs (
         name: service:
         (service.category == "app" || service.category == "admin")
@@ -22,20 +19,17 @@ _: {
         && service.publicHost != null
       ) catalog;
 
-      # Slugs diverge where upstream renamed or the route is named for its role.
       iconSlugs = {
         paperless = "paperless-ngx";
         actual = "actual-budget";
         search = "degoog";
         admin-homepage = "homepage";
-        cockpit-oci-melb-1 = "cockpit";
         ntfy-admin = "ntfy";
         termix-admin = "termix";
         vaultwarden-admin = "vaultwarden";
         webhook-admin = "webhook";
         beszel-admin = "beszel";
         gatus-admin = "gatus";
-        kanidm-admin = "kanidm";
         syncthing-home-forge = "syncthing";
         syncthing-oci-melb-1 = "syncthing";
       };
@@ -59,15 +53,14 @@ _: {
       );
     in
     {
-      config = lib.mkIf cfg.enable {
+      config = {
         sops.secrets.homarr_api_key = {
           key = "api_key";
           path = "/run/secrets/homarr.api_key";
           sopsFile = cfg.secretFiles.host;
         };
 
-        # The key is the one operator step (no headless login); until it exists the unit
-        # logs why it did nothing.
+        # The API key is the one operator step: without it the unit converges nothing.
         systemd.services."homarr-apps" = {
           description = "Sync Homarr app bookmarks with the fleet web policy";
           wantedBy = [ "multi-user.target" ];
@@ -80,8 +73,6 @@ _: {
             "sops-install-secrets.service"
           ];
           restartTriggers = [ desired ];
-          # The sync is a oneshot: a failure means it could not converge, which
-          # is worth retrying a few times before it is reported.
           unitConfig = {
             StartLimitIntervalSec = 300;
             StartLimitBurst = 5;

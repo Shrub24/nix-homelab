@@ -1,0 +1,949 @@
+/*
+ * Glass styling adapted from VULGA01/Authentik-Login-theme-Glassmorphism,
+ * revision 00039399b59a253372d4cbd791127ba6d4f8accc.
+ * MIT License — Copyright (c) 2025 VULGA01
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+@font-face {
+  font-family: "Poiret One";
+  src: url("https://cdn.jsdelivr.net/gh/google/fonts@6157dfaa640ca5738b4d1a7070fe389c3036d7fc/ofl/poiretone/PoiretOne-Regular.ttf")
+    format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Montserrat Alternates";
+  src: url("https://cdn.jsdelivr.net/gh/google/fonts@6157dfaa640ca5738b4d1a7070fe389c3036d7fc/ofl/montserratalternates/MontserratAlternates-Medium.ttf")
+    format("truetype");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Montserrat Alternates";
+  src: url("https://cdn.jsdelivr.net/gh/google/fonts@6157dfaa640ca5738b4d1a7070fe389c3036d7fc/ofl/montserratalternates/MontserratAlternates-SemiBold.ttf")
+    format("truetype");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+/* Surfaces */
+:root,
+:host {
+  --shrublab-glass: rgb(12 18 28 / 32%);
+  --shrublab-glass-blur: 28px;
+  --shrublab-border: rgb(255 255 255 / 16%);
+  --shrublab-shadow: 0 16px 48px rgb(0 0 0 / 24%);
+  --shrublab-radius: 20px;
+  /* Poiret One only reads at display size. */
+  --pf-global--FontFamily--sans-serif:
+    "Montserrat Alternates", system-ui, sans-serif;
+  --pf-global--FontFamily--heading--sans-serif:
+    "Montserrat Alternates", system-ui, sans-serif;
+  --pf-global--FontFamily--overpass--sans-serif:
+    "Montserrat Alternates", system-ui, sans-serif;
+  --pf-global--FontSize--xs: 0.9rem;
+  --pf-global--FontSize--sm: 1rem;
+  --pf-global--FontSize--md: 1.1rem;
+}
+
+/* Authentik owns body::before and the dashboard background layer. */
+body:has(ak-flow-executor)::before {
+  background-image:
+    linear-gradient(
+      var(--shrublab-background-tint),
+      var(--shrublab-background-tint)
+    ),
+    var(--ak-global--background-image, var(--shrublab-wallpaper));
+}
+
+.pf-c-login {
+  --ak-c-login--MaxWidth: 33rem;
+  --ak-c-login__main--BackgroundColor: var(--shrublab-glass);
+  --ak-c-login--spacer: clamp(1.5rem, 6vw, 5.75rem);
+  --ak-c-login__main--Color: #f5f5f5;
+  --ak-c-login__main--BoxShadow: var(--shrublab-shadow);
+  --ak-c-login__main--brand-PaddingIdeal: 6.5rem;
+  --ak-c-login__main--footer-PaddingIdeal: 4.5rem;
+  --ak-c-login__main-header-PaddingBlock: 1.75rem;
+  --ak-c-login--BackgroundColorOverlay: transparent;
+  --pf-c-login__main-footer-band--BackgroundColor: transparent;
+  --pf-c-login__main-header-desc--Color: #e0e0e0;
+}
+
+ak-flow-executor {
+  display: block;
+  height: 100dvh;
+  overflow-y: auto;
+}
+
+.pf-c-login {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  min-height: 100dvh;
+  padding-block: 2rem;
+}
+
+.pf-c-login > ak-locale-select {
+  position: absolute;
+  inset-block-start: 1rem;
+  inset-inline-start: 1rem;
+}
+
+.pf-c-login__header,
+.pf-c-login__footer,
+.pf-c-login::before,
+.pf-c-login::after {
+  display: none;
+}
+
+/* Bounded brand-block padding keeps every flow inside the fixed pane without scrolling. */
+.pf-c-login__main-header,
+.pf-c-login__main-header .pf-c-brand,
+.pf-c-brand {
+  padding-block: 2rem 1.25rem !important;
+}
+
+/* Matching end padding keeps the space-between card balanced. */
+.pf-c-login__main > :not(.pf-c-login__main-header) {
+  padding-block-end: 2rem !important;
+}
+
+img.branding-logo {
+  padding: 0 !important;
+  height: 5.5rem !important;
+  width: auto !important;
+  max-height: 5.5rem;
+  object-fit: contain;
+}
+
+.pf-c-login__main {
+  flex: none;
+  align-self: center;
+
+  /* One pane sized for the tallest flow, so nothing moves between steps. */
+  box-sizing: border-box;
+  width: 33rem;
+  height: 40.5rem;
+
+  /* Fixed start keeps the logo in place on every screen. */
+  justify-content: flex-start;
+  padding-block-start: 3.375rem;
+  gap: 2.5rem;
+  zoom: clamp(0.5, calc(min(100dvh / 46rem, 100vw / 38rem)), 1);
+  overflow-y: auto;
+  border: 0;
+  border-radius: clamp(1.5rem, 4vw, 4rem);
+
+  color: var(--ak-c-login__main--Color);
+}
+
+.pf-c-login__main-body {
+  flex: 1 1 auto;
+}
+
+.pf-c-login__main-header .branding-logo {
+  width: min(20rem, 80%);
+  height: auto;
+  max-height: 140px;
+  object-fit: contain;
+}
+
+.pf-c-login__main-header:not(.pf-c-brand) {
+  padding-inline: var(--ak-c-login--spacer);
+}
+
+.pf-c-login__main-header .pf-c-title {
+  text-align: center;
+  width: 100%;
+}
+
+.pf-c-login,
+:host(ak-stage-identification),
+:host(ak-stage-password),
+:host(ak-stage-prompt),
+:host(ak-stage-authenticator-validate),
+:host(ak-stage-authenticator-validate-code),
+:host(ak-stage-authenticator-validate-webauthn),
+:host(ak-stage-authenticator-validate-duo) {
+  .pf-c-form {
+    --pf-c-form--GridGap: 2.5rem;
+    --pf-c-form__group--m-action--MarginTop: 1rem;
+    --pf-c-form__label--Color: #e0e3e8;
+  }
+
+  /* Monospace for the entered code, not the placeholder. */
+  .pf-c-form-control.pf-m-monospace {
+    font-family: ui-monospace, "SFMono-Regular", monospace;
+  }
+
+  .pf-c-form-control.pf-m-monospace:not(:placeholder-shown) {
+    letter-spacing: 0.3em;
+  }
+
+  .pf-c-form__helper-text {
+    margin-block-start: 0.5rem;
+  }
+
+  .pf-c-form__label-text {
+    font-weight: 500;
+    color: #e0e3e8;
+  }
+
+  .pf-c-form > p {
+    margin: 0;
+    font-family: "Montserrat Alternates", system-ui, sans-serif;
+    font-size: 1.15rem;
+    font-weight: 500;
+    line-height: 1.5;
+    color: #eef2f8;
+    text-align: center;
+  }
+
+  .pf-c-form-control::placeholder {
+    font-style: normal;
+    font-weight: 400;
+    color: rgb(255 255 255 / 90%);
+    font-size: 1.3rem;
+    transition: color 200ms ease;
+  }
+
+  .pf-c-form-control:focus::placeholder {
+    color: rgb(255 255 255 / 45%);
+  }
+
+  .pf-c-form-control {
+    --pf-c-form-control--BackgroundColor: transparent;
+    --pf-c-form-control--Color: #fff;
+    --shrublab-field-line: rgb(255 255 255 / 70%);
+    border: 0;
+    border-bottom: 1px solid var(--shrublab-field-line);
+    border-radius: 0;
+    min-height: 3.25rem;
+    padding: 1.1rem 0.6rem 0.5rem;
+    font-family: "Poiret One", system-ui, sans-serif;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 1.6rem;
+    letter-spacing: 0.02em;
+    caret-color: #fff;
+    transition:
+      border-bottom-color 160ms ease,
+      box-shadow 160ms ease;
+
+    &:focus {
+      --shrublab-field-line: #fff;
+      outline: none;
+      box-shadow: 0 1px 0 var(--shrublab-field-line);
+    }
+
+    &[aria-invalid="true"] {
+      --shrublab-field-line: var(--pf-global--danger-color--100);
+    }
+  }
+
+  .pf-c-form-control[type="password"]:not(:placeholder-shown) {
+    font-family: system-ui, sans-serif;
+    font-size: 1.4rem;
+    letter-spacing: 0.15em;
+  }
+
+  .pf-c-input-group {
+    align-items: stretch;
+
+    .pf-c-button.pf-m-control {
+      background: transparent;
+      border: 0;
+      border-bottom: 1px solid rgb(255 255 255 / 70%);
+      border-radius: 0;
+      padding: 1.1rem 0.6rem 0.5rem;
+      transition:
+        border-bottom-color 160ms ease,
+        box-shadow 160ms ease;
+
+      &::after {
+        border: 0;
+      }
+    }
+
+    &:focus-within .pf-c-button.pf-m-control {
+      border-bottom-color: #fff;
+      box-shadow: 0 1px 0 #fff;
+    }
+  }
+
+  .pf-c-button {
+    --pf-c-button--BorderRadius: 16px;
+  }
+
+  .pf-c-button.pf-m-primary {
+    --pf-c-button--m-primary--BackgroundColor: rgb(255 255 255 / 10%);
+    --pf-c-button--m-primary--hover--BackgroundColor: rgb(255 255 255 / 16%);
+    --pf-c-button--m-primary--focus--BackgroundColor: rgb(255 255 255 / 16%);
+    --pf-c-button--m-primary--active--BackgroundColor: rgb(255 255 255 / 22%);
+    border: 0;
+    min-height: 3.25rem;
+    font-family: "Montserrat Alternates", system-ui, sans-serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    margin-block-start: 1rem;
+  }
+
+  /* Visual order only; tab order is unchanged. */
+  .pf-c-form > .pf-c-form__group:has(> input[name="uidField"]) {
+    display: contents;
+  }
+
+  .pf-c-form > ak-flow-input-password {
+    order: 1;
+  }
+
+  .pf-c-form > .pf-c-form__group.pf-m-action {
+    order: 3;
+  }
+
+  .remember-me-switch {
+    order: 2;
+    align-items: center;
+    margin-block: -1.5rem 0.25rem;
+    font-family: "Poiret One", system-ui, sans-serif;
+    font-size: 1.25rem;
+    cursor: pointer;
+
+    .pf-c-switch__input {
+      appearance: none;
+      flex: none;
+      width: 2.5rem;
+      height: 1.4rem;
+      margin: 0;
+      border-radius: 999px;
+      background:
+        radial-gradient(
+            circle at 0.7rem 50%,
+            #fff 0.5rem,
+            transparent calc(0.5rem + 1px)
+          )
+          no-repeat,
+        rgb(255 255 255 / 18%);
+      background-position: 0 0;
+      background-size: 100% 100%;
+      transition:
+        background-color 200ms ease,
+        background-position 200ms ease;
+      cursor: pointer;
+
+      &:checked {
+        background:
+          radial-gradient(
+              circle at 0.7rem 50%,
+              #fff 0.5rem,
+              transparent calc(0.5rem + 1px)
+            )
+            no-repeat,
+          rgb(255 255 255 / 55%);
+        background-position: 1.1rem 0;
+        background-size: 100% 100%;
+      }
+
+      &:focus-visible {
+        outline: 2px solid #fff;
+        outline-offset: 3px;
+      }
+    }
+  }
+}
+
+/* The logo is the heading; titles stay for screen readers. */
+:host(ak-flow-card) .pf-c-login__main-header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+ak-flow-card:has(input[name="password"]) {
+  label.pf-c-form__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* Label stays for assistive technology only. */
+:host(ak-stage-authenticator-validate-code) .pf-c-form__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+:host(ak-form-static) {
+  text-align: center;
+}
+
+/* Avatar, name, then "Not you?" in one centred column. */
+:host(ak-form-static) .form-control-static {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+:host(ak-form-static) .form-control-static > * {
+  margin: 0;
+}
+
+:host(ak-form-static) .primary-content,
+:host(ak-form-static) .pf-c-form__group-control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+:host(ak-form-static) .pf-c-avatar {
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-block-end: 0.35rem;
+}
+
+/* The signed-in identity carries the display weight. */
+:host(ak-form-static) .username {
+  font-family: "Montserrat Alternates", system-ui, sans-serif;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #fff;
+}
+
+:host(ak-form-static) .links {
+  display: flex;
+  justify-content: center;
+}
+
+:host(ak-form-static) a {
+  font-family: "Montserrat Alternates", system-ui, sans-serif;
+  font-size: 0.95rem;
+  margin-block-start: 0.15rem;
+  color: #cfe4ff;
+}
+
+a.pf-c-login__main-footer-links-item-link,
+.pf-c-login__main-footer-band a {
+  color: #cfe4ff;
+  font-size: 1.15rem;
+}
+
+/* Result screens are an icon and a sentence; drop PatternFly's full-page padding. */
+.pf-c-empty-state {
+  padding-block: 0;
+}
+
+.pf-c-empty-state__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.pf-c-empty-state__icon {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.pf-c-empty-state .pf-c-title {
+  margin: 0;
+}
+
+/* No brand setting exists for the attribution link. */
+ul[aria-label="Site links"] > li:last-child {
+  display: none;
+}
+
+@media (max-width: 35rem) {
+  /* Only notification, settings and profile controls remain. */
+  :host(ak-interface-user) .pf-c-page__header {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  :host(ak-interface-user) .pf-c-page__header::before {
+    display: none;
+  }
+
+  :host(ak-interface-user) .pf-c-page__header-brand {
+    display: none;
+  }
+
+  /* Tools go top-right on a phone. */
+  :host(ak-interface-user) .pf-c-page__header {
+    justify-content: end;
+  }
+
+  :host(ak-interface-user) .pf-c-page__header-tools {
+    margin-inline-start: auto;
+  }
+
+  /* Scale the placeholder so it is not clipped mid-word. */
+  :host(ak-library-impl) .pf-c-form-control {
+    font-size: clamp(1rem, 5.2vw, 1.9rem) !important;
+  }
+
+  /* The picker's fixed width overflows a 420px viewport and exposes a sideways-scrollable strip. */
+  ak-locale-select {
+    width: auto;
+    max-width: calc(100% - 2rem);
+    right: 1rem;
+  }
+
+  .pf-c-login {
+    --ak-c-login__main--brand-PaddingIdeal: 2.5rem;
+    --ak-c-login__main--footer-PaddingIdeal: 2rem;
+    --ak-c-login__main-header-PaddingBlock: 1rem;
+
+    min-height: 0;
+    padding-block: 0;
+  }
+
+  .pf-c-login__main {
+    width: 100%;
+    height: auto;
+    min-height: 100dvh;
+    zoom: 1;
+    overflow-y: visible;
+    border-radius: 0;
+    flex-direction: column;
+    justify-content: center;
+    padding-block-start: 0;
+    gap: 1.5rem;
+  }
+}
+
+/* Dashboard */
+:host(ak-interface-user) .pf-c-page__header {
+  position: relative;
+  z-index: 300;
+  background: transparent;
+}
+
+/* A backdrop-filter on the header itself would make it the backdrop root and leave the profile menu unblurred. */
+:host(ak-interface-user) .pf-c-page__header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: rgb(18 20 26 / 45%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  pointer-events: none;
+}
+
+:host(ak-interface-user) .pf-c-page__header-brand-link {
+  display: flex;
+  align-items: center;
+}
+
+:host(ak-interface-user) img.pf-c-brand {
+  /* The bar shows the icon; the login card keeps the horizontal logo. */
+  content: var(--shrublab-icon);
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+}
+
+:host(ak-library-impl) .pf-c-page__title {
+  color: #fff;
+  font-family: "Poiret One", system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 2.25rem;
+}
+
+:host(ak-library-impl) h2 {
+  font-family: "Poiret One", system-ui, sans-serif;
+  font-weight: 400;
+  font-size: 1.9rem;
+}
+
+:host(ak-library-impl) #application-search-input {
+  --pf-c-form-control--Color: #fff;
+  font-family: "Poiret One", system-ui, sans-serif;
+  font-size: 1.9rem;
+  padding-block: 0.9rem;
+  background: transparent;
+  border-radius: 0;
+}
+
+.clamp-wrapper {
+  color: #fff;
+  font-family: "Montserrat Alternates", system-ui, sans-serif;
+  font-weight: 500;
+}
+
+:host(ak-library-impl) #application-search-input::placeholder {
+  color: #fff;
+  opacity: 0.85;
+}
+
+:host(ak-library-impl) .pf-c-card {
+  --pf-c-card--BackgroundColor: var(--shrublab-glass);
+  --pf-c-card--BoxShadow: 0 4px 16px rgb(0 0 0 / 16%);
+}
+
+/* One frosted surface for the login pane and dashboard tiles. */
+.pf-c-login__main,
+:host(ak-library-impl) .pf-c-card {
+  background: var(--shrublab-glass);
+  border: 0;
+  backdrop-filter: blur(var(--shrublab-glass-blur));
+  -webkit-backdrop-filter: blur(var(--shrublab-glass-blur));
+}
+
+:host(ak-library-impl) .pf-c-card {
+  border-radius: var(--shrublab-radius);
+}
+
+/* One column: Authentik's second column stays empty with a single app group. */
+:host(ak-library-impl) {
+  --shrublab-content-width: 72rem;
+  --shrublab-tile-min: 7rem;
+  --shrublab-tile-max: 11rem;
+}
+
+/* The header's inline-size containment forces an early wrap, so it is turned off. */
+:host(ak-library-impl) .pf-c-page__header {
+  container-type: normal;
+  display: flex;
+  flex-flow: row wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  width: 100%;
+  max-width: var(--shrublab-content-width);
+  margin-inline: auto;
+  padding-block-end: 0.5rem;
+}
+
+/* Heading text stays for assistive technology. */
+:host(ak-library-impl) .pf-c-page__title {
+  flex: 1 1 100%;
+  height: clamp(5.5rem, 13vw, 8.5rem);
+  margin: 0;
+  background: var(--shrublab-logo, none) center / contain no-repeat;
+  font-size: 0;
+  color: transparent;
+}
+
+/* The view toggle keeps its place in the flow, immediately left of the search. */
+:host(ak-library-impl)
+  .pf-c-page__header
+  > :not(.pf-c-page__title):not(search) {
+  flex: 0 0 auto;
+}
+
+:host(ak-library-impl) .pf-c-page__header search {
+  display: flex;
+  flex: 0 1 30rem;
+  margin: 0;
+}
+
+:host(ak-library-impl) .pf-c-page__header search form {
+  flex: 1 1 auto;
+}
+
+/* List view is one pane; the groups dissolve into it. */
+:host(ak-library-impl) [part="app-list"][data-view-mode="list"] {
+  background: var(--shrublab-glass);
+  border-radius: var(--shrublab-radius);
+  backdrop-filter: blur(var(--shrublab-glass-blur));
+  -webkit-backdrop-filter: blur(var(--shrublab-glass-blur));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%);
+  overflow: hidden;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="list"]
+  [part="app-group"] {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  row-gap: 0 !important;
+  min-inline-size: 0;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="list"]
+  [part="app-group-rows"] {
+  background: transparent !important;
+  border-radius: 0 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  row-gap: 0 !important;
+
+  /* One column template so icons and titles align across groups. */
+  grid-template-columns: 3.5rem minmax(0, 1fr) 2rem !important;
+  column-gap: 2.5rem !important;
+}
+
+/* Keep every row divider except the last. */
+:host(ak-library-impl) [part="app-list"][data-view-mode="list"] [part="row"] {
+  border-bottom: 1px solid rgb(255 255 255 / 12%) !important;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="list"]
+  [part="app-group"]:last-of-type
+  [part="row"]:last-child {
+  border-bottom: 0 !important;
+}
+
+/* Match the header width so grid and list share one centred column. */
+:host(ak-library-impl) .pf-c-page__main {
+  width: 100%;
+}
+
+:host(ak-library-impl) .pf-c-page__main-section {
+  width: 100%;
+  max-width: var(--shrublab-content-width);
+  margin-inline: auto;
+}
+
+/* Grid view dissolves group wrappers into one flat run. */
+:host(ak-library-impl) [part="app-list"][data-view-mode="grid"] {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: start;
+  gap: 1rem;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="grid"]
+  [part="app-group"],
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="grid"]
+  [part="app-group-rows"] {
+  display: contents;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="grid"]
+  [part="app-group-header"],
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="grid"]
+  [part="app-group-separator"] {
+  display: none;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="grid"]
+  [part="card-wrapper"] {
+  flex: 0 0 auto;
+  width: 11rem;
+}
+
+/* No hover underline on names. */
+:host(ak-library-impl) a,
+:host(ak-library-impl) a:hover,
+:host(ak-library-impl) a:focus,
+:host(ak-library-impl) [part="row-title"],
+:host(ak-library-impl) [part="card-header-title"] {
+  text-decoration: none;
+}
+
+:host(ak-library-impl) [part="app-list"] {
+  --app-list-column-count: 1 !important;
+  max-width: var(--shrublab-content-width);
+  margin-inline: auto;
+}
+
+/* Rows are one reading column. */
+:host(ak-library-impl) [part="app-list"][data-view-mode="list"] {
+  max-width: 30rem;
+  margin-inline: auto;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="list"]
+  [part="row-link"] {
+  align-items: center;
+  min-height: 3.75rem;
+  column-gap: 2.5rem;
+  padding-block: 0.5rem;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="list"]
+  [part="row-icon-host"] {
+  --icon-height: 3.5rem;
+  width: 3.5rem;
+  height: 3.5rem;
+  flex: none;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="list"]
+  [part="row-icon-host"]
+  ak-app-icon {
+  width: 100%;
+  height: 100%;
+
+  /* Inherited into the icon's shadow root. */
+  --shrublab-icon-fill: 100%;
+}
+
+/* ak-app-icon sets `width: auto` in its shadow root; list rows fill the square instead. */
+:host(ak-app-icon) img,
+:host(ak-app-icon) svg {
+  width: var(--shrublab-icon-fill, auto) !important;
+  height: var(--shrublab-icon-fill, auto) !important;
+  object-fit: contain;
+}
+
+/* Group headers and separators are never shown. */
+:host(ak-library-impl) [part="app-group-header"],
+:host(ak-library-impl) [part="app-group-separator"] {
+  display: none !important;
+}
+
+/* The mark hangs off the row link, since the text column stacks children vertically. Images are generated per slug in theme.nix. */
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="list"]
+  [part="row-link"] {
+  /* Anchor to the row, which spans the pane; the link stops short of its edge. */
+  position: static;
+  padding-inline-start: 0.5rem;
+}
+
+:host(ak-library-impl) [part="app-list"][data-view-mode="list"] [part="row"] {
+  position: relative;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="list"]
+  [part="row-link"]::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: 2rem;
+  width: 2rem;
+  height: 2rem;
+  transform: translateY(-50%);
+  background-position: center;
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+:host(ak-library-impl)
+  [part="app-list"][data-view-mode="list"]
+  [part="row-title"] {
+  font-family: "Montserrat Alternates", system-ui, sans-serif;
+  font-size: 1.5rem;
+  /* Row layout centres it otherwise. */
+  margin-inline-end: auto !important;
+  text-align: start;
+  font-weight: 500;
+}
+
+:host(ak-library-impl) [part="app-group"] {
+  width: 100% !important;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(var(--shrublab-tile-min), var(--shrublab-tile-max))
+  );
+  justify-content: center;
+}
+
+/* Each shadow root adopts this stylesheet, so surfaces are named at the component that renders them. */
+.pf-c-card,
+.pf-c-dropdown__menu,
+:host(ak-notification-drawer) .pf-c-notification-drawer,
+:host(ak-api-drawer) .pf-c-notification-drawer {
+  background: var(--shrublab-glass) !important;
+  border: 0 !important;
+  border-radius: var(--shrublab-radius);
+  backdrop-filter: blur(var(--shrublab-glass-blur));
+  -webkit-backdrop-filter: blur(var(--shrublab-glass-blur));
+}
+
+.pf-c-dropdown__menu-item {
+  border-radius: 0.75rem;
+  color: #fff;
+  transition: background-color 160ms ease;
+}
+
+.pf-c-dropdown__menu-item:hover,
+.pf-c-dropdown__menu-item:focus,
+.pf-c-dropdown__menu-item:focus-visible {
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+  outline: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-c-form-control,
+  .pf-c-form-control::placeholder,
+  .pf-c-input-group .pf-c-button.pf-m-control,
+  .remember-me-switch .pf-c-switch__input {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .pf-c-login {
+    --ak-c-login__main--BackgroundColor: #181b24;
+  }
+
+  :root,
+  :host {
+    --shrublab-glass: #181b24;
+  }
+
+  .pf-c-login__main,
+  :host(ak-library-impl) .pf-c-card,
+  :host(ak-library-impl) [part="app-group-rows"],
+  :host(ak-interface-user) .pf-c-page__header {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

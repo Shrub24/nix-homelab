@@ -65,11 +65,11 @@ _: {
         '';
     in
     {
-      imports = [ ../database/postgres/_consumer.nix ];
+      imports = [
+        ../database/postgres/_consumer.nix
+      ];
 
       options.services.inbox-zero = {
-        enable = lib.mkEnableOption "Inbox Zero Gmail assistant";
-
         secretFiles.host = secretHelpers.mkSecretFileOption "inbox-zero-host-secrets";
 
         networkSubnet = lib.mkOption {
@@ -85,9 +85,9 @@ _: {
 
       config = lib.mkMerge [
         # Selection is enablement.
-        { services.inbox-zero.enable = true; }
 
-        (lib.mkIf cfg.enable {
+        {
+
           assertions = [
             {
               assertion = route != null;
@@ -101,12 +101,6 @@ _: {
               assertion = bifrost != "";
               message = "services.inbox-zero: services.bifrost.endpoint is unavailable; select the bifrost aspect on this host.";
             }
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.inbox-zero";
-              label = "secretFiles.host";
-            })
           ];
 
           # The database role and its scram password come from the same key the
@@ -316,7 +310,7 @@ _: {
             "inbox-zero-watch-renewal".failure = { };
             "inbox-zero-scheduled-actions".failure = { };
           };
-        })
+        }
       ];
     };
 }

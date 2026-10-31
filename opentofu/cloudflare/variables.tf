@@ -80,7 +80,7 @@ variable "aop_enabled" {
 }
 
 # -----------------------------------------------------------------------------
-# Zero Trust Identity Provider (Kanidm generic OIDC)
+# Zero Trust Identity Provider (generic OIDC against the fleet identity provider)
 # -----------------------------------------------------------------------------
 
 variable "idp_type" {
@@ -92,7 +92,7 @@ variable "idp_type" {
 variable "idp_name" {
   description = "Zero Trust IdP name shown on the login page"
   type        = string
-  default     = "Kanidm"
+  default     = "Authentik"
 }
 
 variable "idp_client_id" {
@@ -135,7 +135,7 @@ variable "idp_client_secret" {
 variable "idp_auth_url" {
   description = "OIDC authorization endpoint URL for the Cloudflare Access upstream IdP"
   type        = string
-  default     = "https://kanidm.shrublab.xyz/oauth2/openid/cloudflare-access/authorize"
+  default     = "https://auth.shrublab.xyz/application/o/authorize/"
 
   # validation {
   #   condition = (
@@ -152,7 +152,7 @@ variable "idp_auth_url" {
 variable "idp_token_url" {
   description = "OIDC token endpoint URL for the Cloudflare Access upstream IdP"
   type        = string
-  default     = "https://kanidm.shrublab.xyz/oauth2/token"
+  default     = "https://auth.shrublab.xyz/application/o/token/"
 
   # validation {
   #   condition = (
@@ -169,7 +169,7 @@ variable "idp_token_url" {
 variable "idp_certs_url" {
   description = "OIDC JWKS endpoint URL for the Cloudflare Access upstream IdP"
   type        = string
-  default     = "https://kanidm.shrublab.xyz/oauth2/openid/cloudflare-access/public_key.jwk"
+  default     = "https://auth.shrublab.xyz/application/o/cloudflare-access/jwks/"
 
   # validation {
   #   condition = (
@@ -256,6 +256,35 @@ variable "rate_limit_requests_per_period" {
   description = "Allowed requests per period before mitigation"
   type        = number
   default     = 200
+}
+
+variable "rate_limit_exempt_ips" {
+  description = "Source addresses excluded from zone rate limiting (operator or monitoring egress)"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for ip in var.rate_limit_exempt_ips : can(cidrhost(ip, 0)) || can(cidrhost("${ip}/32", 0))])
+    error_message = "rate_limit_exempt_ips entries must be IPv4 addresses or CIDR ranges."
+  }
+}
+
+variable "rate_limit_exempt_hosts" {
+  description = "Hosts excluded from the zone rate limit: static object delivery, where a limit protects nothing and breaks asset rendering."
+  type        = list(string)
+  default     = ["cache.shrublab.xyz", "build-cache.shrublab.xyz", "assets.shrublab.xyz"]
+}
+
+variable "assets_host" {
+  description = "Hostname serving the public assets bucket, cached as static content."
+  type        = string
+  default     = "assets.shrublab.xyz"
+}
+
+variable "assets_cache_enabled" {
+  description = "Hold published assets at the edge for a year. Rotation purges the object, so a long edge lifetime is safe while the browser lifetime stays short."
+  type        = bool
+  default     = true
 }
 
 variable "rate_limit_requests_to_origin" {

@@ -7,6 +7,7 @@ _: {
       config,
       lib,
       pkgs,
+      options,
       ...
     }:
     let
@@ -131,15 +132,18 @@ _: {
     in
     {
       imports = [ ./state-backups/_consumer.nix ];
+
+      # Declared here, not in the contract: its presence is how a consumer tells that this
+      # mechanism is selected rather than merely imported.
+      options.services.state-backups.restoreStagePackage = lib.mkOption {
+        type = lib.types.package;
+        readOnly = true;
+        description = "Operator-invoked restic restore-staging helper (state-restore-stage) installed by this module.";
+      };
+
       config = lib.mkMerge [
-        (lib.mkIf cfg.enable {
+        {
           assertions = [
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFile;
-              feature = "services.state-backups";
-              label = "secretFile";
-            })
             {
               assertion = cfg.bucket != "";
               message = "services.state-backups.bucket must be set when host state backups are enabled.";
@@ -215,12 +219,10 @@ _: {
             pkgs.sqlite
             restoreStageScript
           ];
-        })
+        }
         {
-          # The restic capability activates only when the conventional host
-          # secret exists.
+          # Host-specific facts arrive only when the conventional host secret exists.
           services.state-backups = lib.mkIf hasHostSecrets {
-            enable = true;
             secretFile = hostSystemSecret;
             bucket = lib.mkDefault bucketName;
           };

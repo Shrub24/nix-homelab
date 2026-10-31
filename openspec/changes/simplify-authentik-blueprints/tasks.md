@@ -1,0 +1,27 @@
+# Tasks
+
+One bounded writer task per dispatch, retaining the writer lineage for this working directory. Parent owns expensive gates and integration. Read lean-implementation and testing-discipline before implementation. Keep unrelated current work intact. No secret edits or live deployment; satisfy the Git-index precondition before local `.#` evaluation. Preserve the runtime secret bootstrap gate.
+
+## 1. Release-schema adapter
+
+- [x] 1.1 Add the minimal ruamel.yaml/python-jsonschema helper beside the Authentik owner, using `authentikComponents.staticWorkdirDeps/blueprints/schema.json` as schema authority. Prove it against the existing rendered blueprint before conversion: supported tagged references pass unresolved; invalid literal enum/foreign-key siblings fail; unknown tags fail; source locations/entry identity are reported without values that could contain secrets. Land focused helper tests and a short validation-boundary explanation in `docs/identity.md`. Verify through a focused Python test command in the pinned dependency environment and the current blueprint build.
+
+## 2. Native YAML authoring
+
+- [x] 2.1 Convert the static entries in `_enrollment.nix`, `_recovery.nix`, `_email-verification.nix`, `_passkeys.nix`, `_wording.nix` and fixed scope expressions to real YAML under an underscore-private directory. Keep fleet projections in Nix and assemble one document in `blueprints.nix` with the standard library serializer and explicit order/context. Remove the superseded static Nix files and custom emitter. Add editor schema/tag support without a moving CI schema dependency. Verify a one-time tag-preserving parsed comparison against the pre-conversion document, preserving IDs, expressions, states and relationships; explain any context representation differences. Run the schema helper and adapt `tests/assert-authentik-email-policy.py` so its existing behavioural cases run on the assembled source. Update authoring paths in `docs/identity.md` in this task.
+
+## 3. Activation-time importer gate
+
+- [x] 3.1 Add a bounded provider-owned systemd oneshot using the pinned Authentik management environment and runtime credentials. Order it after substrate provisioning/migrations/default prerequisites, run rollback-backed importer validation, and observe successful application of the shipped hash through the existing reconciliation mechanism. Re-run on blueprint/relevant runtime changes; fail promptly and redact diagnostics. Verify local unit ordering/trigger evaluation and exercise valid, invalid-reference, stale-success-hash and timeout cases against an isolated compatible database/runtime. Include a negative activation experiment proving the nonzero result reaches NixOS/deploy-rs, not only journald. Document its mechanism and operator failure/recovery steps separately; do not claim DB rollback from generation rollback. Leave this task open if only static wiring is verified.
+
+## 4. Remove superseded checks and integrate
+
+- [x] 4.1 Delete duplicated schema/emitter/reference/binding checks once their replacements are exercised. Prune configuration-echo and source-substring assertions from `tests/check-identity-contract-directionality.sh`; retain narrow seed/group/admission security behaviour, intrinsic client isolation, Cloudflare agreement and email-proof behaviour. Register the schema/helper check in the normal flake/check path using the existing owner pattern. Verify focused `bash tests/check-identity-contract-directionality.sh` and helper tests, including intended negative cases; update the documented proof boundary rather than adding snapshots.
+- [x] 4.2 Parent runs `treefmt --fail-on-change`, `just checks all`, the focused blueprint/schema build and `nix flake check --no-build --all-systems` on the settled indexed tree. Obtain a fresh bounded read-only review, resolve accepted findings and record evidence plus any remaining runtime/browser acceptance. Verify no unexpected provider units on non-provider hosts. No production deployment is implied.
+
+  Evidence: `treefmt --fail-on-change` clean; `nix flake check --no-build --all-systems` reports all checks passed; `checks.<system>.authentik-blueprint-tools` builds; `just checks all` exits 0 (identity contract and email-proof pass, Kanidm restore skips). `la-admin-1` and `home-forge` schedule no `authentik*` unit. Gate acceptance: `tests/authentik-blueprint-delivery.nix` exits 0 for valid application, stale-hash re-application, invalid-reference activation failure and stalled-worker timeout. Review was a parent read-only pass (no child agent tool was available in this session): accepted findings fixed (300 s/360 s bounds for a 146-entry first boot, helper output-path cleanup, check no longer needs ambient Python, test-only normalization removed from the build tool, dead `providerUrl` argument, duplicated unit lists). The harness caught a regression from that last cleanup — collapsing the unit lists dropped the `after` attribute and the gate started at boot — so the ordering is restored and the harness re-run green. Unperformed: live deployment, browser password/passkey acceptance, decision record.
+
+## Workflow follow-up
+
+- Request explicit deployment approval; after deployment confirm the gate accepts the current hash and password/passkey login still works. Keep any unperformed runtime acceptance explicit.
+- Record confirmed rationale through keep-the-why before archiving. Kanidm retirement and unrelated cleanup remain separate work.

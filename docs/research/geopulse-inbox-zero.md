@@ -249,7 +249,7 @@ Redis is therefore optional for a minimal first deployment. A native Redis insta
 - Mixed native and container stack: `modules/observability/latitude.nix` (PostgreSQL consumer with `CREATEDB` at lines 356-381, native Redis at line 400, digest-pinned containers via `repo.ociImages`, Bifrost `localEndpoint` at line 63).
 - Digest-pinned container: `modules/apps/tududi.nix:108-110`, with the state-backups consumer import at line 32.
 - Machine-facing route opt-out: `policy/web-services.nix:211` (`access.requireCloudflareAccess = false`).
-- Container environment invariant: `container-env` aspect (ARCHITECTURE.md, D-077).
+- Container environment invariant: `containers` aspect (ARCHITECTURE.md, D-077).
 - Image policy: `policy/oci-images.nix`, consumed as `config.repo.ociImages.<name>`.
 
 ## 8. Decisions needed before proposing changes

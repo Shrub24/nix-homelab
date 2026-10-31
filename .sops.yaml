@@ -24,7 +24,7 @@ creation_rules:
     key_groups:
       - age:
           - *owner_age
-          - *la_admin_1_age
+          - *oci_melb_1_age
   - path_regex: ^secrets/opentofu/cloudflare\.ya?ml$
     key_groups:
       - age:
@@ -62,12 +62,22 @@ creation_rules:
           - *oci_melb_1_age
           - *la_admin_1_age
           - *home_forge_age
+  - path_regex: ^secrets/services/gatus\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *la_admin_1_age
   - path_regex: ^secrets/services/ntfy\.ya?ml$
     key_groups:
       - age:
           - *owner_age
           - *la_admin_1_age
   - path_regex: ^secrets/services/niks3\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
+  - path_regex: ^secrets/services/assets\.ya?ml$
     key_groups:
       - age:
           - *owner_age
@@ -150,6 +160,13 @@ creation_rules:
           # home-forge is the colocated dialer after the backend move; OCI is
           # retained as a reader only for the cutover window.
           - *home_forge_age
+  - path_regex: ^secrets/services/grafana\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          # Only the host that runs Grafana: the credential bypasses the provider, so it
+          # stays out of hosts/home-forge/oidc.yaml, which oci-melb-1 also reads.
+          - *home_forge_age
   - path_regex: ^secrets/services/paperless\.ya?ml$
     key_groups:
       - age:
@@ -166,16 +183,17 @@ creation_rules:
           - *owner_age
           - *oci_melb_1_age
   # Identity scopes
-  - path_regex: ^secrets/identity/kanidm\.ya?ml$
-    key_groups:
-      - age:
-          - *owner_age
-          - *la_admin_1_age
   - path_regex: ^secrets/identity/provisioning\.json$
     key_groups:
       - age:
           - *owner_age
           - *la_admin_1_age
+  # Authentik runtime and per-client credentials: the identity host alone.
+  - path_regex: ^secrets/identity/authentik\.ya?ml$
+    key_groups:
+      - age:
+          - *owner_age
+          - *oci_melb_1_age
   # Host exception scopes: system (host/bootstrap-only, including recovery password hashes)
   - path_regex: ^secrets/hosts/oci-melb-1/system\.ya?ml$
     key_groups:
@@ -198,18 +216,18 @@ creation_rules:
       - age:
           - *owner_age
           - *oci_melb_1_age
-          - *la_admin_1_age
   - path_regex: ^secrets/hosts/la-admin-1/oidc\.ya?ml$
     key_groups:
       - age:
           - *owner_age
           - *la_admin_1_age
+          - *oci_melb_1_age
   - path_regex: ^secrets/hosts/home-forge/oidc\.ya?ml$
     key_groups:
       - age:
           - *owner_age
           - *home_forge_age
-          - *la_admin_1_age
+          - *oci_melb_1_age
   # Firebase service key
   - path_regex: ^secrets/services/ntfy-firebase-key\.json$
     key_groups:

@@ -18,30 +18,29 @@ _: {
       port = beszelRoute.upstreamPort;
     in
     {
-      imports = [ ../backups/state-backups/_consumer.nix ];
-      options.services.admin.beszel.enable = lib.mkEnableOption "the Beszel hub service wiring";
-      config = lib.mkMerge [
-        (lib.mkIf cfg.enable {
-          services.beszel.hub = {
-            enable = true;
-            inherit host port;
-            environment = {
-              APP_URL = appUrl;
-              DISABLE_PASSWORD_AUTH = "false";
-              USER_CREATION = "true";
-            };
-          };
-
-          services.state-backups.services.beszel = {
-            enable = true;
-            mode = "live";
-            # dataDir is a symlink -> /var/lib/private/<basename> (systemd DynamicUser/StateDirectory remap); restic does not follow symlinks.
-            paths = [ "/var/lib/private/${baseNameOf config.services.beszel.hub.dataDir}" ];
-          };
-        })
-        {
-          services.admin.beszel.enable = true;
-        }
+      imports = [
+        ../backups/state-backups/_consumer.nix
       ];
+      config = {
+
+        services.beszel.hub = {
+          enable = true;
+          inherit host port;
+          environment = {
+            APP_URL = appUrl;
+            # End users sign in through the identity provider only. PocketBase's superusers
+            # collection is unaffected, so the hub's own console stays the break-glass path.
+            DISABLE_PASSWORD_AUTH = "true";
+            USER_CREATION = "true";
+          };
+        };
+
+        services.state-backups.services.beszel = {
+          enable = true;
+          mode = "live";
+          # dataDir is a symlink -> /var/lib/private/<basename> (systemd DynamicUser/StateDirectory remap); restic does not follow symlinks.
+          paths = [ "/var/lib/private/${baseNameOf config.services.beszel.hub.dataDir}" ];
+        };
+      };
     };
 }

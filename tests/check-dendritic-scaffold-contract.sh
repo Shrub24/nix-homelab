@@ -1,17 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Dendritic scaffold contract (openspec changes dendritic-stage-1-scaffold-hosts
-# task 4.1/6.4, dendritic-stage-2-foundation-aspects task 6.1,
-# dendritic-stage-3-operational-aspects task 4.1,
-# dendritic-stage-4-source-model-realignment tasks 4.1/4.2,
-# dendritic-stage-5-shared-source-contributors task 5.2,
-# dendritic-stage-6-music-composition tasks 5.1/5.2, and
-# dendritic-stage-7-placement-aspects tasks 6.1-6.3;
-# feature-owned-service-monitoring tasks 2.1-2.3 and 3.1/3.2 (MON-1..MON-4);
-# design DS-1..DS-6,
-# FND-1..FND-6, OPS-1..OPS-11, S4-1/S4-4/S4-5/S4-8, S5-6/S5-7, S6-2..S6-11,
-# S7-2..S7-9).
+# Dendritic scaffold contract: the repository's structure is what its evaluation exposes.
+# Every contributor is discovered, no converted legacy root survives, and a host's record
+# selects the aspects it runs rather than importing an implementation.
 #
 # Observable evaluations define the contract; negative behavior probes use
 # throwaway copies so the working tree remains untouched.
@@ -222,8 +214,18 @@ done
 
 # --- 4. Preserved flake output contracts (DS-6) ------------------------------
 
-for out in bootstrap checks deploy deployHosts devShells formatter nixosConfigurations packages; do
+# The published surface is default-deny (modules/flake/output-surface.nix): these
+# are the attributes the allowlist names, and nothing else may appear.
+for out in apps checks deploy devShells fleet formatter modules nixosConfigurations packages; do
   ne --apply '_: true' "path:.#${out}" >/dev/null || fail "flake output .${out} missing"
+done
+
+# The empties flake-parts publishes by default, and the two projections the fleet
+# output replaced, must not come back.
+for gone in nixosModules overlays legacyPackages bootstrap deployHosts; do
+  if ne --apply '_: true' "path:.#${gone}" >/dev/null 2>&1; then
+    fail "flake output .${gone} must not be published"
+  fi
 done
 
 # The deploy surface is reachable from the standard checks output (FB-4): each
@@ -254,11 +256,11 @@ deploy_keys="$(ne --raw --apply 'n: builtins.toJSON (builtins.sort builtins.less
 [ "$deploy_keys" = "$registry_keys" ] || fail "deploy node keys $deploy_keys != registry keys $registry_keys"
 # The edge-host fact and the policy's host key name the same thing (the ingress
 # host), so they must agree: exactly one policy host key, equal to edgeHost.
-edge_host="$(ne --raw 'path:.#deployHosts.edgeHost')"
+edge_host="$(ne --raw 'path:.#fleet.edgeHost')"
 policy_hosts="$(ne --raw --apply 'h: builtins.toJSON (builtins.attrNames h)' 'path:.#nixosConfigurations.oci-melb-1.config.repo.web.hosts')"
 [ "$policy_hosts" = "[\"$edge_host\"]" ] ||
   fail "edgeHost $edge_host must be the single policy host key, got $policy_hosts"
-[ "$(ne --raw --apply 'l: builtins.toJSON l' 'path:.#deployHosts.deployOrder')" = '["la-admin-1","oci-melb-1"]' ] ||
+[ "$(ne --raw --apply 'l: builtins.toJSON l' 'path:.#fleet.deployOrder')" = '["la-admin-1","oci-melb-1"]' ] ||
   fail "deployOrder must remain [la-admin-1 oci-melb-1]"
 
 # Stage 8 task 3.1 (HIC-3): every deploy host reference resolves to a declared
@@ -266,10 +268,10 @@ policy_hosts="$(ne --raw --apply 'h: builtins.toJSON (builtins.attrNames h)' 'pa
 deploy_canonical="$(ne --raw --apply 'c: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames c))' 'path:.#nixosConfigurations')" ||
   fail "canonical host IDs must evaluate"
 deploy_refs="$(ne --raw --apply 'd: builtins.toJSON {
-  nodes = builtins.attrNames d.nodes;
+  nodes = builtins.attrNames d.hosts;
   edgeHost = d.edgeHost;
   deployOrder = d.deployOrder;
-}' 'path:.#deployHosts')" || fail "deploy metadata must evaluate"
+}' 'path:.#fleet')" || fail "deploy metadata must evaluate"
 python3 - "$deploy_canonical" "$deploy_refs" <<'PYEOF' || fail "deploy metadata must reference only declared canonical host IDs"
 import json, sys
 canonical = set(json.loads(sys.argv[1]))
@@ -298,7 +300,7 @@ assert s.count(order_anchor) == 1, "deployOrder anchor drifted"
 s = s.replace(order_anchor, '    "oci-melb-1"\n    "ghost-order"\n  ];', 1)
 open(p, "w").write(s)
 PYEOF
-for probe in deployHosts.edgeHost deploy.nodes; do
+for probe in fleet.edgeHost deploy.nodes; do
   set +e
   deploy_bad="$(nix eval --no-write-lock-file --raw "path:${D}#${probe}" 2>&1)"
   deploy_rc=$?
@@ -401,9 +403,11 @@ esac
 
 # --- 5. Bootstrap projection and resolver agreement (DS-6) -------------------
 
-[ "$(ne --raw --apply 'n: builtins.toJSON (builtins.attrNames n)' 'path:.#bootstrap.nodes')" = '["oci-melb-1"]' ] ||
-  fail "flake.bootstrap.nodes must expose exactly oci-melb-1"
-BN='path:.#bootstrap.nodes.oci-melb-1'
+# Reimage metadata is a per-host slice of the fleet output, carried only by hosts
+# whose canonical record declares it.
+[ "$(ne --raw --apply 'f: builtins.toJSON (builtins.concatLists (builtins.map (n: if f.hosts.${n} ? bootstrap then [ n ] else [ ]) (builtins.attrNames f.hosts)))' 'path:.#fleet')" = '["oci-melb-1"]' ] ||
+  fail "fleet.hosts must carry bootstrap metadata for exactly oci-melb-1"
+BN='path:.#fleet.hosts.oci-melb-1.bootstrap'
 # Exactly the seven projected values: five stored in the typed record plus
 # hostName and flake derived from the registry key (DS-5/DS-6).
 oci_keys="$(ne --raw --apply 'v: builtins.toJSON (builtins.sort builtins.lessThan (builtins.attrNames v))' "$BN")"
@@ -477,7 +481,6 @@ tsMtu = ((c.systemd.services.tailscaled or {}).environment or {}).TS_DEBUG_MTU o
 tsAuthKeyFile = c.services.tailscale.authKeyFile or null;
 daemonUnit = (c.systemd.services or { }) ? "notify";
 daemonPkg = (c.services.notify.package or {}).name or "";
-dj = c.applications.dj.enable or false;
 containers = builtins.length (builtins.attrNames (c.virtualisation.oci-containers.containers or { }));
 containerLimits = builtins.all (n: c.systemd.services."podman-${n}".startLimitIntervalSec == 3600 && c.systemd.services."podman-${n}".startLimitBurst == 5) (builtins.attrNames (c.virtualisation.oci-containers.containers or { }));
 }' "path:.#nixosConfigurations.${host}.config")" ||
@@ -507,15 +510,15 @@ if errs:
 PYEOF
 }
 
-probe oci-melb-1 '{"bootLoader":"grub","buildTmpfsSize":"8G","systemdBoot":false,"grub":true,"efiRemovable":true,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"dj":false,"containers":6,"containerLimits":true}'
-probe la-admin-1 '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"dj":false,"containers":0,"containerLimits":true}'
-probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":null,"tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"dj":true,"containers":17,"containerLimits":true}'
+probe oci-melb-1 '{"bootLoader":"grub","buildTmpfsSize":"8G","systemdBoot":false,"grub":true,"efiRemovable":true,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"containers":6,"containerLimits":true}'
+probe la-admin-1 '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"containers":0,"containerLimits":true}'
+probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":null,"tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"containers":17,"containerLimits":true}'
 
 # 7d-2. Stage 5 web/identity observables (S5-4, S5-5, S5-8). web-policy is an
 # all-host infrastructure-support selection: config.repo.web resolves on every
 # host and the ntfy serverUrl default derives from the catalog endpoint (loopback
-# where ntfy is served). kanidm-host-auth is selected on OCI/LA only: both expose
-# the policy-derived provider URL, clients, hostAuth, and Kanidm URI; forge
+# where ntfy is served). The identity provider is placed on OCI only, which exposes
+# the policy-derived provider URL and clients; forge
 # carries only the intrinsic contract the Grafana it runs reads (`or {}` keeps
 # the probe total where an option is absent).
 probe_web_identity() { # $1 host, $2 expected JSON (python dict literal)
@@ -526,10 +529,13 @@ probe_web_identity() { # $1 host, $2 expected JSON (python dict literal)
     ntfyUrl = c.services.notify.ntfy.serverUrl or "";
     ntfyDefault = c.repo.web.catalog."ntfy-admin".endpoint.url or "";
     providerUrl = (c.services.identity.oidc.providerUrl or null);
-    hostAuth = (c.services.identity.hostAuth.enable or false);
-    kanidmUri = if (c.services.kanidm.client.enable or false) then (c.services.kanidm.client.settings.uri or null) else null;
-    fronts = builtins.sort builtins.lessThan (builtins.filter (n: builtins.match "tailscale-serve-.*" n != null) (builtins.attrNames c.systemd.services));
-    kanidmExposureMode = c.repo.web.originServices."kanidm-admin".exposureMode or null;
+    # Behaviour, not inventory: every private-transport route the host provides has
+    # its front. Capabilities may render additional fronts of their own, so the
+    # check is coverage, not equality.
+    frontsCoverRoutes = let
+      fronts = builtins.filter (n: builtins.match "tailscale-serve-.*" n != null) (builtins.attrNames c.systemd.services);
+      serveRoutes = builtins.filter (n: (c.repo.web.originServices.${n}.exposureMode or "") == "tailscale-serve") (builtins.attrNames (c.repo.web.originServices or { }));
+    in builtins.all (n: builtins.elem "tailscale-serve-${n}" fronts) serveRoutes;
     catalogExposureModes = builtins.sort builtins.lessThan (
       builtins.attrNames (
         builtins.listToAttrs (
@@ -537,12 +543,6 @@ probe_web_identity() { # $1 host, $2 expected JSON (python dict literal)
         )
       )
     );
-    kanidmUpstream = c.repo.web.currentHost.services."kanidm-admin".upstream or null;
-    kanidmSni = c.repo.web.currentHost.services."kanidm-admin".upstreamTlsServerName or null;
-    kanidmFrontLoopback = builtins.match ".*--https=8443 https\\+insecure://127\\.0\\.0\\.1:8443" (c.systemd.services."tailscale-serve-kanidm-admin".serviceConfig.ExecStart or "") != null;
-    kanidmTlsChain = c.services.identity.kanidm.tlsChainFile or null;
-    kanidmTlsGroups = c.services.identity.kanidm.tlsReaderGroups or [];
-    kanidmAfterCaddy = builtins.elem "caddy.service" (c.systemd.services.kanidm.after or []);
   }' "path:.#nixosConfigurations.${host}.config")" ||
   fail "${host}: web/identity probe does not evaluate"
   python3 - "$host" "$2" "$json" <<'PYEOF' || fail "${host}: observable web/identity contract violated"
@@ -574,18 +574,17 @@ PYEOF
 # served). The private
 # origin transport is provider-side: the provider renders the front the edge
 # dials, the edge only dials the canonical private name.
-probe_web_identity oci-melb-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","fronts":["tailscale-serve-cockpit","tailscale-serve-geopulse","tailscale-serve-homarr"],"kanidmExposureMode":null,"catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":"https://la-admin-1.tail0fe19b.ts.net:8443","kanidmSni":null,"kanidmFrontLoopback":false,"kanidmTlsChain":null,"kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
-probe_web_identity la-admin-1 '{"providerUrl":"https://id.shrublab.xyz","hostAuth":true,"kanidmUri":"https://id.shrublab.xyz","ntfyUrl":"http://127.0.0.1:2586","fronts":["tailscale-serve-kanidm-admin"],"kanidmExposureMode":"tailscale-serve","catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":null,"kanidmSni":null,"kanidmFrontLoopback":true,"kanidmTlsChain":"/srv/data/kanidm/tls/fullchain.pem","kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
-probe_web_identity home-forge '{"providerUrl":"https://id.shrublab.xyz","hostAuth":false,"kanidmUri":null,"fronts":[],"kanidmExposureMode":null,"catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"],"kanidmUpstream":null,"kanidmSni":null,"kanidmFrontLoopback":false,"kanidmTlsChain":null,"kanidmTlsGroups":[],"kanidmAfterCaddy":false}'
+probe_web_identity oci-melb-1 '{"providerUrl":"https://auth.shrublab.xyz","frontsCoverRoutes":true,"catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"]}'
+probe_web_identity home-forge '{"providerUrl":"https://auth.shrublab.xyz","frontsCoverRoutes":true,"catalogExposureModes":["direct","tailscale-only","tailscale-serve","tailscale-upstream"]}'
 # Forge carries only the intrinsic OIDC contract, because the Grafana it runs
 # reads the derived endpoints; identity machinery itself — provider, host-auth,
 # client — stays absent, not merely disabled.
 forge_identity="$(ne --raw --apply 'c: builtins.toJSON (builtins.attrNames (c.services.identity or {}))' 'path:.#nixosConfigurations.home-forge.config')" ||
   fail "home-forge: identity absence probe does not evaluate"
 [ "$forge_identity" = '["oidc"]' ] || fail "home-forge must carry only the intrinsic OIDC contract (services.identity namespaces: $forge_identity)"
-forge_identity_machinery="$(ne --raw --apply 'c: builtins.toJSON { hostAuth = c.services.identity ? hostAuth; kanidm = c.services.identity ? kanidm; }' 'path:.#nixosConfigurations.home-forge.config')" ||
+forge_identity_machinery="$(ne --raw --apply 'c: builtins.toJSON (c.services.identity ? hostAuth)' 'path:.#nixosConfigurations.home-forge.config')" ||
   fail "home-forge: identity machinery probe does not evaluate"
-[ "$forge_identity_machinery" = '{"hostAuth":false,"kanidm":false}' ] || fail "home-forge must not carry identity machinery: $forge_identity_machinery"
+[ "$forge_identity_machinery" = 'false' ] || fail "home-forge must not carry identity machinery: $forge_identity_machinery"
 
 # 7d-3. Recovery observable (S5-8): the relocated host-recovery leaf stays owned
 # by the base aspect, so both units are present on every host.
@@ -625,7 +624,6 @@ probe_ops() { # $1 host, $2 expected JSON (python dict literal)
   json="$(ne --json --apply 'c: {
     bucket = c.services.state-backups.bucket or "";
     secretFile = c.services.state-backups.secretFile or "";
-    sbEnable = c.services.state-backups.enable or false;
     clientEnable = c.services.niks3-auto-upload.enable or false;
     serverUrl = c.services.niks3-auto-upload.serverUrl or "";
     tokenOwner = (c.sops.secrets.niks3_api_token.owner or null);
@@ -675,9 +673,9 @@ if errs:
 PYEOF
 }
 
-probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"buildMachines":0,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
-probe_ops la-admin-1 "$(printf '{"bucket":"shrublab-backup-la-admin-1","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"buildMachines":0,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}' "$web_suffix")"
-probe_ops home-forge "$(printf '{"bucket":"shrublab-backup-home-forge","sbEnable":true,"clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"buildMachines":0,"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}' "$web_suffix")"
+probe_ops oci-melb-1 '{"bucket":"shrublab-backup-oci-melb-1","clientEnable":true,"serverUrl":"http://127.0.0.1:5751","tokenOwner":"niks3","niks3Srv":true,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"buildMachines":0,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}'
+probe_ops la-admin-1 "$(printf '{"bucket":"shrublab-backup-la-admin-1","clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"buildMachines":0,"stagingRoot":"/srv/data/state-backups","hostCorePaths":[]}' "$web_suffix")"
+probe_ops home-forge "$(printf '{"bucket":"shrublab-backup-home-forge","clientEnable":true,"serverUrl":"http://oci-melb-1.%s:5751","tokenOwner":null,"niks3Srv":false,"beszelAgent":true,"beszelEnvFile":null,"beszelKeySops":true,"beszelTokenAbsent":true,"buildMachines":0,"stagingRoot":"/srv/data/state-backups","hostCorePaths":["/etc/ssh"]}' "$web_suffix")"
 
 # The canonical inventory's host keys are the trust half of the builder
 # contract; pin one end to end rather than trusting the entry names alone.
@@ -907,7 +905,6 @@ fragment_probe() { # $1 copy root -> eval report JSON
     in {
       registered = (c.services.state-backups.services or { }) ? probe;
       mode = c.services.state-backups.services.probe.mode or "";
-      captureEnable = c.services.state-backups.enable or false;
       resticAbsent = !((c.services.restic.backups or { }) != { });
     };
   };
@@ -924,50 +921,12 @@ json="$(fragment_probe "$D")" ||
 python3 - "$json" <<'PY' || fail "7i-5: declaration-surface observables violated: $json"
 import json, sys
 got = json.loads(sys.argv[1])
-want = {"registered": True, "mode": "live", "captureEnable": False, "resticAbsent": True}
+want = {"registered": True, "mode": "live", "resticAbsent": True}
 errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in want.items() if got.get(k) != v]
 if errs:
     raise SystemExit("; ".join(errs))
 PY
 
-
-# 7k. DJ selection semantics (S4-4, S4-8; tasks 4.1/4.2). DJ enablement comes
-# from selecting the dj deployment aspect, not from discovery. The observable
-# is the evaluated applications.dj.enable value; the throwaway mutations below
-# prove discovery-only placement does not activate and selection owns
-# enablement.
-dj_enabled() { # $1 repo root, $2 host -> "true"/"false" through aspect selection
-  local d="$1" host="$2" out err rc
-  err="$(mktemp)"
-  set +e
-  out="$(nix eval --no-write-lock-file --raw --apply \
-    'c: if ((c.applications.dj or { }).enable or false) then "true" else "false"' \
-    "path:${d}#nixosConfigurations.${host}.config" 2>"$err")"
-  rc=$?
-  set -e
-  if [ "$rc" -ne 0 ]; then
-    # stderr stays out of the probe value: store diagnostics are not the answer.
-    tail -2 "$err" || true
-    rm -f "$err"
-    fail "dj probe ${host}: config does not evaluate"
-  fi
-  rm -f "$err"
-  printf '%s' "$out"
-}
-# Discovery alone is not placement: the dj publication exists for every host,
-# yet OCI/LA never select it and expose no DJ contract, while forge selects it
-# and evaluates DJ enabled.
-[ "$(dj_enabled "$ROOT" home-forge)" = true ] || fail "unmodified home-forge must activate DJ via aspect selection"
-[ "$(dj_enabled "$ROOT" oci-melb-1)" = false ] || fail "unmodified oci-melb-1 must not activate discovered-but-unselected DJ"
-[ "$(dj_enabled "$ROOT" la-admin-1)" = false ] || fail "unmodified la-admin-1 must not activate discovered-but-unselected DJ"
-
-# 7k-1. Removing DJ's top-level enablement from the selected dj aspect leaves
-# the selection in place but no longer satisfies forge's DJ contract. The test
-# names the failure (no eval assertion exists for a disabled aspect).
-D="$(make_copy)"
-sed -i '/applications\.dj\.enable = true;/d' "$D/modules/music/dj.nix"
-[ "$(dj_enabled "$D" home-forge)" = false ] ||
-  fail "7k-1: forge must fail the DJ enablement contract when the selected dj aspect does not set applications.dj.enable"
 
 # 7l. Stage 5 semantic negative mutations (S5-6, S5-7). Each runs against a
 # throwaway copy so the working tree is never modified, and each fails for its
@@ -989,85 +948,37 @@ touch "$D/modules/storage/disko-root.nix"
 # 7l-2. The boundary list is gone: a transitional-root name reappearing under
 # modules/ is caught by the root-evacuation predicate (7l-1), not by a list.
 
-# 7l-5. Identity must not activate on forge. Adding aspects.kanidm-host-auth to
+# 7l-5. Identity must not activate on forge. Adding aspects.authentik-identity to
 # the forge record is detected through the missing-services.identity observable,
 # not a publication diff.
 D="$(make_copy)"
-sed -i '/aspects\.dj/i\        aspects.kanidm-host-auth' "$D"/modules/hosts/*/default.nix
+sed -i '/aspects\.dj/i\        aspects.authentik-identity' "$D"/modules/hosts/*/default.nix
 forge_identity_mut="$(ne --raw --apply 'c: builtins.toJSON (builtins.attrNames (c.services.identity or {}))' \
   "path:${D}#nixosConfigurations.home-forge.config")" ||
   fail "7l-5: forge identity mutation probe must evaluate"
 [ "$forge_identity_mut" != '[]' ] ||
-  fail "7l-5: forge must expose identity activation when kanidm-host-auth is wrongly selected"
+  fail "7l-5: forge must expose identity activation when authentik-identity is wrongly selected"
 
-# 7l-6. The intrinsic contract replaces the retired selection: a composition
-# whose only identity participants are importing consumers still evaluates and
-# resolves the canonical client records, and a consumer whose client is absent
-# from policy fails through its own named assertion rather than a missing-option
-# namespace. The host's `identity.hostAuth` assignment goes with the deselected
-# capability because the capability declares that namespace (select-then-
-# configure coupling, not a contract dependency). The host's providerUrl write
-# stays: the contract's web-policy default only resolves on hosts declared in
-# policy/web-services.nix, so this leg proves consumer independence given that
-# write rather than the policy-default path on a consumer host.
-D="$(make_copy)"
-python3 - "$D" <<'PYEOF' > /dev/null || fail "7l-6 consumer-only mutation script failed"
-import sys
+# 7l-6. The intrinsic contract replaces the retired selection: a consumer host resolves
+# the canonical client records from policy without any identity machinery of its own,
+# and a consumer whose client is absent from policy fails through its own named
+# assertion rather than a missing-option namespace. The resolving values are the
+# modules' own definitions, so only the consumer's observable follows them.
+ne --raw --apply 'c: c.services.paperless.oidc.wellknownUrl' \
+  ".#nixosConfigurations.oci-melb-1.config" > /dev/null ||
+  fail "7l-6: a consumer host on the intrinsic contract does not evaluate"
 
-d = sys.argv[1]
-
-p = d + "/modules/hosts/oci-melb-1/default.nix"
-s = open(p).read()
-assert s.count("        aspects.kanidm-host-auth\n") == 1, "kanidm-host-auth selection anchor drifted"
-open(p, "w").write(s.replace("        aspects.kanidm-host-auth\n", "", 1))
-
-p = d + "/modules/hosts/oci-melb-1/_nixos.nix"
-s = open(p).read()
-block = """    identity.hostAuth = {
-      enable = true;
-      sshIntegration = true;
-      pamAllowedLoginGroups = [ "admins" ];
-    };
-"""
-assert s.count(block) == 1, "identity.hostAuth consumer block drifted"
-open(p, "w").write(s.replace(block, "", 1))
-PYEOF
-consumer_json="$(ne --raw --apply 'c: builtins.toJSON {
-  providerUrl = c.services.identity.oidc.providerUrl;
-  identityNamespaces = builtins.attrNames c.services.identity;
-  paperlessClientId = c.services.paperless.oidc.clientId;
-  paperlessWellknownAligned = c.services.paperless.oidc.wellknownUrl == "${c.services.identity.oidc.providerUrl}/oauth2/openid/paperless/.well-known/openid-configuration";
-  karakeepClientId = c.services.karakeep-pod.oidc.clientId;
-  kanidmUnixEnable = c.services.kanidm.unix.enable or false;
-}' "path:${D}#nixosConfigurations.oci-melb-1.config")" ||
-  fail "7l-6: consumer-only composition (OCI without the host-auth capability) does not evaluate"
-python3 - "$consumer_json" <<'PYEOF' || fail "7l-6: consumer-only composition must resolve the canonical client records"
-import json, sys
-got = json.loads(sys.argv[1])
-expected = {
-    "providerUrl": "https://id.shrublab.xyz",
-    "identityNamespaces": ["oidc"],
-    "paperlessClientId": "paperless",
-    "paperlessWellknownAligned": True,
-    "karakeepClientId": "karakeep",
-    "kanidmUnixEnable": False,
-}
-errs = [f"{k}: got {got.get(k)!r} want {v!r}" for k, v in expected.items() if got.get(k) != v]
-if errs:
-    print("; ".join(errs), file=sys.stderr)
-    sys.exit(1)
-PYEOF
 # 7l-6b. Same composition, with the client disabled in canonical policy: OIDC
 # stays enabled through web policy, the contract stops carrying the client, and
 # the consumer must fail through its named assertion.
 python3 - "$D" <<'PYEOF' > /dev/null || fail "7l-6b policy mutation script failed"
-import json, sys
+import sys
 
-p = sys.argv[1] + "/policy/identity.json"
-d = json.load(open(p))
-assert d["systems"]["oauth2"]["paperless"]["enable"] is True, "paperless policy anchor drifted"
-d["systems"]["oauth2"]["paperless"]["enable"] = False
-json.dump(d, open(p, "w"), indent=2)
+p = sys.argv[1] + "/policy/identity.nix"
+s = open(p).read()
+marker = '    paperless = {\n      displayName = "Paperless";'
+assert s.count(marker) == 1, "paperless policy anchor drifted"
+open(p, "w").write(s.replace(marker, '    paperless = {\n      enable = false;\n      displayName = "Paperless";', 1))
 PYEOF
 set +e
 assertion_out="$(nix eval --no-write-lock-file --raw \
@@ -1080,21 +991,6 @@ case "$assertion_out" in
   *) fail "7l-6b: expected the Paperless named assertion, got: $(printf '%s' "$assertion_out" | tail -3)" ;;
 esac
 
-# The host-auth capability's fail-closed by-name selection rejection is
-# exercised by the evaluated materialization below.
-D="$(make_copy)"
-rm "$D/modules/identity/kanidm-host-auth.nix"
-set +e
-hostauth_out="$(nix eval --no-write-lock-file --raw \
-  "path:${D}#nixosConfigurations.oci-melb-1.config.system.build.toplevel.drvPath" 2>&1)"
-hostauth_rc=$?
-set -e
-[ "$hostauth_rc" -ne 0 ] || fail "7l-7: deleting the host-auth contributor must break OCI Kanidm eval"
-case "$hostauth_out" in
-  *"attribute 'kanidm-host-auth' missing"*) ;;
-  *) fail "7l-7: expected the unresolvable kanidm-host-auth selection, got: $(printf '%s' "$hostauth_out" | tail -3)" ;;
-esac
-
 # --- 7m. Stage 6 music composition (S6-2..S6-11) -----------------------------
 # (openspec change dendritic-stage-6-music-composition tasks 5.1/5.2)
 #
@@ -1105,29 +1001,6 @@ esac
 # are never imported from outside the concern, and publish no second aspect.
 # DJ consumes the read-only applications.music.contract through a named
 # assertion. Evaluated probes below verify enabled and isolated behavior.
-
-strip_host_block() { # $1 file, $2 "<option> = {" marker
-  python3 - "$1" "$2" <<'PYEOF'
-import sys
-path, marker = sys.argv[1], sys.argv[2]
-s = open(path).read()
-start = s.index(marker)
-i = s.index("{", start)
-depth = 0
-while True:
-    if s[i] == "{":
-        depth += 1
-    elif s[i] == "}":
-        depth -= 1
-        if depth == 0:
-            break
-    i += 1
-end = i + 1
-if end < len(s) and s[end] == ";":
-    end += 1
-open(path, "w").write(s[:start] + s[end:])
-PYEOF
-}
 
 # 7m-2. Focused observable probe. Every field is forced through the full
 # toplevel derivation (`drv`) so option-merge and assertion failures surface.
@@ -1153,7 +1026,6 @@ let
 in {
   drv = c.system.build.toplevel.drvPath;
   musicOptionCount = builtins.length (builtins.attrNames (c.applications.music or { }));
-  enable = (c.applications.music or { }).enable or false;
   contractPresent = (contractField "storageRoot").success && (contractField "storageRoot").value != null;
   contractStorageRoot = contractText "storageRoot";
   contractLibraryDir = contractText "libraryDir";
@@ -1170,9 +1042,8 @@ in {
   gidMedia = (c.users.groups.media or { }).gid or null;
   onSuccess = c.services.beets.onSuccessUnits or [ ];
   importReadyFlag = c.services.beets.importReadyFlag or "";
-  renderedStandard = if (c.applications.music or { }).enable or false then (c.services.beets.renderedConfigFiles.standard or "") else "";
-  renderedQuarantine = if (c.applications.music or { }).enable or false then (c.services.beets.renderedConfigFiles.quarantine or "") else "";
-  djEnable = (c.applications.dj or { }).enable or false;
+  renderedStandard = c.services.beets.renderedConfigFiles.standard or "";
+  renderedQuarantine = c.services.beets.renderedConfigFiles.quarantine or "";
   djShare = ((c.applications.dj or { }).engine or { }).sharePath or "";
   djRoot = ((c.applications.dj or { }).engine or { }).musicStorageRoot or "";
   djTraktor = ((c.applications.dj or { }).engine or { }).traktorStateDir or "";
@@ -1212,55 +1083,9 @@ if errs:
 PYEOF
 }
 
-probe_music home-forge '{"enable":true,"contractPresent":true,"contractStorageRoot":"/srv/storage/media/music","contractLibraryDir":"/srv/storage/media/music/library","contractPlaylistsDir":"/srv/storage/media/music/playlists","storageRoot":"/srv/storage/media/music","ingest":true,"storage":true,"ffmpegUnit":true,"reconcileUnit":true,"dropboxPath":true,"dropboxTimer":true,"slskdTimer":true,"gidMusicIngest":990,"gidMedia":987,"onSuccess":["media-permission-reconcile.service","navidrome-scan.service"],"importReadyFlag":"/var/lib/beets/ffmpeg-preprocess/inbox-ready","renderedStandard":"/run/secrets/rendered/beets-config.yaml","renderedQuarantine":"/run/secrets/rendered/beets-quarantine-config.yaml","djEnable":true,"djShare":"/srv/storage/media/music","djRoot":"/srv/storage/media/music","djTraktor":"/srv/data/traktor-m3u-sync","tmpfilesHasStorageRoot":true,"tmpfilesHasUntagged":true,"tmpfilesHasSlskdEnv":true}'
-probe_music oci-melb-1 '{"enable":false,"contractPresent":false,"contractStorageRoot":"","contractLibraryDir":"","contractPlaylistsDir":"","storageRoot":"","ingest":false,"storage":false,"ffmpegUnit":false,"reconcileUnit":false,"dropboxPath":false,"dropboxTimer":false,"slskdTimer":false,"gidMusicIngest":null,"gidMedia":null,"onSuccess":[],"importReadyFlag":"","renderedStandard":"","renderedQuarantine":"","djEnable":false,"djShare":"","djRoot":"","djTraktor":"","tmpfilesHasStorageRoot":false,"tmpfilesHasUntagged":false,"tmpfilesHasSlskdEnv":false}'
-probe_music la-admin-1 '{"enable":false,"contractPresent":false,"contractStorageRoot":"","contractLibraryDir":"","contractPlaylistsDir":"","storageRoot":"","ingest":false,"storage":false,"ffmpegUnit":false,"reconcileUnit":false,"dropboxPath":false,"dropboxTimer":false,"slskdTimer":false,"gidMusicIngest":null,"gidMedia":null,"onSuccess":[],"importReadyFlag":"","renderedStandard":"","renderedQuarantine":"","djEnable":false,"djShare":"","djRoot":"","djTraktor":"","tmpfilesHasStorageRoot":false,"tmpfilesHasUntagged":false,"tmpfilesHasSlskdEnv":false}'
-
-# 7m-3. Semantic throwaway mutations (S6-12). Each runs in a fresh copy and
-# forces the full toplevel through the probe expression.
-music_mutation_probe() { # $1 copy, $2 host -> JSON (toplevel forced via drv)
-  nix eval --json --no-write-lock-file --apply "$MUSIC_PROBE" "path:${1}#nixosConfigurations.${2}.config"
-}
-assert_probe() { # $1 host, $2 json, $3 semantic check name
-  python3 - "$1" "$2" "$3" <<'PYEOF' || fail "7m mutation $1: $3 failed"
-import json, sys
-host, raw, check = sys.argv[1], sys.argv[2], sys.argv[3]
-got = json.loads(raw)
-errs = []
-if check == "disabled":
-    if got["enable"]:
-        errs.append(f"enable still {got['enable']!r}")
-    if got["contractPresent"]:
-        errs.append("contract still present")
-    if got["ingest"] or got["storage"]:
-        errs.append("private leaves still enabled")
-    if got["ffmpegUnit"] or got["reconcileUnit"]:
-        errs.append("music units still active")
-elif check == "explicit-dj":
-    if got["musicOptionCount"] != 0:
-        errs.append("music options must stay absent without selection")
-    if got["djShare"] != "/srv/storage/media/music" or got["djRoot"] != "/srv/storage/media/music":
-        errs.append(f"explicit DJ values not honoured: {got['djShare']!r}/{got['djRoot']!r}")
-elif check == "music-no-dj":
-    if not got["enable"] or not got["contractPresent"]:
-        errs.append("music must stay enabled with its contract")
-    if not got["ffmpegUnit"] or not got["reconcileUnit"]:
-        errs.append("music units missing")
-    if got["djEnable"]:
-        errs.append("dj must stay disabled")
-else:
-    errs.append(f"unknown check {check}")
-if errs:
-    print(f"{host}: " + "; ".join(errs), file=sys.stderr)
-    sys.exit(1)
-PYEOF
-}
-
-assert_probe_result() { # $1 host, $2 copy, $3 semantic check name
-  local host="$1" copy="$2" check="$3" result
-  result="$(music_mutation_probe "$copy" "$host")" || fail "7m mutation ${host}: ${check} probe did not evaluate"
-  assert_probe "$host" "$result" "$check"
-}
+probe_music home-forge '{"contractPresent":true,"contractStorageRoot":"/srv/storage/media/music","contractLibraryDir":"/srv/storage/media/music/library","contractPlaylistsDir":"/srv/storage/media/music/playlists","storageRoot":"/srv/storage/media/music","ingest":true,"storage":true,"ffmpegUnit":true,"reconcileUnit":true,"dropboxPath":true,"dropboxTimer":true,"slskdTimer":true,"gidMusicIngest":990,"gidMedia":987,"onSuccess":["media-permission-reconcile.service","navidrome-scan.service"],"importReadyFlag":"/var/lib/beets/ffmpeg-preprocess/inbox-ready","renderedStandard":"/run/secrets/rendered/beets-config.yaml","renderedQuarantine":"/run/secrets/rendered/beets-quarantine-config.yaml","djShare":"/srv/storage/media/music","djRoot":"/srv/storage/media/music","djTraktor":"/srv/data/traktor-m3u-sync","tmpfilesHasStorageRoot":true,"tmpfilesHasUntagged":true,"tmpfilesHasSlskdEnv":true}'
+probe_music oci-melb-1 '{"contractPresent":false,"contractStorageRoot":"","contractLibraryDir":"","contractPlaylistsDir":"","storageRoot":"","ingest":false,"storage":false,"ffmpegUnit":false,"reconcileUnit":false,"dropboxPath":false,"dropboxTimer":false,"slskdTimer":false,"gidMusicIngest":null,"gidMedia":null,"onSuccess":[],"importReadyFlag":"","renderedStandard":"","renderedQuarantine":"","djShare":"","djRoot":"","djTraktor":"","tmpfilesHasStorageRoot":false,"tmpfilesHasUntagged":false,"tmpfilesHasSlskdEnv":false}'
+probe_music la-admin-1 '{"contractPresent":false,"contractStorageRoot":"","contractLibraryDir":"","contractPlaylistsDir":"","storageRoot":"","ingest":false,"storage":false,"ffmpegUnit":false,"reconcileUnit":false,"dropboxPath":false,"dropboxTimer":false,"slskdTimer":false,"gidMusicIngest":null,"gidMedia":null,"onSuccess":[],"importReadyFlag":"","renderedStandard":"","renderedQuarantine":"","djShare":"","djRoot":"","djTraktor":"","tmpfilesHasStorageRoot":false,"tmpfilesHasUntagged":false,"tmpfilesHasSlskdEnv":false}'
 
 # 7m-3a. Discovery is not placement: adding aspects.music without host
 # bindings cannot silently activate the stack (selection is the activation
@@ -1271,71 +1096,12 @@ import sys
 p = sys.argv[1]
 s = open(p).read()
 i = s.index("la-admin-1 = {")
-j = s.index("aspects.kanidm-host-auth", i)
+j = s.index("        aspects.push-server", i)
 k = s.index("\n", j)
 open(p, "w").write(s[: k + 1] + "        aspects.music\n" + s[k + 1 :])
 PYEOF
 expect_eval_fail "$D" la-admin-1 "applications.music.dataRoot"
 
-# 7m-3b. Removing the selected aspect's enablement leaves the selection in
-# place but disables the application (enable false, contract unset, leaves and
-# units inert). The copy restores pre-contract explicit DJ values so the named
-# DJ assertion is not what this probe exercises.
-D="$(make_copy)"
-sed -i '/applications\.music\.enable = true;/d' "$D/modules/music/music.nix"
-python3 - "$D/modules/hosts/home-forge/_nixos.nix" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-old = """  applications.dj = {
-    engine = {
-      enable = true;
-"""
-new = """  applications.dj = {
-    engine = {
-      enable = true;
-      sharePath = musicStorageRoot;
-      musicStorageRoot = musicStorageRoot;
-"""
-assert old in s
-open(p, "w").write(s.replace(old, new))
-PYEOF
-assert_probe_result home-forge "$D" disabled
-
-# 7m-3f. DJ selected/enabled without music and without explicit values fails
-# with the exact named assertion; with both values explicit it succeeds.
-D="$(make_copy)"
-sed -i '/aspects\.music/d' "$D"/modules/hosts/*/default.nix
-strip_host_block "$D/modules/hosts/home-forge/_nixos.nix" "applications.music = {"
-expect_eval_fail "$D" home-forge "applications.dj.engine requires applications.music.contract"
-
-D="$(make_copy)"
-sed -i '/aspects\.music/d' "$D"/modules/hosts/*/default.nix
-strip_host_block "$D/modules/hosts/home-forge/_nixos.nix" "applications.music = {"
-python3 - "$D/modules/hosts/home-forge/_nixos.nix" <<'PYEOF'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-old = """  applications.dj = {
-    engine = {
-      enable = true;
-"""
-new = """  applications.dj = {
-    engine = {
-      enable = true;
-      sharePath = musicStorageRoot;
-      musicStorageRoot = musicStorageRoot;
-"""
-assert old in s
-open(p, "w").write(s.replace(old, new))
-PYEOF
-assert_probe_result home-forge "$D" explicit-dj
-
-# 7m-3g. Music selected without DJ succeeds and retains its observables.
-D="$(make_copy)"
-sed -i '/aspects\.dj/d' "$D"/modules/hosts/*/default.nix
-strip_host_block "$D/modules/hosts/home-forge/_nixos.nix" "applications.dj = {"
-assert_probe_result home-forge "$D" music-no-dj
 
 # --- 7n. Stage 7 placement aspects (S7-2..S7-9) ------------------------------
 # (openspec change dendritic-stage-7-placement-aspects tasks 6.1-6.3)
@@ -1410,7 +1176,7 @@ import sys
 p = sys.argv[1]
 s = open(p).read()
 i = s.index("la-admin-1 = {")
-j = s.index("        aspects.identity-provider", i)
+j = s.index("        aspects.push-server", i)
 k = s.index("\n", j)
 open(p, "w").write(s[: k + 1] + "        aspects.tamper-aspect\n" + s[k + 1 :])
 PYEOF
@@ -1716,7 +1482,7 @@ python3 - "$D/modules/oci/oci.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
-anchor = '        services.notify.events."podman-prune".failure = { };\n'
+anchor = '        boot.kernelParams = [ "console=ttyAMA0,115200n8" ];\n'
 assert anchor in s, "registration anchor drifted"
 s = s.replace(anchor, '        services.notify.events."phantom-unit".failure = { };\n' + anchor, 1)
 open(p, "w").write(s)
@@ -1731,7 +1497,7 @@ python3 - "$D/modules/oci/oci.nix" <<'PYEOF'
 import sys
 p = sys.argv[1]
 s = open(p).read()
-anchor = '        services.notify.events."podman-prune".failure = { };\n'
+anchor = '        boot.kernelParams = [ "console=ttyAMA0,115200n8" ];\n'
 assert anchor in s, "registration anchor drifted"
 s = s.replace(anchor, '        services.notify.events."beets-inbox".failure = { };\n' + anchor, 1)
 open(p, "w").write(s)

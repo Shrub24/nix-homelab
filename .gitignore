@@ -26,3 +26,11 @@ result
 .pi-lens/
 .qmd/
 .pi-herdsman/
+
+# Branding media: the bytes live on the assets host, not in Git. Vector sources stay
+# tracked because they are small, diffable, and reviewed; raster media is uploaded.
+assets/**
+!assets/**/
+!assets/**/*.svg
+!assets/**/README.md
+!assets/**/*-license.txt

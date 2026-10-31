@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+version: 1
+metadata:
+  name: homelab-email-claim
+entries:
+  - attrs:
+      description: Email address asserted by the fleet
+      expression: |
+        email = request.user.email
+        verified = request.user.attributes.get("email_verified_address")
+        return {
+            "email": email,
+            "email_verified": bool(email and verified == email),
+        }
+      name: homelab-email
+      scope_name: email
+    id: scope-homelab-email
+    identifiers:
+      name: homelab-email
+    model: authentik_providers_oauth2.scopemapping

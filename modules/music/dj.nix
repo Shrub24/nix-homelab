@@ -1,4 +1,4 @@
-# DJ: the traktor-m3u-sync package, the applications.dj enablement contract, and the Windows
+# DJ: the traktor-m3u-sync package, its Windows VM workloads, and the read-only music contract.
 # payload. Engine host and VM are sibling contributors of the same publication.
 {
   inputs,
@@ -12,14 +12,9 @@
     {
       imports = [ inputs.traktor-m3u-sync.nixosModules.default ];
 
-      options.applications.dj.enable = lib.mkEnableOption "DJ application composition (Windows VM workloads)";
-
-      # The module declares options above, so its configuration is nested.
       config = {
         services.traktor-m3u-sync.package =
           inputs.traktor-m3u-sync.packages.${pkgs.stdenv.hostPlatform.system}.default;
-
-        applications.dj.enable = true;
 
         applications.dj.engine.setupPackage = withSystem pkgs.stdenv.hostPlatform.system (
           { config, ... }: config.packages.windows-dj-setup

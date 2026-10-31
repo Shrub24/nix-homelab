@@ -11,7 +11,7 @@ let
 in
 {
   settings = {
-    title = "Shrublab Admin";
+    title = "shrublab Admin";
     headerStyle = "boxedWidgets";
     startUrl = "${serviceHref "admin-homepage"}#overview";
     layout = {
@@ -146,14 +146,6 @@ in
     }
     {
       Access = [
-        {
-          "Cockpit (OCI)" = {
-            icon = "mdi-console-network";
-            description = "oci-melb-1 server administration";
-            href = serviceHref "cockpit-oci-melb-1";
-            siteMonitor = serviceHref "cockpit-oci-melb-1";
-          };
-        }
         {
           Termix = {
             icon = "mdi-console";

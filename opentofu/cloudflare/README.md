@@ -26,6 +26,8 @@ This keeps one source of truth while separating runtime wiring from control-plan
 | `cloudflare_zero_trust_access_policy.allow_admins` | Shared reusable `allow_admins` policy |
 | `cloudflare_zero_trust_access_policy.allow_approved` | Shared reusable `allow_approved` policy |
 | `cloudflare_zero_trust_access_identity_provider.main` | Optional IdP configuration for Access (when client credentials are set) |
+| `cloudflare_zero_trust_access_service_token.monitoring` | Machine credential for probes that must reach the origin |
+| `cloudflare_zero_trust_access_policy.allow_machine` | `non_identity` policy admitting that token on every Access application |
 | `cloudflare_authenticated_origin_pulls_settings.this` | Zone-level AOP toggle |
 | `cloudflare_zone_setting.ssl` | Zone SSL mode (`strict`) |
 | `cloudflare_zone_setting.always_use_https` | Zone setting to force HTTPS (`on`) |
@@ -33,6 +35,37 @@ This keeps one source of truth while separating runtime wiring from control-plan
 **Access policy assignment** — each service declares `access.policies` in `policy/web-services.nix` (for example `allow_admins`, `allow_approved`). OpenTofu attaches these shared policy resources to each generated Access application. Services with `access.requireCloudflareAccess = false` get no Access app (e.g. navidrome, vaultwarden).
 
 **Allowed IdPs** — when the identity provider resource is configured, each generated Access application sets `allowed_idps` explicitly to that provider ID.
+
+**Machine access** — `allow_machine` is appended to every generated application, so a client
+carrying the token's headers reaches the origin instead of the login page. Read the credential
+once and store it encrypted; the module that consumes it reads:
+
+```
+tofu output -json machine_access_token          # client_id + client_secret
+just secrets edit secrets/services/gatus.yaml   # cf_access: { client_id, client_secret }
+```
+
+Rotating the token is `tofu apply -replace=cloudflare_zero_trust_access_service_token.monitoring`
+followed by the same two steps: the credential the old secret carries stops working as soon as
+the resource is replaced.
+
+## API token permissions
+
+The token needs these permission groups, account- and zone-scoped as marked. Cloudflare's
+dashboard labels differ from the API's: what the API calls `Write` the dashboard shows as `Edit`.
+
+| Scope | Permission | Used by |
+| --- | --- | --- |
+| Account | `Access: Apps and Policies` | Access applications, their policies, the upstream IdP |
+| Account | `Access: Service Tokens` | `cloudflare_zero_trust_access_service_token.monitoring` |
+| Account | `Access: Organizations, Identity Providers, and Groups` | IdP group membership |
+| Zone | `DNS` | service and origin records |
+| Zone | `Zone Settings` | SSL mode, always-use-HTTPS, Authenticated Origin Pulls |
+| Zone | `Zone WAF` | the managed-ruleset and cache-bypass rulesets |
+
+`Access: Service Tokens` is separate from `Access: Apps and Policies`: a token that can manage
+applications still cannot create the monitoring service token, and the apply fails with
+`auth.forbidden` (code 1010) on that resource alone.
 
 ## Required variables
 

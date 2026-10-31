@@ -11,12 +11,12 @@ all:
   @./tests/check-host-age-anchor.sh
   @./tests/check-deploy-bootstrap-gate.sh
   @./tests/check-flake-source-tracking.sh
+  @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).assets-publisher"
   @./tests/check-dendritic-scaffold-contract.sh
   @./tests/check-web-services-policy.sh
   @./tests/check-web-service-catalog.sh
   @./tests/phase-la-admin-contract.sh
   @./tests/check-identity-contract-directionality.sh
-  @./tests/kanidm-restore-contract.sh
   @./tests/check-shell-account-contract.sh
   @./tests/check-backup-surface-contract.sh
   @./tests/check-bifrost-gateway-contract.sh oci-melb-1

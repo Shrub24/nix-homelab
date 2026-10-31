@@ -13,7 +13,7 @@
 
   karakeepChrome = "ghcr.io/karakeep-app/karakeep-chrome:156.0.8078.47-r1@sha256:4ad61127638dd27bfe685222787c5780dd1d083d23a7658c39af657775814c44";
 
-  karakeepMeilisearch = "getmeili/meilisearch:v1.55.0@sha256:ff546679970126f8822e15d1b6a06bfbff1f2ce2e43f810cfb5258012f92de5c";
+  karakeepMeilisearch = "docker.io/getmeili/meilisearch:v1.55.0@sha256:ff546679970126f8822e15d1b6a06bfbff1f2ce2e43f810cfb5258012f92de5c";
 
   audiomuse = "ghcr.io/neptunehub/audiomuse-ai:3.6.4@sha256:811f1f0bd0de97a1b4ab6601898297010da18fc957312b1ed3bb62990683630c";
 
@@ -25,9 +25,11 @@
 
   omniroute = "ghcr.io/shrub24/omniroute:sha-sha-25965d5@sha256:12d7cf563a5de174f13c32fded4e58c35f841f2a94d97b7af024323a82c78674";
 
-  langfuse = "docker.langfuse.com/langfuse/langfuse:4.70.0@sha256:932a46dfab770f89ecb2ec35258b6b80d3be8773403981a64d271ff0a408deef";
+  # Docker Hub directly: the langfuse.com proxy makes its own anonymous pulls and is
+  # routinely rate-limited, which fails the unit rather than the pull.
+  langfuse = "docker.io/langfuse/langfuse:4.70.0@sha256:932a46dfab770f89ecb2ec35258b6b80d3be8773403981a64d271ff0a408deef";
 
-  langfuseWorker = "docker.langfuse.com/langfuse/langfuse-worker:4.70.0@sha256:3b3b204fa72fd02d010ab90c667d07281e4b9ec3b5b0b1d21470ac2624b8a564";
+  langfuseWorker = "docker.io/langfuse/langfuse-worker:4.70.0@sha256:3b3b204fa72fd02d010ab90c667d07281e4b9ec3b5b0b1d21470ac2624b8a564";
 
   docsMcpServer = "ghcr.io/arabold/docs-mcp-server:3.4.0@sha256:9e54b534cc2f34610a03d4d2e40b18a10fc71365a8e3148fe4a48dcb6eb0089b";
 

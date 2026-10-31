@@ -1,0 +1,133 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+version: 1
+metadata:
+  name: homelab-recovery
+entries:
+  - attrs:
+      authentication: require_unauthenticated
+      designation: recovery
+      name: Password recovery
+      title: Reset your password
+      background: !Context flow-background
+    id: recovery-flow
+    identifiers:
+      slug: recovery
+    model: authentik_flows.flow
+  - attrs:
+      user_fields:
+        - username
+        - email
+    id: recovery-identification
+    identifiers:
+      name: recovery-identification
+    model: authentik_stages_identification.identificationstage
+  - attrs:
+      template: email/password_reset.html
+      token_expiry: minutes=30
+      use_global_settings: true
+    id: recovery-email
+    identifiers:
+      name: recovery-email
+    model: authentik_stages_email.emailstage
+  - attrs:
+      field_key: password
+      label: New password
+      placeholder: New password
+      placeholder_expression: false
+      required: true
+      type: password
+    id: recovery-field-password
+    identifiers:
+      name: recovery-field-password
+    model: authentik_stages_prompt.prompt
+  - attrs:
+      field_key: password_repeat
+      label: New password (repeat)
+      placeholder: New password (repeat)
+      placeholder_expression: false
+      required: true
+      type: password
+    id: recovery-field-password-repeat
+    identifiers:
+      name: recovery-field-password-repeat
+    model: authentik_stages_prompt.prompt
+  - attrs:
+      fields:
+        - !KeyOf recovery-field-password
+        - !KeyOf recovery-field-password-repeat
+    id: recovery-prompt-password
+    identifiers:
+      name: recovery-prompt-password
+    model: authentik_stages_prompt.promptstage
+  - attrs:
+      user_creation_mode: never_create
+    id: recovery-user-write
+    identifiers:
+      name: recovery-user-write
+    model: authentik_stages_user_write.userwritestage
+  - id: recovery-user-login
+    identifiers:
+      name: recovery-user-login
+    model: authentik_stages_user_login.userloginstage
+  - attrs:
+      order: 10
+      stage: !KeyOf recovery-identification
+      target: !KeyOf recovery-flow
+    id: binding-recovery-recovery-identification
+    identifiers:
+      stage: !KeyOf recovery-identification
+      target: !KeyOf recovery-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 20
+      stage: !KeyOf recovery-email
+      target: !KeyOf recovery-flow
+    id: binding-recovery-recovery-email
+    identifiers:
+      stage: !KeyOf recovery-email
+      target: !KeyOf recovery-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 30
+      stage: !KeyOf recovery-prompt-password
+      target: !KeyOf recovery-flow
+    id: binding-recovery-recovery-prompt-password
+    identifiers:
+      stage: !KeyOf recovery-prompt-password
+      target: !KeyOf recovery-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 40
+      stage: !KeyOf recovery-user-write
+      target: !KeyOf recovery-flow
+    id: binding-recovery-recovery-user-write
+    identifiers:
+      stage: !KeyOf recovery-user-write
+      target: !KeyOf recovery-flow
+    model: authentik_flows.flowstagebinding
+  # A reset that skips enrolment would strand the user at the next sign-in without
+  # the device they lost, so recovery replaces the method before creating a session.
+  - attrs:
+      order: 50
+      stage: !Find [
+          authentik_stages_authenticator_totp.authenticatortotpstage,
+          [name, default-authenticator-totp-setup],
+        ]
+      target: !KeyOf recovery-flow
+    id: binding-recovery-totp-setup
+    identifiers:
+      stage: !Find [
+          authentik_stages_authenticator_totp.authenticatortotpstage,
+          [name, default-authenticator-totp-setup],
+        ]
+      target: !KeyOf recovery-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 100
+      stage: !KeyOf recovery-user-login
+      target: !KeyOf recovery-flow
+    id: binding-recovery-recovery-user-login
+    identifiers:
+      stage: !KeyOf recovery-user-login
+      target: !KeyOf recovery-flow
+    model: authentik_flows.flowstagebinding

@@ -1,17 +1,17 @@
 # Non-sensitive OpenTofu config only.
 # Keep only secrets and infra-sensitive identifiers in encrypted SOPS sources.
 
-# Cloudflare Access upstream IdP (Kanidm generic OIDC)
-idp_name      = "Kanidm"
-idp_auth_url  = "https://id.shrublab.xyz/ui/oauth2"
-idp_token_url = "https://id.shrublab.xyz/oauth2/token"
-idp_certs_url = "https://id.shrublab.xyz/oauth2/openid/cloudflare-access/public_key.jwk"
+# Cloudflare Access upstream IdP (Authentik generic OIDC)
+idp_name      = "Authentik"
+idp_auth_url  = "https://auth.shrublab.xyz/application/o/authorize/"
+idp_token_url = "https://auth.shrublab.xyz/application/o/token/"
+idp_certs_url = "https://auth.shrublab.xyz/application/o/cloudflare-access/jwks/"
 
 aop_enabled = true
 
 managed_waf_enabled                = true
 firewall_country_allowlist_enabled = true
-firewall_allowed_countries         = ["AU", "GB", "US"]
+firewall_allowed_countries         = ["AU", "GB", "US", "JP"]
 rate_limit_enabled                 = true
 rate_limit_characteristics         = ["ip.src", "cf.colo.id"]
 rate_limit_requests_per_period     = 300

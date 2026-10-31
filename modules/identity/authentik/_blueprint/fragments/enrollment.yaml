@@ -1,0 +1,241 @@
+# yaml-language-server: $schema=https://goauthentik.io/blueprints/schema.json
+version: 1
+metadata:
+  name: homelab-enrollment
+entries:
+  - attrs:
+      authentication: require_unauthenticated
+      designation: enrollment
+      name: Enrollment
+      title: !Context enrollment-title
+      background: !Context flow-background
+    id: enrollment-flow
+    identifiers:
+      slug: !Context enrollment-flow
+    model: authentik_flows.flow
+  - attrs:
+      continue_flow_without_invitation: false
+    id: enrollment-invitation
+    identifiers:
+      name: !Format
+        - '%s-invitation'
+        - !Context enrollment-flow
+    model: authentik_stages_invitation.invitationstage
+  - attrs:
+      field_key: username
+      label: Username
+      order: 0
+      placeholder: Username
+      placeholder_expression: false
+      required: true
+      type: username
+    id: enrollment-field-username
+    identifiers:
+      name: !Format
+        - '%s-field-username'
+        - !Context enrollment-flow
+    model: authentik_stages_prompt.prompt
+  - attrs:
+      field_key: password
+      label: Password
+      order: 1
+      placeholder: Password
+      placeholder_expression: false
+      required: true
+      type: password
+    id: enrollment-field-password
+    identifiers:
+      name: !Format
+        - '%s-field-password'
+        - !Context enrollment-flow
+    model: authentik_stages_prompt.prompt
+  - attrs:
+      field_key: password_repeat
+      label: Password (repeat)
+      order: 2
+      placeholder: Password (repeat)
+      placeholder_expression: false
+      required: true
+      type: password
+    id: enrollment-field-password-repeat
+    identifiers:
+      name: !Format
+        - '%s-field-password-repeat'
+        - !Context enrollment-flow
+    model: authentik_stages_prompt.prompt
+  - attrs:
+      field_key: name
+      label: Name
+      order: 0
+      placeholder: Name
+      placeholder_expression: false
+      required: true
+      type: text
+    id: enrollment-field-name
+    identifiers:
+      name: !Format
+        - '%s-field-name'
+        - !Context enrollment-flow
+    model: authentik_stages_prompt.prompt
+  - attrs:
+      field_key: email
+      label: Email
+      order: 1
+      placeholder: Email
+      placeholder_expression: false
+      required: true
+      type: email
+    id: enrollment-field-email
+    identifiers:
+      name: !Format
+        - '%s-field-email'
+        - !Context enrollment-flow
+    model: authentik_stages_prompt.prompt
+  - attrs:
+      fields:
+        - !KeyOf enrollment-field-username
+        - !KeyOf enrollment-field-password
+        - !KeyOf enrollment-field-password-repeat
+    id: enrollment-prompt-credentials
+    identifiers:
+      name: !Format
+        - '%s-prompt-credentials'
+        - !Context enrollment-flow
+    model: authentik_stages_prompt.promptstage
+  - attrs:
+      fields:
+        - !KeyOf enrollment-field-name
+        - !KeyOf enrollment-field-email
+    id: enrollment-prompt-details
+    identifiers:
+      name: !Format
+        - '%s-prompt-details'
+        - !Context enrollment-flow
+    model: authentik_stages_prompt.promptstage
+  - attrs:
+      create_users_as_inactive: true
+      create_users_group: !Context enrollment-group
+      user_creation_mode: always_create
+      user_type: internal
+    id: enrollment-user-write
+    identifiers:
+      name: !Format
+        - '%s-user-write'
+        - !Context enrollment-flow
+    model: authentik_stages_user_write.userwritestage
+  - id: enrollment-user-login
+    identifiers:
+      name: !Format
+        - '%s-user-login'
+        - !Context enrollment-flow
+    model: authentik_stages_user_login.userloginstage
+  - attrs:
+      evaluate_on_plan: true
+      order: 5
+      re_evaluate_policies: true
+      stage: !KeyOf enrollment-invitation
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-invitation
+    identifiers:
+      stage: !KeyOf enrollment-invitation
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 10
+      stage: !KeyOf enrollment-prompt-credentials
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-prompt-credentials
+    identifiers:
+      stage: !KeyOf enrollment-prompt-credentials
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 15
+      stage: !KeyOf enrollment-prompt-details
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-prompt-details
+    identifiers:
+      stage: !KeyOf enrollment-prompt-details
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 20
+      stage: !KeyOf enrollment-user-write
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-user-write
+    identifiers:
+      stage: !KeyOf enrollment-user-write
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 30
+      re_evaluate_policies: true
+      stage: !KeyOf verify-email
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-email-confirmation
+    identifiers:
+      stage: !KeyOf verify-email
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 0
+      policy: !KeyOf policy-email-unverified
+      target: !KeyOf binding-enrollment-email-confirmation
+    id: policybinding-enrollment-unverified
+    identifiers:
+      order: 0
+      policy: !KeyOf policy-email-unverified
+      target: !KeyOf binding-enrollment-email-confirmation
+    model: authentik_policies.policybinding
+  # Enrollment asks for a method before the session: the stage injects its configuration
+  # stages because a new account has none.
+  - attrs:
+      order: 60
+      stage: !KeyOf mfa-validation
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-mfa
+    identifiers:
+      stage: !KeyOf mfa-validation
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 100
+      re_evaluate_policies: true
+      stage: !KeyOf enrollment-user-login
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-user-login
+    identifiers:
+      stage: !KeyOf enrollment-user-login
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 200
+      stage: !KeyOf verify-confirmed
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-confirmed
+    identifiers:
+      stage: !KeyOf verify-confirmed
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 0
+      policy: !KeyOf policy-email-verified
+      target: !KeyOf binding-enrollment-user-login
+    id: policybinding-enrollment-user-login
+    identifiers:
+      order: 0
+      policy: !KeyOf policy-email-verified
+      target: !KeyOf binding-enrollment-user-login
+    model: authentik_policies.policybinding
+  - identifiers:
+      name: !Format
+        - '%s-redirect'
+        - !Context enrollment-flow
+    model: authentik_stages_redirect.redirectstage
+    state: absent
+  - identifiers:
+      name: !Format
+        - '%s-email-verification'
+        - !Context enrollment-flow
+    model: authentik_stages_email.emailstage
+    state: absent

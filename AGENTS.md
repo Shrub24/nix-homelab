@@ -200,6 +200,14 @@ Do not make direct repo edits outside established workflows unless the user expl
 
 Project-owned rules that must survive tool regeneration. They live here rather than in the OpenSpec-managed integration files (`.pi/`, `.github/prompts`, `.github/skills`, `.opencode/`), which `openspec update` rewrites wholesale:
 
+### Documentation Placement
+
+- `CONVENTIONS.md` holds code and module patterns: namespaces, naming, ownership, file layout, checks, comment style. Nothing else. An operator preference, an environment fact or a rationale does not belong there.
+- Operator preferences and environment facts belong in the `docs/` entry for that subsystem (`docs/mail.md`, `docs/identity.md`), or in `AGENTS.md` when they change how work is done rather than what the system is.
+- Rationale — the decision, its reason, the rejected alternative, and what would make it worth revisiting — belongs in `docs/decisions.md`.
+- A runbook under `docs/runbooks/` holds operator steps only: preflight, ordered actions, acceptance to record, rollback, recovery. It says what to run and what to check, never why the system is shaped that way or which alternative was rejected; it links to the `docs/` entry instead.
+- A table of current facts belongs in the subsystem's `docs/` entry. A table an operator fills in belongs in the runbook.
+
 ### Flake Reference Form
 
 - Local evaluation uses the Git-tree form `.#`: the `justfile` recipes, the workflow files, `scripts/resolve-host-config.sh`, and the documented cutover command all resolve this repository as `.#` or `.#<output>`.

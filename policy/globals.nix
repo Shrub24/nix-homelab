@@ -1,9 +1,24 @@
+let
+  # The public DNS suffix, written once: web routes take it as their primary domain and every
+  # user-facing address (mail senders, seeded people) derives from it.
+  domain = "shrublab.xyz";
+  # Shared public assets live on their own hostname, whose DNS the bucket provider owns, so
+  # they are deliberately absent from policy/web-services.nix.
+  assetsBase = "https://assets.${domain}";
+in
 {
   # The tailnet suffix, written once: host records derive their FQDN from it and the
   # web policy composes host-backed FQDNs with it.
   tailnet = {
     suffix = "tail0fe19b.ts.net";
   };
+
+  domain = domain;
+
+  # Assets every visitor loads before authenticating, so the bucket behind them is
+  # world-readable by design and nothing here may be secret. `policy/assets.nix` turns this
+  # location into the brand URLs, which may point anywhere public.
+  assets.baseUrl = assetsBase;
 
   # Container-facing service address: a dummy interface on from boot. A container cannot
   # reach a native service over its own bridge, so such services bind this address.
@@ -19,8 +34,7 @@
     containerSourceCIDR = "10.89.0.0/16";
   };
 
-  # ClickHouse HTTP, off its conventional 8123 because home-forge runs Home Assistant
-  # there on the host network. Declared once so the server and every consumer agree.
+  # ClickHouse HTTP, off its conventional 8123: home-forge runs Home Assistant on that port.
   observability = {
     clickhouseHttpPort = 8124;
   };

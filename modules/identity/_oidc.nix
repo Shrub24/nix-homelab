@@ -1,77 +1,96 @@
-# Intrinsic OIDC contract: per-client endpoint URIs from identity policy and the resolved
-# Kanidm route, read-only. It deploys nothing, so readers import it rather than select it.
+# Intrinsic OIDC client contract: approved clients projected through the active
+# provider's conventions. Deploys and registers nothing, so readers import it.
 { lib, config, ... }:
 let
-  cfg = config.services.identity.oidc;
-  identityPolicy = builtins.fromJSON (builtins.readFile ../../policy/identity.json);
-  oauth2Policy = identityPolicy.systems.oauth2 or { };
-  enabledOauth2Clients = lib.filterAttrs (_name: client: client.enable or true) oauth2Policy;
-  # The provider URL comes from the resolved Kanidm route; neither side writes the other's
-  # option namespace.
-  webPolicyKanidmUrl = lib.attrByPath [
-    "repo"
-    "web"
-    "catalog"
-    "kanidm-admin"
-    "publicUrl"
-  ] null config;
-  providerUrlMatch =
-    if cfg.providerUrl == null then null else builtins.match "https://([^/]+).*" cfg.providerUrl;
-  providerUrlValid = cfg.providerUrl == null || providerUrlMatch != null;
-  clientPathPrefix = if cfg.providerUrl == null then null else "${cfg.providerUrl}/oauth2/openid";
-  mkClientOidcEndpoints = clientId: {
-    inherit clientId;
-    issuerUrl = "${clientPathPrefix}/${clientId}";
-    wellknownUrl = "${clientPathPrefix}/${clientId}/.well-known/openid-configuration";
-    authorizationUrl = "${cfg.providerUrl}/ui/oauth2";
-    tokenUrl = "${cfg.providerUrl}/oauth2/token";
-    userinfoUrl = "${clientPathPrefix}/${clientId}/userinfo";
+  policy = import ../../policy/identity.nix;
+  projections = {
+    authentik = import ./authentik/_client.nix;
   };
+  projectionFor =
+    provider:
+    projections.${provider}
+      or (throw "services.identity.oidc: unknown identity provider '${provider}' in policy/identity.nix");
+  routeKey = policy.providers.${policy.provider}.route or null;
+  catalogEntry =
+    if routeKey == null then
+      null
+    else
+      lib.attrByPath [
+        "repo"
+        "web"
+        "catalog"
+        routeKey
+      ] null config;
+  # A private route resolves no public identity; the assertion below reports it.
+  derivedProviderUrl = if catalogEntry == null then null else catalogEntry.publicUrl or null;
+
+  cfg = config.services.identity.oidc;
+  # Conventions apply to the resolved identity, so a projection never decides placement.
+  provider = projectionFor policy.provider { providerUrl = cfg.providerUrl; };
+
+  declaredGroups = policy.groups;
+  enabledClients = lib.filterAttrs (_name: client: client.enable or true) policy.clients;
+
+  mkClient =
+    name: clientPolicy:
+    let
+      scopes = lib.unique (
+        map (provider.nativeScope or (scope: scope)) (
+          builtins.concatLists (builtins.attrValues clientPolicy.access)
+        )
+      );
+    in
+    provider.endpoints name
+    // {
+      clientId = name;
+      inherit scopes;
+      inherit (provider) providerName groupsClaim;
+    };
+
+  # A group typo would silently void that client's access, so it fails by name.
+  undeclaredGroups = lib.concatMap (
+    name:
+    let
+      unknown = lib.subtractLists declaredGroups (builtins.attrNames enabledClients.${name}.access);
+    in
+    lib.optional (
+      unknown != [ ]
+    ) "client '${name}' grants undeclared groups: ${lib.concatStringsSep ", " unknown}"
+  ) (builtins.attrNames enabledClients);
 in
 {
   options.services.identity.oidc = {
     providerUrl = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
-      default = webPolicyKanidmUrl;
-      defaultText = "repo.web.catalog.\"kanidm-admin\".publicUrl";
-      description = "Canonical public URL for the active identity provider. Defaults to the canonical web-policy Kanidm route.";
-    };
-
-    clientPathPrefix = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      readOnly = true;
-      description = "Base client-specific OIDC path prefix for the active identity provider.";
-    };
-
-    tokenUrl = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      readOnly = true;
-      description = "Canonical OAuth2 token endpoint for the active identity provider.";
+      default = derivedProviderUrl;
+      defaultText = lib.literalExpression "config.repo.web.catalog.<active provider route>.publicUrl";
+      description = ''
+        Canonical public URL of the active identity provider. Defaults to the
+        policy-approved route for that provider; set it only to probe a
+        candidate identity that has no published route yet.
+      '';
     };
 
     clients = lib.mkOption {
       type = lib.types.attrs;
       readOnly = true;
-      description = "Canonical per-client OIDC endpoint outputs keyed by consumer name.";
+      description = "Resolved OIDC client facts keyed by consumer name.";
     };
   };
 
   config = {
     assertions = [
       {
-        assertion = providerUrlValid;
-        message = "services.identity.oidc.providerUrl must be null or a valid https URL.";
+        assertion = cfg.providerUrl != null;
+        message = "services.identity.oidc: policy/identity.nix selects provider '${policy.provider}', whose route '${toString routeKey}' declares no public identity; publish it in policy/web-services.nix or supply services.identity.oidc.providerUrl.";
+      }
+      {
+        assertion = undeclaredGroups == [ ];
+        message = "services.identity.oidc: ${lib.concatStringsSep "; " undeclaredGroups}";
       }
     ];
 
-    services.identity.oidc = {
-      clientPathPrefix = if cfg.providerUrl == null then null else clientPathPrefix;
-      tokenUrl = if cfg.providerUrl == null then null else "${cfg.providerUrl}/oauth2/token";
-      clients =
-        if cfg.providerUrl == null then
-          { }
-        else
-          lib.mapAttrs (name: _client: mkClientOidcEndpoints name) enabledOauth2Clients;
-    };
+    services.identity.oidc.clients =
+      if cfg.providerUrl == null then { } else lib.mapAttrs mkClient enabledClients;
   };
 }

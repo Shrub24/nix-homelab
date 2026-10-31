@@ -1,6 +1,6 @@
 # BookOrbit on nixpkgs' native service. The shared PostgreSQL cluster provisions the
 # database through its consumer registry. OIDC providers are configured in BookOrbit's own
-# settings, so the Kanidm client is declared in policy/identity.json with no Nix secret.
+# settings, so its OIDC client is declared in policy/identity.nix with no Nix secret.
 _: {
   flake.modules.nixos.bookorbit =
     {
@@ -36,7 +36,8 @@ _: {
       config = lib.mkMerge [
         { services.bookorbit.enable = true; }
 
-        (lib.mkIf cfg.enable {
+        {
+
           assertions = [
             {
               assertion = route != null;
@@ -46,12 +47,6 @@ _: {
               assertion = localPostgres != null;
               message = "services.bookorbit: this host runs no PostgreSQL cluster; select the postgres aspect and declare services.postgres.instances.<name>.";
             }
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.bookorbit";
-              label = "secretFiles.host";
-            })
           ];
 
           sops.secrets = secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
@@ -161,7 +156,7 @@ _: {
           };
 
           services.notify.events.bookorbit.failure = { };
-        })
+        }
       ];
     };
 }

@@ -2978,7 +2978,9 @@ It also adds `services.geopulse.adminEmail`, bound to `GEOPULSE_ADMIN_EMAIL`, be
 
 **Rejected:** Serving Homarr at the apex. Its cookies could be scoped to `shrublab.xyz`, which every other host receives, and the apex would become a workload whose name is the one people share. A static landing page was deferred: it is content to maintain, and the redirect can be replaced by one later without changing the DNS record.
 
-**Consequences:** `home.shrublab.xyz` is the single dashboard address. Changing the landing target is one edit to `policy/web-services.nix`, and the rendered site and the DNS export follow from it.
+**Revision:** the apex now redirects to `auth.shrublab.xyz`, the identity dashboard, which is the one page every user can sign in to and see their applications. `home.shrublab.xyz` stays Homarr's own address.
+
+**Consequences:** the apex lands on the identity dashboard. Changing the landing target is one edit to `policy/web-services.nix`, and the rendered site and the DNS export follow from it.
 
 **Follow-up found by the live check:** publishing the apex exposed that the dashboard's public route had never worked. `https://home.shrublab.xyz/` answered `400 Client sent an HTTP request to an HTTPS server` — Go's own error string, from the provider's Tailscale Serve front. A `tailscale-serve` route published its socket behind that front, which terminates TLS on the declared port and proxies to the app's loopback listener, but the edge derived its dial scheme from the application's `origin.scheme` (`http`). The dial was therefore a plain-HTTP request to a TLS listener. `lib/policy.nix` now has one `dialScheme` that answers `https` for `tailscale-serve` regardless of what the app speaks, applied to both the edge upstream and the catalog endpoint; dialing the front at the app's scheme is never correct, and the same defect silently affected every tailnet-served route. Verified live: `https://shrublab.xyz/boards` 301s to `https://home.shrublab.xyz/boards`, which answers 200.
 
@@ -3091,3 +3093,152 @@ There is **no consumer registry**, which is the one place this deliberately diff
 **Rejected:** Keeping commit-dependent outputs and assuming a matching tree guarantees reuse, or dropping the tracked source copy to hide the dependency. The source copy is useful provenance and is already content-addressed.
 
 **Consequences:** `system.configurationRevision` is no longer supplied by this repository. Validate equal-tree derivations independently of the later observed PR/main reuse test; neither result substitutes for the other.
+
+## D-115: Application identity is policy-projected, and its providers are directories
+
+**Status:** Accepted; implementation in progress, cutover unverified.
+
+**Context:** Kanidm served two roles — application SSO and host Unix/PAM/SSH authentication — from one server and one SQLite database, with clients described in a Kanidm-shaped document that the provider and the client contract both read. Replacing application SSO with Authentik exposed three couplings: the client contract encoded Kanidm's URL formulas, host authentication resolved its URI from the *active application* provider, and a client's existence in policy was entangled with the module that consumed it.
+
+**Decision:** One registration policy (`policy/identity.nix`) is the authority for approved clients, their access groups and their claim intent. It feeds two independent realizations: the intrinsic client contract (`modules/identity/_oidc.nix`, which applications import and which registers nothing) and the selected provider's own projection (which provisions). No host's configuration is collected to build either, so a client may be approved while its application is not deployed, and an application cannot register itself by being composed. A shared resolver turns policy plus the resolved route into the redirect allowlist, and one credential-source map serves every provider, so a provider swap changes neither the allowlist nor the readership.
+
+Providers live in directories (`modules/identity/kanidm/`, `modules/identity/authentik/`) rather than as provider-prefixed siblings: their runtime, provisioning, client projection and assets cannot be understood apart. Inside a provider directory the ordinary rules hold — a non-underscore file is a discovered flake-parts contributor, a `_` file is value-imported by its owner. The composition aspect `identity-provider` binds the policy's active provider; the implementation aspects stay independently selectable so retaining Kanidm for host authentication cannot be mistaken for retaining it for applications.
+
+Host authentication resolves the Kanidm route named by policy directly, never the active application provider, because an application cutover must not retarget PAM/SSH clients.
+
+**Supersedes:** The flat-sibling preference in `CONVENTIONS.md`, for cohesive provider families only. It also narrows `kanidm-identity`'s canon: Kanidm is a compatibility provider and the host-authentication authority, not the fleet's only identity provider.
+
+**Rejected:** Aggregating registrations from evaluated consumer hosts (the pattern PostgreSQL and state backups use) — those registries are host-local, so a remote consumer's registration would never reach the identity host. Also rejected: forcing Authentik into Kanidm's scope-map shape rather than using native blueprints, and importing Kanidm's encrypted person/membership overlay into Authentik, which would make a UI-owned user database a projection of a document it cannot represent.
+
+**Consequences:** Identity policy is now the place a registration is approved, and both providers read it. Blueprint application is Authentik's, not the NixOS activation's: a mounted file is not evidence of provisioning, so retirement needs an explicit disable/delete and acceptance needs the resulting objects. Authentik owns people, credentials and memberships; Nix owns groups, clients, access rules, the enrollment flow and the brand. Nix seeds a person and stops: the roster entry is applied `state: created` with no credential, so a later UI edit is the intended state rather than drift, while credentials arrive through the invitation-gated enrollment flow (an invitation stage that stops without a token). Recovery is the database plus persistent assets plus the stable secret key — reapplying blueprints restores configuration only. Cutover stays blocked until retained Kanidm host authentication is independently reachable and verified, and per-application account continuity is accepted; unchanged client ids, emails or secrets do not establish it. Email verification is recorded rather than inferred: the enrollment and `verify-email` flows bind one expression policy to their login stage, which stores the confirmed address in `email_verified_address`, and the `homelab-email` mapping asserts `email_verified` only while that stored address matches the account's current one. Deriving the claim from `is_active` was rejected — it asserts a verified address for accounts an administrator created and survives an address change. The cost is that an administrator-created account is unverified until it runs the flow.
+Application-facing provider identifiers — Paperless' `provider_id`, Tududi's callback slug, Memos' provider `uid` and its `/etc/secrets` file label — are the client id rather than a provider name, so the provider's name reaches no consumer and a policy rename moves the identifier with it, at the cost of orphaning an account linked under the previous value. The client id is the policy key; no separate override exists, because both providers provision under that key and an override that reached only the client contract would desynchronise the registration.
+
+## D-116: One domain literal, and mail senders owned by their aspects
+
+**Status:** Accepted.
+
+**Context:** The public DNS suffix `shrublab.xyz` was written as a literal in eleven places — the web policy's `primaryDomain`, a redirect target, four module defaults and environment values, a host-private Cockpit override, two mail senders set in host configuration, and the seeded administrator's address. Each was a second place the domain could drift, and two of them had already drifted from the fleet's intent.
+
+**Decision:** `policy/globals.nix` gains `domain`, the single place the suffix is written; the web policy takes its `primaryDomain` from it and every module composes its hostname or address from it. Each service sends from its own local part (`auth@`, `vault@`, `latitude@`), and the sender is a default in the owning aspect rather than a value the host supplies, so a host's configuration no longer carries a mail address.
+
+**Rejected:** A single shared sender (`no-reply@` with a `Reply-To` into a monitored mailbox). It is fewer literals, but the address is part of a service's user-facing identity — a person can tell which system wrote to them and filter one stream without touching another — and the deliverability argument does not support centralising, because reputation attaches to the domain and the relay's addresses rather than the local part. Also rejected: deriving senders from the resolved web catalog, which couples mail to route publication and yields a null address for an unpublished route.
+
+**Consequences:** The domain changes in one place and every consumer follows. Isolation is unchanged: all senders share one domain and one relay, so a blocklist or reputation hit takes them all; separating them would need a sending subdomain or a second relay account, and the trigger to revisit is a service whose volume or complaint rate starts affecting delivery of the others. Module defaults that duplicate a *route's* public host (`karakeep.publicUrl`, `paperless`'s `PAPERLESS_URL`, `niks3-cache.cacheUrl`, Cockpit's `publicHost`) still restate the host a route already declares; deriving them from `repo.web.catalog` is a separate change, since a route's public identity is absent until it is published.
+
+
+## D-117: Paperless pinned to a nixpkgs revision that already builds
+
+**Status:** Accepted, temporary.
+
+**Context:** `paperless-ngx` 3.3.3 has no prebuilt aarch64 build anywhere. `cache.nixos.org` misses its closure, so oci-melb-1 compiles roughly 49 derivations including DuckDB and torchaudio on a two-core A1; Hydra aborts the same derivation on log volume from GCC 16's `-Wsfinae-incomplete` warnings; and the newer packaging fails its own exporter test with `EOPNOTSUPP` on some build filesystems. The generation already deployed on oci-melb-1 runs 3.3.1 from nixpkgs `fe13242`, whose store path is present on the host and in the fleet cache.
+
+**Decision:** `nixpkgs-paperless` pins that revision, and the `paperless` aspect overlays `paperless-ngx` from it, so the package the nixpkgs module configures — including its own `doCheck = false` override — is the 3.3.1 derivation the fleet already runs. Verified by derivation equality: the aspect resolves to `/nix/store/mb6iji…-paperless-ngx-3.3.1`, the exact path the live generation carries. The remaining build set falls from 49 derivations to 21 wrappers and units.
+
+**Rejected:** Pinning the *whole* nixpkgs for the host, which would move every other package backwards over a single application. Building 3.3.3 instead — the derivation exists and would work once built, but it costs hours per architecture, it was the reason the A1 activation was slow, and the pin is removable in one commit the moment a newer paperless substitutes. Disabling checks locally (`doCheck = false` on our own override) — the nixpkgs module already does that, and it was never the failing stage.
+
+**Consequences:** Paperless runs a two-patch-old release while the pin lives. Renovate does not manage flake inputs in this repository (`enabledManagers` is limited to the custom regexes and GitHub Actions), so the pin is inert until someone runs `nix flake update`, which will move it; the removal trigger is any of: a newer paperless that substitutes on aarch64, a fleet cache entry for it, or an upstream fix for the exporter test. The removal is the pin plus the overlay, with `docs/plan.md` carrying the item.
+
+## D-118: The edge certificate renews on its own schedule, and a rejected renewal is not fatal
+
+**Status:** Accepted.
+
+**Context:** An `oci-melb-1` activation hung on `acme-order-renew-shrublab.xyz.service` for longer than deploy-rs's activation timeout, and the deploy rolled back twice. The unit was retrying a Let's Encrypt `429` — "too many certificates (5) already issued for this exact set of identifiers in the last 168h". The log showed the cause of the escalation was ours: `INFO Changes detected in the certificate configuration` with 89 days of validity remaining. `certExtraDomains` passed the apex name both as `domain` and again in `extraDomainNames`, so lego compared a requested SAN list containing `shrublab.xyz` twice against the stored certificate and read the difference as a configuration change, forcing a re-issue on every activation that touched the unit. Twenty renewal attempts were logged in seven days against a five-per-week limit.
+
+**Decision:** `certExtraDomains` carries only the wildcard, because `domain` already covers the apex. The certificate sets `validMinDays = 30`, which makes nixpkgs' renewal script pass `--renew-days 30` and treat a failed renewal as ignorable (`Ignoring failed renewal because expiration isn't due yet`) while the served certificate is still more than 30 days from expiry.
+
+**Rejected:** Letting Caddy issue and renew the certificate through its own ACME client. It removes the nixpkgs unit class entirely and is the idiomatic Caddy arrangement, but it moves issuance state into Caddy's data directory and adds a second renewal mechanism's failure modes; with the duplicate SAN gone and the skip guard in place, the nixpkgs path no longer produces an unbounded activation wait. Also rejected: overriding the order unit's script to drop `--force-cert-domains`, because that text is itself the restart trigger and a local copy would drift from upstream's recovery semantics.
+
+**Consequences:** The unit keeps nixpkgs' daily check (`acme-renew-<cert>.timer`, `renewInterval = daily`, jittered, `Persistent = yes`), and renews when the certificate is inside 30 days of expiry or when lego has a real configuration change to apply. A `lego` bump still changes the order unit's script, and through `restartTriggers` still starts it — the difference is that a CA rejection is now logged and absorbed instead of failing the unit. Two upstream behaviours worth remembering: `validMinDays` does **not** inherit from `security.acme.defaults` (its per-cert declaration uses a literal `null` default rather than the module's `defaultAndText` helper), and leaving it unset uses a dynamic window — one third of the certificate's lifetime, or half for short-lived certificates — rather than a fixed number of days.
+
+## D-119: The flake publishes a named surface, and host facts live under one key
+
+**Status:** Accepted; implemented in `clean-flake-output-surface`.
+
+**Evidence:** The tree published 13 flake attributes. Three — `nixosModules`, `overlays`, `legacyPackages.<system>` — were flake-parts defaults with nothing populating them. Two, `deployHosts` and `bootstrap`, were projections of one `lib/deploy/hosts.nix` topology plus the host records' reimage metadata, so answering "what is host X" needed both. `packages.<system>` mixed 29 names across six roles. Every inherited package name was checked against nix-fleet before deciding: its workflows read `packages.$RUNNER_SYSTEM.ci-tailscale` (`pin-cache.yml:123`), `ci`, `cache-api-url`, `cache-substituter-url` and `cache-root`; `fixture` is read only by nix-fleet's own tests.
+
+**Context:** A flake's outputs are its public interface, and flake-parts publishes every declared option whether or not something fills it. An output that exists because a framework defaulted it into existence is an interface claim, not a neutral leftover: `nix flake show` advertises a module set, an overlay and a package set this repository does not offer. Meanwhile the two bespoke projections had grown into names a reader has to decode before use, and the repository's own decision rule favours one authority per fact.
+
+**Decision:** The surface is default-deny. One contributor (`modules/flake/output-surface.nix`) imports `flake-parts.touchup`, sets `touchup.any.enable = false` by default, and names the nine published outputs — `nixosConfigurations`, `modules`, `packages`, `checks`, `devShells`, `formatter`, `apps`, `deploy`, `fleet`. A second rule hides `packages.<system>.fixture`, the only inherited entry with no reader here or upstream. Host facts publish once: `fleet.hosts.<id>` carries the validated deploy record joined with the reimage `bootstrap` slice when the host's canonical record declares one, with `fleet.edgeHost` and `fleet.deployOrder` beside it as fleet-level topology. `modules/flake/deploy.nix` owns that output because it already owns the topology validation, so the projection is derived from what was checked rather than recomputed; `modules/flake/bootstrap.nix` was deleted. `deploy` keeps deploy-rs' schema untouched.
+
+**Rejected:** Leaving the three empties, which cost nothing to evaluate but keep `nix flake show` claiming capabilities that do not exist. `partitions`, which splits a flake into subflakes to shrink inputs and the lock, and does not hide outputs. Folding the fleet view into `deploy`, whose schema deploy-rs and `deployChecks` read; a foreign key there is a compatibility risk for no gain. Publishing `fleet.hosts` and `fleet.bootstrap` side by side, the smaller data move that keeps two shapes and still leaves "which output holds this host's reimage facts" open. Hiding `ci-tailscale` because nothing here reads it — nix-fleet's own workflow does, and a hidden output there fails at workflow dispatch rather than in review. And nesting `packages` by role: its type is `lazyAttrsOf types.package`, so nesting is not expressible, and moving roles out (host profiles are already `checks`, the `write-*` generators are `apps`) touches the deploy and CI paths and belongs in its own change.
+
+**Consequences:** A new output needs an allowlist entry, and a rename cannot leak silently: the scaffold contract asserts both directions (the allowlisted set exists, the removed attributes do not come back). Host metadata now has one published path, so the deploy recipe, the deploy workflow, the bootstrap resolver and `deploy.sh`'s header all read `fleet`. `fixture`'s removal is one line to reverse. The `packages` role mixing remains — `docs/research/flake-output-shape.md` records the roles, and reorganising them is deferred rather than settled.
+
+## D-120: Authentik runs on the edge host
+
+**Status:** Accepted; implemented in the Authentik host move.
+
+**Evidence:** `auth.shrublab.xyz` returned 524 and stalled pages while `la-admin-1` itself was healthy (loopback answers in about 80 ms, no CPU steal, no NIC errors). The edge on `oci-melb-1` reached it over the tailnet, a path that lost 17–37% of Tailscale packets and was worse for large ones, and the provider's own looking glasses showed intermittent stalls for transfers from outside its network in both directions. Moving the identity database took about ten minutes against an estimate of half a day.
+
+**Decision:** The `identity-provider` aspect, and the identity PostgreSQL database, are placed on `oci-melb-1`. The database is a consumer of that host's existing cluster rather than a second cluster. The `authentik-admin` route declares `oci-melb-1` as provider with `direct` exposure, so the edge dials loopback. Authentik's TLS listener binds loopback explicitly, because its default wildcard `:9443` collides with a tailnet-address front on the same port.
+
+**Rejected:** An outpost on `oci-melb-1`, which proxies applications and calls back to the core over its API but does not serve the login UI or OIDC endpoints. A tunnel or DERP-only setting, which treats the symptom and adds latency to every path.
+
+**Consequences:** Login and the edge now share a host, so one host carries both. The secret key moved unchanged with the database, which is what keeps sessions and encrypted fields valid. `secrets/identity/authentik.yaml` is readable by `oci-melb-1`, and carries the SMTP pair. `la-admin-1` no longer runs PostgreSQL. A host move is a policy edit plus a secret re-scope, and the data moves by dump and restore with the service stopped. Revisit if the edge host stops being the right place to concentrate identity.
+
+## D-121: The second factor is mandatory, and email recovery replaces it in one flow
+
+**Status:** Accepted; implemented in `require-mfa-with-fallback`.
+
+**Evidence:** The pinned MFA validation stage defaults to `not_configured_action: skip`, so a user
+with no enrolled authenticator signs in with a password alone while a user with a passkey must
+present it. The same stage, set to `configure`, injects its configuration stages and presents a
+choice when several are configured (pinned `authenticator_validate/stage.py`). The recovery flow
+as shipped ends in `user_login` with no MFA stage, and a password-only reset leaves the lost-device
+user facing the method they lost. Authentik's native passwordless flow has no reverse link back to
+password sign-in, which was checked in the pinned source and against the real frontend component.
+
+**Decision:** Every password sign-in passes the second factor, with `webauthn` and `totp` allowed
+and `configure` as the no-device action, so an unenrolled user is enrolled on the way to a session.
+Passkey assertions from the username field remain one-step, skipping password and second factor
+through upstream's own policy. Email recovery performs the whole repair in one flow — the emailed
+link, a new password, and a replacement authenticator code — before creating a session; recovery
+codes are not used, and enrollment requires a method instead of the former optional passkey
+checkbox.
+
+**Rejected:** Recovery codes as the guaranteed fallback, an extra forced step for every user that
+only avoids trusting the mailbox recovery already trusts. A passkey-only landing page with
+"other ways to sign in": Authentik's passwordless component offers only "Retry authentication" on
+cancellation, so the link would need a frontend patch (discussed and declined). Two flows with a
+method-choice prompt, which adds branching and cross-flow redirects for the same outcome. Enforcing
+MFA only for users who already enrolled a device, the shipped behaviour, which is the least
+consistent option.
+
+**Consequences:** Mailbox control is the root of trust for a lost device, which makes the
+verified-email gate load-bearing rather than advisory. Existing users are enrolled on their next
+password sign-in, so the admin account is migrated first. `tests/assert-authentik-mfa-invariants.py`
+fails when a flow reaches its login stage before a method requirement, which is the regression that
+would otherwise appear as a lockout. Old devices stay enrolled after recovery until removed in
+Settings. Revisit if the fleet gains users who cannot be trusted with mailbox recovery, or if
+Authentik ships a supported method-choice entry point.
+
+## D-122: Kanidm is retired, and host identity is not a directory identity
+
+**Status:** Accepted; `kanidm-identity`, `kanidm-host-auth` and `tests/kanidm-restore-contract.sh` are deleted.
+
+**Evidence:** The observation window opened by D-120 closed with Authentik serving every approved
+OIDC client, and no host record selected `kanidm-identity` or `kanidm-host-auth`: SSH has been the
+operator account and its key throughout, so the Unix/PAM capability ran on no host. The provider
+body, its release-family binding, its portable-backup restore helper, its secret scope and its
+per-client compatibility knobs (`allowInsecureClientDisablePkce`, `enableLegacyCrypto`,
+`preferShortUsername`) were reachable only by reselecting the aspect explicitly.
+
+**Decision:** Remove the implementation. `modules/identity/kanidm/` is deleted, along with the
+`Kanidm` secret-template, the `.sops.yaml` rule for `secrets/identity/kanidm.yaml`, the restore
+contract check and its recipe, the `providers.kanidm` policy block, and the `kanidm` projection in
+`_oidc.nix`. The Cloudflare Access IdP defaults now name the Authentik endpoints. The
+`kanidm-identity` and `host-unix-auth` capability specs are retired rather than rewritten, because
+they described a mechanism that no longer exists.
+
+**Rejected:** Keeping the code dormant behind an unselected aspect "in case", which is the state
+D-120 already left it in and which cost a full provider body plus a restore helper to maintain. A
+host-auth replacement over Authentik's LDAP or SCIM surface, which nothing needs while SSH is a
+single operator key.
+
+**Consequences:** Host identity is Authentik alone, so `identity-provider` and `authentik-identity`
+are the whole surface and `policy/identity.nix` carries one provider. The rollback story collapses:
+there is no second provider to fall back to, so a broken provider is repaired in place or recovered
+from the database dump the state-backups contract captures (`authentik` consumer registration).
+A future directory-identity requirement starts as a new proposal with a new implementation, not as
+a reselection of deleted code. Revisit if fleet hosts need shared Unix identities rather than one
+operator account per host.

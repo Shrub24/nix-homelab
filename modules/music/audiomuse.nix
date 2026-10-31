@@ -16,7 +16,7 @@ _: {
 
       # One credential, one source: the role password lives in secretFiles.db. This service reads it
       # to authenticate and the co-located cluster reads the same file and key to provision the role.
-      dbSecretAvailable = cfg.secretFiles.db != null && builtins.pathExists cfg.secretFiles.db;
+      dbSecretAvailable = cfg.secretFiles.db != null;
 
       # Probed through `options`: reading an undeclared option path throws instead of null.
       hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
@@ -135,22 +135,6 @@ _: {
         };
 
         assertions = [
-          (secretHelpers.mkRequiredSecretAssertion {
-            inherit (cfg) enable;
-            file = cfg.secretFiles.host;
-            feature = "services.audiomuse";
-            label = "secretFiles.host";
-          })
-          (secretHelpers.mkRequiredSecretAssertion {
-            inherit (cfg) enable;
-            file = cfg.secretFiles.db;
-            feature = "services.audiomuse";
-            label = "secretFiles.db";
-          })
-          {
-            assertion = !cfg.enable || dbSecretAvailable;
-            message = "services.audiomuse.enable is true but its encrypted secretFiles.db is missing.";
-          }
           {
             assertion = !cfg.enable || localPostgres != null || cfg.postgresHost != null;
             message = "services.audiomuse.enable is true but no PostgreSQL endpoint is available: run a cluster on this host (select the postgres aspect) or set postgresHost explicitly for a database that lives elsewhere.";

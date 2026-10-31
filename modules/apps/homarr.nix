@@ -1,5 +1,4 @@
-# Homarr is the user-facing dashboard; its boards and users are managed in the
-# application, while this aspect owns the runtime, OIDC wiring and persistence.
+# Homarr's boards and users live in the application; this aspect owns only the runtime.
 _: {
   flake.modules.nixos.homarr =
     {
@@ -13,8 +12,6 @@ _: {
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       route = config.repo.web.catalog.homarr or null;
       oidcClient = config.services.identity.oidc.clients.homarr or null;
-      # `publish` is a posture the module reads, not progress it tracks: withheld keeps the
-      # private origin and credentials login, published is OIDC-only.
       published = if route == null then true else route.publish;
 
       dataDir = "/srv/data/homarr";
@@ -26,11 +23,11 @@ _: {
       exportDbFile = "${exportDir}/db.sqlite";
     in
     {
-      imports = [ ../backups/state-backups/_consumer.nix ];
+      imports = [
+        ../backups/state-backups/_consumer.nix
+      ];
 
       options.services.homarr = {
-        enable = lib.mkEnableOption "Homarr user-facing service dashboard";
-
         secretFiles = {
           host = secretHelpers.mkSecretFileOption "homarr-host-secrets";
           oidc = secretHelpers.mkSecretFileOption "homarr-oidc-secrets";
@@ -39,10 +36,8 @@ _: {
       };
 
       config = lib.mkMerge [
-        # Selection is enablement.
-        { services.homarr.enable = true; }
+        {
 
-        (lib.mkIf cfg.enable {
           assertions = [
             {
               assertion = route != null;
@@ -50,24 +45,12 @@ _: {
             }
             {
               assertion = oidcClient != null;
-              message = "services.homarr: canonical OIDC client 'homarr' is missing; check systems.oauth2.homarr in policy/identity.json.";
+              message = "services.homarr: canonical OIDC client 'homarr' is missing; check clients.homarr in policy/identity.nix.";
             }
             {
               assertion = route != null && route.exposureMode == "tailscale-serve";
               message = "services.homarr: route must use tailscale-serve so the private OIDC callback remains reachable.";
             }
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.host;
-              feature = "services.homarr";
-              label = "secretFiles.host";
-            })
-            (secretHelpers.mkRequiredSecretAssertion {
-              inherit (cfg) enable;
-              file = cfg.secretFiles.oidc;
-              feature = "services.homarr";
-              label = "secretFiles.oidc";
-            })
           ];
 
           # NEXTAUTH_URL stays unset so Auth.js derives the callback from forwarded headers.
@@ -85,20 +68,16 @@ _: {
                 else
                   "https://${route.endpoint.host}:${toString route.endpoint.port}"
               }
-              # Only while withheld: they create the first administrator.
               AUTH_PROVIDERS=${if published then "oidc" else "credentials,oidc"}
               AUTH_OIDC_ISSUER=${oidcClient.issuerUrl}
               AUTH_OIDC_CLIENT_ID=${oidcClient.clientId}
-              AUTH_OIDC_CLIENT_NAME=Kanidm
+              AUTH_OIDC_CLIENT_NAME=${oidcClient.providerName}
               AUTH_OIDC_CLIENT_SECRET=${config.sops.placeholder.homarr_oidc_client_secret}
-              # Unquoted on purpose: the env-file parser keeps quotes in the value, and a quoted
-              # list fails Kanidm's scope regex as invalid_scope. groups_name yields bare names.
-              AUTH_OIDC_SCOPE_OVERWRITE=openid email profile groups_name
-              AUTH_OIDC_GROUPS_ATTRIBUTE=groups
-              # false: memberships follow the claim. Sync is authoritative both ways, so every
-              # group an OIDC user keeps must exist in Kanidm under the same name.
+              # Unquoted on purpose: the env-file parser keeps quotes in the value.
+              AUTH_OIDC_SCOPE_OVERWRITE=${builtins.concatStringsSep " " oidcClient.scopes}
+              AUTH_OIDC_GROUPS_ATTRIBUTE=${oidcClient.groupsClaim}
               AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false
-              AUTH_OIDC_ENABLE_DANGEROUS_CREDENTIALS_LINKING=false
+              AUTH_OIDC_ENABLE_DANGEROUS_CREDENTIALS_LINKING=true
             '';
           };
 
@@ -133,8 +112,8 @@ _: {
               };
               environmentFiles = [ config.sops.templates."homarr.environment".path ];
               volumes = [ "${dataDir}:/appdata" ];
-              # No HEALTHCHECK in the image; sdnotify=healthy makes After= mean "listening".
-              # The probe dials containerPort inside the container, never the host-mapped port.
+              # No HEALTHCHECK ships in the image; sdnotify makes After= mean "listening", and the
+              # probe dials the container port rather than the host-mapped one.
               podman.sdnotify = "healthy";
               extraOptions = [
                 "--health-cmd=wget -q --spider http://127.0.0.1:${toString containerPort}/api/health/ready"
@@ -153,22 +132,18 @@ _: {
             ];
 
             services."podman-homarr" = {
-              # sops-install-secrets installs the template before this unit starts.
               wants = [ "sops-install-secrets.service" ];
               after = [ "sops-install-secrets.service" ];
               unitConfig.RequiresMountsFor = [ dataDir ];
-              # The container module sets TimeoutStartSec=0 and readiness now blocks on the
-              # healthcheck, so bound the wait: an app that never becomes healthy fails the
-              # unit instead of hanging the switch.
               serviceConfig.TimeoutStartSec = lib.mkForce 120;
             };
           };
 
-          # Keep the same SQLite CLI available to verify a staged restore.
+          # Keeps the SQLite CLI available to verify a staged restore.
           environment.systemPackages = [ pkgs.sqlite ];
 
-          # SQLite: export through the online backup API, and exclude the directory so WAL
-          # sidecars stay out of the raw capture.
+          # Export through the online backup API and exclude the directory, so WAL sidecars
+          # stay out of the raw capture.
           services.state-backups.services.homarr = {
             enable = true;
             mode = "export";
@@ -181,7 +156,7 @@ _: {
             ];
             cleanupCommands = [ "${pkgs.coreutils}/bin/rm -rf ${exportDir}" ];
           };
-        })
+        }
       ];
     };
 }

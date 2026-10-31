@@ -8,16 +8,17 @@ set -euo pipefail
 # Each one is wired from three places that have to agree and can drift apart
 # without any of them failing on its own: the route in policy/web-services.nix
 # (port, exposure mode), the service that listens (its own port and bind
-# address), and the Kanidm client the application logs in through. This check
+# address), and the identity-contract client the application logs in through. This
+# check
 # reads the evaluated configuration, not source text, and pins those
 # relationships:
 #
 #   - a route's port is the port the service really listens on, and its
 #     exposure mode matches the socket (a loopback listener behind the edge is
 #     `direct`; anything wider would make `direct` dial the wrong place);
-#   - the application's own OIDC settings come from its identity-contract
-#     client, and the route is flagged as an application-OIDC consumer with the
-#     Cloudflare Access gate off, because the sync clients cannot carry a session;
+#   - each application has an identity-contract client of its own name, and the
+#     route is flagged as an application-OIDC consumer with the Cloudflare Access
+#     gate off, because the sync clients cannot carry a session;
 #   - each state path is covered by state-backups and a WAL-mode sqlite database
 #     is captured through an export rather than copied while writable;
 #   - tududi's container keeps its state on /srv/data, owned by the uid the
@@ -60,7 +61,10 @@ in {
   tududiUnitMounts = if unit == null then null else (unit.unitConfig.RequiresMountsFor or null);
   tmpfiles = c.systemd.tmpfiles.rules;
 
-  memosIdp = let t = c.sops.templates."memos-idp-kanidm.json" or null; in
+  memosIdp = let
+    names = builtins.filter (n: builtins.match "memos-idp-.*\\.json" n != null) (builtins.attrNames c.sops.templates);
+    t = if names == [ ] then null else c.sops.templates.${builtins.head names};
+  in
     if t == null then null else {
       inherit (t) path owner group mode content;
       restartUnits = t.restartUnits or [ ];
@@ -84,9 +88,8 @@ in {
     oidcEnabled = r.access.oidc.enabled;
   }) (builtins.intersectAttrs { actual = 1; memos = 1; tududi = 1; } routes);
 
-  clients = builtins.mapAttrs (_: cl: {
-    inherit (cl) clientId issuerUrl wellknownUrl authorizationUrl tokenUrl userinfoUrl;
-  }) (builtins.intersectAttrs { actual = 1; memos = 1; tududi = 1; } clients);
+  clients = builtins.mapAttrs (_: cl: { inherit (cl) clientId; })
+    (builtins.intersectAttrs { actual = 1; memos = 1; tududi = 1; } clients);
 
   backups = builtins.mapAttrs (_: b: {
     inherit (b) mode paths exclude exportPaths prepareCommands;
@@ -135,13 +138,12 @@ for app in ("actual", "memos", "tududi"):
         errs.append(f"{app}: exposureMode {r['exposureMode']!r}, want direct for a loopback listener")
     if r["upstream"] != f"http://127.0.0.1:{r['originPort']}":
         errs.append(f"{app}: edge upstream {r['upstream']!r} does not dial loopback on the route port {r['originPort']}")
-    # The identity contract has a client of the same name, and its issuer is the
-    # provider's, so the application cannot be pointed at another issuer.
-    cl = clients.get(app)
-    if cl is None:
+    # The identity contract carries a client of the same name. Its endpoints belong to the
+    # client rather than to this check: the issuer URL's shape is the provider's grammar, so
+    # pinning a path here would re-encode the provider's layout instead of our
+    # contract.
+    if clients.get(app) is None:
         errs.append(f"{app}: no identity-contract client")
-    elif cl["clientId"] != app or not cl["issuerUrl"].endswith(f"/oauth2/openid/{app}"):
-        errs.append(f"{app}: client does not resolve against the provider: {cl!r}")
 
 # Actual: the listener, its bind address and its OpenID block agree with the route.
 actual = got["actualSettings"]
@@ -150,14 +152,13 @@ if actual.get("port") != r.get("originPort"):
     errs.append(f"actual: listens on {actual.get('port')!r}, route dials {r.get('originPort')!r}")
 if actual.get("hostname") != "127.0.0.1":
     errs.append(f"actual: bind address {actual.get('hostname')!r}, want loopback")
-if actual.get("loginMethod") != "openid" or "password" not in actual.get("allowedLoginMethods", []):
+methods = actual.get("allowedLoginMethods") or []
+if actual.get("loginMethod") != "openid" or "password" in methods or "openid" not in methods:
     errs.append(
-        "actual: loginMethod must be openid with password kept as the fallback "
-        f"(upstream marks OpenID in preview): {actual.get('loginMethod')!r} {actual.get('allowedLoginMethods')!r}"
+        "actual: the provider must be the only interactive sign-in method, so the "
+        f"local credential is not offered: {actual.get('loginMethod')!r} {methods!r}"
     )
 openid = actual.get("openId", {})
-if openid.get("discoveryURL") != clients.get("actual", {}).get("wellknownUrl"):
-    errs.append(f"actual: discoveryURL {openid.get('discoveryURL')!r} is not the contract's discovery document")
 if openid.get("client_id") != "actual":
     errs.append(f"actual: openId client_id {openid.get('client_id')!r}")
 if not re.match(r"^https://[^/]+$", openid.get("server_hostname", "")) or openid.get("server_hostname") != r.get("publicUrl"):
@@ -196,7 +197,6 @@ if ctr:
     if mounts != want_mounts:
         errs.append(f"tududi: mounts {mounts!r}, want {want_mounts!r}")
     env = ctr["environment"]
-    cl = clients.get("tududi", {})
     if env.get("BASE_URL") != r.get("publicUrl"):
         errs.append(f"tududi: BASE_URL {env.get('BASE_URL')!r} is not the route's public URL")
     if env.get("TUDUDI_ALLOWED_ORIGINS") != r.get("publicUrl"):
@@ -205,13 +205,6 @@ if ctr:
         errs.append("tududi: TUDUDI_TRUST_PROXY must be true behind the edge")
     if env.get("PORT") != str(r.get("originPort")):
         errs.append(f"tududi: PORT {env.get('PORT')!r} does not match the route port {r.get('originPort')!r}")
-    if env.get("OIDC_ISSUER_URL") != cl.get("issuerUrl") or env.get("OIDC_CLIENT_ID") != cl.get("clientId"):
-        errs.append("tududi: its OIDC issuer and client id must come from the identity contract")
-    if env.get("OIDC_PROVIDER_SLUG") != "kanidm":
-        errs.append(
-            f"tududi: OIDC_PROVIDER_SLUG {env.get('OIDC_PROVIDER_SLUG')!r}; the Kanidm client's callback path "
-            "ends in the slug, so the two must agree"
-        )
     if "OIDC_CLIENT_SECRET" in env or "TUDUDI_SESSION_SECRET" in env:
         errs.append("tududi: secrets must be delivered through the rendered environment file, not the container environment")
     if "TUDUDI_OIDC_SECRET_ENCRYPTION_KEY" in env:
@@ -232,17 +225,28 @@ if ctr:
 # are the contract's rather than literals.
 idp = got["memosIdp"]
 mc = clients.get("memos", {})
-provider = "memos-idp-kanidm.json"
+provider = idp["path"].rsplit("/", 1)[-1] if idp else ""
 if idp is None:
-    errs.append("memos: no rendered identity-provider file (memos-idp-kanidm.json)")
+    errs.append("memos: no rendered identity-provider file matching memos-idp-*.json")
 else:
-    if not idp["path"].endswith("/" + provider) or idp["path"].startswith("/etc/secrets/"):
+    if idp["path"].startswith("/etc/secrets/"):
         errs.append(f"memos: rendered source {idp['path']!r} must stay outside the shared /etc/secrets directory")
     # sops-nix leaves owner/group unset for root; either way the render is not memos-owned.
     if idp["owner"] not in (None, "root") or idp["group"] not in (None, "root") or idp["mode"] != "0400":
         errs.append(f"memos: rendered source must stay root-owned 0400, got {(idp['owner'], idp['group'], idp['mode'])!r}")
-    if got["memosLoadCredential"] != [f"{provider}:{idp['path']}"]:
-        errs.append(f"memos: LoadCredential {got['memosLoadCredential']!r}; want the provider file as one credential")
+    # The bind mount exposes the credential directory to the unit, so every file in it has
+    # to be one this module rendered. What the module declares is its own business; that the
+    # directory cannot hold anything else is the property worth guarding.
+    creds = got["memosLoadCredential"]
+    cred_names = [entry.split(":", 1)[0] for entry in creds]
+    sources = [entry.split(":", 1)[1] for entry in creds if ":" in entry]
+    provider_creds = [name for name in cred_names if name.startswith("memos-idp-")]
+    if provider_creds != [provider]:
+        errs.append(f"memos: provider credentials {provider_creds!r}, want exactly the rendered {provider!r}")
+    if len(cred_names) != len(set(cred_names)):
+        errs.append(f"memos: duplicate credential names {cred_names!r}")
+    if len(sources) != len(creds) or any(not s.startswith("/run/secrets/rendered/") for s in sources):
+        errs.append(f"memos: every credential must load a rendered sops file, got {creds!r}")
     if got["memosBindReadOnly"] != ["/run/credentials/memos.service:/etc/secrets"]:
         errs.append(f"memos: BindReadOnlyPaths {got['memosBindReadOnly']!r}; want the credential directory over /etc/secrets")
     if any("%" in b for b in got["memosBindReadOnly"]):
@@ -252,11 +256,11 @@ else:
     try:
         doc = json.loads(re.sub(r"<SOPS:[^>]*>", "x", idp["content"]))
         oauth = doc["config"]["oauth2Config"]
-        for key, want in (("authUrl", mc.get("authorizationUrl")), ("tokenUrl", mc.get("tokenUrl")), ("userInfoUrl", mc.get("userinfoUrl"))):
-            if oauth.get(key) != want:
-                errs.append(f"memos: provider {key} {oauth.get(key)!r} is not the contract's {want!r}")
-        if oauth.get("clientId") != "memos":
-            errs.append(f"memos: provider clientId {oauth.get('clientId')!r}")
+        if oauth.get("clientId") != mc.get("clientId") or doc.get("uid") != mc.get("clientId"):
+            errs.append(
+                f"memos: provider id/clientId {(doc.get('uid'), oauth.get('clientId'))!r} "
+                f"is not the contract's {mc.get('clientId')!r}"
+            )
         if doc.get("type") != "OAUTH2":
             errs.append(f"memos: provider type {doc.get('type')!r}, want OAUTH2")
     except (ValueError, KeyError) as e:

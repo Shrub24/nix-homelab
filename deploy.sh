@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Values resolve from CLI flags first, then from the environment exported by
-# scripts/resolve-host-config.sh (typed flake.bootstrap.nodes projection,
+# scripts/resolve-host-config.sh (the `fleet.hosts.<host>.bootstrap` projection,
 # design DS-6). deploy.sh consumes exported registry values only; it never
 # parses host metadata source itself.
 TARGET_HOST="${TARGET_HOST:-}"
@@ -20,7 +20,8 @@ Usage: $0 [--target <host-or-ip>] [--bootstrap-user <user>] [--flake <flake-ref>
 Target, bootstrap user, and flake ref are required; deploy.sh never assumes a
 default host. The canonical caller is the just bootstrap recipe (just
 bootstrap <host> <addr>), which sources scripts/resolve-host-config.sh to
-resolve the host's flake.bootstrap.nodes metadata from the typed registry and
+resolve the host's `fleet.hosts.<host>.bootstrap` metadata from the typed registry
+and
 passes the values here as flags or exports (TARGET_HOST, BOOTSTRAP_USER,
 FLAKE, HARDWARE_CONFIG_GENERATOR, HARDWARE_CONFIG_PATH).
 

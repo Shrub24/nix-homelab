@@ -26,6 +26,12 @@
     # validator builds, from the settings declared in `modules/flake/treefmt.nix`.
     treefmt-nix.follows = "nix-fleet/treefmt-nix";
 
+    # Temporary: paperless 3.3.3 has no aarch64 build anywhere (its test suite fails on Linux, and
+    # Hydra aborts the derivation on log volume before finishing), so paperless comes from the
+    # revision whose build the fleet already runs. Remove once a newer paperless substitutes or
+    # builds; docs/plan.md carries the trigger.
+    nixpkgs-paperless.url = "github:NixOS/nixpkgs/fe13242281a67641c0102cdb1087f0ebe586c7df";
+
     # Deployment and host-recovery dependencies stay fleet-owned.
     disko.url = "github:nix-community/disko";
     disko.inputs.nixpkgs.follows = "nixpkgs";
@@ -46,6 +52,8 @@
     traktor-m3u-sync.inputs.nixpkgs.follows = "nixpkgs";
     traktor-m3u-sync.inputs.flake-parts.follows = "flake-parts";
     traktor-m3u-sync.inputs.treefmt-nix.follows = "nix-fleet/treefmt-nix";
+
+    authentik-nix.url = "github:nix-community/authentik-nix";
 
   };
 }

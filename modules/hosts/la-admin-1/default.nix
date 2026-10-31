@@ -28,11 +28,9 @@ in
         aspects.oci-images
         aspects.fleet-packages
         aspects.web-policy
-        aspects.kanidm-host-auth
         # Selection is enablement; no host imports an implementation.
         aspects.ingress
         aspects.push-server
-        aspects.identity-provider
         aspects.vaultwarden
         aspects.gatus
         aspects.beszel
@@ -56,7 +54,6 @@ in
         aspects.telemetry-metrics
         aspects.telemetry-logs
         aspects.node-exporter
-        aspects.container-env
       ];
 
       fragments = [ ./_nixos.nix ];

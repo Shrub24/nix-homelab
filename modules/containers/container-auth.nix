@@ -5,35 +5,34 @@ _: {
     { config, lib, ... }:
     let
       containers = config.virtualisation.oci-containers.containers;
-
-      # An operator who has not supplied the credential keeps the anonymous pull budget
-      # rather than a failing unit.
-      hasDockerHubAuth =
-        containers != { }
-        &&
-          (import ../../lib/sops-keys.nix { inherit lib; }).hasKey config.sops.defaultSopsFile "dockerhub"
-            "auth";
+      cfg = config.services.containers;
     in
     {
-      sops.secrets = lib.optionalAttrs hasDockerHubAuth {
-        # Podman's auth.json accepts only a base64 "user:token" blob, so the secret holds
-        # that value rather than the pair.
-        "dockerhub/auth" = { };
+      options.services.containers.registryAuth = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Authenticate Docker Hub pulls with `dockerhub/auth` from the fleet secret file,
+          which must hold the base64 `user:token` blob Podman's auth.json accepts. Left
+          false the anonymous pull budget applies.
+        '';
       };
 
-      sops.templates = lib.optionalAttrs hasDockerHubAuth {
-        "containers-auth.json".content = builtins.toJSON {
-          auths."docker.io".auth = config.sops.placeholder."dockerhub/auth";
+      config = lib.mkIf cfg.registryAuth {
+        sops.secrets."dockerhub/auth" = { };
+
+        sops.templates."containers-auth.json" = {
+          content = builtins.toJSON {
+            auths."docker.io".auth = config.sops.placeholder."dockerhub/auth";
+          };
         };
-      };
 
-      systemd.services = lib.optionalAttrs hasDockerHubAuth (
-        lib.mapAttrs' (
+        systemd.services = lib.mapAttrs' (
           name: _:
           lib.nameValuePair "podman-${name}" {
             environment.REGISTRY_AUTH_FILE = config.sops.templates."containers-auth.json".path;
           }
-        ) containers
-      );
+        ) containers;
+      };
     };
 }

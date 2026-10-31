@@ -17,10 +17,6 @@
       foundation = config.fleet.foundation;
       hostIdentity = config.fleet.hostIdentity;
 
-      hasGithubToken =
-        (import ../../lib/sops-keys.nix { inherit lib; }).hasKey config.sops.defaultSopsFile "github"
-          "token";
-
       sshKeys = [
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFBqFsxbrn6SVOHXi4+LS5olKxEW8JlZ5V+irA18/586 saurabhj@arch"
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMrzW7nXTeKqejlnIYmccciDJ4/PfjV6ek4Wvo7v86/a termix"
@@ -58,6 +54,16 @@
               override conflict to differ from the common default.
             '';
           };
+
+          githubToken = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = ''
+              Authenticate Nix fetches with `github/token` from the fleet secret file.
+              The key must exist there; a fleet without one sets this false rather than
+              keep the anonymous budget in place.
+            '';
+          };
         };
 
         # Outbound dev SSH identity: the conventional host-scoped default is
@@ -81,16 +87,15 @@
           cores = 0;
         };
 
-        # nix.conf is world-readable, so the token reaches the daemon through an included
-        # file instead; without it the anonymous GitHub budget stays in place.
-        sops.secrets."github/token" = lib.mkIf hasGithubToken { };
+        # nix.conf is world-readable, so the token reaches the daemon through an included file.
+        sops.secrets."github/token" = lib.mkIf foundation.githubToken { };
 
-        sops.templates."nix-access-tokens.conf" = lib.mkIf hasGithubToken {
+        sops.templates."nix-access-tokens.conf" = lib.mkIf foundation.githubToken {
           content = "access-tokens = github.com=${config.sops.placeholder."github/token"}\n";
           restartUnits = [ "nix-daemon.service" ];
         };
 
-        nix.extraOptions = lib.mkIf hasGithubToken (
+        nix.extraOptions = lib.mkIf foundation.githubToken (
           "!include ${config.sops.templates."nix-access-tokens.conf".path}"
         );
 

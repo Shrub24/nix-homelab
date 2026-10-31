@@ -19,11 +19,13 @@ Publishing is a bucket write rather than a host fact, so one host owns it: `oci-
 URLs would repeat the same idempotent upload and materialise the bucket credential three times.
 
 Application icons are **not** published. A copy in the bucket would be ours to license and to
-keep current, and the artwork is already reachable where it belongs, so the identity dashboard
-resolves each tile from the application itself: `policy/assets.nix` declares a path the service
-serves, and the tile URL is built from that application's own origin. Only the two applications
-that serve no usable artwork carry a commit-pinned upstream URL instead. The viewer's browser
-fetches those icons, so a tile follows the deployed version and the fleet redistributes nothing.
+keep current, so every tile points at a commit-pinned upstream file — a dashboard-icons or
+selfhst CDN path, or the application's own repository — recorded in `policy/assets.nix`. Pinning
+the commit rather than the moving branch is what keeps a tile stable when upstream reorganises
+its set, and the fleet redistributes nothing. Taking the artwork from the running application
+instead was tried and dropped: several serve no icon, several serve it only behind Cloudflare
+Access, and the paths move between versions. A client with no declared entry falls back to its
+own favicon.
 
 ## The background
 
@@ -49,29 +51,28 @@ outliving a browser's copy.
 
 `policy/assets.nix` is the whole declaration. A `brand` entry is a URL plus, optionally, the
 tracked file that publication uploads to it; an entry whose URL leaves `publicUrl` must have no
-file, because there is nowhere to publish it. An `icons` entry names either a path served by the
-application or a pinned upstream URL. No service module registers assets, so adding an
-application tile is one policy entry.
+file, because there is nowhere to publish it. An `icons` entry is a pinned upstream URL. No
+service module registers assets, so adding an application tile is one policy entry.
 
-| Consumer | Source | Resolved as |
+| Consumer | Upstream file | Host |
 | --- | --- | --- |
-| Actual | `/android-chrome-512x512.png` | application origin |
-| Beszel | `/static/icon.svg` | application origin |
-| BookOrbit | `/pwa-icon-source.svg` | application origin |
-| GeoPulse | `/geopulse-logo.svg` | application origin |
-| Grafana | `/public/img/grafana_icon.svg` | application origin |
-| Homarr | pinned upstream `logo.svg` | `raw.githubusercontent.com` |
-| Inbox Zero | `/icons/icon-512x512.png` | application origin |
-| Karakeep | `/icons/logo-icon-dark.svg` | application origin |
-| Langfuse | `/icon.svg` | application origin |
-| Memos | `/logo.webp` | application origin |
-| Paperless | pinned upstream `logo_leaf.svg` | `raw.githubusercontent.com` |
-| tududi | `/icon-logo.png` | application origin |
+| Actual | `dashboard-icons/svg/actual-budget.svg` | `cdn.jsdelivr.net` |
+| Beszel | `dashboard-icons/svg/beszel.svg` | `cdn.jsdelivr.net` |
+| BookOrbit | `dashboard-icons/webp/bookorbit.webp` | `cdn.jsdelivr.net` |
+| GeoPulse | `selfhst/icons/svg/geopulse-light.svg` | `cdn.jsdelivr.net` |
+| Grafana | `dashboard-icons/svg/grafana.svg` | `cdn.jsdelivr.net` |
+| Homarr | `dashboard-icons/svg/homarr.svg` | `cdn.jsdelivr.net` |
+| Inbox Zero | `docs/favicon.png` | `raw.githubusercontent.com` |
+| Karakeep | `selfhst/icons/svg/karakeep.svg` | `cdn.jsdelivr.net` |
+| Langfuse | `web/public/icon.svg` | `raw.githubusercontent.com` |
+| Memos | `dashboard-icons/svg/memos.svg` | `cdn.jsdelivr.net` |
+| Paperless | `selfhst/icons/svg/paperless-ngx.svg` | `cdn.jsdelivr.net` |
+| tududi | `selfhst/icons/svg/tududi-light.svg` | `cdn.jsdelivr.net` |
 
-A tile fails to render while its application is unreachable, and a Cloudflare Access-gated
-application shows no icon until the viewer holds that host's session. Both are accepted: the
-alternative is publishing copies of third-party artwork we would then have to license and keep
-current.
+A tile renders even while its application is unreachable, because the artwork comes from a CDN
+rather than the service; a tile is blank only while that CDN is unreachable. Published third-party
+artwork would be ours to license and keep current, which is why the bucket carries only the fleet's
+own brand files.
 
 The wallpaper is declared as a URL with no source file, so publication cannot recreate it: it is
 uploaded by hand, and it may equally be pointed at any other public location. Cloudflare Access is an external federation client without an

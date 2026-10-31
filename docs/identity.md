@@ -285,6 +285,19 @@ biometric), with no platform-only attachment restriction: synced passkeys and co
 security keys are both allowed. No credential is created declaratively. Additional methods are
 added later from the user menu under **Settings > MFA Devices > Enroll**.
 
+### The verified-email gate
+
+The login path challenges an unverified address with a code, and the proof that grants the
+session is the confirmed device for the address the account currently carries. The two policies
+that consume that proof hold the same block, and the gate — not only the standalone verification
+flow — is a consumer because the main login path re-evaluates it after the code stage.
+`tests/assert-authentik-email-policy.py` fails when the two copies diverge.
+
+An account with no address is not challenged: there is nothing to verify, so the exemption is
+"no address, no proof required" rather than a fail-open. Making it fail closed is the stronger
+position and needs the accounts to have addresses first; two of the six on the live provider do
+not, which is drift from before enrollment required one.
+
 `tests/assert-authentik-mfa-invariants.py` asserts the plan-level property that makes this safe:
 no flow reaches its login stage before a method requirement. The interactive behaviour — a real
 passkey, a real authenticator code, a recovery run — is operator acceptance.

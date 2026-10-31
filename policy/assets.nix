@@ -22,7 +22,8 @@ in
     wallpaper.url = "${globals.assets.baseUrl}/background.png";
   };
 
-  # Dashboard icon sources: `url` is a pinned public file, `path` is served by the application.
+  # Dashboard icons are commit-pinned upstream files: the dashboard is not gated by the
+  # application or by Cloudflare Access, and no third-party artwork is redistributed.
   icons = {
     actual.url = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@83f32e08257b66fbd971ac8d7645f5b38d52e85d/svg/actual-budget.svg";
     beszel.url = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@83f32e08257b66fbd971ac8d7645f5b38d52e85d/svg/beszel.svg";

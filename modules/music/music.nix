@@ -279,167 +279,165 @@ _: {
         };
       };
 
-      config = lib.mkMerge [
-        {
-          applications.music.contract = {
-            inherit (cfg) storageRoot;
-            inherit (mediaPaths) libraryDir;
-            inherit (mediaPaths) playlistsDir;
-          };
+      config = {
+        applications.music.contract = {
+          inherit (cfg) storageRoot;
+          inherit (mediaPaths) libraryDir;
+          inherit (mediaPaths) playlistsDir;
+        };
 
-          assertions = [
-            {
-              assertion = !cfg.audiomuse.enable || localPostgres != null || cfg.audiomuse.postgresHost != null;
-              message = "applications.music.audiomuse is enabled but no PostgreSQL endpoint is available: run the cluster on this host (select the postgres aspect) or set applications.music.audiomuse.postgresHost for a database that lives elsewhere.";
+        assertions = [
+          {
+            assertion = !cfg.audiomuse.enable || localPostgres != null || cfg.audiomuse.postgresHost != null;
+            message = "applications.music.audiomuse is enabled but no PostgreSQL endpoint is available: run the cluster on this host (select the postgres aspect) or set applications.music.audiomuse.postgresHost for a database that lives elsewhere.";
+          }
+        ];
+
+        # Storage ownership lives in music-storage; only explicit paths are injected here.
+        services.musicStorage = {
+          enable = true;
+          inherit (cfg) storageRoot;
+          inherit (mediaPaths) libraryDir;
+          inherit (mediaPaths) playlistsDir;
+          inherit (mediaPaths) inboxDir;
+          inherit (mediaPaths) quarantineDir;
+          inherit (mediaPaths) versionArchiveRoot;
+        };
+
+        users.users.dev.extraGroups = lib.mkAfter [
+          "beets"
+          "music-ingest"
+          "media"
+        ];
+
+        services.syncthing = {
+          enable = true;
+          dataDir = "${cfg.dataRoot}/syncthing";
+          configDir = "${cfg.dataRoot}/syncthing/config";
+          deviceTargets = cfg.syncthingDevices;
+          folderTargets = lib.mapAttrs (
+            _name: folder:
+            folder
+            // {
+              ensureDir = false;
             }
-          ];
+          ) cfg.syncthingFolders;
+        };
 
-          # Storage ownership lives in music-storage; only explicit paths are injected here.
-          services.musicStorage = {
+        services.state-backups.services.syncthing = {
+          enable = true;
+          mode = "live";
+          paths = [ "${cfg.dataRoot}/syncthing" ];
+        };
+
+        services.navidrome = {
+          enable = cfg.navidrome.enable;
+          inherit (mediaPaths) libraryDir;
+          inherit (mediaPaths) quarantineDir;
+          extraDirs = [ mediaPaths.setsDir ];
+          dataDir = "${cfg.dataRoot}/navidrome";
+          audiomuse.enable = cfg.audiomuse.enable;
+        };
+
+        services.state-backups.services.navidrome = {
+          enable = cfg.navidrome.enable;
+          mode = "live";
+          paths = [ "${cfg.dataRoot}/navidrome" ];
+        };
+
+        services.audiomuse = lib.mkIf cfg.audiomuse.enable {
+          enable = true;
+          dataDir = "${cfg.dataRoot}/audiomuse";
+          timeZone = config.time.timeZone;
+          secretFiles.host = cfg.secretFiles.host;
+          secretFiles.db = lib.mkDefault cfg.secretFiles.host;
+          postgresHost =
+            if cfg.audiomuse.postgresHost != null then cfg.audiomuse.postgresHost else audiomusePostgres.host;
+          postgresPort =
+            if cfg.audiomuse.postgresPort != null then cfg.audiomuse.postgresPort else audiomusePostgres.port;
+        };
+
+        services.beets = {
+          dataDir = "${cfg.dataRoot}/beets";
+          inherit (mediaPaths) inboxDir;
+          inherit (mediaPaths) libraryDir;
+          inherit (mediaPaths) quarantineDir;
+          secretFiles.host = cfg.secretFiles.host;
+          configFiles = {
+            standard = cfg.configFiles.standard;
+            quarantine = cfg.configFiles.quarantine;
+          };
+          runners = beetsRunnerInstances;
+          notify = {
             enable = true;
-            inherit (cfg) storageRoot;
-            inherit (mediaPaths) libraryDir;
-            inherit (mediaPaths) playlistsDir;
-            inherit (mediaPaths) inboxDir;
-            inherit (mediaPaths) quarantineDir;
-            inherit (mediaPaths) versionArchiveRoot;
+            # nix-fleet severity vocabulary; the music topic travels in the CLI call.
+            tier = "failure";
           };
+        };
 
-          users.users.dev.extraGroups = lib.mkAfter [
-            "beets"
-            "music-ingest"
-            "media"
-          ];
+        services.state-backups.services.beets = {
+          enable = true;
+          mode = "live";
+          paths = [ "${cfg.dataRoot}/beets" ];
+        };
 
-          services.syncthing = {
-            enable = true;
-            dataDir = "${cfg.dataRoot}/syncthing";
-            configDir = "${cfg.dataRoot}/syncthing/config";
-            deviceTargets = cfg.syncthingDevices;
-            folderTargets = lib.mapAttrs (
-              _name: folder:
-              folder
-              // {
-                ensureDir = false;
-              }
-            ) cfg.syncthingFolders;
-          };
+        # Automated runners only, failure-only: oneshot success is not an operator event. A renamed runner fails the contract.
+        services.notify.events =
+          lib.genAttrs
+            [
+              "beets-inbox"
+              "beets-reconcile"
+              "beets-duplicates"
+            ]
+            (_: {
+              failure = { };
+            });
 
-          services.state-backups.services.syncthing = {
-            enable = true;
-            mode = "live";
-            paths = [ "${cfg.dataRoot}/syncthing" ];
-          };
+        # Ingest is owned by music-ingest; this composition injects explicit paths only.
+        services.musicIngest = {
+          enable = true;
+          inherit (mediaPaths) inboxDir;
+          inherit (cfg) storageRoot;
+          onSuccessUnit = "beets-inbox.service";
+        };
 
-          services.navidrome = {
-            enable = cfg.navidrome.enable;
-            inherit (mediaPaths) libraryDir;
-            inherit (mediaPaths) quarantineDir;
-            extraDirs = [ mediaPaths.setsDir ];
-            dataDir = "${cfg.dataRoot}/navidrome";
-            audiomuse.enable = cfg.audiomuse.enable;
-          };
+        services.beets.onSuccessUnits = [
+          "media-permission-reconcile.service"
+        ]
+        ++ lib.optional cfg.navidrome.enable "navidrome-scan.service";
 
-          services.state-backups.services.navidrome = {
-            enable = cfg.navidrome.enable;
-            mode = "live";
-            paths = [ "${cfg.dataRoot}/navidrome" ];
-          };
+        # Touched by preprocess when an import is due; beets-inbox gates on it.
+        services.beets.importReadyFlag = config.services.musicIngest.readyFlag;
 
-          services.audiomuse = lib.mkIf cfg.audiomuse.enable {
-            enable = true;
-            dataDir = "${cfg.dataRoot}/audiomuse";
-            timeZone = config.time.timeZone;
-            secretFiles.host = cfg.secretFiles.host;
-            secretFiles.db = lib.mkDefault cfg.secretFiles.host;
-            postgresHost =
-              if cfg.audiomuse.postgresHost != null then cfg.audiomuse.postgresHost else audiomusePostgres.host;
-            postgresPort =
-              if cfg.audiomuse.postgresPort != null then cfg.audiomuse.postgresPort else audiomusePostgres.port;
-          };
+        programs.zsh.shellAliases = {
+          b = "sudo -u beets env BEETSDIR=${config.services.beets.dataDir} HOME=${config.services.beets.dataDir} beet -c ${config.services.beets.renderedConfigFiles.quarantine}";
+        };
 
-          services.beets = {
-            dataDir = "${cfg.dataRoot}/beets";
-            inherit (mediaPaths) inboxDir;
-            inherit (mediaPaths) libraryDir;
-            inherit (mediaPaths) quarantineDir;
-            secretFiles.host = cfg.secretFiles.host;
-            configFiles = {
-              standard = cfg.configFiles.standard;
-              quarantine = cfg.configFiles.quarantine;
-            };
-            runners = beetsRunnerInstances;
-            notify = {
-              enable = true;
-              # nix-fleet severity vocabulary; the music topic travels in the CLI call.
-              tier = "failure";
-            };
-          };
+        services.state-backups.services.media = {
+          enable = true;
+          mode = "live";
+          paths = [ cfg.storageRoot ];
+          # Syncthing-internal; the engine-dj quiesce hooks stop the VM first.
+          exclude = [ mediaPaths.versionArchiveRoot ];
+        };
 
-          services.state-backups.services.beets = {
-            enable = true;
-            mode = "live";
-            paths = [ "${cfg.dataRoot}/beets" ];
-          };
+        services.slskd = {
+          downloadsPath = "${mediaPaths.inboxDir}/slskd";
+          incompletePath = "${mediaPaths.inboxDir}/slskd-incomplete";
+          shareDirectories = [ mediaPaths.libraryDir ];
+          secretFiles.host = cfg.secretFiles.host;
+          downloadCompleteScript = config.services.musicIngest.downloadCompleteScript;
+        };
 
-          # Automated runners only, failure-only: oneshot success is not an operator event. A renamed runner fails the contract.
-          services.notify.events =
-            lib.genAttrs
-              [
-                "beets-inbox"
-                "beets-reconcile"
-                "beets-duplicates"
-              ]
-              (_: {
-                failure = { };
-              });
+        services.slskd.domain = lib.mkIf (cfg.slskdDomain != null) cfg.slskdDomain;
 
-          # Ingest is owned by music-ingest; this composition injects explicit paths only.
-          services.musicIngest = {
-            enable = true;
-            inherit (mediaPaths) inboxDir;
-            inherit (cfg) storageRoot;
-            onSuccessUnit = "beets-inbox.service";
-          };
-
-          services.beets.onSuccessUnits = [
-            "media-permission-reconcile.service"
-          ]
-          ++ lib.optional cfg.navidrome.enable "navidrome-scan.service";
-
-          # Touched by preprocess when an import is due; beets-inbox gates on it.
-          services.beets.importReadyFlag = config.services.musicIngest.readyFlag;
-
-          programs.zsh.shellAliases = {
-            b = "sudo -u beets env BEETSDIR=${config.services.beets.dataDir} HOME=${config.services.beets.dataDir} beet -c ${config.services.beets.renderedConfigFiles.quarantine}";
-          };
-
-          services.state-backups.services.media = {
-            enable = true;
-            mode = "live";
-            paths = [ cfg.storageRoot ];
-            # Syncthing-internal; the engine-dj quiesce hooks stop the VM first.
-            exclude = [ mediaPaths.versionArchiveRoot ];
-          };
-
-          services.slskd = {
-            downloadsPath = "${mediaPaths.inboxDir}/slskd";
-            incompletePath = "${mediaPaths.inboxDir}/slskd-incomplete";
-            shareDirectories = [ mediaPaths.libraryDir ];
-            secretFiles.host = cfg.secretFiles.host;
-            downloadCompleteScript = config.services.musicIngest.downloadCompleteScript;
-          };
-
-          services.slskd.domain = lib.mkIf (cfg.slskdDomain != null) cfg.slskdDomain;
-
-          services.tagr = {
-            enable = true;
-            dataDir = "${cfg.dataRoot}/tagr";
-            libraryPath = mediaPaths.libraryDir;
-            quarantinePath = mediaPaths.quarantineDir;
-            secretFiles.host = cfg.secretFiles.host;
-          };
-        }
-      ];
+        services.tagr = {
+          enable = true;
+          dataDir = "${cfg.dataRoot}/tagr";
+          libraryPath = mediaPaths.libraryDir;
+          quarantinePath = mediaPaths.quarantineDir;
+          secretFiles.host = cfg.secretFiles.host;
+        };
+      };
     };
 }

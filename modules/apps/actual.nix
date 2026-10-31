@@ -24,83 +24,80 @@ _: {
 
       options.services.actual.secretFiles.oidc = secretHelpers.mkSecretFileOption "actual-oidc";
 
-      config = lib.mkMerge [
+      config = {
 
-        {
+        assertions = [
+          {
+            assertion = route != null;
+            message = "services.actual: canonical web-policy route 'repo.web.catalog.actual' is missing; declare the actual route under its host in policy/web-services.nix.";
+          }
+          {
+            assertion = oidcClient != null;
+            message = "services.actual: canonical OIDC client 'actual' is missing from services.identity.oidc.clients; check clients.actual in policy/identity.nix.";
+          }
+        ];
 
-          assertions = [
-            {
-              assertion = route != null;
-              message = "services.actual: canonical web-policy route 'repo.web.catalog.actual' is missing; declare the actual route under its host in policy/web-services.nix.";
-            }
-            {
-              assertion = oidcClient != null;
-              message = "services.actual: canonical OIDC client 'actual' is missing from services.identity.oidc.clients; check clients.actual in policy/identity.nix.";
-            }
-          ];
+        sops.secrets = secretHelpers.mkSecretsFromMap cfg.secretFiles.oidc {
+          actual_oidc_client_secret = {
+            key = "actual/client_secret";
+            path = "/run/secrets/actual.oidc_client_secret";
+            # The unit's preStart renders config.json as the service user.
+            owner = "actual";
+            group = "actual";
+            # config.json is rendered once at start, so a rotated secret needs a restart.
+            restartUnits = [ "actual.service" ];
+          };
+        };
 
-          sops.secrets = secretHelpers.mkSecretsFromMap cfg.secretFiles.oidc {
-            actual_oidc_client_secret = {
-              key = "actual/client_secret";
-              path = "/run/secrets/actual.oidc_client_secret";
-              # The unit's preStart renders config.json as the service user.
-              owner = "actual";
-              group = "actual";
-              # config.json is rendered once at start, so a rotated secret needs a restart.
-              restartUnits = [ "actual.service" ];
+        users.users.actual = {
+          description = "Actual Budget service user";
+          isSystemUser = true;
+          group = "actual";
+        };
+        users.groups.actual = { };
+
+        systemd.tmpfiles.rules = [
+          "d ${dataDir} 0700 actual actual - -"
+        ];
+
+        services.actual = {
+          enable = true;
+          user = "actual";
+          group = "actual";
+
+          settings = {
+            inherit dataDir;
+            hostname = "127.0.0.1";
+            port = route.upstreamPort;
+            loginMethod = "openid";
+            # Upstream builds the account from the `preferred_username` claim, so the OIDC
+            # identity owns the account. Password login would authenticate a separate local
+            # credential, so it is not offered.
+            allowedLoginMethods = [ "openid" ];
+            openId = {
+              discoveryURL = oidcClient.wellknownUrl;
+              client_id = oidcClient.clientId;
+              client_secret._secret = config.sops.secrets.actual_oidc_client_secret.path;
+              # Upstream builds the callback as new URL('/openid/callback', server_hostname),
+              # so this is the full public origin, not a bare host name.
+              server_hostname = route.publicUrl;
             };
           };
+        };
 
-          users.users.actual = {
-            description = "Actual Budget service user";
-            isSystemUser = true;
-            group = "actual";
-          };
-          users.groups.actual = { };
-
-          systemd.tmpfiles.rules = [
-            "d ${dataDir} 0700 actual actual - -"
+        # account.sqlite is a live database: it is exported with sqlite's online backup API, never
+        # copied raw. The per-budget user files are captured as they are on disk.
+        services.state-backups.services.actual = {
+          enable = true;
+          mode = "export";
+          paths = [ cfg.settings.userFiles ];
+          exportPaths = [ "${exportDir}/account.sqlite" ];
+          prepareCommands = [
+            "${pkgs.coreutils}/bin/mkdir -p ${exportDir}"
+            "${pkgs.sqlite}/bin/sqlite3 -readonly ${cfg.settings.serverFiles}/account.sqlite ${lib.escapeShellArg ".backup ${exportDir}/account.sqlite"}"
           ];
-
-          services.actual = {
-            enable = true;
-            user = "actual";
-            group = "actual";
-
-            settings = {
-              inherit dataDir;
-              hostname = "127.0.0.1";
-              port = route.upstreamPort;
-              loginMethod = "openid";
-              # Upstream builds the account from the `preferred_username` claim, so the OIDC
-              # identity owns the account. Password login would authenticate a separate local
-              # credential, so it is not offered.
-              allowedLoginMethods = [ "openid" ];
-              openId = {
-                discoveryURL = oidcClient.wellknownUrl;
-                client_id = oidcClient.clientId;
-                client_secret._secret = config.sops.secrets.actual_oidc_client_secret.path;
-                # Upstream builds the callback as new URL('/openid/callback', server_hostname),
-                # so this is the full public origin, not a bare host name.
-                server_hostname = route.publicUrl;
-              };
-            };
-          };
-
-          # account.sqlite is a live database: it is exported with sqlite's online backup API, never
-          # copied raw. The per-budget user files are captured as they are on disk.
-          services.state-backups.services.actual = {
-            enable = true;
-            mode = "export";
-            paths = [ cfg.settings.userFiles ];
-            exportPaths = [ "${exportDir}/account.sqlite" ];
-            prepareCommands = [
-              "${pkgs.coreutils}/bin/mkdir -p ${exportDir}"
-              "${pkgs.sqlite}/bin/sqlite3 -readonly ${cfg.settings.serverFiles}/account.sqlite ${lib.escapeShellArg ".backup ${exportDir}/account.sqlite"}"
-            ];
-            cleanupCommands = [ "${pkgs.coreutils}/bin/rm -rf ${exportDir}" ];
-          };
-        }
-      ];
+          cleanupCommands = [ "${pkgs.coreutils}/bin/rm -rf ${exportDir}" ];
+        };
+      };
     };
 }

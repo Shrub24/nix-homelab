@@ -41,143 +41,137 @@ _: {
 
         secretFiles.host = secretHelpers.mkSecretFileOption "vaultwarden-host-secrets";
       };
-      config = lib.mkMerge [
-        {
-          assertions = [
-          ];
+      config = {
 
-          sops.templates."vaultwarden.env" = {
+        sops.templates."vaultwarden.env" = {
+          owner = "vaultwarden";
+          group = "vaultwarden";
+          mode = "0400";
+          content = ''
+            ADMIN_TOKEN='${config.sops.placeholder.vaultwarden_admin_token}'
+            SMTP_USERNAME=${config.sops.placeholder.vaultwarden_smtp_username}
+            SMTP_PASSWORD=${config.sops.placeholder.vaultwarden_smtp_password}
+            PUSH_INSTALLATION_ID=${config.sops.placeholder.vaultwarden_push_installation_id}
+            PUSH_INSTALLATION_KEY=${config.sops.placeholder.vaultwarden_push_installation_key}
+          '';
+        };
+
+        sops.secrets = secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
+          vaultwarden_admin_token = {
+            key = "vaultwarden/admin_token";
+            path = "/run/secrets/vaultwarden.admin_token";
             owner = "vaultwarden";
             group = "vaultwarden";
-            mode = "0400";
-            content = ''
-              ADMIN_TOKEN='${config.sops.placeholder.vaultwarden_admin_token}'
-              SMTP_USERNAME=${config.sops.placeholder.vaultwarden_smtp_username}
-              SMTP_PASSWORD=${config.sops.placeholder.vaultwarden_smtp_password}
-              PUSH_INSTALLATION_ID=${config.sops.placeholder.vaultwarden_push_installation_id}
-              PUSH_INSTALLATION_KEY=${config.sops.placeholder.vaultwarden_push_installation_key}
-            '';
+          };
+          vaultwarden_smtp_username = {
+            key = "vaultwarden/smtp_username";
+            path = "/run/secrets/vaultwarden.smtp_username";
+            owner = "vaultwarden";
+            group = "vaultwarden";
+          };
+          vaultwarden_smtp_password = {
+            key = "vaultwarden/smtp_password";
+            path = "/run/secrets/vaultwarden.smtp_password";
+            owner = "vaultwarden";
+            group = "vaultwarden";
+          };
+          vaultwarden_push_installation_id = {
+            key = "vaultwarden/push_installation_id";
+            path = "/run/secrets/vaultwarden.push_installation_id";
+            owner = "vaultwarden";
+            group = "vaultwarden";
+          };
+          vaultwarden_push_installation_key = {
+            key = "vaultwarden/push_installation_key";
+            path = "/run/secrets/vaultwarden.push_installation_key";
+            owner = "vaultwarden";
+            group = "vaultwarden";
+          };
+        };
+
+        services.vaultwarden = {
+          enable = true;
+          dbBackend = "sqlite";
+
+          config = {
+            DATA_FOLDER = cfg.dataDir;
+            # ── Domain & reverse proxy ──
+            DOMAIN = vaultRoute.publicUrl;
+            ROCKET_ADDRESS = vaultHost;
+            ROCKET_PORT = vaultPort;
+            IP_HEADER = "X-Forwarded-For";
+
+            # ── Access control ──
+            SIGNUPS_ALLOWED = false;
+            SIGNUPS_VERIFY = true;
+            INVITATIONS_ALLOWED = true;
+            ORG_CREATION_USERS = "none";
+
+            # ── Features ──
+            SENDS_ALLOWED = true;
+            WEB_VAULT_ENABLED = true;
+            ENABLE_WEBSOCKET = true;
+            EXPERIMENTAL_CLIENT_FEATURE_FLAGS = "ssh-key-vault-item,ssh-agent";
+            EMERGENCY_ACCESS_ALLOWED = true;
+
+            # ── Push notifications ──
+            PUSH_ENABLED = true;
+
+            # ── Security hardening ──
+            PASSWORD_ITERATIONS = 600000;
+            PASSWORD_HINTS_ALLOWED = true;
+            LOGIN_RATELIMIT_SECONDS = 60;
+            LOGIN_RATELIMIT_MAX_BURST = 10;
+            ADMIN_RATELIMIT_SECONDS = 300;
+            ADMIN_RATELIMIT_MAX_BURST = 3;
+            ADMIN_SESSION_LIFETIME = 20;
+
+            # ── SMTP (non-secret settings) ──
+            SMTP_HOST = "smtp.resend.com";
+            SMTP_FROM = cfg.smtpFrom;
+            SMTP_FROM_NAME = "Vaultwarden";
+            SMTP_PORT = 587;
+            SMTP_SECURITY = "starttls";
+
+            # ── Housekeeping ──
+            EVENTS_DAYS_RETAIN = 30;
+            LOG_LEVEL = "info";
+            EXTENDED_LOGGING = true;
+            LOG_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S.%3f";
           };
 
-          sops.secrets = secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
-            vaultwarden_admin_token = {
-              key = "vaultwarden/admin_token";
-              path = "/run/secrets/vaultwarden.admin_token";
-              owner = "vaultwarden";
-              group = "vaultwarden";
-            };
-            vaultwarden_smtp_username = {
-              key = "vaultwarden/smtp_username";
-              path = "/run/secrets/vaultwarden.smtp_username";
-              owner = "vaultwarden";
-              group = "vaultwarden";
-            };
-            vaultwarden_smtp_password = {
-              key = "vaultwarden/smtp_password";
-              path = "/run/secrets/vaultwarden.smtp_password";
-              owner = "vaultwarden";
-              group = "vaultwarden";
-            };
-            vaultwarden_push_installation_id = {
-              key = "vaultwarden/push_installation_id";
-              path = "/run/secrets/vaultwarden.push_installation_id";
-              owner = "vaultwarden";
-              group = "vaultwarden";
-            };
-            vaultwarden_push_installation_key = {
-              key = "vaultwarden/push_installation_key";
-              path = "/run/secrets/vaultwarden.push_installation_key";
-              owner = "vaultwarden";
-              group = "vaultwarden";
-            };
-          };
+          environmentFile = config.sops.templates."vaultwarden.env".path;
+        };
 
-          services.vaultwarden = {
-            enable = true;
-            dbBackend = "sqlite";
+        systemd.tmpfiles.rules = [
+          "d ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
+          "z ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
+        ]
+        ++ lib.optionals (lib.hasAttrByPath [ "services" "state-backups" "restoreStagePackage" ] options) [
+          # SQLite export parent: the export prepare command runs in the restic
+          # backup unit as root, so the staging dir is root-owned 0700.
+          "d ${builtins.dirOf vaultwardenExportFile} 0700 root root - -"
+        ];
 
-            config = {
-              DATA_FOLDER = cfg.dataDir;
-              # ── Domain & reverse proxy ──
-              DOMAIN = vaultRoute.publicUrl;
-              ROCKET_ADDRESS = vaultHost;
-              ROCKET_PORT = vaultPort;
-              IP_HEADER = "X-Forwarded-For";
+        systemd.services.vaultwarden = {
+          unitConfig.RequiresMountsFor = [ cfg.dataDir ];
+          serviceConfig.ReadWritePaths = [ cfg.dataDir ];
+        };
 
-              # ── Access control ──
-              SIGNUPS_ALLOWED = false;
-              SIGNUPS_VERIFY = true;
-              INVITATIONS_ALLOWED = true;
-              ORG_CREATION_USERS = "none";
-
-              # ── Features ──
-              SENDS_ALLOWED = true;
-              WEB_VAULT_ENABLED = true;
-              ENABLE_WEBSOCKET = true;
-              EXPERIMENTAL_CLIENT_FEATURE_FLAGS = "ssh-key-vault-item,ssh-agent";
-              EMERGENCY_ACCESS_ALLOWED = true;
-
-              # ── Push notifications ──
-              PUSH_ENABLED = true;
-
-              # ── Security hardening ──
-              PASSWORD_ITERATIONS = 600000;
-              PASSWORD_HINTS_ALLOWED = true;
-              LOGIN_RATELIMIT_SECONDS = 60;
-              LOGIN_RATELIMIT_MAX_BURST = 10;
-              ADMIN_RATELIMIT_SECONDS = 300;
-              ADMIN_RATELIMIT_MAX_BURST = 3;
-              ADMIN_SESSION_LIFETIME = 20;
-
-              # ── SMTP (non-secret settings) ──
-              SMTP_HOST = "smtp.resend.com";
-              SMTP_FROM = cfg.smtpFrom;
-              SMTP_FROM_NAME = "Vaultwarden";
-              SMTP_PORT = 587;
-              SMTP_SECURITY = "starttls";
-
-              # ── Housekeeping ──
-              EVENTS_DAYS_RETAIN = 30;
-              LOG_LEVEL = "info";
-              EXTENDED_LOGGING = true;
-              LOG_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S.%3f";
-            };
-
-            environmentFile = config.sops.templates."vaultwarden.env".path;
-          };
-
-          systemd.tmpfiles.rules = [
-            "d ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
-            "z ${cfg.dataDir} 0750 vaultwarden vaultwarden - -"
-          ]
-          ++ lib.optionals (lib.hasAttrByPath [ "services" "state-backups" "restoreStagePackage" ] options) [
-            # SQLite export parent: the export prepare command runs in the restic
-            # backup unit as root, so the staging dir is root-owned 0700.
-            "d ${builtins.dirOf vaultwardenExportFile} 0700 root root - -"
+        services.state-backups.services.vaultwarden = {
+          enable = true;
+          mode = "export";
+          paths = [ cfg.dataDir ];
+          exportPaths = [ vaultwardenExportFile ];
+          prepareCommands = [
+            ''
+              tmp_export="${vaultwardenExportFile}.tmp"
+              rm -f "$tmp_export"
+              ${pkgs.sqlite}/bin/sqlite3 ${cfg.dataDir}/db.sqlite3 ".backup $tmp_export"
+              mv "$tmp_export" ${vaultwardenExportFile}
+            ''
           ];
-
-          systemd.services.vaultwarden = {
-            unitConfig.RequiresMountsFor = [ cfg.dataDir ];
-            serviceConfig.ReadWritePaths = [ cfg.dataDir ];
-          };
-
-          services.state-backups.services.vaultwarden = {
-            enable = true;
-            mode = "export";
-            paths = [ cfg.dataDir ];
-            exportPaths = [ vaultwardenExportFile ];
-            prepareCommands = [
-              ''
-                tmp_export="${vaultwardenExportFile}.tmp"
-                rm -f "$tmp_export"
-                ${pkgs.sqlite}/bin/sqlite3 ${cfg.dataDir}/db.sqlite3 ".backup $tmp_export"
-                mv "$tmp_export" ${vaultwardenExportFile}
-              ''
-            ];
-          };
-        }
-        {
-        }
-      ];
+        };
+      };
     };
 }

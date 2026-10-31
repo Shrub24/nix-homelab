@@ -13,6 +13,23 @@ entries = json.loads(
 expression = next(
     e["attrs"]["expression"] for e in entries if e.get("id") == "policy-email-verified"
 )
+consumers = [
+    e["attrs"]["expression"]
+    for e in entries
+    if e.get("id") in ("policy-email-verified", "policy-email-gate")
+]
+
+
+def consume_block(expression):
+    """The database write both policies share; one copy drifting is the failure to catch."""
+    start = expression.index("with transaction.atomic():")
+    end = expression.index("proof.delete()") + len("proof.delete()")
+    return "\n".join(line.strip() for line in expression[start:end].splitlines())
+
+
+if len({consume_block(e) for e in consumers}) != 1:
+    sys.exit("the two email policies disagree on the proof-consuming block")
+
 program = compile(
     "def evaluate(request):\n"
     + "\n".join("    " + line for line in expression.splitlines()),

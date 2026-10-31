@@ -38,67 +38,64 @@ _: {
         ../identity/_oidc.nix
       ];
 
-      config = lib.mkMerge [
+      config = {
 
-        {
+        services.admin.termix.oidc = {
+          enabled = oidcRuntimeEnabled;
+          inherit (termixClient) clientId providerName;
+          inherit (termixClient) issuerUrl;
+          inherit (termixClient) authorizationUrl;
+          inherit (termixClient) tokenUrl;
+          inherit (termixClient) userinfoUrl;
+          environmentFile = if oidcRuntimeEnabled then config.sops.templates."termix-oidc.env".path else null;
+        };
 
-          services.admin.termix.oidc = {
-            enabled = oidcRuntimeEnabled;
-            inherit (termixClient) clientId providerName;
-            inherit (termixClient) issuerUrl;
-            inherit (termixClient) authorizationUrl;
-            inherit (termixClient) tokenUrl;
-            inherit (termixClient) userinfoUrl;
-            environmentFile = if oidcRuntimeEnabled then config.sops.templates."termix-oidc.env".path else null;
+        services.state-backups.services.termix = {
+          enable = true;
+          mode = "live";
+          paths = [ cfg.dataDir ];
+        };
+
+        systemd.services.tailscale-serve-termix = {
+          description = "Expose Termix via dedicated Tailscale HTTPS port";
+          requires = [
+            "tailscaled.service"
+            "podman-termix.service"
+          ];
+          wants = [ "tailscaled-autoconnect.service" ];
+          after = [
+            "tailscaled-autoconnect.service"
+            "tailscaled.service"
+            "podman-termix.service"
+          ];
+          partOf = [
+            "tailscaled.service"
+            "podman-termix.service"
+          ];
+          restartIfChanged = true;
+          stopIfChanged = true;
+          wantedBy = [ "multi-user.target" ];
+          preStart = "${pkgs.tailscale}/bin/tailscale wait --timeout=60s";
+          # Start limits are [Unit] settings; systemd ignores them in [Service].
+          unitConfig = {
+            StartLimitIntervalSec = 300;
+            StartLimitBurst = 3;
           };
-
-          services.state-backups.services.termix = {
-            enable = true;
-            mode = "live";
-            paths = [ cfg.dataDir ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            # Recover if tailscaled is slow to reach Running; stop after 3 tries so a genuinely
+            # logged-out node fails loudly instead of spinning.
+            Restart = "on-failure";
+            RestartSec = "10s";
+            ExecStart = ''
+              ${pkgs.tailscale}/bin/tailscale serve --yes --bg --https=8443 ${termixUpstream}
+            '';
+            ExecStop = ''
+              ${pkgs.tailscale}/bin/tailscale serve --https=8443 off
+            '';
           };
-
-          systemd.services.tailscale-serve-termix = {
-            description = "Expose Termix via dedicated Tailscale HTTPS port";
-            requires = [
-              "tailscaled.service"
-              "podman-termix.service"
-            ];
-            wants = [ "tailscaled-autoconnect.service" ];
-            after = [
-              "tailscaled-autoconnect.service"
-              "tailscaled.service"
-              "podman-termix.service"
-            ];
-            partOf = [
-              "tailscaled.service"
-              "podman-termix.service"
-            ];
-            restartIfChanged = true;
-            stopIfChanged = true;
-            wantedBy = [ "multi-user.target" ];
-            preStart = "${pkgs.tailscale}/bin/tailscale wait --timeout=60s";
-            # Start limits are [Unit] settings; systemd ignores them in [Service].
-            unitConfig = {
-              StartLimitIntervalSec = 300;
-              StartLimitBurst = 3;
-            };
-            serviceConfig = {
-              Type = "oneshot";
-              RemainAfterExit = true;
-              # Recover if tailscaled is slow to reach Running; stop after 3 tries so a genuinely
-              # logged-out node fails loudly instead of spinning.
-              Restart = "on-failure";
-              RestartSec = "10s";
-              ExecStart = ''
-                ${pkgs.tailscale}/bin/tailscale serve --yes --bg --https=8443 ${termixUpstream}
-              '';
-              ExecStop = ''
-                ${pkgs.tailscale}/bin/tailscale serve --https=8443 off
-              '';
-            };
-          };
-        }
-      ];
+        };
+      };
     };
 }

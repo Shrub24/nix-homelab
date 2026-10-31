@@ -44,9 +44,9 @@ _: {
             (lib.concatMapStringsSep " || " (status: "[STATUS] == ${toString status}") (healthyStatuses svc))
           ];
         }
-        // lib.optionalAttrs hasToken {
-          # Gatus expands environment variables over its whole configuration, so the token
-          # never enters the store.
+        // lib.optionalAttrs (hasToken && (svc.access.requireCloudflareAccess or false)) {
+          # Only Access-gated routes need the token, and only they may receive it. Gatus
+          # expands environment variables over its whole configuration, so it stays out of the store.
           headers = {
             "CF-Access-Client-Id" = "\${CF_ACCESS_CLIENT_ID}";
             "CF-Access-Client-Secret" = "\${CF_ACCESS_CLIENT_SECRET}";
@@ -62,73 +62,69 @@ _: {
         secretFiles.accessToken = secretHelpers.mkSecretFileOption "gatus-access-token-secrets";
 
       };
-      config = lib.mkMerge [
-        {
-          # A rendered secret file has to be owned by a resolvable account, and a dynamic one
-          # has no name to own it.
-          users.groups.gatus = lib.mkIf hasToken { };
-          users.users.gatus = lib.mkIf hasToken {
-            isSystemUser = true;
-            group = "gatus";
-          };
+      config = {
+        # A rendered secret file has to be owned by a resolvable account, and a dynamic one
+        # has no name to own it.
+        users.groups.gatus = lib.mkIf hasToken { };
+        users.users.gatus = lib.mkIf hasToken {
+          isSystemUser = true;
+          group = "gatus";
+        };
 
-          sops.secrets = lib.mkIf hasToken {
-            "gatus/cf_access_client_id" = {
-              sopsFile = cfg.secretFiles.accessToken;
-              key = "cf_access/client_id";
-            };
-            "gatus/cf_access_client_secret" = {
-              sopsFile = cfg.secretFiles.accessToken;
-              key = "cf_access/client_secret";
-            };
+        sops.secrets = lib.mkIf hasToken {
+          "gatus/cf_access_client_id" = {
+            sopsFile = cfg.secretFiles.accessToken;
+            key = "cf_access/client_id";
           };
-
-          sops.templates."gatus-access-token.env" = lib.mkIf hasToken {
-            owner = "gatus";
-            group = "gatus";
-            mode = "0400";
-            content = ''
-              CF_ACCESS_CLIENT_ID=${config.sops.placeholder."gatus/cf_access_client_id"}
-              CF_ACCESS_CLIENT_SECRET=${config.sops.placeholder."gatus/cf_access_client_secret"}
-            '';
+          "gatus/cf_access_client_secret" = {
+            sopsFile = cfg.secretFiles.accessToken;
+            key = "cf_access/client_secret";
           };
+        };
 
-          systemd.services.gatus.serviceConfig = lib.mkIf hasToken {
-            DynamicUser = lib.mkForce false;
-          };
+        sops.templates."gatus-access-token.env" = lib.mkIf hasToken {
+          owner = "gatus";
+          group = "gatus";
+          mode = "0400";
+          content = ''
+            CF_ACCESS_CLIENT_ID=${config.sops.placeholder."gatus/cf_access_client_id"}
+            CF_ACCESS_CLIENT_SECRET=${config.sops.placeholder."gatus/cf_access_client_secret"}
+          '';
+        };
 
-          services.gatus = {
-            enable = true;
-            openFirewall = false;
-            environmentFile = lib.mkIf hasToken config.sops.templates."gatus-access-token.env".path;
-            settings = {
-              web.address = webAddress;
-              web.port = webPort;
-              inherit endpoints;
-              alerting.custom = {
-                url = "http://127.0.0.1:5555/notify";
-                method = "POST";
-                headers = {
-                  Content-Type = "application/json";
+        systemd.services.gatus.serviceConfig = lib.mkIf hasToken {
+          DynamicUser = lib.mkForce false;
+        };
+
+        services.gatus = {
+          enable = true;
+          openFirewall = false;
+          environmentFile = lib.mkIf hasToken config.sops.templates."gatus-access-token.env".path;
+          settings = {
+            web.address = webAddress;
+            web.port = webPort;
+            inherit endpoints;
+            alerting.custom = {
+              url = "http://127.0.0.1:5555/notify";
+              method = "POST";
+              headers = {
+                Content-Type = "application/json";
+              };
+              placeholders = {
+                ALERT_TRIGGERED_OR_RESOLVED = {
+                  TRIGGERED = "warning";
+                  RESOLVED = "info";
                 };
-                placeholders = {
-                  ALERT_TRIGGERED_OR_RESOLVED = {
-                    TRIGGERED = "warning";
-                    RESOLVED = "info";
-                  };
-                };
-                body = builtins.toJSON {
-                  severity = "[ALERT_TRIGGERED_OR_RESOLVED]";
-                  title = "Gatus: [ENDPOINT_NAME]";
-                  message = "[ALERT_DESCRIPTION]";
-                  topic = "web";
-                };
+              };
+              body = builtins.toJSON {
+                severity = "[ALERT_TRIGGERED_OR_RESOLVED]";
+                title = "Gatus: [ENDPOINT_NAME]";
+                message = "[ALERT_DESCRIPTION]";
+                topic = "web";
               };
             };
           };
-        }
-        {
-        }
-      ];
+        };
+      };
     };
 }

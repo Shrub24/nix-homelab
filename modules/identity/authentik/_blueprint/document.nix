@@ -19,17 +19,7 @@ let
   assets = import ../../../../policy/assets.nix;
   iconFor =
     name: origin:
-    let
-      source = assets.icons.${name} or { };
-    in
-    if source ? url then
-      source.url
-    else if origin == null then
-      null
-    else if source ? path then
-      "${origin}${source.path}"
-    else
-      "${origin}/favicon.ico";
+    assets.icons.${name}.url or (if origin == null then null else "${origin}/favicon.ico");
   credentials = import ../_credentials.nix { inherit lib; };
   clientScopes = client: lib.unique (builtins.concatLists (lib.attrValues client.access));
 
@@ -256,8 +246,9 @@ let
       ]) held
     );
 
-  # Reconciliation never deletes, so a disabled client needs a tombstone to leave the dashboard.
-  retiredClients = [ "termix" ];
+  # Reconciliation never deletes, so a disabled client leaves through a tombstone; the policy
+  # record stays declared and its `enable` flag is the only authority.
+  retiredClients = builtins.attrNames (lib.filterAttrs (_: client: !(client.enable or true)) clients);
   retiredClientEntries =
     map (name: {
       model = "authentik_core.application";

@@ -3,6 +3,8 @@ version: 1
 metadata:
   name: homelab-verification
 entries:
+  # Both policies carry the proof-consuming block verbatim: the login path re-evaluates this
+  # gate after the code stage, so it is where that path consumes the proof.
   - attrs:
       expression: |
         from django.db import transaction

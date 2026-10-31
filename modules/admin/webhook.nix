@@ -12,20 +12,18 @@ _: {
       cfg = config.services.admin.webhook;
     in
     {
-      config = lib.mkMerge [
-        {
-          services.webhook = {
-            enable = true;
-            ip = "127.0.0.1";
-            openFirewall = false;
-            hooks = {
-              health = {
-                execute-command = "${pkgs.coreutils}/bin/true";
-                response-message = "ok";
-              };
+      config = {
+        services.webhook = {
+          enable = true;
+          ip = "127.0.0.1";
+          openFirewall = false;
+          hooks = {
+            health = {
+              execute-command = "${pkgs.coreutils}/bin/true";
+              response-message = "ok";
             };
           };
-        }
-      ];
+        };
+      };
     };
 }

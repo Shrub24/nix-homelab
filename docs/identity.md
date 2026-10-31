@@ -212,8 +212,12 @@ fails, the stage is skipped, and login proceeds unchanged. The binding cannot in
 policies, nor an unconditional recording policy, because it is evaluated once while the plan is
 built, before a person is in context.
 Verification decisions read the current database row rather than the flow's pickled user.
-Accounts without an address retain the existing login bypass but cannot acquire a
-verified-address claim; invitation enrollment requires an address.
+An address-less account fails closed: the login path sends it to verification like any other
+unverified account, and the flow's own session policy refuses because no address can be proven.
+Live state has two such rows and neither signs in through a browser flow — `AnonymousUser` and
+the embedded outpost's service account — so the cost lands on an administrator or migration
+that creates a person without an address, which blocks that person until one is set.
+Invitation enrollment requires an address.
 
 The code is entered in the initiating browser, preserving its flow plan and original
 application destination even if mail is read on another device. There is no verification

@@ -39,7 +39,7 @@
             enrollment
             ;
           providerDomain = providerRoute.publicHost;
-          clients = enabledClients;
+          clients = identityPolicy.clients;
           routeFor = name: config.repo.web.catalog.${(enabledClients // identityPolicy.links).${name}.route};
         })
       );

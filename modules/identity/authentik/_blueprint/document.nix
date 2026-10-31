@@ -22,12 +22,15 @@ let
     assets.icons.${name}.url or (if origin == null then null else "${origin}/favicon.ico");
   credentials = import ../_credentials.nix { inherit lib; };
   clientScopes = client: lib.unique (builtins.concatLists (lib.attrValues client.access));
+  # Lifecycle is decided here so a caller passes the whole policy map and the rendered document
+  # cannot disagree with the deployment about which clients still exist.
+  activeClients = lib.filterAttrs (_: client: client.enable or true) clients;
 
   tag = text: { __raw = text; };
   fragment = path: { __file = path; };
 
   needsGroupsClaim = builtins.any (client: lib.elem "groups" (clientScopes client)) (
-    builtins.attrValues clients
+    builtins.attrValues activeClients
   );
 
   # Parents must apply before children; policy declares groups in the reverse order.
@@ -80,7 +83,7 @@ let
 
   dashboardGroups = lib.unique (
     builtins.filter (group: group != null) (
-      lib.mapAttrsToList (_: client: client.group or null) clients
+      lib.mapAttrsToList (_: client: client.group or null) activeClients
       ++ lib.mapAttrsToList (_: link: link.group or null) links
     )
   );
@@ -297,8 +300,8 @@ else
         ./fragments/verification.yaml
         ./fragments/enrollment.yaml
       ]
-      ++ lib.concatLists (lib.mapAttrsToList clientEntries clients)
-      ++ lib.concatLists (lib.mapAttrsToList clientRoleEntries clients)
+      ++ lib.concatLists (lib.mapAttrsToList clientEntries activeClients)
+      ++ lib.concatLists (lib.mapAttrsToList clientRoleEntries activeClients)
       ++ lib.concatLists (lib.mapAttrsToList linkEntries links)
       ++ retiredClientEntries;
   }

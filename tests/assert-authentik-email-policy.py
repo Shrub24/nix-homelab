@@ -132,8 +132,55 @@ user.save.assert_not_called()
 
 result, _, _ = check(verified="old@example.com")
 assert not result
+# An address-less account cannot prove ownership of an address, so it gets no session.
 result, user, _ = check(current_email="", pending_email="")
-assert result and "email_verified_address" not in user.attributes
+assert not result and "email_verified_address" not in user.attributes
 user.save.assert_not_called()
+
+# The login path must send an address-less account to verification rather than past it; only a
+# proven match may skip the stage.
+gate = next(
+    e["attrs"]["expression"] for e in entries if e.get("id") == "policy-email-gate"
+)
+gate_program = compile(
+    "def evaluate(request):\n" + "\n".join("    " + line for line in gate.splitlines()),
+    "homelab-email-gate",
+    "exec",
+)
+
+
+def gate_reaches(verified=None, email="new@example.com"):
+    user = SimpleNamespace(pk=1, email=email, attributes={}, save=Mock())
+    if verified:
+        user.attributes["email_verified_address"] = verified
+    user.refresh_from_db = Mock()
+    models = SimpleNamespace(
+        EmailDevice=SimpleNamespace(
+            objects=SimpleNamespace(
+                filter=lambda **_: SimpleNamespace(first=lambda: None)
+            )
+        )
+    )
+    users = SimpleNamespace(objects=SimpleNamespace(get=lambda **_: user))
+    with patch.dict(
+        sys.modules,
+        {
+            "django.db": SimpleNamespace(
+                transaction=SimpleNamespace(atomic=nullcontext)
+            ),
+            "authentik.stages.authenticator_email.models": models,
+            "authentik.core.models": SimpleNamespace(User=users),
+        },
+    ):
+        scope = {}
+        exec(gate_program, scope)
+        return scope["evaluate"](
+            SimpleNamespace(context={"pending_user": user}, user=user)
+        )
+
+
+assert gate_reaches() is True
+assert gate_reaches(verified="new@example.com") is False
+assert gate_reaches(email="") is True
 
 print("authentik-email-policy: PASS (address-bound proof, activation and consumption)")

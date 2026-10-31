@@ -33,30 +33,7 @@ report() { # $1 flake ref, $2 apply expression
 WORK="$(mktemp -d /tmp/identity-contract.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
-# 1b. Applications whose provider identifier appears in their callback path take that
-# identifier from the client id, so a policy rename cannot leave the path behind.
-python3 - "$ROOT/policy/identity.nix" <<'PYEOF' || fail "a callback path does not carry its client id"
-import re, sys
-
-policy = open(sys.argv[1]).read()
-errors = []
-for name in ("paperless", "tududi"):
-    block = policy.split(f"    {name} = {{", 1)
-    if len(block) != 2:
-        errors.append(f"client {name} not found in policy")
-        continue
-    body = block[1].split("    };", 1)[0]
-    path = re.search(r'callbackPath = "([^"]*)"', body)
-    if not path:
-        errors.append(f"{name}: no callbackPath")
-    elif f"/{name}/" not in path.group(1) and not path.group(1).endswith(f"/{name}"):
-        errors.append(f"{name}: callback path {path.group(1)!r} does not carry the client id")
-if errors:
-    print("; ".join(errors), file=sys.stderr)
-    sys.exit(1)
-PYEOF
-
-# 2. The client contract alone resolves endpoints and starts nothing. Explicit
+# 1. The client contract alone resolves endpoints and starts nothing. Explicit
 # override of the provider URL keeps this probe independent of policy.
 probe_dir="$WORK/fragment"
 mkdir -p "$probe_dir"
@@ -99,13 +76,13 @@ if errors:
     sys.exit(1)
 PYEOF
 
-# 3. A remote client host resolves the same contract with no provider selected:
+# 2. A remote client host resolves the same contract with no provider selected:
 # the contract is intrinsic, not a side effect of the provider's aspect.
 report ".#nixosConfigurations.oci-melb-1.config" \
   'c: c.services.identity.oidc.clients.paperless.issuerUrl' > /dev/null ||
   fail "a remote client host resolves no client contract"
 
-# 7. Fixture: Authentik with its runtime credentials supplied and a controlled roster.
+# 3. Fixture: Authentik with its runtime credentials supplied and a controlled roster.
 authentik="$WORK/authentik"
 mkdir -p "$authentik"
 make_copy "$authentik"
@@ -181,6 +158,91 @@ nix eval --no-write-lock-file --impure --json --expr '
   || fail "the blueprint document does not assemble"
 python3 "$ROOT/tests/assert-authentik-email-policy.py" "$doc_yaml" || fail "email-code proof policy failed"
 "$blueprint_python" "$ROOT/tests/assert-authentik-mfa-invariants.py" "$doc_yaml" || fail "a session would be created without a second factor"
+# Lifecycle: a client the policy disables leaves through a tombstone, because reconciliation
+# never deletes and the provider would otherwise keep a working login path.
+"$blueprint_python" - "$doc_yaml" <<'PYTOMB' || fail "a disabled client is not tombstoned"
+import sys
+
+from ruamel.yaml import YAML
+
+raw = YAML().load(open(sys.argv[1]))
+entries = raw["entries"]
+errors = []
+
+absent = [
+    entry
+    for entry in entries
+    if entry.get("state") == "absent" and entry.get("model", "").startswith("authentik_")
+]
+retired = {
+    str(entry["identifiers"].get("name"))
+    for entry in absent
+    if entry["model"] == "authentik_providers_oauth2.oauth2provider"
+}
+
+for name in retired:
+    models = {entry["model"] for entry in absent if name in str(entry.get("identifiers", {}))}
+    for model in ("authentik_core.application", "authentik_providers_oauth2.oauth2provider"):
+        if model not in models:
+            errors.append(f"{name}: no {model} tombstone")
+    if any(
+        entry.get("model") == "authentik_providers_oauth2.oauth2provider"
+        and entry.get("state") != "absent"
+        and str(entry["identifiers"].get("name")) == name
+        for entry in entries
+    ):
+        errors.append(f"{name}: tombstoned client still renders an active provider")
+
+if errors:
+    print("; ".join(errors), file=sys.stderr)
+    sys.exit(1)
+PYTOMB
+
+"$blueprint_python" - "$doc_yaml" <<'PYREDIR' || fail "the rendered redirect allowlist is wrong"
+import sys
+
+from ruamel.yaml import YAML
+
+raw = YAML().load(open(sys.argv[1]))
+errors = []
+
+
+def text(value):
+    return str(value)
+
+
+providers = [
+    entry
+    for entry in raw["entries"]
+    if entry.get("model") == "authentik_providers_oauth2.oauth2provider"
+    and entry.get("state") != "absent"
+]
+if not providers:
+    errors.append("the document renders no OAuth provider")
+
+for entry in providers:
+    name = entry["identifiers"]["name"]
+    uris = [text(uri["url"]) for uri in entry["attrs"].get("redirect_uris", [])]
+    if not uris:
+        errors.append(f"{name}: no redirect URI")
+        continue
+    for uri in uris:
+        scheme = uri.split("://", 1)[0] if "://" in uri else ""
+        if not scheme:
+            errors.append(f"{name}: redirect {uri!r} is not absolute")
+        elif scheme == "http":
+            # A native client may register its own scheme, but no redirect travels in clear.
+            errors.append(f"{name}: redirect {uri!r} is plaintext")
+    # A provider whose identifier appears in its callback path takes it from the client id,
+    # so the two cannot drift apart under a rename.
+    if name in ("paperless", "tududi"):
+        if not all(f"/{name}/" in uri or uri.endswith(f"/{name}") for uri in uris):
+            errors.append(f"{name}: redirect {uris!r} does not carry the client id")
+
+if errors:
+    print("; ".join(errors), file=sys.stderr)
+    sys.exit(1)
+PYREDIR
 "$blueprint_python" - "$doc_yaml" "$authentik/policy/identity.nix" <<'PYEOF' || fail "the blueprint document violates the roster/enrollment/brand contract"
 import re, sys
 
@@ -393,7 +455,7 @@ case "$undeclared_out" in
 *) fail "expected the named undeclared-group error, got: $(printf '%s' "$undeclared_out" | tail -3)" ;;
 esac
 
-# 8. Cloudflare Access federates with the same client contract. A cutover that moved the
+# 4. Cloudflare Access federates with the same client contract. A cutover that moved the
 # provider without moving the Access IdP would leave every Access-gated route unreachable,
 # so the infrastructure input is checked against the contract rather than trusted.
 # Read from a host that composes the contract: the provider host runs no OIDC client of

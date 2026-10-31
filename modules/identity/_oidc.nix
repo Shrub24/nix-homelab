@@ -4,7 +4,6 @@
 let
   policy = import ../../policy/identity.nix;
   projections = {
-    kanidm = import ./kanidm/_client.nix;
     authentik = import ./authentik/_client.nix;
   };
   projectionFor =

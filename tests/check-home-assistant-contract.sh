@@ -127,7 +127,7 @@ else:
     if not route["access"]["requireCloudflareAccess"]:
         errs.append("once published, Access must sit outside Home Assistant's own login")
     if route["access"]["oidc"]["enabled"]:
-        errs.append("this instance authenticates with Home Assistant's own login, not Kanidm OIDC")
+        errs.append("this instance authenticates with Home Assistant's own login")
 if forge["edgeServes"]:
     errs.append("the edge renders a site for a route that is not released")
 

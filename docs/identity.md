@@ -1,8 +1,10 @@
 # Identity
 
-Application SSO is served by Authentik, with Kanidm retained for host
-Unix/PAM/SSH authentication. `docs/runbooks/identity-migration.md` is the operator
-procedure; this document is the mechanism behind it.
+Application SSO is served by Authentik, the fleet's only identity provider. The Kanidm
+implementation and its Unix/PAM/SSH capability were retired once the migration settled
+(D-122), so host login is the operator account and its key.
+`docs/runbooks/identity-migration.md` is the operator procedure; this document is the
+mechanism behind it.
 
 ## Ownership split
 
@@ -10,15 +12,13 @@ procedure; this document is the mechanism behind it.
 | --- | --- |
 | Approved clients, access groups, claim intent | `policy/identity.nix` |
 | Client-side OIDC facts | `modules/identity/_oidc.nix` (intrinsic) |
-| Provider registration | `modules/identity/kanidm/server.nix`, `modules/identity/authentik/server.nix` |
+| Provider registration | `modules/identity/authentik/server.nix` |
 | People, credentials, memberships | Authentik's database and UI |
-| Unix identities and SSH/PAM policy | `modules/identity/kanidm/host-auth.nix` per host |
-| Clients, groups, access bindings, brand and flow context | `modules/identity/authentik/_blueprint.nix` |
-| Static flows, stages, prompts and policy expressions | `modules/identity/authentik/_blueprints/*.yaml`, assembled by `blueprints.nix` |
+| Clients, groups, access bindings, brand and flow context | `modules/identity/authentik/_blueprint/document.nix` |
+| Static flows, stages, prompts and policy expressions | `modules/identity/authentik/_blueprint/fragments/*.yaml`, assembled by `blueprints.nix` |
 
-`identity-provider` binds the policy-selected provider; `kanidm-identity` and
-`authentik-identity` stay independently selectable, so retained host authentication never
-depends on which provider serves applications. Importing `_oidc.nix` resolves client
+`identity-provider` binds the policy-selected provider and `authentik-identity` runs it.
+Importing `_oidc.nix` resolves client
 configuration and registers nothing: approving a client and deploying its application are
 separate acts, and an application cannot register itself by being composed.
 
@@ -35,7 +35,7 @@ infer the type of a resolved reference.
 
 ### Blueprint authoring
 
-Static definitions are real YAML under `modules/identity/authentik/_blueprints/`.
+Static definitions are real YAML under `modules/identity/authentik/_blueprint/fragments/`.
 Python expressions use block scalars. Nix projects fleet registrations and non-secret
 context; `blueprints.nix` assembles them with the YAML fragments into one document using
 ruamel.yaml. The fragment order lives in `_blueprint/document.nix`. Context supplies the enrollment
@@ -107,25 +107,21 @@ nix build --no-link --print-out-paths --impure --expr '
 Operational checks and recovery are in
 [`runbooks/authentik-blueprints.md`](runbooks/authentik-blueprints.md).
 
-Providers live in directories (`kanidm/`, `authentik/`) because runtime, provisioning,
-client projection and assets cannot be understood apart. Inside one, a non-underscore file
-is a discovered contributor and a `_` file is value-imported by its owner.
+The provider lives in a directory because runtime, provisioning, client projection and
+assets cannot be understood apart. Inside it a non-underscore file is a discovered
+contributor, and its `_blueprint/` folder holds the pipeline those contributors share: the
+document generator, brand and theme sections, the YAML fragments, the assembler and the
+activation gate.
 
 ## Which provider serves what
 
 | Consumer | Provider | Endpoint source |
 | --- | --- | --- |
 | Applications (OIDC clients) | the policy's `provider` | the client contract, from the provider's `_client.nix` |
-| Host Unix/PAM/SSH login | Kanidm, always | the Kanidm route named by policy, resolved independently of `provider` |
 
-An application cutover therefore cannot retarget PAM/SSH, and retiring the Kanidm server
-is a separate decision from retiring it as an application provider.
-
-Providers publish at distinct canonical hostnames: `auth.shrublab.xyz` is the Authentik
-identity, served by that host's own TLS front (`tailscale-serve` exposure) and deliberately
-outside Cloudflare Access — gating the provider behind its own login is a lockout. The
-Kanidm compatibility endpoint keeps its own route for as long as host authentication needs
-it.
+The provider publishes at `auth.shrublab.xyz`, served by that host's own TLS front
+(`tailscale-serve` exposure) and deliberately outside Cloudflare Access — gating the
+provider behind its own login is a lockout.
 
 ## Identifiers
 

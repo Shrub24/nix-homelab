@@ -140,7 +140,7 @@ for app in ("actual", "memos", "tududi"):
         errs.append(f"{app}: edge upstream {r['upstream']!r} does not dial loopback on the route port {r['originPort']}")
     # The identity contract carries a client of the same name. Its endpoints belong to the
     # client rather than to this check: the issuer URL's shape is the provider's grammar, so
-    # pinning a path here would re-encode Kanidm's or Authentik's layout instead of our
+    # pinning a path here would re-encode the provider's layout instead of our
     # contract.
     if clients.get(app) is None:
         errs.append(f"{app}: no identity-contract client")

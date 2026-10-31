@@ -10,10 +10,9 @@ in
   # own aspect and is not redirected by this value.
   provider = "authentik";
 
-  # Each provider's route carries its public identity; a null route makes selecting
-  # that provider fail closed instead of inventing a URL.
+  # A provider's route carries its public identity; a null route makes selecting that
+  # provider fail closed instead of inventing a URL.
   providers = {
-    kanidm.route = "kanidm-admin";
     authentik = {
       route = "authentik-admin";
       # A member of a group is an effective member of its ancestors, so authority accumulates
@@ -114,7 +113,6 @@ in
         "profile"
         "email"
       ];
-      kanidm.allowInsecureClientDisablePkce = true;
     };
 
     karakeep = {
@@ -135,7 +133,6 @@ in
           "email"
         ];
       };
-      kanidm.enableLegacyCrypto = true;
     };
 
     paperless = {
@@ -212,7 +209,6 @@ in
           "email"
         ];
       };
-      kanidm.enableLegacyCrypto = true;
     };
 
     memos = {
@@ -256,7 +252,6 @@ in
           "groups"
         ];
       };
-      kanidm.preferShortUsername = true;
     };
 
     tududi = {
@@ -277,7 +272,6 @@ in
           "email"
         ];
       };
-      kanidm.enableLegacyCrypto = true;
     };
 
     geopulse = {
@@ -292,10 +286,6 @@ in
         "profile"
         "email"
       ];
-      kanidm = {
-        allowInsecureClientDisablePkce = true;
-        enableLegacyCrypto = true;
-      };
     };
 
     homarr = {

@@ -161,7 +161,7 @@
             type = lib.types.str;
             default = "ES256";
             description = ''
-              Expected id_token signing algorithm. Kanidm signs ES256; openid-client
+              Expected id_token signing algorithm. The provider signs ES256; openid-client
               defaults to RS256 and fails every callback when this is unset.
             '';
           };

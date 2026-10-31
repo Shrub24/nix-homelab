@@ -79,8 +79,6 @@ cat >"$probe_dir/flake.nix" <<EOF2
       c = sys.config;
     in {
       clients = c.services.identity.oidc.clients;
-      providerNamespaceAbsent = !(c.services.identity ? kanidm);
-      hostAuthAbsent = !(c.services.identity ? hostAuth);
     };
   };
 }
@@ -96,9 +94,6 @@ got = json.loads(sys.argv[1])
 errors = []
 if not got.get("clients"):
     errors.append("no clients resolved from policy")
-for absent in ("providerNamespaceAbsent", "hostAuthAbsent"):
-    if got.get(absent) is not True:
-        errors.append(f"{absent} must hold when only the client contract is imported")
 if errors:
     print("; ".join(errors), file=sys.stderr)
     sys.exit(1)

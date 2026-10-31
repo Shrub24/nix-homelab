@@ -87,7 +87,7 @@ Track D: Service baseline
 - keep music service composition explicit through the discovered `music` deployment aspect `modules/music/music.nix` (selected on `home-forge` only; selection provides `applications.music.enable`), with the service contributors beside it under `modules/music/`
 - keep music service modules regrouped under `modules/music/` for navigability without changing option namespaces
 - run the complete music application on `home-forge` under the host-selected music application root `/srv/storage/media/music/{library,playlists,inbox,quarantine,.versions}`, with AudioMuse's database in OCI's shared Postgres over Tailscale and LA edge routes for music/slskd/tagr pointing at `home-forge`; playlist export/import for Engine DJ is owned by a separate repository
-- keep admin service composition in independently selected aspects: `identity-provider` (Kanidm), `cockpit`, and the individual workload aspects `termix`, `vaultwarden`, `homepage`, `gatus`, `beszel`, and `webhook`; there is no `admin-hub` bundle (D-054), and Quantum is fully retired (TD-07)
+- keep admin service composition in independently selected aspects: `identity-provider`, `cockpit`, and the individual workload aspects `termix`, `vaultwarden`, `homepage`, `gatus`, `beszel`, and `webhook`; there is no `admin-hub` bundle (D-054), and Quantum is fully retired (TD-07)
 - keep the admin surface split between reusable service modules and host-owned inputs (Cockpit host overlays, per-workload secret sources, and the LA host-local `/srv/data` ACL/reconcile remainder)
 - evolve Beets via native systemd-based inbox-to-library promotion under `home-forge` `/srv/storage/media/music/library` while keeping library and quarantine playback visibility
 - support a secondary approved-quarantine promotion runner for manual re-attempt workflows
@@ -102,7 +102,7 @@ Track E: Future-ready evolution
 
 Track F: Admin/edge host migration
 
-- `la-admin-1` is the active admin, edge, and Kanidm/OIDC host; the previous rollback host was decommissioned after the LA backup/recovery gates passed
+- `la-admin-1` is the active admin and edge host; the previous rollback host was decommissioned after the LA backup/recovery gates passed
 - serial deploy order is `la-admin-1` before `oci-melb-1`; the local-admin Cockpit path is `/la-admin-1`
 - LA adoption (preinstalled NixOS, non-destructive) is separate from later AU edge and US-East workload work
 - cross-host consumers use stable service IDs from the policy catalog (`config.repo.web.catalog`); physical deployment facts (`edgeHost`, `deployOrder`) stay only in `lib/deploy/hosts.nix`
@@ -224,9 +224,9 @@ Current open items, newest first. Each names the artifact that closes it.
   once a live token proves the claim carries both, so a per-app role becomes a binding
   change rather than a group-tree change.
 
-- The tree names Authentik as the active provider and no host selects Kanidm; `kanidm-admin`
-  (`id.shrublab.xyz`) is deleted from policy, so the next `just tofu apply` destroys its DNS
-  record. The Kanidm code stays for the observation window, dormant.
+- Authentik is the active provider and the observation window is closed: the Kanidm
+  implementation is retired (D-122), and `kanidm-admin` (`id.shrublab.xyz`) is gone from policy,
+  so the next `just tofu apply` destroys its DNS record.
 - Deploy `oci-melb-1`, then `home-forge`, then `la-admin-1`. The provider host last, because its
   deploy carries the blueprint.
 - Operator steps before the deploys: add `Access: Service Tokens → Edit` to the Cloudflare API

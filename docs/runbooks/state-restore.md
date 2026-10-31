@@ -57,34 +57,6 @@ The recipe never writes live state; applying staged files to live paths is alway
 7. Validate the service and its data.
 8. Keep the fallback (preserved dir, staging dir, snapshot) until soak is complete.
 
-## 4. Kanidm (la-admin-1)
-
-Applies only while a host selects `aspects.kanidm-identity`: the restore helper ships with
-the provider, so with Kanidm deselected there is no `kanidm-restore@` template to start. To
-arm the path for a rollback, select the aspect and deploy before starting this section.
-
-Artifact: portable export `backup-*.json.gz` from `/var/lib/kanidm/backups`. Export-only contract: the live DB (`/var/lib/kanidm/kanidm.db`) is not restic-covered.
-
-Stage (operator workstation):
-
-```sh
-just backups restore-stage la-admin-1 <snapshot> /var/lib/kanidm/backups
-```
-
-Quiesce and apply (target host):
-
-```sh
-sudo systemctl stop kanidm.service restic-backups-state.service restic-backups-state.timer
-stage=/var/tmp/state-restore/restore.<id>                    # path the recipe printed on this host
-backup=$(ls -1t "$stage/var/lib/kanidm/backups"/backup-*.json.gz | head -n1)
-sudo systemctl start "$(systemd-escape --path --template=kanidm-restore@.service "$backup")"
-```
-
-- The helper restores the artifact, runs the offline verifier fail-closed, and fixes ownership. It refuses to run while `kanidm.service` is active and never starts it.
-- Every nonzero verifier result is fatal — never parse, "repair", or accept a verifier failure; the helper exits nonzero before any ownership repair or service start.
-- Only after the helper reports done: `sudo systemctl start kanidm.service`
-- Validate: admin login, one OIDC client login, provider discovery URL resolves.
-
 ## 5. PostgreSQL shared cluster (oci-melb-1)
 
 Artifact: logical cluster export `all.sql.gz` at `/srv/data/state-backups/postgres` produced by NixOS `services.postgresqlBackup` (a previous-good copy is retained locally as `all.prev.sql.gz`). The raw `/srv/data/postgres` directory is NOT portable backup coverage.

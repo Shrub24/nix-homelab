@@ -3211,3 +3211,34 @@ fails when a flow reaches its login stage before a method requirement, which is 
 would otherwise appear as a lockout. Old devices stay enrolled after recovery until removed in
 Settings. Revisit if the fleet gains users who cannot be trusted with mailbox recovery, or if
 Authentik ships a supported method-choice entry point.
+
+## D-122: Kanidm is retired, and host identity is not a directory identity
+
+**Status:** Accepted; `kanidm-identity`, `kanidm-host-auth` and `tests/kanidm-restore-contract.sh` are deleted.
+
+**Evidence:** The observation window opened by D-120 closed with Authentik serving every approved
+OIDC client, and no host record selected `kanidm-identity` or `kanidm-host-auth`: SSH has been the
+operator account and its key throughout, so the Unix/PAM capability ran on no host. The provider
+body, its release-family binding, its portable-backup restore helper, its secret scope and its
+per-client compatibility knobs (`allowInsecureClientDisablePkce`, `enableLegacyCrypto`,
+`preferShortUsername`) were reachable only by reselecting the aspect explicitly.
+
+**Decision:** Remove the implementation. `modules/identity/kanidm/` is deleted, along with the
+`Kanidm` secret-template, the `.sops.yaml` rule for `secrets/identity/kanidm.yaml`, the restore
+contract check and its recipe, the `providers.kanidm` policy block, and the `kanidm` projection in
+`_oidc.nix`. The Cloudflare Access IdP defaults now name the Authentik endpoints. The
+`kanidm-identity` and `host-unix-auth` capability specs are retired rather than rewritten, because
+they described a mechanism that no longer exists.
+
+**Rejected:** Keeping the code dormant behind an unselected aspect "in case", which is the state
+D-120 already left it in and which cost a full provider body plus a restore helper to maintain. A
+host-auth replacement over Authentik's LDAP or SCIM surface, which nothing needs while SSH is a
+single operator key.
+
+**Consequences:** Host identity is Authentik alone, so `identity-provider` and `authentik-identity`
+are the whole surface and `policy/identity.nix` carries one provider. The rollback story collapses:
+there is no second provider to fall back to, so a broken provider is repaired in place or recovered
+from the database dump the state-backups contract captures (`authentik` consumer registration).
+A future directory-identity requirement starts as a new proposal with a new implementation, not as
+a reselection of deleted code. Revisit if fleet hosts need shared Unix identities rather than one
+operator account per host.

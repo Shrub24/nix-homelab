@@ -324,7 +324,7 @@ in
           access.requireCloudflareAccess = false;
         };
 
-        # Kanidm OIDC gates the web app; Access is off because OPDS and e-reader clients cannot pass it.
+        # OIDC is the gate; Access is off because OPDS and e-reader clients cannot pass it.
         bookorbit = {
           subdomain = "books";
           origin = {
@@ -364,7 +364,7 @@ in
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;
-          # Published: Kanidm login is the gate; its `groups` decide administration.
+          # Published: OIDC login is the gate; its `groups` decide administration.
         };
 
         # Google sign-in gates the app; the webhook stays public, so neither Access nor app OIDC applies.
@@ -617,7 +617,7 @@ in
           exposureMode = "tailscale-upstream";
           category = "app";
           publish = false;
-          # Behind Access once published; Home Assistant's own auth is the inner gate, not Kanidm.
+          # Behind Access once published; Home Assistant keeps its own inner login.
           access.requireCloudflareAccess = true;
           cloudflare = {
             proxied = true;

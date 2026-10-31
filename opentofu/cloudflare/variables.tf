@@ -80,7 +80,7 @@ variable "aop_enabled" {
 }
 
 # -----------------------------------------------------------------------------
-# Zero Trust Identity Provider (Kanidm generic OIDC)
+# Zero Trust Identity Provider (generic OIDC against the fleet identity provider)
 # -----------------------------------------------------------------------------
 
 variable "idp_type" {
@@ -92,7 +92,7 @@ variable "idp_type" {
 variable "idp_name" {
   description = "Zero Trust IdP name shown on the login page"
   type        = string
-  default     = "Kanidm"
+  default     = "Authentik"
 }
 
 variable "idp_client_id" {
@@ -135,7 +135,7 @@ variable "idp_client_secret" {
 variable "idp_auth_url" {
   description = "OIDC authorization endpoint URL for the Cloudflare Access upstream IdP"
   type        = string
-  default     = "https://kanidm.shrublab.xyz/oauth2/openid/cloudflare-access/authorize"
+  default     = "https://auth.shrublab.xyz/application/o/authorize/"
 
   # validation {
   #   condition = (
@@ -152,7 +152,7 @@ variable "idp_auth_url" {
 variable "idp_token_url" {
   description = "OIDC token endpoint URL for the Cloudflare Access upstream IdP"
   type        = string
-  default     = "https://kanidm.shrublab.xyz/oauth2/token"
+  default     = "https://auth.shrublab.xyz/application/o/token/"
 
   # validation {
   #   condition = (
@@ -169,7 +169,7 @@ variable "idp_token_url" {
 variable "idp_certs_url" {
   description = "OIDC JWKS endpoint URL for the Cloudflare Access upstream IdP"
   type        = string
-  default     = "https://kanidm.shrublab.xyz/oauth2/openid/cloudflare-access/public_key.jwk"
+  default     = "https://auth.shrublab.xyz/application/o/cloudflare-access/jwks/"
 
   # validation {
   #   condition = (

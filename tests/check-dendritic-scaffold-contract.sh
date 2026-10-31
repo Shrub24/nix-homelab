@@ -525,7 +525,7 @@ probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBo
 # 7d-2. Stage 5 web/identity observables (S5-4, S5-5, S5-8). web-policy is an
 # all-host infrastructure-support selection: config.repo.web resolves on every
 # host and the ntfy serverUrl default derives from the catalog endpoint (loopback
-# where ntfy is served). kanidm-host-auth is selected on OCI/LA only: both expose
+# where ntfy is served). The identity provider is placed on OCI only, which exposes
 # the policy-derived provider URL and clients; forge
 # carries only the intrinsic contract the Grafana it runs reads (`or {}` keeps
 # the probe total where an option is absent).
@@ -590,9 +590,9 @@ probe_web_identity home-forge '{"providerUrl":"https://auth.shrublab.xyz","front
 forge_identity="$(ne --raw --apply 'c: builtins.toJSON (builtins.attrNames (c.services.identity or {}))' 'path:.#nixosConfigurations.home-forge.config')" ||
   fail "home-forge: identity absence probe does not evaluate"
 [ "$forge_identity" = '["oidc"]' ] || fail "home-forge must carry only the intrinsic OIDC contract (services.identity namespaces: $forge_identity)"
-forge_identity_machinery="$(ne --raw --apply 'c: builtins.toJSON { hostAuth = c.services.identity ? hostAuth; kanidm = c.services.identity ? kanidm; }' 'path:.#nixosConfigurations.home-forge.config')" ||
+forge_identity_machinery="$(ne --raw --apply 'c: builtins.toJSON (c.services.identity ? hostAuth)' 'path:.#nixosConfigurations.home-forge.config')" ||
   fail "home-forge: identity machinery probe does not evaluate"
-[ "$forge_identity_machinery" = '{"hostAuth":false,"kanidm":false}' ] || fail "home-forge must not carry identity machinery: $forge_identity_machinery"
+[ "$forge_identity_machinery" = 'false' ] || fail "home-forge must not carry identity machinery: $forge_identity_machinery"
 
 # 7d-3. Recovery observable (S5-8): the relocated host-recovery leaf stays owned
 # by the base aspect, so both units are present on every host.
@@ -956,16 +956,16 @@ touch "$D/modules/storage/disko-root.nix"
 # 7l-2. The boundary list is gone: a transitional-root name reappearing under
 # modules/ is caught by the root-evacuation predicate (7l-1), not by a list.
 
-# 7l-5. Identity must not activate on forge. Adding aspects.kanidm-host-auth to
+# 7l-5. Identity must not activate on forge. Adding aspects.authentik-identity to
 # the forge record is detected through the missing-services.identity observable,
 # not a publication diff.
 D="$(make_copy)"
-sed -i '/aspects\.dj/i\        aspects.kanidm-host-auth' "$D"/modules/hosts/*/default.nix
+sed -i '/aspects\.dj/i\        aspects.authentik-identity' "$D"/modules/hosts/*/default.nix
 forge_identity_mut="$(ne --raw --apply 'c: builtins.toJSON (builtins.attrNames (c.services.identity or {}))' \
   "path:${D}#nixosConfigurations.home-forge.config")" ||
   fail "7l-5: forge identity mutation probe must evaluate"
 [ "$forge_identity_mut" != '[]' ] ||
-  fail "7l-5: forge must expose identity activation when kanidm-host-auth is wrongly selected"
+  fail "7l-5: forge must expose identity activation when authentik-identity is wrongly selected"
 
 # 7l-6. The intrinsic contract replaces the retired selection: a consumer host resolves
 # the canonical client records from policy without any identity machinery of its own,

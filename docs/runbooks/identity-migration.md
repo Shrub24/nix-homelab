@@ -4,7 +4,9 @@ Operator steps for moving application SSO from Kanidm to Authentik. The mechanis
 them — ownership split, flows, the email claim, per-application continuity — is
 [`docs/identity.md`](../identity.md); the decision is D-115.
 
-Kanidm keeps serving Unix/PAM/SSH authentication throughout. Nothing here changes that.
+This procedure was written for the window in which Kanidm still served host authentication.
+That window closed with D-122, so nothing here restores it; what remains are the steps for
+repairing or repeating the application-SSO move.
 
 ## Preflight
 
@@ -98,8 +100,7 @@ while they match, so changing an address un-verifies it until the flow runs agai
 One window, in this order. The tree already names Authentik (`provider` in
 `policy/identity.nix`), so the deploy is the flip.
 
-1. Confirm no host selects `kanidm-host-auth` and that both hosts are reachable by Tailscale
-   SSH and their static `sshd` keys.
+1. Confirm both hosts are reachable by Tailscale SSH and their static `sshd` keys.
 2. Back up the Authentik database, the Kanidm state and each application's own database.
 3. `geopulse` on `oci-melb-1`: delete the `authentik` row from the `oidc_providers` table. Its
    client is declared in Nix now, and a database row of the same name shadows the declarative
@@ -107,15 +108,16 @@ One window, in this order. The tree already names Authentik (`provider` in
 4. Move the two clients whose configuration lives in their own database — `beszel` and
    `bookorbit` — to the Authentik issuer in each application's own settings, and confirm one
    login each. Nix cannot move them.
-5. Deploy the consumer hosts first, then `la-admin-1` last: it carries the blueprint whose brand
-   fields changed, and the retained Kanidm runtime.
+5. Deploy the consumer hosts first, then the provider host last: identity carries the blueprint
+   whose brand fields change.
 6. `./scripts/export-web-services-policy.sh`, then apply OpenTofu — Cloudflare Access
    federation points at the contract's endpoints. The identity suite fails while the two
    disagree, so this cannot be skipped silently.
 7. Endpoints come from the contract and change only on redeploy, so every host that serves the
    identity and every host that consumes a client needs its own deploy.
 8. Keep the identity host outside Cloudflare Access.
-9. Leave `id` where it is: it is Kanidm's issuer, and repointing it moves every stored issuer.
+9. Leave `id` where it is: it is the retired provider's issuer, and repointing it moves every
+   stored issuer.
 
 ## Per-application acceptance
 
@@ -148,8 +150,8 @@ does not revert it.
 
 ## Host access before cutover
 
-Kanidm is not retained: no host selects `kanidm-host-auth`, so host login is Tailscale SSH plus
-the static keys in `sshd`. Before the flip:
+Host login is Tailscale SSH plus the static keys in `sshd`; no identity provider serves it.
+Before the flip:
 
 1. From independent sessions, reach `la-admin-1` and `oci-melb-1` by Tailscale SSH.
 2. Confirm a key-based `ssh` login on each host, outside Tailscale, as the break-glass path.
@@ -158,13 +160,11 @@ the static keys in `sshd`. Before the flip:
 
 ## Rollback
 
-Set `provider` back, revert the route posture (`publish`, and the subdomain if it moved),
-and redeploy the affected hosts. Moving the provider back redeploys the Kanidm server, which the
-same commit stopped; its data, secrets and backups were never removed, so it returns on the next
-deploy of `la-admin-1`. The identity suite reports the tfvars value that must move with it.
-Application-side state written during the new login may not follow, so restore the application's
-own backup if it changed materially. The three database-configured clients need their issuer
-moved back by hand.
+There is no second provider to fall back to (D-122). Repair in place: restore the Authentik
+database from the backup the state-backups contract captures, reapply blueprints, and redeploy
+the provider host. Application-side state written during a broken window may not follow, so
+restore the application's own backup if it changed materially. The three database-configured
+clients need their issuer changed by hand if the public route moves.
 
 ## Recovery
 
@@ -176,7 +176,7 @@ mechanism.
 
 ## Removing Kanidm
 
-`la-admin-1` selects `kanidm-identity` explicitly so the retired provider keeps running through
-the observation window; that selection, its secret readership, its backup registration and its
-restore helper are removed together once the window closes. Keep one restore of its state until
-the change is archived.
+Done (D-122). The observation window closed with Authentik serving every client and no host
+selecting the Kanidm aspects, so the implementation, its secret rule and its restore helper are
+deleted rather than kept dormant. `secrets/identity/kanidm.yaml` remains on disk for the
+operator to delete, and one restore of that state should be kept until the change is archived.

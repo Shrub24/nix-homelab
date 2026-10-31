@@ -1,5 +1,3 @@
-# Paperless runtime sibling of the `paperless` aspect: deferredModule values
-# merge across sibling files, so the host selects one aspect name.
 { inputs, ... }:
 {
   flake.modules.nixos.paperless =
@@ -14,16 +12,11 @@
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       repoPackages = config.repo.packages;
       oidcEnabled = cfg.oidc.enable;
-      # This application's canonical client record is the single source for its
-      # issuer endpoints; the host supplies enablement and credentials only.
       oidcClient = config.services.identity.oidc.clients.paperless or null;
       socialAccountProvidersJson = builtins.toJSON {
         openid_connect = {
-          # Scopes and label come from the client contract, not the application.
           SCOPE = if oidcClient == null then [ ] else oidcClient.scopes;
           OAUTH_PKCE_ENABLED = true;
-          # The provider gates login on a verified address, so a same-email link to an account
-          # that predates it is trusted rather than refused as a duplicate.
           VERIFIED_EMAIL = true;
           EMAIL_AUTHENTICATION = true;
           APPS = [
@@ -111,8 +104,7 @@
       };
 
       config = lib.mkMerge [
-        # Base package from the pinned revision; the nixpkgs module's own override (checks off)
-        # still applies to it, which is what the running 3.3.1 generation was built from.
+        # The nixpkgs module applies its own override on top of this one.
         {
           nixpkgs.overlays = [
             (_final: prev: {
@@ -121,13 +113,10 @@
             })
           ];
         }
-        # Selection is enablement: the aspect supplies the leaf's enable flag.
         { services.paperless.enable = true; }
 
         {
 
-          # The post-consume hook is the one non-root notify caller here, so it joins the daemon's
-          # group; services.notify.cliGroup stays null because access is per caller.
           users.users.paperless.extraGroups = lib.mkAfter (
             lib.optionals (config.users.groups ? notify) [ "notify" ]
           );
@@ -175,8 +164,8 @@
             owner = "paperless";
             group = "paperless";
             mode = "0400";
-            # Every paperless unit reads this file; a rendered-content change is invisible to
-            # switch-to-configuration, so without this a stale environment survives a deploy.
+            # Every paperless unit reads this file, and switch-to-configuration cannot see a
+            # rendered-content change: without this a stale environment survives a deploy.
             restartUnits = [
               "paperless-web.service"
               "paperless-consumer.service"
@@ -238,8 +227,6 @@
             passwordFile = lib.mkDefault config.sops.secrets.paperless_admin_pass.path;
 
             database.createLocally = lib.mkDefault false;
-            # Plain PDFs/images only: no Tika/Gotenberg sidecar for office and
-            # email documents.
             configureTika = lib.mkDefault false;
             openMPThreadingWorkaround = lib.mkDefault true;
 
@@ -269,8 +256,6 @@
               PAPERLESS_REDIRECT_LOGIN_TO_SSO = true;
               PAPERLESS_DISABLE_REGULAR_LOGIN = true;
               PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS = true;
-              # allauth's own globals are not mapped by this application's settings loader,
-              # so email-based sign-in is declared in the provider block below instead.
               PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS_CLAIM = "groups";
             };
           };

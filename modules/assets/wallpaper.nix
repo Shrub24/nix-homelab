@@ -23,11 +23,7 @@ _: {
     in
     {
       options.services.assets.wallpaper = {
-        enable = lib.mkOption {
-          type = lib.types.bool;
-          default = false;
-          description = "Rotate the published background from the candidate prefix on a timer. One host owns it; two rotators would overwrite each other.";
-        };
+        enable = lib.mkEnableOption "the published-background rotator; one host may own it, since two rotators overwrite each other";
         key = lib.mkOption {
           type = lib.types.str;
           default = lib.removePrefix "${policy.publicUrl}/" policy.brand.wallpaper.url;

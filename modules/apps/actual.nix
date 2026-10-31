@@ -1,5 +1,4 @@
-# Actual Budget: port and public URL from the canonical route, OpenID client from the
-# identity contract, secret from the host-scoped OIDC source.
+# Actual Budget: route, identity contract and OIDC secret are all read, never restated.
 _: {
   flake.modules.nixos.actual =
     {
@@ -12,7 +11,7 @@ _: {
       cfg = config.services.actual;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       route = config.repo.web.catalog.actual or null;
-      oidcClient = config.services.identity.oidc.clients.actual or null;
+      oidcClient = config.services.identity.oidc.clients.actual;
       dataDir = "/srv/data/actual";
       exportDir = "${config.services.state-backups.stagingRoot}/actual";
     in
@@ -31,20 +30,15 @@ _: {
             assertion = route != null;
             message = "services.actual: canonical web-policy route 'repo.web.catalog.actual' is missing; declare the actual route under its host in policy/web-services.nix.";
           }
-          {
-            assertion = oidcClient != null;
-            message = "services.actual: canonical OIDC client 'actual' is missing from services.identity.oidc.clients; check clients.actual in policy/identity.nix.";
-          }
         ];
 
         sops.secrets = secretHelpers.mkSecretsFromMap cfg.secretFiles.oidc {
           actual_oidc_client_secret = {
             key = "actual/client_secret";
             path = "/run/secrets/actual.oidc_client_secret";
-            # The unit's preStart renders config.json as the service user.
             owner = "actual";
             group = "actual";
-            # config.json is rendered once at start, so a rotated secret needs a restart.
+            # config.json is rendered once per start as this user, so a rotated secret needs a restart.
             restartUnits = [ "actual.service" ];
           };
         };
@@ -70,23 +64,19 @@ _: {
             hostname = "127.0.0.1";
             port = route.upstreamPort;
             loginMethod = "openid";
-            # Upstream builds the account from the `preferred_username` claim, so the OIDC
-            # identity owns the account. Password login would authenticate a separate local
-            # credential, so it is not offered.
             allowedLoginMethods = [ "openid" ];
             openId = {
               discoveryURL = oidcClient.wellknownUrl;
               client_id = oidcClient.clientId;
               client_secret._secret = config.sops.secrets.actual_oidc_client_secret.path;
               # Upstream builds the callback as new URL('/openid/callback', server_hostname),
-              # so this is the full public origin, not a bare host name.
+              # so this must be the full origin, not a host name.
               server_hostname = route.publicUrl;
             };
           };
         };
 
-        # account.sqlite is a live database: it is exported with sqlite's online backup API, never
-        # copied raw. The per-budget user files are captured as they are on disk.
+        # account.sqlite is live: exported through the online backup API, never copied raw.
         services.state-backups.services.actual = {
           enable = true;
           mode = "export";

@@ -34,8 +34,7 @@ in
     containerSourceCIDR = "10.89.0.0/16";
   };
 
-  # ClickHouse HTTP, off its conventional 8123 because home-forge runs Home Assistant
-  # there on the host network. Declared once so the server and every consumer agree.
+  # ClickHouse HTTP, off its conventional 8123: home-forge runs Home Assistant on that port.
   observability = {
     clickhouseHttpPort = 8124;
   };

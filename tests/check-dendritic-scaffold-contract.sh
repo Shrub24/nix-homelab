@@ -1,17 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Dendritic scaffold contract (openspec changes dendritic-stage-1-scaffold-hosts
-# task 4.1/6.4, dendritic-stage-2-foundation-aspects task 6.1,
-# dendritic-stage-3-operational-aspects task 4.1,
-# dendritic-stage-4-source-model-realignment tasks 4.1/4.2,
-# dendritic-stage-5-shared-source-contributors task 5.2,
-# dendritic-stage-6-music-composition tasks 5.1/5.2, and
-# dendritic-stage-7-placement-aspects tasks 6.1-6.3;
-# feature-owned-service-monitoring tasks 2.1-2.3 and 3.1/3.2 (MON-1..MON-4);
-# design DS-1..DS-6,
-# FND-1..FND-6, OPS-1..OPS-11, S4-1/S4-4/S4-5/S4-8, S5-6/S5-7, S6-2..S6-11,
-# S7-2..S7-9).
+# Dendritic scaffold contract: the repository's structure is what its evaluation exposes.
+# Every contributor is discovered, no converted legacy root survives, and a host's record
+# selects the aspects it runs rather than importing an implementation.
 #
 # Observable evaluations define the contract; negative behavior probes use
 # throwaway copies so the working tree remains untouched.

@@ -1,5 +1,4 @@
-# GeoPulse: PostgreSQL consumer, native backend and frontend, and the secrets contract.
-# The front-end port is read from the private web-policy route, so declaration and socket cannot drift.
+# GeoPulse: PostgreSQL consumer, native backend and frontend, front-end port from the route.
 {
   withSystem,
   ...
@@ -17,7 +16,6 @@
       cfg = config.services.geopulse;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
-      # Loopback listener the edge dials; the port is stated once in policy/web-services.nix.
       catalog = config.repo.web.catalog or { };
       frontendRoute =
         catalog.geopulse
@@ -28,14 +26,14 @@
 
       publicOriginMessage = "services.geopulse: the web-policy route 'geopulse' must publish a public identity (subdomain with a public exposure mode), because the OIDC callback, the issued-token issuer and the private bootstrap tunnel all present that origin.";
 
-      # Browser origin comes from the route's published identity, so a subdomain change moves the callback too.
       publicOrigin =
         let
           url = frontendRoute.publicUrl or null;
         in
         if url == null then throw publicOriginMessage else url;
 
-      # Published only: a withheld route keeps the Tailscale Serve origin, or the first OIDC login targets a host the edge does not serve.
+      # Published only: on a withheld route the first OIDC login would target an origin the
+      # edge does not serve.
       published = frontendRoute.publish == null || frontendRoute.publish;
       browserOrigin =
         if published then
@@ -43,7 +41,6 @@
         else
           "https://${frontendRoute.endpoint.host}:${toString frontendRoute.endpoint.port}";
 
-      # A host without a local cluster is a configuration error; the address is built lazily so the requirement is named.
       hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
       localPostgres = if hasLocalCluster then config.services.postgres.localEndpoint else null;
       noClusterMessage = "services.geopulse: this host runs no PostgreSQL cluster; the backend dials the local cluster on loopback, so select the postgres aspect with an instance.";
@@ -62,19 +59,19 @@
       # Projected only once the secret file exists, so an unbound path never reaches a path-typed option.
       hasSecretFile = cfg.secretFiles.host != null;
 
-      # Upstream reads its approved clients from the environment, but a database row of the same
-      # name shadows it: the row is the admin UI's copy, not state.
+      # A database row of the same name shadows the environment's approved client, so the
+      # admin UI's copy must not survive a redeploy.
       oidcClient = config.services.identity.oidc.clients.geopulse or null;
       hasOidcSecret = cfg.secretFiles.oidc != null && builtins.pathExists cfg.secretFiles.oidc;
       oidcEnabled = oidcClient != null && hasOidcSecret;
 
-      # Owner-scoped file: a rendered template sits under a 0750 root directory a non-root service cannot traverse.
+      # Owner-scoped: a rendered template sits under a 0750 root directory the service cannot traverse.
       secrets = {
         postgresPassword = "/run/secrets/geopulse/postgres-password";
         aiKey = "/run/secrets/geopulse/ai-encryption-key.txt";
       };
 
-      # Substrate and runtime read the same file and key, so a rotation moves both.
+      # Substrate and runtime read the same file and key, so one rotation moves both.
       secretEntries = secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
         "geopulse/postgres-password" = {
           key = "roles/geopulse/password";
@@ -90,14 +87,14 @@
         };
       };
 
-      # Upstream's entrypoint wrote this file; index.html loads it from the web root.
       frontendConfig = pkgs.writeTextDir "config.js" ''
         window.VUE_APP_CONFIG = {
           API_BASE_URL: '/api/v1',
         };
       '';
 
-      # Handles are mutually exclusive and evaluated in order, so specific mappings precede the SPA catch-all.
+      # Handles are mutually exclusive and evaluated in order, so specific mappings precede
+      # the SPA catch-all.
       caddyfile = pkgs.writeText "Caddyfile" ''
         {
             # Caddy already owns the default admin endpoint on localhost:2019.
@@ -109,7 +106,7 @@
             }
         }
 
-        # Hostless: a site address is also a host matcher, which would reject the public host the edge forwards.
+        # Hostless: a site address is also a host matcher, which would reject the forwarded public host.
         http://:${toString frontendPort} {
             bind 127.0.0.1
 
@@ -132,7 +129,7 @@
                 }
             }
 
-            # Fixed upstream tile host: nginx's default `a` subdomain, without a general-purpose proxy.
+            # Fixed tile host: nginx's default `a` subdomain, with no general-purpose proxy.
             handle /osm/tiles/* {
                 @tile path_regexp ^/osm/tiles/(a|b|c)/(.*)$
                 rewrite @tile /{re.tile.2}
@@ -145,14 +142,14 @@
                 }
             }
 
-            # Hashed assets are immutable; the shell and SPA routes stay no-store, so a missing asset is not cached as the shell.
+            # Hashed assets are immutable; the shell stays no-store so a missing asset is not
+            # cached in its place.
             handle /assets/* {
                 header Cache-Control "public, max-age=31536000, immutable"
                 root * ${cfg.frontendPackage}
                 file_server
             }
 
-            # SPA fallback: client routes return the app shell.
             handle {
                 header Cache-Control "no-store"
                 root * ${cfg.frontendPackage}
@@ -160,7 +157,7 @@
                 file_server
             }
 
-            # Upstream's body limit; the application accepts 2 GiB.
+            # Matches the application's 2 GiB body limit.
             request_body {
                 max_size 200MB
             }
@@ -178,7 +175,7 @@
             fi
           done
 
-          # Read from its owner-scoped file at start, so the value never enters the store or the command line.
+          # Read from an owner-scoped file at start, so the value never enters the store or argv.
           export GEOPULSE_POSTGRES_PASSWORD
           GEOPULSE_POSTGRES_PASSWORD="$(cat ${secrets.postgresPassword})"
 
@@ -239,7 +236,6 @@
 
       config = lib.mkMerge [
 
-        # BUSL-1.1 is admitted by name, so no unfree override is needed.
         {
           services.geopulse.backendPackage = withSystem pkgs.stdenv.hostPlatform.system (
             { config, ... }: config.packages.geopulse-backend
@@ -249,8 +245,6 @@
           );
         }
 
-        # Publication is one policy edit: `publish = false` in policy/web-services.nix until bootstrap finishes.
-
         {
 
           assertions = [
@@ -259,7 +253,7 @@
               message = noClusterMessage;
             }
             {
-              # The public identity is required while the route is private: the callback and tunnel both use it.
+              # Required even while the route is private: the callback and the tunnel both use it.
               assertion = (frontendRoute.publicUrl or null) != null;
               message = publicOriginMessage;
             }
@@ -291,7 +285,8 @@
             "d ${cfg.dataDir}/dumps 0750 geopulse geopulse - -"
           ];
 
-          # Same file and key as the provider. PostGIS SQL runs as the substrate admin: Flyway's CREATE EXTENSION needs privileges the app role lacks.
+          # Same file and key as the provider. PostGIS SQL runs as the substrate admin, because
+          # Flyway's CREATE EXTENSION needs a privilege the app role lacks.
           services.postgres.consumers.geopulse = lib.mkIf hasSecretFile {
             database = "geopulse";
             role = "geopulse";
@@ -300,7 +295,7 @@
               file = cfg.secretFiles.host;
               key = "roles/geopulse/password";
             };
-            # Loopback only: the cluster does not listen on IPv6; the catch-all reject follows.
+            # Loopback only: the cluster does not listen on IPv6, so the catch-all reject follows.
             allowedCIDRs = [ "127.0.0.1/32" ];
             extensions = ps: [ ps.postgis ];
             setupSQL = ''
@@ -309,7 +304,7 @@
             '';
           };
 
-          # Mutable files only: the database is recovered from the substrate's export, not this raw capture.
+          # Mutable files only: the database is recovered from the substrate's export.
           services.state-backups.services.geopulse = {
             enable = true;
             paths = [
@@ -330,7 +325,7 @@
               ) secretEntries
             )
             // lib.optionalAttrs oidcEnabled {
-              # The client secret stays out of the unit's environment, which lands in the store.
+              # Keeps the client secret out of the unit environment, which lands in the store.
               "geopulse/oidc-client-secret" = {
                 key = "geopulse/client_secret";
                 sopsFile = cfg.secretFiles.oidc;
@@ -354,7 +349,8 @@
             };
           };
 
-          # Five starts in five minutes end in `failed`, which fires OnFailure; the default start limit never trips at a 10s delay.
+          # Five starts in five minutes reach `failed` and fire OnFailure; the default limit
+          # never trips at a 10s restart delay.
           services.notify.events = {
             geopulse-backend.failure = { };
             geopulse-web.failure = { };
@@ -369,7 +365,6 @@
               "postgresql-provision.service"
               "sops-install-secrets.service"
             ];
-            # No start without the role, schema prerequisites and secret files.
             requires = [
               "postgresql-provision.service"
               "sops-install-secrets.service"
@@ -378,41 +373,35 @@
             environment = {
               QUARKUS_HTTP_HOST = "127.0.0.1";
               QUARKUS_HTTP_PORT = toString cfg.backendPort;
-              # Quarkus enables localhost-only host validation on its own when the listener binds a
-              # loopback address in prod, so any request carrying the front's forwarded public Host is
-              # answered 400 before routing. Nothing validates the Host here: the listener is loopback
-              # only and the front, not the client, is the sole reachable peer.
+              # Quarkus enables localhost-only host validation itself on a loopback listener in prod,
+              # answering 400 before routing to a request carrying the forwarded public Host.
               QUARKUS_HTTP_HOST_VALIDATION_REQUIRE_LOCALHOST = "false";
 
               GEOPULSE_POSTGRES_URL = localPostgresUrl;
               GEOPULSE_POSTGRES_USERNAME = "geopulse";
               GEOPULSE_AI_ENCRYPTION_KEY_LOCATION = "file:${secrets.aiKey}";
 
-              # The app is reached over HTTPS at the edge, so no plain-HTTP cookie.
               GEOPULSE_AUTH_SECURE_COOKIES = "true";
-              # Upstream defaults the issuer and callback to the public base URL; both take the route's published origin.
               GEOPULSE_PUBLIC_BASE_URL = browserOrigin;
 
-              # AI stays off: the environment cannot switch it off for users who enable it.
               GEOPULSE_MQTT_ENABLED = "false";
               GEOPULSE_AI_LOGGING_ENABLED = "false";
 
               GEOPULSE_BACKUP_WORK_PATH = "${cfg.dataDir}/backups/.work";
               GEOPULSE_BACKUP_BINARY_DIRECTORY = postgresBinDirectory;
-              # Backup coordination takes an advisory lock, so it runs in the database the role may reach.
+              # Backup coordination takes an advisory lock, so it runs in a database the role reaches.
               GEOPULSE_BACKUP_MAINTENANCE_DATABASE = "geopulse";
               GEOPULSE_IMPORT_DROP_FOLDER_PATH = "${cfg.dataDir}/import";
               GEOPULSE_IMPORT_TEMP_DIR = "${cfg.dataDir}/import/tmp";
               GEOPULSE_IMPORT_CHUNKS_DIR = "${cfg.dataDir}/import/chunks";
             }
             // lib.optionalAttrs (cfg.adminEmail != null) {
-              # 2.0 promotes this address on every login, so the administrator is declared, not claimed by first login.
+              # 2.0 promotes this address on every login, so declare the administrator.
               GEOPULSE_ADMIN_EMAIL = cfg.adminEmail;
             }
             // lib.optionalAttrs oidcEnabled {
               GEOPULSE_OIDC_ENABLED = "true";
               GEOPULSE_OIDC_CALLBACK_BASE_URL = browserOrigin;
-              # Address ownership is the provider's claim, so an existing account links on it.
               GEOPULSE_OIDC_AUTO_LINK_ACCOUNTS = "true";
 
               GEOPULSE_OIDC_PROVIDER_AUTHENTIK_ENABLED = "true";

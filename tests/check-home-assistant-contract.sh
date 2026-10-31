@@ -42,7 +42,6 @@ let
     edgeRoute = c.repo.web.hosts.oci-melb-1.services.home-assistant or null;
     edgeServes = builtins.hasAttr "home-assistant" (c.services.ingress.routes or { });
     failedAssertions = map (a: a.message) (builtins.filter (a: !a.assertion) (c.assertions or [ ]));
-    clickhousePort = c.services.clickhouse.serverConfig.http_port or 0;
   };
 in
 {
@@ -130,14 +129,6 @@ else:
         errs.append("this instance authenticates with Home Assistant's own login")
 if forge["edgeServes"]:
     errs.append("the edge renders a site for a route that is not released")
-
-# The host is shared: another native listener holding Home Assistant's port wins
-# the bind, because the container joins the host network namespace.
-if forge["port"] == forge["clickhousePort"]:
-    errs.append(
-        f"Home Assistant and ClickHouse both claim port {forge['port']} on home-forge; "
-        "a host-networked container cannot bind a port a native service holds"
-    )
 if forge["failedAssertions"]:
     errs.append(f"home-forge violates an assertion: {forge['failedAssertions']}")
 

@@ -31,7 +31,7 @@ _: {
       ];
 
       options.services.bookorbit.secretFiles.host =
-        secretHelpers.mkSecretFileOption "bookorbit-host-secrets";
+        secretHelpers.mkSecretFileOptionWithDefault "bookorbit-host-secrets" ../../secrets/services/bookorbit.yaml;
 
       config = lib.mkMerge [
         { services.bookorbit.enable = true; }

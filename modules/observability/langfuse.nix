@@ -122,7 +122,7 @@
           };
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "langfuse-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "langfuse-host-secrets" ../../secrets/services/langfuse.yaml;
 
         secretFiles.oidc = secretHelpers.mkSecretFileOption "langfuse-oidc-secrets";
 

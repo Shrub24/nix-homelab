@@ -33,7 +33,7 @@ _: {
       options.services.tududi = {
 
         secretFiles = {
-          host = secretHelpers.mkSecretFileOption "tududi-host-secrets";
+          host = secretHelpers.mkSecretFileOptionWithDefault "tududi-host-secrets" ../../secrets/services/tududi.yaml;
           oidc = secretHelpers.mkSecretFileOption "tududi-oidc-secrets";
         };
       };

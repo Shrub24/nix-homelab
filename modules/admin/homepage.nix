@@ -24,7 +24,7 @@ _: {
     {
 
       options.services.admin.homepage.secretFiles.host =
-        secretHelpers.mkSecretFileOption "homepage-host-secrets";
+        secretHelpers.mkSecretFileOptionWithDefault "homepage-host-secrets" ../../secrets/applications/admin.yaml;
       config = {
 
         sops.templates."homepage-auth.env" = {

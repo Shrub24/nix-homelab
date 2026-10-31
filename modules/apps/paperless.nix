@@ -71,7 +71,7 @@
           description = "Top-level data root for Paperless dirs (data, media, consumption, paperless-gpt, docling).";
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "paperless-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "paperless-host-secrets" ../../secrets/services/paperless.yaml;
 
         secretFiles.oidc = secretHelpers.mkSecretFileOption "paperless-oidc-secrets";
 

@@ -78,7 +78,7 @@ _: {
           description = "Dedicated Podman network shared by Karakeep containers for stable DNS/service discovery.";
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "karakeep-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "karakeep-host-secrets" ../../secrets/services/karakeep-pod.yaml;
         secretFiles.oidc = secretHelpers.mkSecretFileOption "karakeep-oidc-secrets";
 
         oidc = {

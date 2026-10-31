@@ -36,30 +36,14 @@
   # secrets keep the activation-script install ahead of user creation via users.deps.
 
   services = {
-    admin.vaultwarden.secretFiles.host = ../../../secrets/applications/admin.yaml;
-
-    admin.gatus.secretFiles.accessToken = ../../../secrets/services/gatus.yaml;
-
-    admin.homepage.secretFiles.host = ../../../secrets/applications/admin.yaml;
-
     tailscale.debugMtu = 1200;
 
     notify = {
-      secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
       secretFiles.hostSystem = ../../../secrets/hosts/la-admin-1/system.yaml;
       ntfy = {
         # No server URL override: the catalog endpoint already resolves loopback
         # here, because this host serves ntfy.
         enable = true;
-      };
-    };
-
-    ntfy = {
-      secretFiles.firebase = ../../../secrets/services/ntfy-firebase-key.json;
-      auth = {
-        # Publisher policy lives in the push-server aspect; this host supplies
-        # only the encrypted auth file provisioned from it.
-        secretFiles.auth = ../../../secrets/services/ntfy.yaml;
       };
     };
 
@@ -69,7 +53,6 @@
       rescueUser.name = "rescue";
       reboot.onCalendar = "weekly";
     };
-
   };
 
   sops.defaultSopsFile = ../../../secrets/common.yaml;

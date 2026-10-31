@@ -29,7 +29,7 @@ _: {
 
       options.services.homarr = {
         secretFiles = {
-          host = secretHelpers.mkSecretFileOption "homarr-host-secrets";
+          host = secretHelpers.mkSecretFileOptionWithDefault "homarr-host-secrets" ../../secrets/services/homarr.yaml;
           oidc = secretHelpers.mkSecretFileOption "homarr-oidc-secrets";
         };
 

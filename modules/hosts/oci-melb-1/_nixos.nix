@@ -38,7 +38,6 @@ in
 
   services.ingress = {
     role = "edge";
-    secretFiles.host = ../../../secrets/applications/edge-ingress.yaml;
   };
 
   # One owner for the published wallpaper; rotation is a bucket copy, so it belongs where
@@ -48,7 +47,6 @@ in
   services = {
     paperless = {
       dataRoot = "/srv/data";
-      secretFiles.host = ../../../secrets/services/paperless.yaml;
       secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
       oidc.enable = config.repo.web.catalog.paperless.access.oidc.enabled;
       # paperless-gpt is off pending re-evaluation: the stack's LLM/vision routing
@@ -57,7 +55,6 @@ in
 
     # The aspect owns the state path and the settings document; the host binds
     # only the host-scoped secret file.
-    bifrost.secretFiles.host = ../../../secrets/services/bifrost.yaml;
 
     karakeep-pod = {
       oidc = {
@@ -68,7 +65,6 @@ in
         allowDangerousEmailAccountLinking = true;
       };
       storage.s3.enable = true;
-      secretFiles.host = ../../../secrets/services/karakeep-pod.yaml;
       secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
     };
 
@@ -77,19 +73,14 @@ in
     memos.secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
 
     tududi.secretFiles = {
-      host = ../../../secrets/services/tududi.yaml;
       oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
     };
 
-    inbox-zero.secretFiles.host = ../../../secrets/services/inbox-zero.yaml;
-
     homarr = {
       secretFiles = {
-        host = ../../../secrets/services/homarr.yaml;
         oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
       };
     };
-    geopulse.secretFiles.host = ../../../secrets/services/geopulse.yaml;
     geopulse.secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
 
     tailscale.debugMtu = 1200;
@@ -110,7 +101,6 @@ in
       # API token in the host scope; signing key and S3 credentials in the
       # service scope.
       secretFiles.apiToken = ../../../secrets/hosts/oci-melb-1/system.yaml;
-      secretFiles.host = ../../../secrets/services/niks3.yaml;
     };
 
     postgres = {
@@ -126,7 +116,6 @@ in
     niks3-publisher.serverUrl = config.repo.web.catalog."niks3-write".endpoint.url;
 
     notify = {
-      secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
       secretFiles.hostSystem = ../../../secrets/hosts/oci-melb-1/system.yaml;
 
       ntfy = {

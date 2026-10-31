@@ -195,7 +195,7 @@
       ];
 
       options.services.geopulse = {
-        secretFiles.host = secretHelpers.mkSecretFileOption "geopulse-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "geopulse-host-secrets" ../../secrets/services/geopulse.yaml;
 
         secretFiles.oidc = secretHelpers.mkSecretFileOption "geopulse-oidc-secrets";
 

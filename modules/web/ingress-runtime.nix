@@ -310,7 +310,7 @@ _: {
           };
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "the Cloudflare DNS-01 token used by the edge role";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "the Cloudflare DNS-01 token used by the edge role" ../../secrets/applications/edge-ingress.yaml;
 
         routes = lib.mkOption {
           default = { };

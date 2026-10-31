@@ -70,7 +70,7 @@ _: {
       ];
 
       options.services.inbox-zero = {
-        secretFiles.host = secretHelpers.mkSecretFileOption "inbox-zero-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "inbox-zero-host-secrets" ../../secrets/services/inbox-zero.yaml;
 
         networkSubnet = lib.mkOption {
           type = lib.types.str;

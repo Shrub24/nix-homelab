@@ -59,7 +59,7 @@ _: {
     in
     {
       options.services.admin.gatus = {
-        secretFiles.accessToken = secretHelpers.mkSecretFileOption "gatus-access-token-secrets";
+        secretFiles.accessToken = secretHelpers.mkSecretFileOptionWithDefault "gatus-access-token-secrets" ../../secrets/services/gatus.yaml;
 
       };
       config = {

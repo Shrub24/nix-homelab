@@ -58,7 +58,7 @@ in
         secretFiles = {
           firebase = lib.mkOption {
             type = lib.types.nullOr lib.types.path;
-            default = null;
+            default = ../../secrets/services/ntfy-firebase-key.json;
             example = ../../secrets/services/firebase-key.json;
             description = ''
               Path to SOPS-encrypted Firebase Admin SDK key JSON file.
@@ -167,14 +167,12 @@ in
 
           # Path B: Auth enabled — module settings for upstream deps, template for full config
           (lib.mkIf cfg.auth.enable {
+            services.ntfy.auth.secretFiles.auth = lib.mkDefault ../../secrets/services/ntfy.yaml;
+
             assertions =
               lib.optional (cfg.auth.file == null) {
                 assertion = false;
                 message = "services.ntfy.auth.file must be set when auth is enabled.";
-              }
-              ++ lib.optional (cfg.auth.secretFiles.auth == null) {
-                assertion = false;
-                message = "services.ntfy.auth.secretFiles.auth must be set when auth is enabled.";
               }
               ++ lib.optional (invalidPublisherNames != [ ]) {
                 assertion = false;

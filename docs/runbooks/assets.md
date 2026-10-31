@@ -38,13 +38,16 @@ That needs a Cloudflare API token with **Zone Read** and **Cache Purge** on the 
 1. Confirm `shrublab-assets` and its custom domain `assets.shrublab.xyz` exist.
 2. Confirm the token has object read/write authority for that bucket only.
 3. As the operator, populate `access_key_id` and `secret_access_key` in
-   `secrets/common.yaml` using the existing secrets workflow. Do not print their values.
+   `secrets/services/assets.yaml` using the existing secrets workflow; `cf_purge_token` only
+   where the rotator is selected. The zone id is resolved from its name, so it is not stored.
+   Do not print their values.
 4. Run the repository checks before deployment.
 
 ## Deploy and inspect
 
-1. Deploy `oci-melb-1` and `home-forge`, then `la-admin-1` through the normal deploy workflow.
-2. On each host, list the jobs:
+1. Deploy `oci-melb-1` through the normal deploy workflow. It is the only host that selects
+   the publishing aspect; the other hosts run no `assets-publish` or `assets-wallpaper` unit.
+2. On `oci-melb-1`, list the jobs:
 
    ```sh
    systemctl status assets-publish
@@ -73,10 +76,13 @@ all `unchanged`. After fixing a source or credential error, repeat the same comm
 1. Request the icon and logo URLs the brand policy declares without cookies. Record HTTP
    status and Content-Type; expect 200 and `image/svg+xml`.
 2. Refresh twice and inspect the journals. Record the second run's `unchanged` outcome.
-3. Confirm the wallpaper object remains present with `Content-Type: image/jpeg`.
+3. Confirm the wallpaper object remains present at `background.png`. Its `Content-Type` is
+   sniffed from the rotated file's bytes, so it follows the candidate: `image/png` for a PNG
+   source, `image/jpeg` for a JPEG.
 4. In a fresh browser session, open the Authentik Application Dashboard and confirm every tile
-   renders an icon. A tile rendered from an application's own origin stays blank while that
-   application is unreachable or its Cloudflare Access session is absent.
+   renders an icon. Icons come from the commit-pinned CDN URLs `policy/assets.nix` declares
+   (dashboard-icons and two application-served paths), so a blank tile points at a moved CDN
+   object or a pinned commit that predates the artwork, not at the application being down.
 5. Record a controlled failed-source check only on a disposable test key: the prior object's
    body must remain unchanged. Do not break a production source to run this check.
 

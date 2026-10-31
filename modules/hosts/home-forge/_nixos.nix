@@ -108,7 +108,7 @@ in
   };
 
   # Grafana SSO via the fleet identity provider (admins only); the secret is host-scoped.
-  services.victoria = {
+  services.grafana = {
     oidc.enable = true;
     secretFiles.oidc = ../../../secrets/hosts/home-forge/oidc.yaml;
   };

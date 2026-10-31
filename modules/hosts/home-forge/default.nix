@@ -71,9 +71,10 @@ in
         aspects.telemetry-otlp
         aspects.node-exporter
         aspects.containers
-        # Observability store: VictoriaMetrics/VictoriaLogs/VictoriaTraces
-        # plus Grafana, placed on the host with the disks for it.
+        # Observability store: VictoriaMetrics/VictoriaLogs/VictoriaTraces, placed on the
+        # host with the disks for it, and the Grafana front end that reads it.
         aspects.victoria
+        aspects.grafana
         # LLM observability backends, colocated with the telemetry stores.
         aspects.langfuse
         aspects.latitude

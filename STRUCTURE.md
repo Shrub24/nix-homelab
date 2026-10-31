@@ -91,7 +91,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 - Purpose: Monitoring and telemetry — collection, dashboards, and traces
 - Contains: `beszel.nix`, `gatus.nix`, `phoenix.nix` (the Beszel hub stays in this repository; only the agent is shared infrastructure), `victoria.nix` (the `victoria` placement aspect: VictoriaMetrics, VictoriaLogs and VictoriaTraces with their Grafana front end, every listener port read from its web-policy declaration — D-074), and `dashboards/` (boards authored here and copied verbatim into the Grafana folders: `fleet-overview`, `pipeline-health`; every other board, including the niks3 cache's, is taken from an upstream source or a flake input and rewritten on the way in)
-- Key files: `modules/observability/beszel.nix`, `modules/observability/gatus.nix`, `modules/observability/victoria.nix`
+- Key files: `modules/observability/beszel.nix`, `modules/observability/gatus.nix`, `modules/observability/victoria.nix`, `modules/observability/grafana.nix`
 
 **`modules/web/`:**
 
@@ -268,7 +268,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **Flake attributes:** `camelCase` for flake outputs: `nixosConfigurations`, `devShells`
 
-**Nix options:** `dot.separated.namespaces`: `applications.music.enable`, `services.paperless.enable`, `services.victoria.grafana.port`
+**Nix options:** `dot.separated.namespaces`: `applications.music.enable`, `services.paperless.enable`, `services.grafana.settings.server.http_port`
 
 - `applications.<name>` for composition root stacks
 - `services.<domain>.<name>` for grouped services

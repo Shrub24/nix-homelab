@@ -3242,3 +3242,42 @@ from the database dump the state-backups contract captures (`authentik` consumer
 A future directory-identity requirement starts as a new proposal with a new implementation, not as
 a reselection of deleted code. Revisit if fleet hosts need shared Unix identities rather than one
 operator account per host.
+
+## D-123: Grafana is its own aspect, not part of the observability store
+
+**Context:** D-074 placed VictoriaMetrics, VictoriaLogs, VictoriaTraces and their Grafana front end
+in one `victoria` aspect so datasource uids, ports and endpoints lived in one file. The co-location
+still holds — the datasources address listeners those three services bind — but the namespace did
+not: Grafana's OIDC switch, its client-secret binding and its local-admin credential all sat under
+`services.victoria.*` while the service is `services.grafana`. A reader looking for Grafana's SSO
+found it under a different word, and the local-admin secret defaulted from a module named for the
+store.
+
+**Decision:** Split the aspect. `modules/observability/grafana.nix` publishes `flake.modules.nixos.grafana`
+and owns everything Grafana: the four datasources, the four plugins, the seven provisioned dashboards
+and their folders, the three settings blocks (anonymous viewers, OIDC, security), the OIDC switch and
+its secret, and the local-admin credential. `modules/observability/victoria.nix` keeps the three
+stores, their retention, their listen address and the self-scrape job. `home-forge` selects both.
+
+The uids stay byte-identical (`victoriametrics`, `victoriametrics-metricsql`, `victorialogs`,
+`victoriatraces`), because provisioning resolves a datasource by uid and a changed uid fails the whole
+module graph against stored state. The datasource URLs read their ports from the same web-policy
+catalog entries the stores bind, so the port still has one declaration. Grafana asserts the store
+aspect is selected rather than tolerating its absence: a front end with nothing behind it is a
+misconfiguration, and the assertion names it.
+
+**Rejected:** Publishing a read-only datasource contract (uids, ports, endpoints) from `victoria` for
+Grafana to consume, as the plan first proposed. A uid is a name Grafana gives a datasource — it means
+nothing outside Grafana's own provisioning — and the port already has one authority in the web policy,
+so the contract would have restated both facts rather than sharing them. Also rejected: leaving the
+Grafana options under `services.victoria` because the module also wires the stores; that keeps the
+namespace lie and forces every future front-end concern through a store module.
+
+**Consequences:** The `grafana` aspect is selected wherever a UI is wanted and `victoria` wherever the
+stores are; today only `home-forge` selects both. `services.grafana.oidc.enable` and
+`services.grafana.secretFiles.*` join nixpkgs' `services.grafana` namespace, which declares none of
+those names, so no collision. Three sops secrets lost their `victoria_` prefix
+(`grafana_client_secret`, `grafana_secret_key`, `grafana_admin_password`), so their runtime paths
+under `/run/secrets/` changed with the settings that reference them; Grafana restarts on activation
+either way. Revisit if a second front end (another dashboard product) needs the same store, at which
+point the store, not one UI, is what a contract should describe.

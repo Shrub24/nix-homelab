@@ -1,6 +1,6 @@
 # BookOrbit on home-forge
 
-BookOrbit runs on nixpkgs' native `services.bookorbit` on `home-forge` (`modules/apps/bookorbit.nix`). Its acquisition sources are the general `torrents` aspect, Prowlarr and qBittorrent (`modules/torrents/torrents.nix`), which BookOrbit does not own. The route is `books.shrublab.xyz`: Kanidm OIDC gates the web app, and Cloudflare Access is off because OPDS and e-reader clients cannot pass it.
+BookOrbit runs on nixpkgs' native `services.bookorbit` on `home-forge` (`modules/apps/bookorbit.nix`). Its acquisition sources are the general `torrents` aspect, Prowlarr and qBittorrent (`modules/torrents/torrents.nix`), which BookOrbit does not own. The route is `books.shrublab.xyz`: the fleet's OIDC login gates the web app, and Cloudflare Access is off because OPDS and e-reader clients cannot pass it.
 
 ## Operator-provisioned secrets
 

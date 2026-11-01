@@ -43,6 +43,8 @@ in
   # the branding is curated rather than on every host that publishes assets.
   services.assets.wallpaper.enable = true;
 
+  services.containers.registryAuth = true;
+
   services = {
     paperless = {
       dataRoot = "/srv/data";

@@ -87,6 +87,8 @@ in
   # holds ~30 connections, so the 40-connection default starved Langfuse at startup.
   services.postgresql.settings.max_connections = "200";
 
+  services.containers.registryAuth = true;
+
   applications.music = {
     dataRoot = "/srv/data";
     storageRoot = musicStorageRoot;

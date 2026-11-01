@@ -4,11 +4,14 @@
 let
   assets = import ./assets.nix;
   globals = import ./globals.nix;
+  # The active provider: its key here is also the identifier an application's OIDC callback
+  # path embeds, so the two cannot drift.
+  provider = "authentik";
 in
 {
   # The provider serving application SSO; a retained provider is selected through its
   # own aspect and is not redirected by this value.
-  provider = "authentik";
+  inherit provider;
 
   # A provider's route carries its public identity; a null route makes selecting that
   # provider fail closed instead of inventing a URL.
@@ -285,6 +288,30 @@ in
         "profile"
         "email"
       ];
+    };
+
+    sparkyfitness = {
+      displayName = "SparkyFitness";
+      # Dashboard grouping: the library renders one section per group.
+      group = "Everyday";
+      route = "sparkyfitness";
+      # The application's own callback embeds the provider slug it is configured with.
+      callbackPath = "/api/auth/sso/callback/${provider}";
+      access = {
+        # The `groups` scope is what carries the administrator claim, so the application's
+        # admin mapping has something to match.
+        service-admins = [
+          "openid"
+          "profile"
+          "email"
+          "groups"
+        ];
+        users = [
+          "openid"
+          "profile"
+          "email"
+        ];
+      };
     };
 
     homarr = {

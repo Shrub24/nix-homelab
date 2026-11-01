@@ -15,6 +15,7 @@
     tududi = ../../secrets/hosts/oci-melb-1/oidc.yaml;
     geopulse = ../../secrets/hosts/oci-melb-1/oidc.yaml;
     homarr = ../../secrets/hosts/oci-melb-1/oidc.yaml;
+    sparkyfitness = ../../secrets/hosts/oci-melb-1/oidc.yaml;
     bookorbit = ../../secrets/hosts/home-forge/oidc.yaml;
     langfuse = ../../secrets/hosts/home-forge/oidc.yaml;
     grafana = ../../secrets/hosts/home-forge/oidc.yaml;

@@ -53,6 +53,12 @@
   # Multi-arch index digest: the arm64 manifest is selected on oci-melb-1.
   inboxZero = "ghcr.io/elie222/inbox-zero:2.30.0@sha256:e9970c499a79b8a15bbab21363d1b87ea247c75b2721f036c7cee0e2c78d1fcc";
 
+  # SparkyFitness ships the React SPA behind nginx and the API as a separate image, both as
+  # multi-arch indexes; the frontend's nginx is what serves the application.
+  sparkyFitness = "docker.io/codewithcj/sparkyfitness:v1.11.0@sha256:5eb77135ccd8e58492ee9bd19b8714ea4a73a99623b863a9287ccecb0557cd17";
+
+  sparkyFitnessServer = "docker.io/codewithcj/sparkyfitness_server:v1.11.0@sha256:51a2d7c19bd99b50ea17e579fe8d9d4febed895595356b1ddafe0fa808caf75e";
+
   # Latitude ships one release tag across all six images, so they move together; the digests
   # are multi-arch index digests, valid on both architectures.
   latitude = {

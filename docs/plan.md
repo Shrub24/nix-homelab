@@ -249,6 +249,14 @@ guards a trap that already cost 19 files from the index.
   so the assertion belongs with the target (Navidrome binds `0.0.0.0`, which is why
   AudioMuse's default dial is functional though off-convention).
 
+### SparkyFitness rate limiting behind the proxy
+
+- The application's nginx rate-limits its auth endpoints by client IP, and behind Caddy and
+  Cloudflare every request arrives from the proxy, so the limit is per-proxy rather than
+  per-client. Upstream reads the client from a configured real-IP header; decide whether the
+  fleet sets one once the acceptance run shows the limit firing on ordinary traffic, and if so
+  set it together with the trusted-hop count rather than a header alone.
+
 ### Deployments pending
 
 - `oci-melb-1`: the deployed generation predates the `auth.shrublab.xyz` route, so the edge answers that hostname with an empty body; redeploying closes the identity staging step as well as the meilisearch qualification below. It was rolled back on `podman-karakeep-meilisearch` (unqualified image reference), now `docker.io/getmeili/meilisearch`.
@@ -258,6 +266,9 @@ guards a trap that already cost 19 files from the index.
 - `la-admin-1` also carries the identity projection changes since the last activation: the
   Authentik `web.base_url` seed, the invitation stage and enrollment flow, the group chain,
   and the redirect after confirmation.
+- `oci-melb-1` additionally carries SparkyFitness (`docs/runbooks/sparkyfitness.md`): it needs
+  the `sparkyfitness` provider, client and route applied, and the same deploy seeds the
+  invitation flow, so accept sign-in there before closing either.
 
 ### Machine access to Access-gated routes (operator-gated)
 

@@ -10,9 +10,9 @@ _: {
     let
       cfg = config.services.homarr;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
       route = config.repo.web.catalog.homarr or null;
       oidcClient = config.services.identity.oidc.clients.homarr or null;
-      published = if route == null then true else route.publish;
 
       dataDir = "/srv/data/homarr";
       containerPort = 7575;
@@ -29,10 +29,25 @@ _: {
 
       options.services.homarr = {
         secretFiles = {
-          host = secretHelpers.mkSecretFileOption "homarr-host-secrets";
+          host = secretHelpers.mkSecretFileOptionWithDefault "homarr-host-secrets" ../../secrets/services/homarr.yaml;
           oidc = secretHelpers.mkSecretFileOption "homarr-oidc-secrets";
         };
 
+        publicUrl = lib.mkOption {
+          type = lib.types.str;
+          default =
+            if route != null && route.published then
+              route.publicUrl
+            else
+              throw "services.homarr.publicUrl: the web-policy route 'homarr' is not published; set the option to the origin Homarr is served from";
+          description = "Origin Homarr builds links and its OIDC callback from (BASE_URL).";
+        };
+
+        authProviders = lib.mkOption {
+          type = lib.types.str;
+          default = "oidc";
+          description = "Sign-in methods Homarr offers (AUTH_PROVIDERS).";
+        };
       };
 
       config = lib.mkMerge [
@@ -47,10 +62,6 @@ _: {
               assertion = oidcClient != null;
               message = "services.homarr: canonical OIDC client 'homarr' is missing; check clients.homarr in policy/identity.nix.";
             }
-            {
-              assertion = route != null && route.exposureMode == "tailscale-serve";
-              message = "services.homarr: route must use tailscale-serve so the private OIDC callback remains reachable.";
-            }
           ];
 
           # NEXTAUTH_URL stays unset so Auth.js derives the callback from forwarded headers.
@@ -62,13 +73,8 @@ _: {
             content = ''
               AUTH_SECRET=${config.sops.placeholder.homarr_auth_secret}
               SECRET_ENCRYPTION_KEY=${config.sops.placeholder.homarr_secret_encryption_key}
-              BASE_URL=${
-                if published then
-                  route.publicUrl
-                else
-                  "https://${route.endpoint.host}:${toString route.endpoint.port}"
-              }
-              AUTH_PROVIDERS=${if published then "oidc" else "credentials,oidc"}
+              BASE_URL=${cfg.publicUrl}
+              AUTH_PROVIDERS=${cfg.authProviders}
               AUTH_OIDC_ISSUER=${oidcClient.issuerUrl}
               AUTH_OIDC_CLIENT_ID=${oidcClient.clientId}
               AUTH_OIDC_CLIENT_NAME=${oidcClient.providerName}
@@ -102,27 +108,24 @@ _: {
           virtualisation = {
             podman.enable = true;
 
-            oci-containers.containers.homarr = {
-              autoStart = true;
-              image = config.repo.ociImages.homarr;
-              ports = [ "127.0.0.1:${toString route.upstreamPort}:${toString containerPort}" ];
-              environment = {
-                PUID = toString containerUid;
-                PGID = toString containerGid;
-              };
-              environmentFiles = [ config.sops.templates."homarr.environment".path ];
-              volumes = [ "${dataDir}:/appdata" ];
-              # No HEALTHCHECK ships in the image; sdnotify makes After= mean "listening", and the
-              # probe dials the container port rather than the host-mapped one.
-              podman.sdnotify = "healthy";
-              extraOptions = [
-                "--health-cmd=wget -q --spider http://127.0.0.1:${toString containerPort}/api/health/ready"
-                "--health-interval=5s"
-                "--health-timeout=3s"
-                "--health-retries=10"
-                "--health-start-period=5s"
-              ];
-            };
+            oci-containers.containers.homarr = lib.mkMerge [
+              (readiness.mkReadyProbe {
+                cmd = "wget -q --spider http://127.0.0.1:${toString containerPort}/api/health/ready";
+              })
+              {
+                autoStart = true;
+                image = config.repo.ociImages.homarr;
+                ports = [ "127.0.0.1:${toString route.upstreamPort}:${toString containerPort}" ];
+                environment = {
+                  PUID = toString containerUid;
+                  PGID = toString containerGid;
+                };
+                environmentFiles = [ config.sops.templates."homarr.environment".path ];
+                volumes = [ "${dataDir}:/appdata" ];
+                extraOptions = [
+                ];
+              }
+            ];
           };
 
           systemd = {

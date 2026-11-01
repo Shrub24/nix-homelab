@@ -10,6 +10,6 @@
     {
       imports = [ inputs.nix-fleet.modules.nixos.tailscale ];
 
-      services.tailscale.secretFiles.auth = lib.mkIf (builtins.pathExists authKeyFile) authKeyFile;
+      services.tailscale.secretFiles.auth = authKeyFile;
     };
 }

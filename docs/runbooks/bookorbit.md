@@ -1,6 +1,6 @@
 # BookOrbit on home-forge
 
-BookOrbit runs on nixpkgs' native `services.bookorbit` on `home-forge` (`modules/apps/bookorbit.nix`). Its acquisition sources are the general `torrents` aspect, Prowlarr and qBittorrent (`modules/torrents/torrents.nix`), which BookOrbit does not own. The route is `books.shrublab.xyz`: Kanidm OIDC gates the web app, and Cloudflare Access is off because OPDS and e-reader clients cannot pass it.
+BookOrbit runs on nixpkgs' native `services.bookorbit` on `home-forge` (`modules/apps/bookorbit.nix`). Its acquisition sources are the general `torrents` aspect, Prowlarr and qBittorrent (`modules/torrents/torrents.nix`), which BookOrbit does not own. The route is `books.shrublab.xyz`: the fleet's OIDC login gates the web app, and Cloudflare Access is off because OPDS and e-reader clients cannot pass it.
 
 ## Operator-provisioned secrets
 
@@ -29,7 +29,7 @@ The account is `admin`. The unit loads the password through a systemd credential
 
 1. Deploy `home-forge`. The `bookorbit-migrate` oneshot runs migrations before the service starts.
 2. Open `https://books.shrublab.xyz`, then complete setup with `SETUP_BOOTSTRAP_TOKEN` (`/auth/setup`).
-3. Add the Kanidm provider in **Settings → OIDC / SSO**: issuer from the `bookorbit` client in `policy/identity.nix`, client ID and secret from Kanidm, scopes `openid profile email`, and redirect URI `https://books.shrublab.xyz/oauth2-callback`. Enable **Allow local account linking** if the first admin already exists locally. Link a superuser before setting `DISABLE_LOCAL_AUTH`.
+3. Add the identity provider in **Settings → OIDC / SSO**: issuer from the `bookorbit` client in `policy/identity.nix`, client ID and secret from `secrets/hosts/home-forge/oidc.yaml`, scopes `openid profile email`, and redirect URI `https://books.shrublab.xyz/oauth2-callback`. Enable **Allow local account linking** if the first admin already exists locally. Link a superuser before setting `DISABLE_LOCAL_AUTH`.
 4. Set the library folder to `/srv/storage/media/books`.
 
 ## Acquisition sources

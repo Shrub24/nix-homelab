@@ -241,7 +241,7 @@ _: {
           description = "Whether the music application composes the Navidrome leaf service and its state-backup contract.";
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "music-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "music-host-secrets" ../../secrets/applications/music.yaml;
 
         slskdDomain = lib.mkOption {
           type = lib.types.nullOr lib.types.str;

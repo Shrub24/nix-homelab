@@ -1,5 +1,6 @@
 # Placement, not addresses: a route declares `origin.provider` plus shape; dial addresses derive in
-# lib/policy.nix and identity stays literal. exposureMode has no default.
+# lib/policy.nix and identity stays literal. Two facts are declared, each single-purpose:
+# `posture` publishes the route, `exposureMode` says how its socket is reached.
 { canonicalServices }:
 let
   globals = import ./globals.nix;
@@ -29,7 +30,10 @@ in
     primaryDomain = globals.domain;
     category = "app";
     path = "/";
-    declarePublic = true;
+    # One publication switch: `private` keeps a route out of the edge and DNS alike, while its
+    # provider still renders the front a tailnet client dials.
+    posture = "public";
+    exposureMode = "tailscale-upstream";
     stripPrefix = false;
     responseHeaders = { };
 
@@ -101,8 +105,6 @@ in
             port = 9002;
           };
           category = "admin";
-          declarePublic = true;
-          publish = true;
           access.requireCloudflareAccess = false;
           cloudflare = {
             proxied = true;
@@ -235,7 +237,6 @@ in
             port = 3003;
           };
           exposureMode = "tailscale-upstream";
-          declarePublic = true;
           category = "app";
           access.requireCloudflareAccess = true;
           cloudflare = {
@@ -253,7 +254,6 @@ in
             port = 3010;
           };
           exposureMode = "tailscale-upstream";
-          declarePublic = true;
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;
@@ -272,7 +272,6 @@ in
             port = 8080;
           };
           exposureMode = "tailscale-upstream";
-          declarePublic = true;
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;
@@ -360,7 +359,6 @@ in
             provider = "oci-melb-1";
             port = 7575;
           };
-          exposureMode = "tailscale-serve";
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;
@@ -392,8 +390,6 @@ in
           };
           # tailscale-serve: the front binds loopback, and the provider renders the private front for the OIDC callback.
           exposureMode = "tailscale-serve";
-          declarePublic = true;
-          publish = true;
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;
@@ -428,7 +424,7 @@ in
             provider = "la-admin-1";
             port = 9000;
           };
-          exposureMode = "tailscale-only";
+          posture = "private";
           category = "admin";
           health.path = "/hooks/health";
         };
@@ -493,8 +489,7 @@ in
           subdomain = "bifrost";
           # Provider and transport are the canonical bifrost/embeddings record's.
           origin = canonicalOrigin "bifrost" "embeddings";
-          exposureMode = "tailscale-only";
-          declarePublic = false;
+          posture = "private";
           category = "admin";
           health.path = "/v1/models";
         };
@@ -504,8 +499,7 @@ in
           subdomain = null;
           # Provider and transport are the canonical niks3-write record's.
           origin = canonicalOrigin "niks3-write" "api";
-          exposureMode = "tailscale-only";
-          declarePublic = false;
+          posture = "private";
           category = "infra";
           health.path = "/";
         };
@@ -518,8 +512,7 @@ in
             provider = "home-forge";
             port = 8091;
           };
-          exposureMode = "tailscale-only";
-          declarePublic = false;
+          posture = "private";
           category = "infra";
           health.path = "/";
         };
@@ -532,8 +525,7 @@ in
             provider = "home-forge";
             port = 9696;
           };
-          exposureMode = "tailscale-only";
-          declarePublic = false;
+          posture = "private";
           category = "infra";
           health.path = "/";
         };
@@ -546,8 +538,7 @@ in
             provider = "home-forge";
             port = 3002;
           };
-          exposureMode = "tailscale-only";
-          declarePublic = false;
+          posture = "private";
           category = "admin";
           health.path = "/health";
         };
@@ -561,8 +552,7 @@ in
             provider = "home-forge";
             port = 8428;
           };
-          exposureMode = "tailscale-only";
-          declarePublic = false;
+          posture = "private";
           category = "infra";
           health.path = "/health";
         };
@@ -574,8 +564,7 @@ in
             provider = "home-forge";
             port = 9428;
           };
-          exposureMode = "tailscale-only";
-          declarePublic = false;
+          posture = "private";
           category = "infra";
           health.path = "/health";
         };
@@ -587,8 +576,7 @@ in
             provider = "home-forge";
             port = 10428;
           };
-          exposureMode = "tailscale-only";
-          declarePublic = false;
+          posture = "private";
           category = "infra";
           health.path = "/health";
         };
@@ -606,7 +594,7 @@ in
         };
 
         # Home Assistant shares home-forge's namespace, so the edge dials the provider's tailnet listener directly.
-        # Withheld until accepted: released by flipping `publish`; its own login is the only gate until then.
+        # Withheld until accepted: released by flipping `exposureMode`; its own login is the only gate until then.
         home-assistant = {
           subdomain = "hass";
           origin = {
@@ -614,9 +602,9 @@ in
             provider = "home-forge";
             port = 8123;
           };
-          exposureMode = "tailscale-upstream";
+          # Withheld: the private posture keeps it out of both the edge and DNS until accepted.
+          posture = "private";
           category = "app";
-          publish = false;
           # Behind Access once published; Home Assistant keeps its own inner login.
           access.requireCloudflareAccess = true;
           cloudflare = {

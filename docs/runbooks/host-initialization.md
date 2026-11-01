@@ -123,7 +123,7 @@ The fleet baseline keeps shell accounts distinct by declaration, never by post-b
 
 - repo entrypoint: `just bootstrap <host> <addr>` sources `scripts/resolve-host-config.sh`, which resolves the host's reimage metadata from the typed `fleet.hosts.<host>.bootstrap` projection (bootstrap metadata inlined in the host's registry record; `hostName` and `flake` are derived from the registry key, and `bootstrapUser` plus optional `hardwareConfigGenerator`/`hardwareConfigPath` are declared inline) and passes the values to `deploy.sh`. `deploy.sh` fails closed on unresolved required values (target, bootstrap user, flake ref) before any Nix or network work; it runs `nixos-anywhere` over SSH from a temporary supported Linux image, with `disko` applying the declarative layout
 - the temporary installer image's SSH host key is **diagnostic only** — it disappears with the installer and must never be used to derive a persistent SOPS age recipient
-- two-step secrets bootstrap is the default: install the base system first, then, after first boot, enroll the persistent host-key recipient exactly as in sections 3–5 and create encrypted secrets
+- the host secret file is mandatory at evaluation: create `secrets/hosts/<host>/system.yaml` and encrypt it before the first install. Sections 3–5 enroll the persistent host-key recipient; skip the "after first boot" step and derive it before installing, because a configuration without that file no longer evaluates
 - continue from rescue readiness and first-generation steps; then deploy-rs takes over
 
 ## 9. deploy-rs steady state and public cutover

@@ -11,9 +11,7 @@ _: {
       cfg = config.services.ingress;
       ingressRoutes = import ./_ingress-routes.nix { inherit lib; };
       currentHost = lib.attrByPath [ "repo" "web" "currentHost" ] { } config;
-      # `publish = false` keeps the route's identity while the edge serves nothing. A
-      # declared route is published unless the policy says otherwise.
-      resolvedRoutes = lib.filterAttrs (name: svc: svc.publish or true) (currentHost.services or { });
+      resolvedRoutes = lib.filterAttrs (_: svc: svc.published or true) (currentHost.services or { });
       primaryDomain = currentHost.primaryDomain or "";
 
       edgeRoutes = ingressRoutes resolvedRoutes;

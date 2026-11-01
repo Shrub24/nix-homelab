@@ -1,5 +1,4 @@
-# Karakeep deployment aspect: selection supplies the pod's top-level enablement; OIDC wiring, the S3
-# asset store toggle, and both secret sources stay explicit host variants.
+# Karakeep deployment aspect: selection supplies the pod's top-level enablement; OIDC wiring, the S3# asset store toggle, and both secret sources stay explicit host variants.
 
 _: {
   flake.modules.nixos.karakeep =
@@ -14,6 +13,7 @@ _: {
       cfg = config.services.karakeep-pod;
       envDir = builtins.dirOf cfg.environmentFile;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
       # This application's canonical client record is the single source for its
       # issuer endpoints; the host supplies enablement and credentials only.
       oidcClient = config.services.identity.oidc.clients.karakeep or null;
@@ -68,8 +68,15 @@ _: {
 
         publicUrl = lib.mkOption {
           type = lib.types.str;
-          default = "https://keep.${globals.domain}";
-          description = "Public-facing base URL for Karakeep (NEXTAUTH_URL).";
+          default =
+            let
+              route = config.repo.web.catalog.karakeep or null;
+            in
+            if route != null && route.published then
+              route.publicUrl
+            else
+              throw "services.karakeep.publicUrl: the web-policy route 'karakeep' is not published; set the option for a withheld instance";
+          description = "Base URL for Karakeep (NEXTAUTH_URL), derived from the web-policy route.";
         };
 
         networkName = lib.mkOption {
@@ -78,7 +85,7 @@ _: {
           description = "Dedicated Podman network shared by Karakeep containers for stable DNS/service discovery.";
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "karakeep-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "karakeep-host-secrets" ../../secrets/services/karakeep-pod.yaml;
         secretFiles.oidc = secretHelpers.mkSecretFileOption "karakeep-oidc-secrets";
 
         oidc = {
@@ -223,29 +230,32 @@ _: {
           };
 
           oci-containers.containers = {
-            karakeep-meilisearch = {
-              autoStart = true;
-              image = cfg.meilisearchImage;
-              extraOptions = [
-                "--network=${cfg.networkName}"
-                # The pod's shared env file carries the gateway URL even though Meilisearch reads none of
-                # it, and every variable in a mounted file must resolve.
-                "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
-              ];
-              environment = {
-                MEILI_NO_ANALYTICS = "true";
-                # Meilisearch refuses to open a database written by an older release unless the upgrade is
-                # requested. The upgrade is one-way, so a rollback past this generation leaves the old
-                # server unable to read its own database.
-                MEILI_UPGRADE_DB = "true";
-              };
-              environmentFiles = [
-                cfg.environmentFile
-              ];
-              volumes = [
-                "${cfg.dataDir}/meilisearch:/meili_data"
-              ];
-            };
+            karakeep-meilisearch = lib.mkMerge [
+              (readiness.mkReadyProbe { cmd = "curl -fsS http://127.0.0.1:7700/health"; })
+              {
+                autoStart = true;
+                image = cfg.meilisearchImage;
+                extraOptions = [
+                  "--network=${cfg.networkName}"
+                  # The pod's shared env file carries the gateway URL even though Meilisearch reads none of
+                  # it, and every variable in a mounted file must resolve.
+                  "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
+                ];
+                environment = {
+                  MEILI_NO_ANALYTICS = "true";
+                  # Meilisearch refuses to open a database written by an older release unless the upgrade is
+                  # requested. The upgrade is one-way, so a rollback past this generation leaves the old
+                  # server unable to read its own database.
+                  MEILI_UPGRADE_DB = "true";
+                };
+                environmentFiles = [
+                  cfg.environmentFile
+                ];
+                volumes = [
+                  "${cfg.dataDir}/meilisearch:/meili_data"
+                ];
+              }
+            ];
 
             karakeep-chrome = {
               autoStart = true;
@@ -314,6 +324,7 @@ _: {
         systemd = {
           services = {
             "podman-network-${cfg.networkName}" = {
+
               description = "Create Podman network ${cfg.networkName}";
               wantedBy = [ "multi-user.target" ];
               before = [
@@ -352,6 +363,8 @@ _: {
             };
 
             "podman-karakeep-meilisearch" = {
+              # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+              serviceConfig.TimeoutStartSec = lib.mkForce 120;
               wants = [
                 "network-online.target"
                 "podman-network-${cfg.networkName}.service"

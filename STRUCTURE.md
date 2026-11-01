@@ -77,7 +77,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 - Purpose: End-user applications — the things a person opens
 - Contains: `paperless.nix` composition with its sibling `paperless-gpt.nix` (the stack owns its own enablement under `services.paperless`), `karakeep.nix`, `vaultwarden.nix`
 - New OCI-host placements: `actual.nix` (native Actual Budget), `memos.nix` (native Memos with a sops-rendered OAuth2 provider file), and `tududi.nix` (digest-pinned container). Each owns its secret wiring and export-first SQLite backup registration; see D-091 and `docs/runbooks/actual-memos-tududi.md`.
-- Homarr v2 (`homarr.nix`) is a separate user-facing dashboard, not a replacement for the operator Homepage. Nix owns its digest-pinned runtime, OIDC and backup contract; users, groups, boards, and catalogue entries are edited in Homarr. Its route stays withheld during private Tailscale bootstrap. The module is implemented but host selection awaits operator-provisioned secrets (D-092); see `docs/runbooks/homarr.md`.
+- Homarr v2 (`homarr.nix`) is a separate user-facing dashboard, not a replacement for the operator Homepage. Nix owns its digest-pinned runtime, OIDC, sign-in options and backup contract; users, groups, boards, and catalogue entries are edited in Homarr. Its route is served behind the edge, and the sign-in surface is two ordinary options rather than a bootstrap state (D-092, D-125); see `docs/runbooks/homarr.md`.
 - `home-assistant.nix` places Home Assistant as the digest-pinned upstream container on `home-forge`: `--network=host` because discovery integrations need the LAN namespace, no published port, `/srv/data/home-assistant` created `0700` and otherwise operator-owned (Nix renders no Home Assistant configuration), an export-first recorder backup, and a route withheld by policy until the instance is accepted. Options live under `services.hass`, because nixpkgs owns `services.home-assistant` for its native Core module (D-100); see `docs/runbooks/home-assistant.md`.
 - Key files: `modules/apps/paperless.nix`, `modules/apps/karakeep.nix`, `modules/apps/actual.nix`, `modules/apps/memos.nix`, `modules/apps/tududi.nix`, `modules/apps/homarr.nix`, `modules/apps/home-assistant.nix`
 
@@ -91,7 +91,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 - Purpose: Monitoring and telemetry — collection, dashboards, and traces
 - Contains: `beszel.nix`, `gatus.nix`, `phoenix.nix` (the Beszel hub stays in this repository; only the agent is shared infrastructure), `victoria.nix` (the `victoria` placement aspect: VictoriaMetrics, VictoriaLogs and VictoriaTraces with their Grafana front end, every listener port read from its web-policy declaration — D-074), and `dashboards/` (boards authored here and copied verbatim into the Grafana folders: `fleet-overview`, `pipeline-health`; every other board, including the niks3 cache's, is taken from an upstream source or a flake input and rewritten on the way in)
-- Key files: `modules/observability/beszel.nix`, `modules/observability/gatus.nix`, `modules/observability/victoria.nix`
+- Key files: `modules/observability/beszel.nix`, `modules/observability/gatus.nix`, `modules/observability/victoria.nix`, `modules/observability/grafana.nix`
 
 **`modules/web/`:**
 
@@ -224,7 +224,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 - Purpose: Contract validation scripts
 - Contains: `check-web-services-policy.sh`, phase contract tests (`phase-*.sh`), contract checks for hosts and modules
-- Key files: `tests/check-web-services-policy.sh`, `tests/check-dendritic-scaffold-contract.sh`
+- Key files: `tests/check-web-services-policy.sh`, `tests/check-postgres-hba-safety.sh`
 
 **`opentofu/`:**
 
@@ -246,7 +246,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **Core Logic:** `modules/`: domain aspect contributors with their sibling contributors (`modules/identity/`, `modules/notifications/`, `modules/cache/`, `modules/music/`, `modules/admin/`, `modules/web/`, `modules/oci/`, `modules/database/`, `modules/knowledge/`), canonical host contributors (`modules/hosts/`), and flake materialization plus the fleet baseline (`modules/flake/`)
 
-**Private Service Endpoints:** `policy/web-services.nix` declares every service, published or private; `lib/policy.nix` projects a private service (`tailscale-only` + `declarePublic = false`) as `repo.web.catalog.<id>.endpoint` with no public identity, so a provider's listen port and every consumer's target URL come from one declaration. The surviving provider-placement invariant is asserted in `tests/check-web-service-catalog.sh`
+**Private Service Endpoints:** `policy/web-services.nix` declares every service, published or private; `lib/policy.nix` projects a private service (`posture = "private"`, D-124) as `repo.web.catalog.<id>.endpoint` with no public identity, so a provider's listen port and every consumer's target URL come from one declaration. The surviving provider-placement invariant is asserted in `tests/check-web-service-catalog.sh`
 
 **Policy SSOT:** `policy/web-services.nix`: All public web service endpoint definitions with `origin.provider` placement (canonical host ID, scheme, port), exposure mode, and Cloudflare config (plain data, taking nix-fleet's `canonicalServices` so a canonical route's origin derives from the service inventory; placements are validated against canonical host records in `modules/web/web-policy.nix`; dial addresses derive at the consumer). `policy/globals.nix` `tailnet.suffix` is the single tailnet suffix authority
 
@@ -268,7 +268,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **Flake attributes:** `camelCase` for flake outputs: `nixosConfigurations`, `devShells`
 
-**Nix options:** `dot.separated.namespaces`: `applications.music.enable`, `services.paperless.enable`, `services.victoria.grafana.port`
+**Nix options:** `dot.separated.namespaces`: `applications.music.enable`, `services.paperless.enable`, `services.grafana.settings.server.http_port`
 
 - `applications.<name>` for composition root stacks
 - `services.<domain>.<name>` for grouped services
@@ -290,7 +290,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 
 **New host:** `modules/hosts/<host-name>/default.nix` — a discovered contributor declaring the canonical `nixos.hosts.<host-name>` record: `system` and `tailscale.hostname` derived from `config.fleet.hosts.<host-name>` (the canonical inventory lives in nix-fleet — a new host is declared there first, and its record here fails closed with a named error until it is, D-066), plus `tailscale.tailnetSuffix` (read from `policy/globals.nix`), `composition.extraModules` (input-provided NixOS modules), `composition.aspects` (the support quartet `provenance`/`oci-images`/`fleet-packages`/`web-policy`, the foundation aspects `base`/`shell`/`networking`/`tailscale`/`notify`, the operational aspects `state-backups`/`cache-publisher`/`builder-access`/`build-account`/`observability-agent`, any host-facing application aspects such as `dj`/`music`/`authentik-identity`, and the host's placement aspects as applicable), and `composition.fragments = [ ./_nixos.nix ]`. Its build capability is an upstream inventory fact (`fleet.hosts.<id>.capabilities.nixBuilder` in nix-fleet), and its host key binds there too — read from the host's own `ssh_host_ed25519_key.pub`. Keep every host-private fragment underscore-prefixed and never import a workload implementation. Add the physical entry to `lib/deploy/hosts.nix` (its host IDs are validated against the record keys), add host-scoped `.sops.yaml` rules, and add the host's `bootstrap` metadata to the record when it is reimaged via `nixos-anywhere`.
 
-**New application/product aspect:** `modules/<domain>/<aspect>.nix` publishing `flake.modules.nixos.<aspect>` — composition with the app's `enable` flag supplied by selection, shared paths, and sub-service wiring; put a helper or a second contributor beside the owner under `modules/<domain>/` (a sibling file publishing the same aspect name, or a `_`-prefixed value-imported helper). Use `secretFiles.host` for secret passthrough. Then select the aspect in each deploying host's `nixos.hosts.<id>` record and assert the placement in `tests/check-dendritic-scaffold-contract.sh`. Put a contributor in `modules/flake/` only when it is a flake materialization, fleet-baseline, or infrastructure support concern (D-056). Each knowledge aspect is a single file carrying both the enable flag and the fleet contract (`modules/knowledge/{degoog,hindsight,docs-mcp}.nix`); a sibling contributor is for genuinely independent sources, not for splitting a body from its own enablement (D-059)
+**New application/product aspect:** `modules/<domain>/<aspect>.nix` publishing `flake.modules.nixos.<aspect>` — composition with the app's `enable` flag supplied by selection, shared paths, and sub-service wiring; put a helper or a second contributor beside the owner under `modules/<domain>/` (a sibling file publishing the same aspect name, or a `_`-prefixed value-imported helper). Use `secretFiles.host` for secret passthrough. Then select the aspect in each deploying host's `nixos.hosts.<id>` record; selection is the whole assertion, because an unselected aspect contributes nothing. Put a contributor in `modules/flake/` only when it is a flake materialization, fleet-baseline, or infrastructure support concern (D-056). Each knowledge aspect is a single file carrying both the enable flag and the fleet contract (`modules/knowledge/{degoog,hindsight,docs-mcp}.nix`); a sibling contributor is for genuinely independent sources, not for splitting a body from its own enablement (D-059)
 
 **New edge ingress host:** select `aspects.ingress` in the host record — role-based (edge/origin/none) with the implementation at `modules/web/ingress.nix` over `modules/web/ingress-runtime.nix` and `modules/web/ingress-origin-exposure.nix`; the host keeps only `role` and the application-scoped secret binding. A service whose socket is loopback-bound or otherwise unreachable declares `exposureMode = "tailscale-serve"` in `policy/web-services.nix`: the edge then dials the provider's canonical private name and the provider host renders the front itself — no host or service wiring, and the port stays single-sourced.
 

@@ -12,13 +12,14 @@ all:
   @./tests/check-deploy-bootstrap-gate.sh
   @./tests/check-flake-source-tracking.sh
   @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).assets-publisher"
-  @./tests/check-dendritic-scaffold-contract.sh
+  @./tests/check-postgres-hba-safety.sh
   @./tests/check-web-services-policy.sh
   @./tests/check-web-service-catalog.sh
   @./tests/phase-la-admin-contract.sh
   @./tests/check-identity-contract-directionality.sh
   @./tests/check-shell-account-contract.sh
   @./tests/check-backup-surface-contract.sh
+  @./tests/check-container-service-address.sh
   @./tests/check-bifrost-gateway-contract.sh oci-melb-1
   @./tests/check-bifrost-gateway-contract.sh home-forge
   @./tests/check-build-account-contract.sh
@@ -37,8 +38,8 @@ test-host-age-anchor:
 test-deploy-bootstrap-gate:
   @./tests/check-deploy-bootstrap-gate.sh
 
-test-dendritic-scaffold-contract:
-  @./tests/check-dendritic-scaffold-contract.sh
+test-postgres-hba-safety:
+  @./tests/check-postgres-hba-safety.sh
 
 test-web-policy:
   @./tests/check-web-services-policy.sh
@@ -51,6 +52,9 @@ test-shell-account-contract:
 
 test-backup-surface:
   @./tests/check-backup-surface-contract.sh
+
+test-container-service-address:
+  @./tests/check-container-service-address.sh
 
 test-bifrost-gateway:
   @./tests/check-bifrost-gateway-contract.sh oci-melb-1

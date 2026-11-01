@@ -27,7 +27,7 @@ _: {
         }
       ) cfg.consumers;
 
-      hasCredential = c: c.password != null && builtins.pathExists c.password.file;
+      hasCredential = c: c.password != null;
       credentialled = lib.filter hasCredential (lib.filter (c: c.auth == "scram") consumers);
 
       provisionEtcName = "postgres/provision.sh";

@@ -31,6 +31,7 @@ in
 
       cfg = config.services.omniroute;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
 
       appUid = 1000;
       appGid = 1000;
@@ -127,16 +128,19 @@ in
             podman.enable = true;
 
             oci-containers.containers = {
-              omniroute-redis = {
-                autoStart = true;
-                image = cfg.redisImage;
-                extraOptions = [
-                  "--network=${cfg.networkName}"
-                ];
-                volumes = [
-                  "${redisDir}:/data"
-                ];
-              };
+              omniroute-redis = lib.mkMerge [
+                (readiness.mkReadyProbe { cmd = "redis-cli ping | grep -q PONG"; })
+                {
+                  autoStart = true;
+                  image = cfg.redisImage;
+                  extraOptions = [
+                    "--network=${cfg.networkName}"
+                  ];
+                  volumes = [
+                    "${redisDir}:/data"
+                  ];
+                }
+              ];
 
               omniroute = {
                 autoStart = true;
@@ -196,6 +200,8 @@ in
               };
 
               "podman-omniroute-redis" = {
+                # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+                serviceConfig.TimeoutStartSec = lib.mkForce 120;
                 wants = [
                   "network-online.target"
                   "podman-network-${cfg.networkName}.service"

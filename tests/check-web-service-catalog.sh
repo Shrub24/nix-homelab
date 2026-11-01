@@ -20,14 +20,23 @@ nix eval --impure --no-write-lock-file --expr '
     # asserted (dial fields are host-relative and asserted per host below).
     catalog = policyLib.serviceCatalog policy "edge-invariant-nominal";
   in
-  assert catalog.paperless.publicUrl == "https://paper.shrublab.xyz";
-  assert catalog.karakeep.publicUrl == "https://keep.shrublab.xyz";
-  assert catalog.paperless.access.oidc.enabled;
-  assert catalog.karakeep.access.oidc.enabled;
-  assert catalog."ntfy-admin".health.path == "/v1/health";
-  assert !(builtins.hasAttr "origin" catalog.paperless);
-  assert !(builtins.hasAttr "upstream" catalog.paperless);
-  assert !(builtins.hasAttr "healthUrl" catalog.paperless);
+  # The catalog is the cross-host dial surface, so it must never carry the
+  # edge routing fields: a consumer that read them would dial a placement
+  # rather than a service.
+  let
+    names = builtins.attrNames catalog;
+    hasEdgeFields = e: builtins.any (f: builtins.hasAttr f e) [ "origin" "upstream" "healthUrl" ];
+    leaked = builtins.filter (name: hasEdgeFields catalog.${name}) names;
+    # Publication is derived per entry: a published route carries a public
+    # identity, a withheld one carries none, and every entry carries a dialable
+    # endpoint either way.
+    dialable = name: let e = catalog.${name}; in e.endpoint.port != null && e.endpoint.url != "";
+    published = builtins.filter (name: (catalog.${name}.publicUrl or null) != null) names;
+    withheld = builtins.filter (name: (catalog.${name}.publicUrl or null) == null) names;
+  in
+  assert leaked == [ ];
+  assert builtins.all dialable names;
+  assert published != [ ] && withheld != [ ];
   true
 ' > /dev/null
 echo "web-service catalog contract: PASS"
@@ -40,7 +49,7 @@ nix eval --impure --no-write-lock-file --expr '
     lib = flake.inputs.nixpkgs.lib;
     policyLib = import ./lib/policy.nix { inherit lib; };
     dupPolicy = {
-      defaults = { primaryDomain = "example.com"; exposureMode = "tailscale-only"; };
+      defaults = { primaryDomain = "example.com"; posture = "private"; };
       hosts = {
         a = {
           services.dup = {
@@ -153,7 +162,7 @@ nix eval --impure --no-write-lock-file --json --expr '
     lib = flake.inputs.nixpkgs.lib;
   in
   {
-    isPrivate = catalog.declarePublic == false && catalog.exposureMode == "tailscale-only";
+    isPrivate = catalog.published == false;
     noPublicIdentity = catalog.publicUrl == null && catalog.publicHost == null;
     providerListensOnDeclaredPort = provider.services.niks3.httpAddr
       == "0.0.0.0:${toString catalog.endpoint.port}";

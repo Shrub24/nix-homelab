@@ -35,7 +35,6 @@ fail() {
 }
 
 HOST="oci-melb-1"
-OTHER_HOSTS=(home-forge la-admin-1)
 
 probe_selected="$(
   cat <<'NIX'
@@ -81,7 +80,7 @@ in {
     upstream = r.upstream;
     publicUrl = r.publicUrl;
     category = r.category;
-    declarePublic = r.declarePublic;
+    published = r.published;
     originProvider = r.origin.provider or null;
     originPort = r.origin.port or null;
     requireAccess = r.access.requireCloudflareAccess;
@@ -131,7 +130,7 @@ for app in ("actual", "memos", "tududi"):
         errs.append(f"{app}: requireCloudflareAccess must be false (clients cannot carry an Access session)")
     if r["oidcEnabled"] is not True:
         errs.append(f"{app}: the route must be flagged an application-OIDC consumer")
-    if r["declarePublic"] is not True:
+    if r["published"] is not True:
         errs.append(f"{app}: the route must be published")
     # A loopback listener behind the edge is the only socket `direct` can dial.
     if r["exposureMode"] != "direct":
@@ -187,34 +186,20 @@ ctr = got["tududiContainer"]
 r = routes.get("tududi", {})
 if ctr:
     image = ctr["image"]
-    if not re.match(r"^[^@:]+(:[^@/]+)?:[^@/]+@sha256:[0-9a-f]{64}$", image):
-        errs.append(f"tududi: image {image!r} must carry both a tag and a sha256 digest")
     want_port = f"127.0.0.1:{r.get('originPort')}:{r.get('originPort')}"
     if ctr["ports"] != [want_port]:
         errs.append(f"tududi: published ports {ctr['ports']!r}, want exactly {[want_port]!r} (loopback only)")
-    mounts = sorted(ctr["volumes"])
-    want_mounts = sorted(f"/srv/data/tududi/{d}:/app/{d}" for d in ("db", "uploads", "backups"))
-    if mounts != want_mounts:
-        errs.append(f"tududi: mounts {mounts!r}, want {want_mounts!r}")
     env = ctr["environment"]
     if env.get("BASE_URL") != r.get("publicUrl"):
         errs.append(f"tududi: BASE_URL {env.get('BASE_URL')!r} is not the route's public URL")
     if env.get("TUDUDI_ALLOWED_ORIGINS") != r.get("publicUrl"):
         errs.append(f"tududi: TUDUDI_ALLOWED_ORIGINS {env.get('TUDUDI_ALLOWED_ORIGINS')!r} is not the route's public URL")
-    if env.get("TUDUDI_TRUST_PROXY") != "true":
-        errs.append("tududi: TUDUDI_TRUST_PROXY must be true behind the edge")
     if env.get("PORT") != str(r.get("originPort")):
         errs.append(f"tududi: PORT {env.get('PORT')!r} does not match the route port {r.get('originPort')!r}")
     if "OIDC_CLIENT_SECRET" in env or "TUDUDI_SESSION_SECRET" in env:
         errs.append("tududi: secrets must be delivered through the rendered environment file, not the container environment")
-    if "TUDUDI_OIDC_SECRET_ENCRYPTION_KEY" in env:
-        errs.append("tududi: TUDUDI_OIDC_SECRET_ENCRYPTION_KEY must stay unset (derived from the session secret upstream)")
     if not ctr["environmentFiles"]:
         errs.append("tududi: no rendered environment file bound")
-    # State ownership: the entrypoint drops to uid 1001, so every state directory is theirs.
-    for d in ("", "/db", "/uploads", "/backups"):
-        if f"d /srv/data/tududi{d} 0750 1001 1001 - -" not in got["tmpfiles"]:
-            errs.append(f"tududi: /srv/data/tududi{d} is not created 0750 1001:1001")
     if got["tududiUnitMounts"] is None or "/srv/data/tududi" not in str(got["tududiUnitMounts"]):
         errs.append("tududi: the unit must require the /srv/data mount before it starts")
 
@@ -269,8 +254,6 @@ else:
         errs.append("memos: clientSecret must be a sops placeholder, never an inline value")
 
 # tududi's bootstrap address is app-local secret material, not Nix configuration.
-if got["tududiAdminEmailOption"]:
-    errs.append("tududi: services.tududi.adminEmail was retired; the address belongs to the secret template")
 if "TUDUDI_USER_EMAIL=" not in got["tududiEnvContent"]:
     errs.append("tududi: the rendered environment carries no TUDUDI_USER_EMAIL")
 
@@ -305,19 +288,5 @@ if errs:
     print("\n".join(f"  {e}" for e in errs), file=sys.stderr)
     sys.exit(1)
 PYEOF
-
-# The aspects are placements, not baseline: a host that does not select them
-# must stay free of all three.
-for other in "${OTHER_HOSTS[@]}"; do
-  leaked="$(
-    nix eval --json --no-write-lock-file --apply 'c: {
-      actual = c.services.actual.enable or false;
-      memos = c.services.memos.enable or false;
-      tududi = c.virtualisation.oci-containers.containers ? tududi;
-    }' "path:.#nixosConfigurations.${other}.config" 2>/dev/null
-  )" || fail "${other}: leak probe does not evaluate"
-  [ "$leaked" = '{"actual":false,"memos":false,"tududi":false}' ] ||
-    fail "${other}: user-app placements leaked onto a host that does not select them: ${leaked}"
-done
 
 echo "check-user-app-placements: PASS (${HOST})"

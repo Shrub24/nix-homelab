@@ -177,7 +177,7 @@ Fleet-shared scope:
 Preferred baseline:
 
 - preinstalled NixOS hosts adopt non-destructively with `nixos-rebuild boot --target-host` through the existing sudo account, then reboot via the provider console; non-NixOS or repartitioned targets reimage with `nixos-anywhere`/`disko` through `just bootstrap <host> <addr>`
-- two-step secrets bootstrap is the default because it reduces pre-install key handling risk
+- host-scoped secrets exist before the first install: `secrets/hosts/<host>/system.yaml` is mandatory, so the configuration has one state rather than an unprovisioned phase (D-126)
 - the age recipient is derived only from the persistent SSH host key after its fingerprint is verified through the provider console; live `ssh-keyscan` results are diagnostic only and are never persisted as a recipient
 
 Accepted advanced alternative:
@@ -236,7 +236,7 @@ Current baseline:
 - each host writes to its own dedicated Cloudflare R2 bucket using host-scoped credentials and a host-unique restic password
 - non-secret transport defaults (`endpoint`, `region`, path-style behavior) stay canonical in `policy/globals.nix`
 - restic repositories are host-scoped: `shrublab-backup-la-admin-1`, `shrublab-backup-oci-melb-1`, and `shrublab-backup-home-forge`; the decommissioned host's repository was retained as migration recovery evidence
-- the operational capability is split (D-055): `state-backups` is `modules/backups/state-backups.nix` (its declaration surface, including the `services.state-backups.services.<name>` registry producers register in, is `modules/backups/state-backups/_consumer.nix`) and derives the conventional host secret path `secrets/hosts/<host>/system.yaml` plus the `shrublab-backup-<host>` bucket, gating enablement on the secret file's existence (two-step sops bootstrap); `cache-publisher` consumes the shared nix-fleet `niks3-publisher` mechanism (D-061) and supplies only the fleet's conventions: the write endpoint resolved through the `niks3Write` internal contract (D-056) and the host-scoped push token. Publication therefore uses upstream's post-build hook — every builder uploads what it builds — and the former activation-time post-deploy push with its public-key filter and the `nix-path-filter` package is retired with it. The OCI cache server leaf is `modules/cache/niks3-cache.nix`, owned by the `niks3-cache` aspect.
+- the operational capability is split (D-055): `state-backups` is `modules/backups/state-backups.nix` (its declaration surface, including the `services.state-backups.services.<name>` registry producers register in, is `modules/backups/state-backups/_consumer.nix`) and derives the conventional host secret path `secrets/hosts/<host>/system.yaml` plus the `shrublab-backup-<host>` bucket; the file is mandatory, not a gate (D-126); `cache-publisher` consumes the shared nix-fleet `niks3-publisher` mechanism (D-061) and supplies only the fleet's conventions: the write endpoint resolved through the `niks3Write` internal contract (D-056) and the host-scoped push token. Publication therefore uses upstream's post-build hook — every builder uploads what it builds — and the former activation-time post-deploy push with its public-key filter and the `nix-path-filter` package is retired with it. The OCI cache server leaf is `modules/cache/niks3-cache.nix`, owned by the `niks3-cache` aspect.
 
 Consistency model:
 
@@ -396,7 +396,7 @@ Actual retains password login because its OpenID integration is upstream preview
 
 State resides under `/srv/data/{actual,memos,tududi}`, with export-first capture of the primary SQLite databases. Actual's raw `user-files` capture has not been proven coherent. These placements are not deployed, and the absent encrypted tududi file blocks the complete host derivation. The [runbook](runbooks/actual-memos-tududi.md) owns operator preparation, rollout and recovery checks.
 
-Homarr v2 is a separate user-facing dashboard being added for `oci-melb-1`, not a replacement for the operator Homepage on `la-admin-1` (D-092). Nix owns its digest-pinned runtime, OIDC, private Tailscale bootstrap and recovery contract. Homarr's users, groups, boards and catalogue entries are edited in the application and are not generated from web policy. The public route stays withheld until private OIDC acceptance; host selection awaits the operator-provisioned service and OAuth client secrets. See the [Homarr runbook](runbooks/homarr.md).
+Homarr v2 is a separate user-facing dashboard served on `oci-melb-1`, not a replacement for the operator Homepage on `la-admin-1` (D-092). Nix owns its digest-pinned runtime, OIDC client, sign-in options and recovery contract. Homarr's users, groups, boards and catalogue entries are edited in the application and are not generated from web policy. `services.homarr.publicUrl` and `services.homarr.authProviders` are ordinary options; re-enabling the local administrator is the break-glass path and a deployment, not a supported mode (D-125). See the [Homarr runbook](runbooks/homarr.md).
 
 ## Deployment Architecture
 

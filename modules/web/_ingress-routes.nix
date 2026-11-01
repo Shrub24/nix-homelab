@@ -9,7 +9,6 @@ lib.mapAttrs (_: svc: {
     exposureMode
     category
     stripPrefix
-    declarePublic
     responseHeaders
     ;
   upstream = svc.upstream or null;

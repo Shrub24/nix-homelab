@@ -12,14 +12,19 @@ _: {
         type = lib.types.bool;
         default = false;
         description = ''
-          Authenticate Docker Hub pulls with `dockerhub/auth` from the fleet secret file,
-          which must hold the base64 `user:token` blob Podman's auth.json accepts. Left
-          false the anonymous pull budget applies.
+          Authenticate Docker Hub pulls with `dockerhub/auth` from
+          `secrets/services/containers.yaml`: the base64 `username:token` blob Podman's
+          auth.json accepts, which needs both halves. Left false the anonymous pull budget
+          applies — and because sops fails evaluation on a missing file, the encrypted file
+          must exist before this is turned on.
         '';
       };
 
       config = lib.mkIf cfg.registryAuth {
-        sops.secrets."dockerhub/auth" = { };
+        sops.secrets."dockerhub/auth" = {
+          sopsFile = ../../secrets/services/containers.yaml;
+          key = "dockerhub/auth";
+        };
 
         sops.templates."containers-auth.json" = {
           content = builtins.toJSON {

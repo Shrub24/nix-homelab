@@ -1,8 +1,6 @@
-# GeoPulse: PostgreSQL consumer, native backend and frontend, front-end port from the route.
-{
-  withSystem,
-  ...
-}:
+# GeoPulse: PostgreSQL consumer, and two digest-pinned containers — the native backend and the
+# nginx UI that serves the SPA and proxies the API.
+{ ... }:
 {
   flake.modules.nixos.geopulse =
     {
@@ -15,176 +13,45 @@
     let
       cfg = config.services.geopulse;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
+      serviceNetwork = (import ../../policy/globals.nix).serviceNetwork;
+
+      networkName = "geopulse";
+      backendContainer = "geopulse-backend";
+      uiContainer = "geopulse-ui";
 
       catalog = config.repo.web.catalog or { };
       frontendRoute =
         catalog.geopulse
-          or (throw "geopulse: required private web-policy route 'repo.web.catalog.\"geopulse\"' is missing for host '${
+          or (throw "geopulse: required web-policy route 'repo.web.catalog.\"geopulse\"' is missing for host '${
             config.networking.hostName or "?"
           }'");
       frontendPort = frontendRoute.upstreamPort;
 
-      publicOriginMessage = "services.geopulse: the web-policy route 'geopulse' must publish a public identity (subdomain with a public exposure mode), because the OIDC callback, the issued-token issuer and the private bootstrap tunnel all present that origin.";
-
-      publicOrigin =
+      publicOriginMessage = "services.geopulse: the web-policy route 'geopulse' must publish a public identity (subdomain with a public exposure mode), because the OIDC callback and the issued-token issuer both present that origin.";
+      browserOrigin =
         let
           url = frontendRoute.publicUrl or null;
         in
         if url == null then throw publicOriginMessage else url;
 
-      # Published only: on a withheld route the first OIDC login would target an origin the
-      # edge does not serve.
-      published = frontendRoute.publish == null || frontendRoute.publish;
-      browserOrigin =
-        if published then
-          publicOrigin
-        else
-          "https://${frontendRoute.endpoint.host}:${toString frontendRoute.endpoint.port}";
-
       hasLocalCluster = lib.hasAttrByPath [ "services" "postgres" "localEndpoint" ] options;
       localPostgres = if hasLocalCluster then config.services.postgres.localEndpoint else null;
-      noClusterMessage = "services.geopulse: this host runs no PostgreSQL cluster; the backend dials the local cluster on loopback, so select the postgres aspect with an instance.";
+      noClusterMessage = "services.geopulse: this host runs no PostgreSQL cluster; select the postgres aspect with an instance.";
+      # The backend is bridged, so it reaches the cluster's service-address listener, not loopback.
       localPostgresUrl =
         if localPostgres == null then
           throw noClusterMessage
         else
-          "jdbc:postgresql://127.0.0.1:${toString localPostgres.port}/geopulse";
-      # The backup client must match the running cluster's binaries.
-      postgresBinDirectory =
-        if localPostgres == null then
-          throw noClusterMessage
-        else
-          "${config.services.postgresql.finalPackage}/bin";
+          "jdbc:postgresql://${serviceNetwork.hostName}:${toString localPostgres.port}/geopulse";
 
-      # Projected only once the secret file exists, so an unbound path never reaches a path-typed option.
       hasSecretFile = cfg.secretFiles.host != null;
-
-      # A database row of the same name shadows the environment's approved client, so the
-      # admin UI's copy must not survive a redeploy.
       oidcClient = config.services.identity.oidc.clients.geopulse or null;
-      hasOidcSecret = cfg.secretFiles.oidc != null && builtins.pathExists cfg.secretFiles.oidc;
-      oidcEnabled = oidcClient != null && hasOidcSecret;
+      oidcEnabled = oidcClient != null && cfg.secretFiles.oidc != null;
 
-      # Owner-scoped: a rendered template sits under a 0750 root directory the service cannot traverse.
-      secrets = {
-        postgresPassword = "/run/secrets/geopulse/postgres-password";
-        aiKey = "/run/secrets/geopulse/ai-encryption-key.txt";
-      };
+      # Mounted into the backend at the path its `GEOPULSE_AI_ENCRYPTION_KEY_LOCATION` names.
+      aiKeyFile = "/run/secrets/geopulse/ai-encryption-key.txt";
 
-      # Substrate and runtime read the same file and key, so one rotation moves both.
-      secretEntries = secretHelpers.mkSecretsFromMap cfg.secretFiles.host {
-        "geopulse/postgres-password" = {
-          key = "roles/geopulse/password";
-          path = secrets.postgresPassword;
-          owner = "geopulse";
-          group = "geopulse";
-        };
-        "geopulse/ai-encryption-key" = {
-          key = "ai/encryption_key";
-          path = secrets.aiKey;
-          owner = "geopulse";
-          group = "geopulse";
-        };
-      };
-
-      frontendConfig = pkgs.writeTextDir "config.js" ''
-        window.VUE_APP_CONFIG = {
-          API_BASE_URL: '/api/v1',
-        };
-      '';
-
-      # Handles are mutually exclusive and evaluated in order, so specific mappings precede
-      # the SPA catch-all.
-      caddyfile = pkgs.writeText "Caddyfile" ''
-        {
-            # Caddy already owns the default admin endpoint on localhost:2019.
-            admin off
-            auto_https off
-            # Trust forwarded headers from loopback only, so no other client can claim them.
-            servers {
-                trusted_proxies static 127.0.0.1
-            }
-        }
-
-        # Hostless: a site address is also a host matcher, which would reject the forwarded public host.
-        http://:${toString frontendPort} {
-            bind 127.0.0.1
-
-            handle /config.js {
-                header Cache-Control "no-store"
-                root * ${frontendConfig}
-                file_server
-            }
-
-            # /mcp is mirrored for parity; no route publishes it.
-            handle /api/* {
-                reverse_proxy 127.0.0.1:${toString cfg.backendPort} {
-                    header_up Host {host}
-                }
-            }
-
-            handle /mcp* {
-                reverse_proxy 127.0.0.1:${toString cfg.backendPort} {
-                    header_up Host {host}
-                }
-            }
-
-            # Fixed tile host: nginx's default `a` subdomain, with no general-purpose proxy.
-            handle /osm/tiles/* {
-                @tile path_regexp ^/osm/tiles/(a|b|c)/(.*)$
-                rewrite @tile /{re.tile.2}
-                header Cache-Control "public, max-age=2592000"
-                reverse_proxy https://a.tile.openstreetmap.org {
-                    header_up Host a.tile.openstreetmap.org
-                    header_up User-Agent "GeoPulse/${cfg.frontendPackage.version}"
-                    header_up -Cookie
-                    header_up -Authorization
-                }
-            }
-
-            # Hashed assets are immutable; the shell stays no-store so a missing asset is not
-            # cached in its place.
-            handle /assets/* {
-                header Cache-Control "public, max-age=31536000, immutable"
-                root * ${cfg.frontendPackage}
-                file_server
-            }
-
-            handle {
-                header Cache-Control "no-store"
-                root * ${cfg.frontendPackage}
-                try_files {path} /index.html
-                file_server
-            }
-
-            # Matches the application's 2 GiB body limit.
-            request_body {
-                max_size 200MB
-            }
-        }
-      '';
-
-      startBackend = pkgs.writeShellApplication {
-        name = "geopulse-backend";
-        text = ''
-          # Without this an empty key surfaces only as JVM stack traces.
-          for file in ${secrets.postgresPassword} ${secrets.aiKey}; do
-            if [ ! -s "$file" ]; then
-              echo "geopulse: delivered secret '$file' is missing or empty; fill secrets/services/geopulse.yaml with 'sops edit' and redeploy" >&2
-              exit 1
-            fi
-          done
-
-          # Read from an owner-scoped file at start, so the value never enters the store or argv.
-          export GEOPULSE_POSTGRES_PASSWORD
-          GEOPULSE_POSTGRES_PASSWORD="$(cat ${secrets.postgresPassword})"
-
-          exec ${pkgs.jdk25}/bin/java \
-            -XX:+ExitOnOutOfMemoryError \
-            -XX:HeapDumpPath=${cfg.dataDir}/dumps/ \
-            -jar ${cfg.backendPackage}/quarkus-app/quarkus-run.jar
-        '';
-      };
     in
     {
       # Declaration-only: evaluates on hosts without the mechanism.
@@ -195,7 +62,7 @@
       ];
 
       options.services.geopulse = {
-        secretFiles.host = secretHelpers.mkSecretFileOption "geopulse-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "geopulse-host-secrets" ../../secrets/services/geopulse.yaml;
 
         secretFiles.oidc = secretHelpers.mkSecretFileOption "geopulse-oidc-secrets";
 
@@ -214,79 +81,34 @@
         dataDir = lib.mkOption {
           type = lib.types.path;
           default = "/srv/data/geopulse";
-          description = "Mutable GeoPulse state: database backup files, import drop folder and heap dumps.";
-        };
-
-        backendPort = lib.mkOption {
-          type = lib.types.port;
-          default = 8086;
-          description = "Loopback listener of the GeoPulse backend. It is never published: the front end proxies to it on the same host.";
-        };
-
-        backendPackage = lib.mkOption {
-          type = lib.types.package;
-          description = "GeoPulse backend (Quarkus fast-jar) from the repository's package projection, injected per system.";
-        };
-
-        frontendPackage = lib.mkOption {
-          type = lib.types.package;
-          description = "GeoPulse static front end from the repository's package projection, injected per system.";
+          description = "Mutable GeoPulse state: database backup files and the import drop folder.";
         };
       };
 
       config = lib.mkMerge [
-
         {
-          services.geopulse.backendPackage = withSystem pkgs.stdenv.hostPlatform.system (
-            { config, ... }: config.packages.geopulse-backend
-          );
-          services.geopulse.frontendPackage = withSystem pkgs.stdenv.hostPlatform.system (
-            { config, ... }: config.packages.geopulse-frontend
-          );
-        }
-
-        {
-
           assertions = [
             {
               assertion = localPostgres != null;
               message = noClusterMessage;
             }
             {
-              # Required even while the route is private: the callback and the tunnel both use it.
               assertion = (frontendRoute.publicUrl or null) != null;
               message = publicOriginMessage;
             }
           ];
 
-          users.groups.geopulse = { };
-          users.users.geopulse = {
-            isSystemUser = true;
-            group = "geopulse";
-            home = cfg.dataDir;
-            description = "GeoPulse backend service account";
-          };
-
-          users.groups.geopulse-web = { };
-          users.users.geopulse-web = {
-            isSystemUser = true;
-            group = "geopulse-web";
-            home = "/var/empty";
-            description = "GeoPulse static front-end service account";
-          };
-
           systemd.tmpfiles.rules = [
-            "d ${cfg.dataDir} 0750 geopulse geopulse - -"
-            "d ${cfg.dataDir}/backups 0750 geopulse geopulse - -"
-            "d ${cfg.dataDir}/backups/.work 0750 geopulse geopulse - -"
-            "d ${cfg.dataDir}/import 0750 geopulse geopulse - -"
-            "d ${cfg.dataDir}/import/tmp 0750 geopulse geopulse - -"
-            "d ${cfg.dataDir}/import/chunks 0750 geopulse geopulse - -"
-            "d ${cfg.dataDir}/dumps 0750 geopulse geopulse - -"
+            "d ${cfg.dataDir} 0700 root root - -"
+            "d ${cfg.dataDir}/backups 0700 root root - -"
+            "d ${cfg.dataDir}/backups/.work 0700 root root - -"
+            "d ${cfg.dataDir}/import 0700 root root - -"
+            "d ${cfg.dataDir}/import/tmp 0700 root root - -"
+            "d ${cfg.dataDir}/import/chunks 0700 root root - -"
           ];
 
-          # Same file and key as the provider. PostGIS SQL runs as the substrate admin, because
-          # Flyway's CREATE EXTENSION needs a privilege the app role lacks.
+          # The backend dials from its own bridge, so the ACL carries the container supernet as
+          # well as loopback (a host-networked dialer would arrive as the service address).
           services.postgres.consumers.geopulse = lib.mkIf hasSecretFile {
             database = "geopulse";
             role = "geopulse";
@@ -295,8 +117,10 @@
               file = cfg.secretFiles.host;
               key = "roles/geopulse/password";
             };
-            # Loopback only: the cluster does not listen on IPv6, so the catch-all reject follows.
-            allowedCIDRs = [ "127.0.0.1/32" ];
+            allowedCIDRs = [
+              "127.0.0.1/32"
+              serviceNetwork.containerSourceCIDR
+            ];
             extensions = ps: [ ps.postgis ];
             setupSQL = ''
               CREATE EXTENSION IF NOT EXISTS postgis;
@@ -319,146 +143,168 @@
           };
 
           sops.secrets =
-            lib.optionalAttrs hasSecretFile (
-              builtins.mapAttrs (
-                _: entry: entry // { restartUnits = [ "geopulse-backend.service" ]; }
-              ) secretEntries
-            )
+            lib.optionalAttrs hasSecretFile {
+              # The container runs as root so a 0400 root-owned mount is readable to it.
+              "geopulse/ai-encryption-key" = {
+                key = "ai/encryption_key";
+                sopsFile = cfg.secretFiles.host;
+                path = aiKeyFile;
+                mode = "0400";
+                owner = "root";
+                group = "root";
+              };
+              "geopulse/postgres-password" = {
+                key = "roles/geopulse/password";
+                sopsFile = cfg.secretFiles.host;
+                restartUnits = [ "podman-${backendContainer}.service" ];
+              };
+            }
             // lib.optionalAttrs oidcEnabled {
-              # Keeps the client secret out of the unit environment, which lands in the store.
+              # Keeps the client secret out of the container's declared environment.
               "geopulse/oidc-client-secret" = {
                 key = "geopulse/client_secret";
                 sopsFile = cfg.secretFiles.oidc;
                 mode = "0400";
-                owner = "geopulse";
-                group = "geopulse";
-                restartUnits = [ "geopulse-backend.service" ];
+                owner = "root";
+                group = "root";
+                restartUnits = [ "podman-${backendContainer}.service" ];
               };
             };
 
-          sops.templates = lib.mkIf oidcEnabled {
-            "geopulse.oidc.env" = {
-              owner = "geopulse";
-              group = "geopulse";
-              mode = "0400";
-              content = ''
-                GEOPULSE_OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET=${
-                  config.sops.placeholder."geopulse/oidc-client-secret"
-                }
-              '';
+          sops.templates =
+            lib.optionalAttrs hasSecretFile {
+              "geopulse.env" = {
+                mode = "0400";
+                restartUnits = [ "podman-${backendContainer}.service" ];
+                content = ''
+                  GEOPULSE_POSTGRES_PASSWORD=${config.sops.placeholder."geopulse/postgres-password"}
+                '';
+              };
+            }
+            // lib.optionalAttrs oidcEnabled {
+              "geopulse.oidc.env" = {
+                mode = "0400";
+                restartUnits = [ "podman-${backendContainer}.service" ];
+                content = ''
+                  GEOPULSE_OIDC_PROVIDER_AUTHENTIK_CLIENT_SECRET=${
+                    config.sops.placeholder."geopulse/oidc-client-secret"
+                  }
+                '';
+              };
             };
-          };
 
-          # Five starts in five minutes reach `failed` and fire OnFailure; the default limit
-          # never trips at a 10s restart delay.
           services.notify.events = {
-            geopulse-backend.failure = { };
-            geopulse-web.failure = { };
-          };
-
-          systemd.services.geopulse-backend = {
-            description = "GeoPulse backend (location history and API)";
-            wantedBy = [ "multi-user.target" ];
-            after = [
-              "network.target"
-              "postgresql.service"
-              "postgresql-provision.service"
-              "sops-install-secrets.service"
-            ];
-            requires = [
-              "postgresql-provision.service"
-              "sops-install-secrets.service"
-            ];
-            unitConfig.RequiresMountsFor = [ cfg.dataDir ];
-            environment = {
-              QUARKUS_HTTP_HOST = "127.0.0.1";
-              QUARKUS_HTTP_PORT = toString cfg.backendPort;
-              # Quarkus enables localhost-only host validation itself on a loopback listener in prod,
-              # answering 400 before routing to a request carrying the forwarded public Host.
-              QUARKUS_HTTP_HOST_VALIDATION_REQUIRE_LOCALHOST = "false";
-
-              GEOPULSE_POSTGRES_URL = localPostgresUrl;
-              GEOPULSE_POSTGRES_USERNAME = "geopulse";
-              GEOPULSE_AI_ENCRYPTION_KEY_LOCATION = "file:${secrets.aiKey}";
-
-              GEOPULSE_AUTH_SECURE_COOKIES = "true";
-              GEOPULSE_PUBLIC_BASE_URL = browserOrigin;
-
-              GEOPULSE_MQTT_ENABLED = "false";
-              GEOPULSE_AI_LOGGING_ENABLED = "false";
-
-              GEOPULSE_BACKUP_WORK_PATH = "${cfg.dataDir}/backups/.work";
-              GEOPULSE_BACKUP_BINARY_DIRECTORY = postgresBinDirectory;
-              # Backup coordination takes an advisory lock, so it runs in a database the role reaches.
-              GEOPULSE_BACKUP_MAINTENANCE_DATABASE = "geopulse";
-              GEOPULSE_IMPORT_DROP_FOLDER_PATH = "${cfg.dataDir}/import";
-              GEOPULSE_IMPORT_TEMP_DIR = "${cfg.dataDir}/import/tmp";
-              GEOPULSE_IMPORT_CHUNKS_DIR = "${cfg.dataDir}/import/chunks";
-            }
-            // lib.optionalAttrs (cfg.adminEmail != null) {
-              # 2.0 promotes this address on every login, so declare the administrator.
-              GEOPULSE_ADMIN_EMAIL = cfg.adminEmail;
-            }
-            // lib.optionalAttrs oidcEnabled {
-              GEOPULSE_OIDC_ENABLED = "true";
-              GEOPULSE_OIDC_CALLBACK_BASE_URL = browserOrigin;
-              GEOPULSE_OIDC_AUTO_LINK_ACCOUNTS = "true";
-
-              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_ENABLED = "true";
-              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_NAME = oidcClient.providerName;
-              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_CLIENT_ID = oidcClient.clientId;
-              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_DISCOVERY_URL = oidcClient.wellknownUrl;
+            "podman-${backendContainer}" = {
+              failure = { };
             };
-            unitConfig = {
-              StartLimitIntervalSec = 300;
-              StartLimitBurst = 5;
-            };
-            serviceConfig = {
-              User = "geopulse";
-              Group = "geopulse";
-              ExecStart = "${startBackend}/bin/geopulse-backend";
-              Restart = "on-failure";
-              RestartSec = "10s";
-              ReadWritePaths = [ cfg.dataDir ];
-              ProtectSystem = "strict";
-              ProtectHome = true;
-              PrivateTmp = true;
-              PrivateDevices = true;
-              NoNewPrivileges = true;
-              ProtectKernelTunables = true;
-              ProtectKernelModules = true;
-              ProtectControlGroups = true;
-            }
-            // lib.optionalAttrs oidcEnabled {
-              EnvironmentFile = config.sops.templates."geopulse.oidc.env".path;
+            "podman-${uiContainer}" = {
+              failure = { };
             };
           };
 
-          systemd.services.geopulse-web = {
-            description = "GeoPulse static front end (loopback listener)";
-            wantedBy = [ "multi-user.target" ];
-            after = [ "network.target" ];
-            unitConfig = {
-              StartLimitIntervalSec = 300;
-              StartLimitBurst = 5;
-            };
-            serviceConfig = {
-              User = "geopulse-web";
-              Group = "geopulse-web";
-              # Caddy cannot infer the adapter from a hashed store basename.
-              ExecStart = "${pkgs.caddy}/bin/caddy run --adapter caddyfile --config ${caddyfile}";
-              Restart = "on-failure";
-              RestartSec = "10s";
-              ProtectSystem = "strict";
-              ProtectHome = true;
-              PrivateTmp = true;
-              PrivateDevices = true;
-              NoNewPrivileges = true;
-              ProtectKernelTunables = true;
-              ProtectKernelModules = true;
-              ProtectControlGroups = true;
+          systemd.services = {
+            "podman-network-${networkName}" = {
+              description = "Create Podman network ${networkName}";
+              wantedBy = [ "multi-user.target" ];
+              before = [
+                "podman-${backendContainer}.service"
+                "podman-${uiContainer}.service"
+              ];
+              after = [ "network.target" ];
+              serviceConfig = {
+                Type = "oneshot";
+                RemainAfterExit = true;
+                ExecStart = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network exists ${networkName} || ${pkgs.podman}/bin/podman network create ${networkName}'";
+                ExecStop = "${pkgs.runtimeShell} -c '${pkgs.podman}/bin/podman network rm -f ${networkName} || true'";
+              };
             };
           };
+
+          virtualisation.oci-containers.containers.${backendContainer} = lib.mkMerge [
+            (readiness.mkReadyProbe {
+              cmd = "curl -fsS http://127.0.0.1:8080/api/v1/system/health";
+              startPeriod = "10s";
+            })
+            {
+              image = config.repo.ociImages.geopulseBackend;
+              # Bridged with no published port: the UI reaches it by name on the shared network.
+              extraOptions = [
+                "--network=${networkName}"
+                # Podman's DNS does not resolve the service name on this network.
+                "--add-host=${serviceNetwork.hostName}:${serviceNetwork.address}"
+                # The image's own user cannot read a 0400 root-owned key mount.
+                "--user=0"
+              ];
+              environmentFiles = [
+                config.sops.templates."geopulse.env".path
+              ]
+              ++ lib.optional oidcEnabled config.sops.templates."geopulse.oidc.env".path;
+              volumes = [
+                "${cfg.dataDir}/backups:/data/geopulse-backups"
+                "${cfg.dataDir}/import:/data/geopulse-import"
+                "${aiKeyFile}:/app/keys/ai-encryption-key.txt:ro"
+              ];
+              environment = {
+                QUARKUS_HTTP_HOST = "0.0.0.0";
+                GEOPULSE_POSTGRES_URL = localPostgresUrl;
+                GEOPULSE_POSTGRES_USERNAME = "geopulse";
+                GEOPULSE_AI_ENCRYPTION_KEY_LOCATION = "file:/app/keys/ai-encryption-key.txt";
+
+                # A database that ran the retired source build records a repeatable migration the
+                # image no longer ships; undone, Flyway's start-time validation crash-loops.
+                QUARKUS_FLYWAY_IGNORE_MIGRATION_PATTERNS = "repeatable:missing";
+
+                GEOPULSE_AUTH_SECURE_COOKIES = "true";
+                GEOPULSE_PUBLIC_BASE_URL = browserOrigin;
+
+                GEOPULSE_MQTT_ENABLED = "false";
+                GEOPULSE_AI_LOGGING_ENABLED = "false";
+
+                GEOPULSE_BACKUP_WORK_PATH = "/data/geopulse-backups/.work";
+                # The image carries PostgreSQL 17 and 18 clients and picks the matching major.
+                GEOPULSE_BACKUP_MAINTENANCE_DATABASE = "geopulse";
+                GEOPULSE_IMPORT_DROP_FOLDER_PATH = "/data/geopulse-import";
+                GEOPULSE_IMPORT_TEMP_DIR = "/data/geopulse-import/tmp";
+                GEOPULSE_IMPORT_CHUNKS_DIR = "/data/geopulse-import/chunks";
+              }
+              // lib.optionalAttrs (cfg.adminEmail != null) {
+                GEOPULSE_ADMIN_EMAIL = cfg.adminEmail;
+              }
+              // lib.optionalAttrs oidcEnabled {
+                GEOPULSE_OIDC_ENABLED = "true";
+                GEOPULSE_OIDC_CALLBACK_BASE_URL = browserOrigin;
+                GEOPULSE_OIDC_AUTO_LINK_ACCOUNTS = "true";
+
+                GEOPULSE_OIDC_PROVIDER_AUTHENTIK_ENABLED = "true";
+                GEOPULSE_OIDC_PROVIDER_AUTHENTIK_NAME = oidcClient.providerName;
+                GEOPULSE_OIDC_PROVIDER_AUTHENTIK_CLIENT_ID = oidcClient.clientId;
+                GEOPULSE_OIDC_PROVIDER_AUTHENTIK_DISCOVERY_URL = oidcClient.wellknownUrl;
+              };
+            }
+          ];
+
+          virtualisation.oci-containers.containers.${uiContainer} = lib.mkMerge [
+            (readiness.mkReadyProbe { cmd = "wget -q --spider http://127.0.0.1:80/"; })
+            {
+              image = config.repo.ociImages.geopulseUi;
+              # The image is nginx on Alpine, so the probe is busybox wget on its own port.
+              extraOptions = [
+                "--network=${networkName}"
+              ];
+              # The image's nginx renders config.js, proxies /api and /mcp, serves the SPA and
+              # proxies OSM tiles; the route dials this loopback listener.
+              ports = [ "127.0.0.1:${toString frontendPort}:80" ];
+              environment = {
+                GEOPULSE_BACKEND_URL = "http://${backendContainer}:8080";
+                CLIENT_MAX_BODY_SIZE = "200M";
+              };
+              dependsOn = [ backendContainer ];
+            }
+          ];
+          # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+          # The backend applies migrations on start, so it gets the longer budget.
+          systemd.services."podman-${backendContainer}".serviceConfig.TimeoutStartSec = lib.mkForce 300;
+          systemd.services."podman-${uiContainer}".serviceConfig.TimeoutStartSec = lib.mkForce 120;
         }
       ];
     };

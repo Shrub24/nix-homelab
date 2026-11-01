@@ -56,7 +56,8 @@
     {
       imports = [ inputs.degoog.nixosModules.default ];
 
-      options.services.degoog.secretFiles.host = secretHelpers.mkSecretFileOption "degoog-host-secrets";
+      options.services.degoog.secretFiles.host =
+        secretHelpers.mkSecretFileOptionWithDefault "degoog-host-secrets" ../../secrets/services/degoog.yaml;
 
       config = lib.mkMerge [
         # Selection is enablement. The package comes from this repository: the

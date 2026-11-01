@@ -59,7 +59,7 @@ in
       ];
 
       options.services.bifrost = {
-        secretFiles.host = secretHelpers.mkSecretFileOption "bifrost-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "bifrost-host-secrets" ../../secrets/services/bifrost.yaml;
 
         endpoint.hostBaseUrl = lib.mkOption {
           type = lib.types.str;

@@ -1,5 +1,5 @@
-# Cockpit: selection imports the leaf (enable defaults true) and owns the wiring common to
-# every host. `publicHost`, `urlRoot` and `loopbackTls.enable` stay host-local.
+# Cockpit: three contributors publish the one aspect, so selection is the whole enable.
+# `publicHost`, `urlRoot` and `loopbackTls.enable` stay host-local.
 _: {
   flake.modules.nixos.cockpit =
     {
@@ -10,7 +10,6 @@ _: {
     }:
     let
       hostSecretFile = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
-      hasHostSecrets = builtins.pathExists hostSecretFile;
 
       cfg = config.services.admin.cockpit;
       svcUser = cfg.serviceUser;
@@ -210,7 +209,7 @@ _: {
             tailscaleServe.enable = true;
           };
 
-          sops.secrets = lib.optionalAttrs hasHostSecrets {
+          sops.secrets = {
             cockpit_service_user_password_hash = {
               sopsFile = hostSecretFile;
               key = "cockpit/service_user/password_hash";

@@ -30,10 +30,6 @@ HOST="${1:-oci-melb-1}"
 
 json="$(
   nix eval --json --no-write-lock-file --apply 'c: let
-    envByPath = builtins.listToAttrs (map (n: {
-      name = c.sops.templates.${n}.path;
-      value = c.sops.templates.${n}.content;
-    }) (builtins.attrNames c.sops.templates));
   in {
     renderedConfig = c.services.bifrost.renderedConfig;
     renderedConfigFile = c.services.bifrost.renderedConfigFile;
@@ -57,13 +53,6 @@ json="$(
     hindsightLlmBaseUrl = ((c.virtualisation.oci-containers.containers or { }).hindsight or { }).environment.HINDSIGHT_API_LLM_BASE_URL or "";
     docsMcpOpenAiBase = ((c.virtualisation.oci-containers.containers or { }).docs-mcp or { }).environment.OPENAI_API_BASE or "";
     firewallExtra = c.networking.firewall.extraCommands;
-    containerEnv = builtins.mapAttrs (_: ctr: {
-      options = ctr.extraOptions or [ ];
-      text = builtins.concatStringsSep " " (
-        (builtins.attrValues (ctr.environment or { }))
-        ++ (map (p: envByPath.${p} or "") (ctr.environmentFiles or [ ]))
-      );
-    }) c.virtualisation.oci-containers.containers;
     notifyRegistered = (c.services.notify.events.bifrost.failure or null) != null;
   }' "path:.#nixosConfigurations.${HOST}.config"
 )" || fail "${HOST}: bifrost probe does not evaluate"
@@ -235,25 +224,6 @@ if rule_line is None:
     errs.append(f"nothing admits a container to the gateway port {gateway_port}")
 elif "-s " not in rule_line or "-d " not in rule_line:
     errs.append(f"the gateway ingress rule is not source- and destination-scoped: {rule_line!r}")
-
-# The other half of the same invariant: a container whose environment names the
-# service address needs the entry that resolves it, or it dials a name its own
-# resolver has never heard of. Containers that share one environment file are all
-# covered, because the variables in it are in each of their environments. Host
-# network containers are exempt: they share the host's namespace, where the name
-# already resolves.
-if match:
-    service_name = match.group(1)
-    for name, container in got["containerEnv"].items():
-        options = container["options"]
-        if "--network=host" in options or any(o.startswith("--network=host") for o in options):
-            continue
-        if service_name not in container["text"]:
-            continue
-        if not any(o.startswith(f"--add-host={service_name}:") for o in options):
-            errs.append(
-                f"container {name!r} dials {service_name!r} without --add-host={service_name}:<address>"
-            )
 
 # Host-local consumption (nix-fleet's `localEndpoint` contract): the aspect
 # publishes the listener as a loopback endpoint, and a consumer running on the

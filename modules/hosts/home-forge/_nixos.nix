@@ -5,7 +5,6 @@
   ...
 }:
 let
-  hasHostSecrets = builtins.pathExists ../../../secrets/hosts/home-forge/system.yaml;
 
   # Host-owned physical music root; the music aspect derives the storage
   # library contract from it.
@@ -49,7 +48,7 @@ in
 
   # The physical console is the primary break-glass path; the rescue operator is
   # defense-in-depth and activates once host secrets exist.
-  services.hostRecovery = lib.mkIf hasHostSecrets {
+  services.hostRecovery = {
     enable = true;
     secretFile = ../../../secrets/hosts/home-forge/system.yaml;
     rescueUser.name = "rescue";
@@ -67,7 +66,6 @@ in
   hardware.facter.reportPath = lib.mkIf (builtins.pathExists ./facter.json) ./facter.json;
 
   services.notify = {
-    secretFiles.host = ../../../secrets/services/notification-daemon.yaml;
     secretFiles.hostSystem = ../../../secrets/hosts/home-forge/system.yaml;
     ntfy.enable = true;
   };
@@ -76,7 +74,6 @@ in
     engine = {
       enable = true;
       inherit traktorStateDir;
-      secretFiles.navidrome = ../../../secrets/applications/music.yaml;
     };
   };
 
@@ -90,10 +87,11 @@ in
   # holds ~30 connections, so the 40-connection default starved Langfuse at startup.
   services.postgresql.settings.max_connections = "200";
 
+  services.containers.registryAuth = true;
+
   applications.music = {
     dataRoot = "/srv/data";
     storageRoot = musicStorageRoot;
-    secretFiles.host = ../../../secrets/applications/music.yaml;
     navidrome.enable = true;
     audiomuse.enable = true;
   };
@@ -101,37 +99,31 @@ in
   services.syncthing.openDefaultPorts = lib.mkForce true;
 
   services.degoog = {
-    secretFiles.host = ../../../secrets/services/degoog.yaml;
   };
 
-  services.bookorbit.secretFiles.host = ../../../secrets/services/bookorbit.yaml;
   services.torrents.secretFiles.host = ../../../secrets/hosts/home-forge/system.yaml;
 
   services.hindsight = {
-    secretFiles.host = ../../../secrets/services/hindsight.yaml;
     # Defaults: LLM dials this host's gateway (bifrost runs here); embeddings dial Voyage
     # directly, where the voyage/ prefix sets input_type per side.
   };
 
   # Grafana SSO via the fleet identity provider (admins only); the secret is host-scoped.
-  services.victoria = {
+  services.grafana = {
     oidc.enable = true;
     secretFiles.oidc = ../../../secrets/hosts/home-forge/oidc.yaml;
   };
 
   # LLM observability backends; their OIDC secrets live in this host's oidc file.
   services.langfuse = {
-    secretFiles.host = ../../../secrets/services/langfuse.yaml;
     secretFiles.oidc = ../../../secrets/hosts/home-forge/oidc.yaml;
     oidc.enable = config.repo.web.catalog.langfuse.access.oidc.enabled;
   };
 
   # Provider credentials are service-scoped: both gateway hosts read one encrypted file.
   # Each host runs its own process and state; no gateway dials another.
-  services.bifrost.secretFiles.host = ../../../secrets/services/bifrost.yaml;
 
   services.latitude = {
-    secretFiles.host = ../../../secrets/services/latitude.yaml;
   };
 
   # Gateway role: producers push OTLP to this host's tailnet endpoint, so every export leg is

@@ -20,6 +20,9 @@
             topics = lib.mkDefault globals.notifications.telegram.topics;
           };
 
+          # The conventional host-scoped file; a host may still override it.
+          secretFiles.host = lib.mkDefault ../../secrets/services/notification-daemon.yaml;
+
           ntfy = {
             # The catalog endpoint, not the public hostname: the edge's browser-signature
             # rule rejects the daemon's urllib client.
@@ -49,10 +52,6 @@
           {
             assertion = !cfg.telegram.enable || cfg.telegram.topics != { };
             message = "services.notify.telegram.topics must be configured with at least one tier.";
-          }
-          {
-            assertion = cfg.secretFiles.host != null;
-            message = "services.notify.secretFiles.host must be set to the conventional host-scoped secret file (secrets/services/notification-daemon.yaml).";
           }
         ]
         ++ lib.optional (cfg.ntfy.enable && cfg.ntfy.serverUrl == "") {

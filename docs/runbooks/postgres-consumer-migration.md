@@ -1,17 +1,14 @@
 # Moving a PostgreSQL consumer between clusters
 
-The substrate is composed from a mechanism, per-host clusters, and consumer
-registrations (D-058). A consumer is registered next to the service that uses
-it, and it resolves its endpoint from the host's own cluster when one is
-declared, otherwise from the internal transport contract. Moving a database
-therefore means moving a registration and, for a cross-host move, the endpoint
-source — never the service's connection code.
+A consumer's registration lives beside the service that uses it, and the database
+lives on the host that runs the service: `services.postgres.localEndpoint` is the
+only endpoint a consumer resolves, so there is no cross-host registration to move.
+Moving a database therefore means moving a registration, never a consumer's
+connection code. The substrate shape is [D-058](../decisions.md).
 
-Two moves are possible, and they differ only in where the registration lives.
+## Moving a consumer within its host
 
-## Same-host move (the normal case)
-
-The service and its database share a host.
+This is the only supported move: the service and its database share a host.
 
 1. Declare the cluster on the target host if it does not have one:
 
@@ -43,18 +40,13 @@ The service needs no edit: `services.postgres.localEndpoint` is how a
 co-located consumer discovers the cluster it should use, and the consumer's
 `extensions`/`setupSQL` follow the registration.
 
-## Cross-host move (the exception)
+## Cross-host is not supported
 
-The service runs on one host and the database on another.
-
-1. Register the consumer on the **provider** host — that is the only host that
-   can create the role and read its credential — and point `password.file` at
-   the consumer's secret file, which means the provider host gains read access
-   to it. Treat that as an explicit blast-radius widening in `.sops.yaml`.
-2. The consumer host reads the endpoint from the contract
-   (`config.repo.internal.postgres.<instance>`); the contract's provider and
-   port must agree with the cluster that actually serves it, or evaluation fails
-   with a named `internal-contracts:` error.
+A consumer on one host cannot read a cluster on another: only the provider can
+create the role and read its credential, so a split placement would either widen
+that file's readership or leave the role unprovisioned. Move the consumer's own
+compute to the host with the cluster instead — AudioMuse's move did exactly that,
+and the reference below is that move.
 
 ## Migrating the data
 

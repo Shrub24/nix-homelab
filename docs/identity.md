@@ -338,7 +338,7 @@ next to its client secret.
 | --- | --- | --- |
 | Langfuse | `initial_admin/{email,password}` in SOPS, seeded on first start | re-enable password login |
 | Paperless | `paperless/admin_pass` in SOPS, applied by `services.paperless.passwordFile` | re-enable regular login |
-| Grafana | `grafana/admin_password` once the host binds `services.victoria.secretFiles.admin`; until then the password lives in Grafana's own database | re-enable the login form |
+| Grafana | `grafana/admin_password`; the module defaults `services.grafana.secretFiles.admin` to it, and until the account exists the password lives in Grafana's own database | re-enable the login form |
 | Karakeep | none; provider-created accounts carry no password | re-enable password auth, then set one |
 | Actual | none; the account is the provider's `preferred_username` claim | re-enable the password method |
 | Memos | admin-role password, set on the host | not needed — upstream gates the password by role |
@@ -360,7 +360,7 @@ reason to hold a credential that bypasses them, so the break-glass password live
 just secrets bootstrap secrets/services/grafana.yaml
 ```
 
-The victoria module defaults `services.victoria.secretFiles.admin` to that file, so no host
+The Grafana aspect defaults `services.grafana.secretFiles.admin` to that file, so no host
 record binds it; a host overrides the option only to point elsewhere. Grafana's
 `admin_password` is applied from the file on the account's first creation.
 

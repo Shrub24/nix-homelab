@@ -19,20 +19,8 @@ _: {
 
       # Probes target the published URL, so an outage of either the edge or the origin shows.
       # Access answers an unauthenticated probe with a redirect, which says nothing about the
-      # origin: a service token makes the probe a real one. The file arrives after the OpenTofu
-      # apply, so its presence decides, and until then the gate counts as healthy.
-      hasToken = cfg.secretFiles.accessToken != null && builtins.pathExists cfg.secretFiles.accessToken;
-      healthyStatuses =
-        svc:
-        if (svc.access.requireCloudflareAccess or false) && !hasToken then
-          [
-            200
-            302
-            401
-            403
-          ]
-        else
-          [ svc.health.expectedStatus ];
+      # origin: the service token makes the probe a real one.
+      healthyStatuses = svc: [ svc.health.expectedStatus ];
 
       mkEndpoint =
         serviceName: svc:
@@ -44,7 +32,7 @@ _: {
             (lib.concatMapStringsSep " || " (status: "[STATUS] == ${toString status}") (healthyStatuses svc))
           ];
         }
-        // lib.optionalAttrs (hasToken && (svc.access.requireCloudflareAccess or false)) {
+        // lib.optionalAttrs (svc.access.requireCloudflareAccess or false) {
           # Only Access-gated routes need the token, and only they may receive it. Gatus
           # expands environment variables over its whole configuration, so it stays out of the store.
           headers = {
@@ -59,19 +47,19 @@ _: {
     in
     {
       options.services.admin.gatus = {
-        secretFiles.accessToken = secretHelpers.mkSecretFileOption "gatus-access-token-secrets";
+        secretFiles.accessToken = secretHelpers.mkSecretFileOptionWithDefault "gatus-access-token-secrets" ../../secrets/services/gatus.yaml;
 
       };
       config = {
         # A rendered secret file has to be owned by a resolvable account, and a dynamic one
         # has no name to own it.
-        users.groups.gatus = lib.mkIf hasToken { };
-        users.users.gatus = lib.mkIf hasToken {
+        users.groups.gatus = { };
+        users.users.gatus = {
           isSystemUser = true;
           group = "gatus";
         };
 
-        sops.secrets = lib.mkIf hasToken {
+        sops.secrets = {
           "gatus/cf_access_client_id" = {
             sopsFile = cfg.secretFiles.accessToken;
             key = "cf_access/client_id";
@@ -82,7 +70,7 @@ _: {
           };
         };
 
-        sops.templates."gatus-access-token.env" = lib.mkIf hasToken {
+        sops.templates."gatus-access-token.env" = {
           owner = "gatus";
           group = "gatus";
           mode = "0400";
@@ -92,14 +80,14 @@ _: {
           '';
         };
 
-        systemd.services.gatus.serviceConfig = lib.mkIf hasToken {
+        systemd.services.gatus.serviceConfig = {
           DynamicUser = lib.mkForce false;
         };
 
         services.gatus = {
           enable = true;
           openFirewall = false;
-          environmentFile = lib.mkIf hasToken config.sops.templates."gatus-access-token.env".path;
+          environmentFile = config.sops.templates."gatus-access-token.env".path;
           settings = {
             web.address = webAddress;
             web.port = webPort;

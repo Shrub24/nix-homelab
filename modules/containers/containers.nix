@@ -38,8 +38,7 @@
       secretNameAt =
         path: firstOrNull (lib.filter (name: secrets.${name}.path == path) (lib.attrNames secrets));
 
-      readIfPresent =
-        file: lib.optionalString (file != null && builtins.pathExists file) (builtins.readFile file);
+      readIfPresent = file: lib.optionalString (file != null) (builtins.readFile file);
       sopsFileOf = name: if name == null then "" else readIfPresent (secrets.${name}.sopsFile or null);
 
       revisionOf =

@@ -100,7 +100,7 @@ Canonical human-facing architecture and migration guidance lives under `docs/` (
 - Provide an `aarch64`-capable installer/kexec path; the upstream README only treats x86_64 kexec as the default and calls out custom images for other architectures.
 - Assume UEFI and capture host facts after first boot with `nixos-facter`; do not hand-maintain guessed boot details.
 - Use `nixos-rebuild --target-host` for post-install updates.
-- Keep secrets bootstrap two-step: install base system first, then add the machine recipient and encrypted host secrets.
+- Host secrets precede the first install: create `secrets/hosts/<host>/system.yaml`, encrypt it to the host's age recipient, then install. There is no unprovisioned bootstrap state to support (D-126).
 - Keep storage to GPT + EFI + `/` + one data mount, with Navidrome reading directly from the Syncthing path.
 - Introduce `deploy-rs` and wire its checks into `flake check`.
 - Keep `.sops.yaml` path-scoped by host so new machines do not inherit decryption access.

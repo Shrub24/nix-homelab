@@ -12,17 +12,16 @@ _: {
       cfg = config.services.ingress;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
 
+      # The projection hands over published routes only, so publication is not re-tested here.
       routeNames = builtins.attrNames cfg.routes;
       routeByName = name: cfg.routes.${name};
-      isPublicRoute = route: route.exposureMode != "tailscale-only";
-      publicRouteNames = builtins.filter (name: isPublicRoute (routeByName name)) routeNames;
-      publicRoutes = map routeByName publicRouteNames;
+      routeList = map routeByName routeNames;
 
       hostForRoute =
         route:
         if route.subdomain != null then "${route.subdomain}.${cfg.primaryDomain}" else cfg.primaryDomain;
 
-      siteHosts = lib.unique (map hostForRoute publicRoutes);
+      siteHosts = lib.unique (map hostForRoute routeList);
 
       needsAccessHeader = route: route.cloudflareAccessRequired;
 
@@ -126,8 +125,7 @@ _: {
             }
           '';
 
-      hostRouteNames =
-        host: builtins.filter (name: hostForRoute (routeByName name) == host) publicRouteNames;
+      hostRouteNames = host: builtins.filter (name: hostForRoute (routeByName name) == host) routeNames;
 
       hostAopValues =
         host: map (name: (routeByName name).authenticatedOriginPullsRequired) (hostRouteNames host);
@@ -180,7 +178,7 @@ _: {
       renderSite =
         host:
         let
-          namesForHost = builtins.filter (name: hostForRoute (routeByName name) == host) publicRouteNames;
+          namesForHost = builtins.filter (name: hostForRoute (routeByName name) == host) routeNames;
           sortedNames = lib.sort (
             a: b: builtins.stringLength (routeByName a).path > builtins.stringLength (routeByName b).path
           ) namesForHost;
@@ -213,27 +211,16 @@ _: {
       # The apex is already `domain`; repeating it here forces a re-issue on every activation.
       certExtraDomains = [ "*.${cfg.primaryDomain}" ];
 
-      routeAssertions =
-        lib.map (
-          name:
-          let
-            route = routeByName name;
-          in
-          {
-            assertion = lib.hasPrefix "/" route.path;
-            message = "services.ingress route '${name}' path must start with '/'.";
-          }
-        ) routeNames
-        ++ lib.map (
-          name:
-          let
-            route = routeByName name;
-          in
-          {
-            assertion = route.exposureMode == "tailscale-only" || route.declarePublic;
-            message = "services.ingress route '${name}' must set declarePublic=true for public exposure modes.";
-          }
-        ) routeNames;
+      routeAssertions = lib.map (
+        name:
+        let
+          route = routeByName name;
+        in
+        {
+          assertion = lib.hasPrefix "/" route.path;
+          message = "services.ingress route '${name}' path must start with '/'.";
+        }
+      ) routeNames;
     in
     {
       options.services.ingress = {
@@ -310,7 +297,7 @@ _: {
           };
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "the Cloudflare DNS-01 token used by the edge role";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "the Cloudflare DNS-01 token used by the edge role" ../../secrets/applications/edge-ingress.yaml;
 
         routes = lib.mkOption {
           default = { };
@@ -346,16 +333,9 @@ _: {
                     "direct"
                     "tailscale-upstream"
                     "tailscale-serve"
-                    "tailscale-only"
                   ];
                   default = "tailscale-upstream";
-                  description = "Exposure mode for this route: how the edge reaches it and whether it is published.";
-                };
-
-                declarePublic = lib.mkOption {
-                  type = lib.types.bool;
-                  default = false;
-                  description = "Explicit opt-in required for public route rendering.";
+                  description = "How the edge and the catalog reach this route's socket. Publication is the policy posture, not this value.";
                 };
 
                 category = lib.mkOption {
@@ -485,7 +465,7 @@ _: {
         ]
         ++ routeAssertions;
 
-        networking.firewall.allowedTCPPorts = lib.mkIf (cfg.role == "edge" && publicRouteNames != [ ]) [
+        networking.firewall.allowedTCPPorts = lib.mkIf (cfg.role == "edge" && routeNames != [ ]) [
           80
           443
         ];

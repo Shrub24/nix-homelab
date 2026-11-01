@@ -8,23 +8,6 @@ top@{ inputs, ... }:
       system,
       ...
     }:
-    let
-      # GeoPulse is BUSL-1.1, which nixpkgs marks unfree. This package set admits those names and
-      # nothing else; every other output stays on the default refusal.
-      geopulsePkgs = import pkgs.path {
-        inherit system;
-        overlays = pkgs.overlays;
-        config = pkgs.config // {
-          allowUnfreePredicate =
-            pkg:
-            builtins.elem (pkgs.lib.getName pkg) [
-              "geopulse"
-              "geopulse-backend"
-              "geopulse-frontend"
-            ];
-        };
-      };
-    in
     {
       packages = {
         inherit (pkgs) deploy-rs;
@@ -37,17 +20,6 @@ top@{ inputs, ... }:
         };
         windows-dj-setup = pkgs.callPackage ../../pkgs/windows-dj-setup { };
         bookorbit-plugins = pkgs.callPackage ../../pkgs/bookorbit-plugins { };
-        inherit (geopulsePkgs.callPackage ../../pkgs { })
-          geopulse
-          geopulse-backend
-          geopulse-frontend
-          ;
-        # The Maven the geopulse backend's dependency hash was generated with, published
-        # so `nix run .#update-packages -- geopulse` can read the current value without
-        # crossing into the nixpkgs input. Taken from the set the derivation is
-        # instantiated from, so an overlay on `maven` cannot make the guard compare
-        # against a toolchain the build does not use.
-        geopulse-maven-toolchain = geopulsePkgs.maven;
         host-la-admin-1 = top.config.flake.deploy.nodes.la-admin-1.profiles.system.path;
         host-oci-melb-1 = top.config.flake.deploy.nodes.oci-melb-1.profiles.system.path;
         host-home-forge = top.config.flake.deploy.nodes.home-forge.profiles.system.path;

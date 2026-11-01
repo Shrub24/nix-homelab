@@ -261,7 +261,7 @@ in
           };
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "latitude-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "latitude-host-secrets" ../../secrets/services/latitude.yaml;
       };
 
       config = {

@@ -157,7 +157,7 @@ Rationale:
 
 ## D-010: Secrets bootstrap default is two-step
 
-Status: Accepted
+Status: Superseded by D-126
 
 Decision:
 
@@ -3242,3 +3242,212 @@ from the database dump the state-backups contract captures (`authentik` consumer
 A future directory-identity requirement starts as a new proposal with a new implementation, not as
 a reselection of deleted code. Revisit if fleet hosts need shared Unix identities rather than one
 operator account per host.
+
+## D-123: Grafana is its own aspect, not part of the observability store
+
+**Context:** D-074 placed VictoriaMetrics, VictoriaLogs, VictoriaTraces and their Grafana front end
+in one `victoria` aspect so datasource uids, ports and endpoints lived in one file. The co-location
+still holds — the datasources address listeners those three services bind — but the namespace did
+not: Grafana's OIDC switch, its client-secret binding and its local-admin credential all sat under
+`services.victoria.*` while the service is `services.grafana`. A reader looking for Grafana's SSO
+found it under a different word, and the local-admin secret defaulted from a module named for the
+store.
+
+**Decision:** Split the aspect. `modules/observability/grafana.nix` publishes `flake.modules.nixos.grafana`
+and owns everything Grafana: the four datasources, the four plugins, the seven provisioned dashboards
+and their folders, the three settings blocks (anonymous viewers, OIDC, security), the OIDC switch and
+its secret, and the local-admin credential. `modules/observability/victoria.nix` keeps the three
+stores, their retention, their listen address and the self-scrape job. `home-forge` selects both.
+
+The uids stay byte-identical (`victoriametrics`, `victoriametrics-metricsql`, `victorialogs`,
+`victoriatraces`), because provisioning resolves a datasource by uid and a changed uid fails the whole
+module graph against stored state. The datasource URLs read their ports from the same web-policy
+catalog entries the stores bind, so the port still has one declaration. Grafana asserts the store
+aspect is selected rather than tolerating its absence: a front end with nothing behind it is a
+misconfiguration, and the assertion names it.
+
+**Rejected:** Publishing a read-only datasource contract (uids, ports, endpoints) from `victoria` for
+Grafana to consume, as the plan first proposed. A uid is a name Grafana gives a datasource — it means
+nothing outside Grafana's own provisioning — and the port already has one authority in the web policy,
+so the contract would have restated both facts rather than sharing them. Also rejected: leaving the
+Grafana options under `services.victoria` because the module also wires the stores; that keeps the
+namespace lie and forces every future front-end concern through a store module.
+
+**Consequences:** The `grafana` aspect is selected wherever a UI is wanted and `victoria` wherever the
+stores are; today only `home-forge` selects both. `services.grafana.oidc.enable` and
+`services.grafana.secretFiles.*` join nixpkgs' `services.grafana` namespace, which declares none of
+those names, so no collision. Three sops secrets lost their `victoria_` prefix
+(`grafana_client_secret`, `grafana_secret_key`, `grafana_admin_password`), so their runtime paths
+under `/run/secrets/` changed with the settings that reference them; Grafana restarts on activation
+either way. Revisit if a second front end (another dashboard product) needs the same store, at which
+point the store, not one UI, is what a contract should describe.
+
+## D-124: A route declares its publication once, beside its dial
+
+**Context:** `policy/web-services.nix` carried three overlapping switches. `declarePublic` decided
+whether a route got a public identity, and `resolveCloudflareHosts` keyed its filter on it. `publish`
+decided whether the edge rendered the route, and `ingress.nix` filtered on it. `exposureMode` decided
+how the edge and the catalog dialed. Publication was therefore written twice, and a route withheld the
+other way — `publish = false` alone, as Home Assistant was — still produced a DNS record. The two
+surfaces could disagree, and for one live route they did.
+
+**Decision:** Publication is one field, `posture` (`public` by default, `private` when withheld), and
+`exposureMode` keeps only the dial it always described: `direct`, `tailscale-upstream`,
+`tailscale-serve`. `lib/policy.nix` computes `isPublished` once from the posture and uses it for three
+things — the resolved `published` field, the catalog's public identity (`publicUrl`/`publicHost`/
+`publicDomain`), and the Cloudflare export's host filter — so the edge, the identity fields and DNS
+cannot be out of step. `publish` and `declarePublic` are deleted everywhere, including the ingress route
+shape and the `exposureMode` enum, where `tailscale-only` had been standing in for the private posture.
+The ingress runtime no longer re-tests publication, because the projection hands it published routes
+only.
+
+**Rejected:** Deriving publication from the dial alone, which an earlier draft of this record did by
+treating `tailscale-only` as the private posture. A private route still needs a dial, and the collapsed
+form made one real state inexpressible: `tailscale-serve` plus privacy is Homarr's recovery posture —
+the provider keeps rendering its tailnet front, so an operator can reach the instance and reopen the
+credentials login, while the public hostname, the edge route and the DNS record are all gone. Also
+rejected: `declarePublic` as a separate draft flag, which needs a second question — who may serve a
+route that must not be reachable — that no consumer asks.
+
+**Consequences:** Withholding a route is one line, and `home-assistant` is withheld that way until its
+instance is accepted; it is absent from both the edge route map and the export. A private route whose
+dial names no front (`tailscale-upstream`) is reachable only on the tailnet, which is what the private
+machine endpoints want. `check-web-service-catalog.sh` asserts a private entry is unpublished. Revisit if
+a route must be served publicly with no DNS record — a staging front — at which point the case earns its
+own field rather than sharing one by accident.
+
+## D-125: No supported bootstrap states — expose the configuration key, not a lifecycle flag
+
+**Context:** Homarr's module derived `BASE_URL` and `AUTH_PROVIDERS` from whether its route was
+published, so a "withheld route" was a second supported runtime: private origin, credentials
+provider, plus a second registered OIDC redirect URI at the tailnet front to make that instance
+reachable. Keeping it honest cost a whole-tree copy of the repository in the contract test, because
+`repo.web` is read-only and the withheld branch could not be constructed any other way. Nothing
+stopped there: the same shape appeared as `includePrivateEndpointCallback` in the redirect
+projection, and the GeoPulse runbook carried a hand-run TLS terminator, `/etc/hosts` override and SSH
+tunnel for reaching the withheld origin.
+
+**Decision:** A module exposes the application's own configuration keys as ordinary options and
+sets nothing from a lifecycle state. Homarr takes `services.homarr.publicUrl` (BASE_URL) and
+`services.homarr.authProviders` (AUTH_PROVIDERS), defaulting to the deployed values; a host that
+wants a different origin or sign-in method sets the option and deploys, so the result is a
+deployment rather than a phase of one. The `published` branch, the `tailscale-serve` assertion that
+existed only to keep the private callback reachable, and the `includePrivateEndpointCallback`
+mechanism are deleted, along with the tree-copy control and the bootstrap procedures in the Homarr
+and GeoPulse runbooks. Route `posture` remains policy: it is an exposure fact about where a site is
+served, not a state an application module reads.
+
+Breaking the invariant is now something an operator writes down. `authProviders = "credentials,oidc"`
+on a public route is representable, and that is the point: the break-glass step is a one-line
+deployment with a revert, not a special mode the module supports and the suite must test.
+
+**Rejected:** Keeping the withheld branch and test, which is what this repository did until now. It
+made an imperative pathway — reach a second, unpublished origin by hand, log in there, then flip a
+flag — look declarative, and it required every consumer of the module to reason about a state that
+exists only during setup. Also rejected: an override option on the derived value, which keeps the
+state switch and merely moves where it is set.
+
+**Consequences:** Homarr's route is `direct` again (loopback behind the local edge) rather than
+`tailscale-serve`, and no client registers a private endpoint callback. A login over a withheld
+origin is no longer supported; the public callback is the only one. D-104 (the posture switch) is
+superseded, and D-124's `posture` field survives because it publishes a route rather than shaping a
+module's configuration. Revisit if a service genuinely cannot be reached without a second origin
+during setup: that case earns an explicit, named option rather than a state machine.
+
+## D-126: Host secrets precede the first install — no unprovisioned bootstrap state
+
+**Context:** Six places probed `secrets/hosts/<host>/system.yaml` with `builtins.pathExists` and
+skipped their secret wiring when it was absent: the SSH identity in `base`, `state-backups`,
+`cache-publisher`, `cockpit`, the Tailscale auth key, and the rescue-user policy in two host
+compositions. The reason was the two-step bring-up D-010 chose — install the base system first, then
+derive the host's age recipient from its now-existing host key and encrypt the secrets. That made a
+host configuration valid in two states, and the second state was invisible: a missing secret
+silently omitted a binding instead of naming the file, which is the opposite of how every other
+secret in this repository behaves.
+
+**Decision:** The host secret file is mandatory at evaluation. Bindings that previously sat behind
+`lib.mkIf hasHostSecrets` are unconditional, and an absent file fails evaluation with its path
+named. Bring-up moves the secret ahead of the install: derive the persistent host key's age
+recipient, add it to `.sops.yaml`, create and encrypt `secrets/hosts/<host>/system.yaml`, then
+install. D-010 is superseded; its sibling D-011 (pre-generated host identity) describes exactly this
+order, so the two decisions collapse into one path.
+
+**Rejected:** A declared `fleet.foundation.hostSecrets` flag defaulting to true, which keeps the
+second state but writes it down. Also rejected: keeping the probe as a documented exception, because
+the exception is the whole class of error D-125 names — a configuration whose meaning depends on
+which files happen to exist when it is evaluated.
+
+**Consequences:** A new host needs its age recipient before it can be installed, and a reimage of an
+existing host no longer benefits from an interim secretless generation: the operator re-encrypts to
+the new host key first. Nothing changes on the three current hosts, whose secret files exist. A
+configuration that loses its secret file now fails loudly rather than deploying without backups, a
+push token, or a Tailscale auth key.
+
+## D-127: GeoPulse runs on upstream's images, not a source build
+
+**Context:** GeoPulse was built from a pinned source revision: a Maven fixed-output hash, an npm
+fixed-output hash, a Maven-version assertion, and a `patchPhase` that installed one SQL file. Every
+nixpkgs Maven bump or upstream release meant regenerating both hashes across two ecosystems. The
+only local artifact was `R__Add_oidc_session_code_verifier.sql`, which adds an
+`oidc_session_states.code_verifier` column nothing reads: upstream does not implement PKCE, and its
+own Authelia documentation says `require_pkce` must be `false` "because GeoPulse does not send a
+PKCE `code_challenge` or `code_verifier`". The patch survives from the Kanidm era, when the client
+demanded PKCE. The aspect also ran its own Caddy front to reproduce upstream's nginx surface —
+`config.js` generation, `/api` and `/mcp` proxying, a tile proxy, cache headers and a body limit.
+
+**Decision:** The aspect runs two digest-pinned upstream images. `tess1o/geopulse-backend:<v>-native`
+is the GraalVM backend (multi-arch, armv8-a, which is Ampere A1) and `tess1o/geopulse-ui:<v>` is
+nginx plus the built SPA, which already renders `config.js`, proxies the API and `/mcp`, proxies the
+OSM tiles and sets the cache headers — three env vars replace the generated Caddy configuration. The
+source build, its updater and its package registrations are deleted. Both containers share a
+dedicated Podman network; the backend is bridged with no published port and dials the cluster on the
+service address, so its consumer ACL admits the container supernet alongside loopback; the UI
+publishes the route's port on loopback only.
+
+**Rejected:** Keeping our Caddy front in front of the UI container, which would proxy to a proxy to
+reach the backend and leave two places to keep the tile and cache behaviour right. Also rejected:
+the `-native-compat` image, whose purpose is x86-64-v2 and Raspberry Pi class ARM and is not our
+target.
+
+**Consequences:** Upstream image bumps are Renovate's job against `policy/oci-images.nix` instead of
+a hash regeneration. The backend's own backup feature works inside the image, which bundles
+PostgreSQL 17 and 18 clients and picks the matching major, so the host binary path it used is gone.
+The backend runs as root inside its container so the 0400 root-owned AI key mount is readable. The
+memory bound that used to be a JVM flag is now the container's, and the aspect no longer owns a
+front-end runtime at all.
+
+## D-128: A container unit reports ready only when its probe passes
+
+**Context:** Every container unit is `Type=notify`, but nixpkgs passes `--sdnotify=conmon` by
+default, so the notification means "the container process started". A dependent unit's `After=`, and
+the deploy's success, therefore said nothing about whether the application answered — GeoPulse's UI
+could start against a backend still applying migrations, and a deploy could go green with a
+crash-looping container that had merely started once.
+
+**Decision:** A container that serves a protocol reports ready through
+`modules/containers/_readiness.nix`: `podman.sdnotify = "healthy"` together with an explicit
+`--health-cmd`, which the helper requires because it has no default. The helper is merged as a sibling
+of the container literal so the probe's options concatenate with the container's rather than
+replacing them. The probe is chosen from what the pinned image actually contains — `curl`, busybox
+`wget`, `redis-cli` — and always dials the container's own port, never a host mapping.
+
+**Rejected:** Relying on an image's own `HEALTHCHECK`. This is not a preference but a hard limit,
+established the hard way: podman refuses `--sdnotify=healthy` with exit 125 (`sdnotify policy
+"healthy" requires a healthcheck to be set`) even for an image that declares one — reproduced
+minimally with `podman run --sdnotify=healthy` on a container whose image carries a `HEALTHCHECK`,
+which errors, and the same command with an explicit `--health-cmd`, which runs. A first attempt
+accepted the image's declaration as sufficient and broke two containers that had been up for three
+days. Also rejected: a probe written from an assumed endpoint or binary, since a tool absent from the
+image turns a healthy service into a failed unit. And rejected: asserting the flags in a contract
+test, which restates what the module sets and can only fail when the module changes —
+misconfiguration fails the unit at start instead.
+
+**Consequences:** Seven of twenty-five containers carry it. The binding criterion is that a unit
+depends on its readiness — the fleet has exactly two such edges (`geopulse-ui` → `geopulse-backend`,
+`langfuse-worker` → `langfuse-web`) — and the rest are leaves, where a probe buys only an earlier
+failure signal; the remaining eighteen are left as a tentative expansion in `docs/plan.md`. A ready
+unit must also state its own `TimeoutStartSec`: podman sets it to 0 as a definition, so a probe that
+never passes would hold the activation open rather than fail it, and the budget belongs to the
+application rather than to a fleet-wide default. No test asserts any of this — the assertion that
+caught the real defect was the container/service-address coupling in the gateway contract, not a
+restatement of the helper.

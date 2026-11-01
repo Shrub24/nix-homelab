@@ -39,7 +39,7 @@ _: {
           description = "Persistent data directory for Vaultwarden state.";
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "vaultwarden-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "vaultwarden-host-secrets" ../../secrets/applications/admin.yaml;
       };
       config = {
 

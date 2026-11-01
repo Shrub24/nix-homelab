@@ -7,12 +7,6 @@ let
       clientPolicy.originUrl
     else
       "${route.publicUrl}${clientPolicy.callbackPath}";
-  privateEndpoint =
-    if clientPolicy.includePrivateEndpointCallback or false then
-      [ "https://${route.endpoint.host}:${toString route.endpoint.port}${clientPolicy.callbackPath}" ]
-    else
-      [ ];
 in
 (if builtins.isList canonical then canonical else [ canonical ])
-++ privateEndpoint
 ++ (clientPolicy.additionalRedirectUrls or [ ])

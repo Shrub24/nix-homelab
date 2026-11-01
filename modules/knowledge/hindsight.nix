@@ -178,7 +178,7 @@ in
           };
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "hindsight-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "hindsight-host-secrets" ../../secrets/services/hindsight.yaml;
       };
 
       config = lib.mkMerge [

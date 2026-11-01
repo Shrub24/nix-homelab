@@ -12,7 +12,6 @@ _: {
     }:
     let
       hostSystemSecret = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
-      hasHostSecrets = builtins.pathExists hostSystemSecret;
       bucketName = "shrublab-backup-${config.networking.hostName}";
       # S3 bucket naming rule: 3-63 chars, lowercase alnum/hyphens, alnum at both ends.
       bucketNameValid = builtins.match "^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$" bucketName != null;
@@ -222,7 +221,7 @@ _: {
         }
         {
           # Host-specific facts arrive only when the conventional host secret exists.
-          services.state-backups = lib.mkIf hasHostSecrets {
+          services.state-backups = {
             secretFile = hostSystemSecret;
             bucket = lib.mkDefault bucketName;
           };

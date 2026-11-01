@@ -13,6 +13,7 @@
     let
       cfg = config.services.langfuse;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
 
       hasSecretFile = cfg.secretFiles.host != null;
 
@@ -122,7 +123,7 @@
           };
         };
 
-        secretFiles.host = secretHelpers.mkSecretFileOption "langfuse-host-secrets";
+        secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "langfuse-host-secrets" ../../secrets/services/langfuse.yaml;
 
         secretFiles.oidc = secretHelpers.mkSecretFileOption "langfuse-oidc-secrets";
 
@@ -389,11 +390,6 @@
           '';
         };
 
-        # Restarting on rotation re-runs upstream's idempotent LANGFUSE_INIT seed.
-        systemd.services.podman-langfuse-web.restartTriggers =
-          lib.optional hasSecretFile
-            config.sops.templates."langfuse.environment".path;
-
         virtualisation.podman.enable = true;
 
         systemd.services."podman-network-${cfg.networkName}" = {
@@ -409,21 +405,26 @@
         };
 
         # Host network, not published ports: a published port would bypass the firewall on every interface.
-        virtualisation.oci-containers.containers.langfuse-web = {
-          autoStart = true;
-          image = cfg.image;
-          environment = {
-            PORT = toString cfg.port;
-            HOSTNAME = "0.0.0.0";
-          };
-          environmentFiles = lib.optionals hasSecretFile [
-            config.sops.templates."langfuse.environment".path
-          ];
-          extraOptions = [
-            "--network=host"
-            "--add-host=${serviceHost}:${serviceAddress}"
-          ];
-        };
+        virtualisation.oci-containers.containers.langfuse-web = lib.mkMerge [
+          (readiness.mkReadyProbe {
+            cmd = "wget --spider -q http://127.0.0.1:${toString cfg.port}/api/public/health";
+          })
+          {
+            autoStart = true;
+            image = cfg.image;
+            environment = {
+              PORT = toString cfg.port;
+              HOSTNAME = "0.0.0.0";
+            };
+            environmentFiles = lib.optionals hasSecretFile [
+              config.sops.templates."langfuse.environment".path
+            ];
+            extraOptions = [
+              "--network=host"
+              "--add-host=${serviceHost}:${serviceAddress}"
+            ];
+          }
+        ];
 
         # No inbound ports; reaches the native roles through the service address.
         virtualisation.oci-containers.containers.langfuse-worker = {
@@ -448,6 +449,10 @@
           services = {
             "podman-langfuse-web" = {
               description = "Langfuse web (UI, ingestion API, OTLP endpoint)";
+              # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+              serviceConfig.TimeoutStartSec = lib.mkForce 300;
+              # Restarting on rotation re-runs upstream's idempotent LANGFUSE_INIT seed.
+              restartTriggers = lib.optional hasSecretFile config.sops.templates."langfuse.environment".path;
               wants = [ "network-online.target" ];
               after = [
                 "network-online.target"

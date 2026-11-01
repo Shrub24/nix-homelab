@@ -43,6 +43,7 @@
           endpoint = lib.mkDefault s3Host;
           region = lib.mkDefault (s3.region or "");
         };
+        secretFiles.host = lib.mkDefault ../../secrets/services/niks3.yaml;
         cacheUrl = lib.mkDefault "https://cache.${globals.domain}";
         # CI federation: GitHub OIDC tokens push, R2 serves reads. Claims are bound, not `sub`, and
         # one rule per repository reserves its pin namespace because a pin is not scoped.

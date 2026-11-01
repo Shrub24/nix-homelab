@@ -12,6 +12,7 @@ _: {
     let
       cfg = config.services.audiomuse;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
       serviceNetwork = (import ../../policy/globals.nix).serviceNetwork;
 
       # One credential, one source: the role password lives in secretFiles.db. This service reads it
@@ -230,12 +231,15 @@ _: {
           "z ${cfg.dataDir}/temp 0750 root root - -"
         ];
 
-        virtualisation.oci-containers.containers.audiomuse-redis = {
-          autoStart = true;
-          image = config.repo.ociImages.redis7Alpine;
-          extraOptions = [ "--network=${cfg.networkName}" ];
-          volumes = [ "${cfg.dataDir}/redis:/data" ];
-        };
+        virtualisation.oci-containers.containers.audiomuse-redis = lib.mkMerge [
+          (readiness.mkReadyProbe { cmd = "redis-cli ping | grep -q PONG"; })
+          {
+            autoStart = true;
+            image = config.repo.ociImages.redis7Alpine;
+            extraOptions = [ "--network=${cfg.networkName}" ];
+            volumes = [ "${cfg.dataDir}/redis:/data" ];
+          }
+        ];
 
         virtualisation.oci-containers.containers.audiomuse-worker = {
           autoStart = true;
@@ -279,7 +283,11 @@ _: {
           ];
           requires = [ "podman-network-${cfg.networkName}.service" ];
           unitConfig.RequiresMountsFor = [ cfg.dataDir ];
-          serviceConfig.ExecStartPre = "${pkgs.coreutils}/bin/chown 999:999 '${cfg.dataDir}/redis'";
+          serviceConfig = {
+            ExecStartPre = "${pkgs.coreutils}/bin/chown 999:999 '${cfg.dataDir}/redis'";
+            # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+            TimeoutStartSec = lib.mkForce 120;
+          };
         };
 
         systemd.services."podman-audiomuse-worker" = {

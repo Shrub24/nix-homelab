@@ -280,7 +280,6 @@ in
       group = "Everyday";
       route = "geopulse";
       callbackPath = "/oidc/callback";
-      includePrivateEndpointCallback = true;
       access.users = [
         "openid"
         "profile"
@@ -294,7 +293,6 @@ in
       group = "Everyday";
       route = "homarr";
       callbackPath = "/api/auth/callback/oidc";
-      includePrivateEndpointCallback = true;
       access = {
         service-admins = [
           "openid"

@@ -46,6 +46,10 @@ rec {
   dialScheme =
     resolved: if resolved.exposureMode == "tailscale-serve" then "https" else resolved.origin.scheme;
 
+  # Publication is one switch: a private route leaves the edge and DNS alike, while its provider
+  # still renders the front a tailnet client dials. Two surfaces, one authority.
+  isPublished = resolved: (resolved.posture or "public") != "private";
+
   mkUpstream =
     dialer: resolved:
     "${dialScheme resolved}://${
@@ -85,6 +89,7 @@ rec {
         inherit primaryDomain;
         publicHost = mkPublicHost primaryDomain resolved;
         publicUrl = mkPublicUrl resolved;
+        published = isPublished resolved;
       }
       # A redirect has no socket, so an origin would be a lie the upstream string repeats.
       // (
@@ -103,10 +108,7 @@ rec {
     let
       services = resolveHostServices policy hostName;
       publicServices = lib.filterAttrs (
-        _: service:
-        (service.declarePublic or false)
-        && (service.exposureMode or "") != "tailscale-only"
-        && (service.subdomain or "") != ""
+        _: service: isPublished service && (service.subdomain or "") != ""
       ) services;
 
       serviceList = lib.attrValues publicServices;
@@ -149,7 +151,6 @@ rec {
             hostname = if canonicalService.subdomain == null then "@" else canonicalService.subdomain;
             inherit (canonicalService) primaryDomain;
             proxied = canonicalService.cloudflare.proxied or true;
-            declarePublic = true;
             inherit (canonicalService) exposureMode;
             routes = map (service: service.service) hostServices;
           }
@@ -223,13 +224,10 @@ rec {
 
   # Catalog: upstream shape plus a machine-to-machine `endpoint` resolved against the
   # evaluating host. Clients dial it, never the public hostname, which hits the Access gate.
-  isPublicService =
-    resolved: (resolved.declarePublic or false) && resolved.exposureMode != "tailscale-only";
-
   mkCatalogEntry =
     evalHostName: serviceName: resolved:
     let
-      public = isPublicService resolved;
+      public = isPublished resolved;
       endpointHostValue = endpointHost resolved.origin.provider resolved.exposureMode evalHostName;
       endpoint =
         let
@@ -251,14 +249,13 @@ rec {
       publicDomain = if public then resolved.primaryDomain else null;
       inherit endpoint;
       # Publication posture travels with the entry, so a consumer need not read the
-      # provider-host record. Same default as the edge filter.
-      publish = resolved.publish or true;
+      # provider-host record; it is the same value the edge filter reads.
+      inherit (resolved) published;
       inherit (resolved)
         primaryDomain
         subdomain
         path
         category
-        declarePublic
         exposureMode
         access
         health

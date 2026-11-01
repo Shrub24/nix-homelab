@@ -166,7 +166,7 @@
           };
           secretFiles.navidrome = lib.mkOption {
             type = lib.types.nullOr lib.types.path;
-            default = null;
+            default = ../../secrets/applications/music.yaml;
             description = "SOPS file carrying navidrome_username/navidrome_password for the playlist-sync API fetch.";
           };
 
@@ -283,10 +283,6 @@
         };
 
         assertions = [
-          {
-            assertion = engine.secretFiles.navidrome != null;
-            message = "applications.dj.engine.secretFiles.navidrome must be set (Navidrome API credentials for playlist-sync).";
-          }
           {
             assertion = musicContract != null || (engine.sharePath != "" && engine.musicStorageRoot != "");
             message = "applications.dj.engine requires applications.music.contract; select the music aspect on this host (or set applications.dj.engine.sharePath and musicStorageRoot explicitly).";

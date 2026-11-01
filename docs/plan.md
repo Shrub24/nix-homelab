@@ -315,7 +315,15 @@ change; publishers neither prune objects nor change Cloudflare Access.
   selects both. The uids stayed byte-identical because provisioning resolves a datasource by uid; the
   datasource URLs read their ports from the same policy entries the stores bind, so no read-only
   datasource contract was needed. The OIDC switch and its host-scoped binding moved with the option.
-- Route-derived module defaults: `karakeep.publicUrl`, Paperless' `PAPERLESS_URL`, `niks3-cache.cacheUrl` and Cockpit's `publicHost` restate a host a route already declares. Deriving them from `repo.web.catalog` needs a policy for a route that is not yet published (D-116).
+- Route-derived module defaults — done for the two that have a route. `services.karakeep-pod.publicUrl`
+  and `services.paperless.publicUrl` now default from `repo.web.catalog` instead of naming
+  `keep.`/`paper.` again, so a hostname change is one policy edit. Both throw by name when the route is
+  unpublished, and the option stays the override: a withheld instance behind a `direct` route has no
+  browser origin to derive (its catalog `endpoint` is loopback), which is the ambiguity D-116 named and
+  the reason the derivation stops at "published". Two of the four are not derivable and are no longer
+  tracked as work: Cockpit already reads `cockpitRoute.publicHost` with a named throw and an override,
+  and `niks3-cache.cacheUrl` is the R2-served cache host, which has no edge route at all — its source
+  is `policy/globals.nix` `domain`, not the catalog.
 - Port collisions have no general check, and none is wanted (question, kept open). The scaffold
   contract's duplicate-port case was removed during the Authentik cutover because it inferred
   listeners from option shapes and flagged Authentik's own `9002`, and the last collision assertion

@@ -71,6 +71,19 @@
           description = "Top-level data root for Paperless dirs (data, media, consumption, paperless-gpt, docling).";
         };
 
+        publicUrl = lib.mkOption {
+          type = lib.types.str;
+          default =
+            let
+              route = config.repo.web.catalog.paperless or null;
+            in
+            if route != null && route.published then
+              route.publicUrl
+            else
+              throw "services.paperless.publicUrl: the web-policy route 'paperless' is not published; set the option for a withheld instance";
+          description = "Base URL Paperless builds its links and OAuth redirects from (PAPERLESS_URL).";
+        };
+
         secretFiles.host = secretHelpers.mkSecretFileOptionWithDefault "paperless-host-secrets" ../../secrets/services/paperless.yaml;
 
         secretFiles.oidc = secretHelpers.mkSecretFileOption "paperless-oidc-secrets";
@@ -241,7 +254,7 @@
 
               PAPERLESS_OCR_LANGUAGE = "eng";
               PAPERLESS_TIME_ZONE = config.time.timeZone;
-              PAPERLESS_URL = "https://paper.${(import ../../policy/globals.nix).domain}";
+              PAPERLESS_URL = cfg.publicUrl;
               PAPERLESS_DATE_ORDER = "DMY";
               PAPERLESS_FILENAME_DATE_ORDER = "YMD";
 

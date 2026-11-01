@@ -68,8 +68,15 @@ _: {
 
         publicUrl = lib.mkOption {
           type = lib.types.str;
-          default = "https://keep.${globals.domain}";
-          description = "Public-facing base URL for Karakeep (NEXTAUTH_URL).";
+          default =
+            let
+              route = config.repo.web.catalog.karakeep or null;
+            in
+            if route != null && route.published then
+              route.publicUrl
+            else
+              throw "services.karakeep.publicUrl: the web-policy route 'karakeep' is not published; set the option for a withheld instance";
+          description = "Base URL for Karakeep (NEXTAUTH_URL), derived from the web-policy route.";
         };
 
         networkName = lib.mkOption {

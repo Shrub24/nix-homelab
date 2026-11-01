@@ -236,9 +236,17 @@ and accepted-mutation proofs; `check-telemetry-view-composition` delegates to ni
 guard and mutates one pipeline to prove the guard is live; `check-flake-source-tracking`
 guards a trap that already cost 19 files from the index.
 
-Still worth moving, not pruning: `check-bifrost-gateway-contract.sh` carries the fleet-wide
-container/service-address audit (the assertion that caught GeoPulse's missing `--add-host`).
-It is a real coupling in the wrong file — it belongs with the containers aspect.
+- **`check-container-service-address.sh`** (new, 100 lines). The fleet-wide audit that had
+  been living inside `check-bifrost-gateway-contract.sh` — the assertion that caught
+  GeoPulse's missing `--add-host` — moved out, because every container is in scope by
+  construction there rather than only the ones naming the gateway. It asserts the
+  target-independent coupling: a bridged container whose environment names the service
+  address must carry `--add-host` resolving it to the declared address, and a run that
+  inspects no bridged container fails rather than passing. Deliberately not asserted:
+  that nothing dials `host.containers.internal`, because whether that works depends on what
+  the target binds — it fails against a loopback listener and succeeds against `0.0.0.0`,
+  so the assertion belongs with the target (Navidrome binds `0.0.0.0`, which is why
+  AudioMuse's default dial is functional though off-convention).
 
 ### Deployments pending
 

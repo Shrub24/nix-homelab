@@ -19,6 +19,7 @@ all:
   @./tests/check-identity-contract-directionality.sh
   @./tests/check-shell-account-contract.sh
   @./tests/check-backup-surface-contract.sh
+  @./tests/check-container-service-address.sh
   @./tests/check-bifrost-gateway-contract.sh oci-melb-1
   @./tests/check-bifrost-gateway-contract.sh home-forge
   @./tests/check-build-account-contract.sh
@@ -51,6 +52,9 @@ test-shell-account-contract:
 
 test-backup-surface:
   @./tests/check-backup-surface-contract.sh
+
+test-container-service-address:
+  @./tests/check-container-service-address.sh
 
 test-bifrost-gateway:
   @./tests/check-bifrost-gateway-contract.sh oci-melb-1

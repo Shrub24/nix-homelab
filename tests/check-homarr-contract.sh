@@ -44,9 +44,9 @@ cat >"$tmp/probe.nix" <<EOF
 let
   repo = builtins.getFlake "path:$ROOT";
   fixture = builtins.toPath "$tmp/homarr.yaml";
-  # The login posture is derived from the route's publication, which the resolver derives
-  # from the route's exposure mode. oci-melb-1 selects the homarr aspect, so the module is
-  # already part of this configuration; importing it again would re-declare its options.
+  # The login posture is derived from the route's derived `published` value. oci-melb-1
+  # selects the homarr aspect, so the module is already part of this configuration;
+  # importing it again would re-declare its options.
   mkHomarr = _: repo.nixosConfigurations.oci-melb-1.extendModules {
     modules = [
       {

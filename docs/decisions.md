@@ -157,7 +157,7 @@ Rationale:
 
 ## D-010: Secrets bootstrap default is two-step
 
-Status: Accepted
+Status: Superseded by D-126
 
 Decision:
 
@@ -3353,3 +3353,32 @@ origin is no longer supported; the public callback is the only one. D-104 (the p
 superseded, and D-124's `posture` field survives because it publishes a route rather than shaping a
 module's configuration. Revisit if a service genuinely cannot be reached without a second origin
 during setup: that case earns an explicit, named option rather than a state machine.
+
+## D-126: Host secrets precede the first install — no unprovisioned bootstrap state
+
+**Context:** Six places probed `secrets/hosts/<host>/system.yaml` with `builtins.pathExists` and
+skipped their secret wiring when it was absent: the SSH identity in `base`, `state-backups`,
+`cache-publisher`, `cockpit`, the Tailscale auth key, and the rescue-user policy in two host
+compositions. The reason was the two-step bring-up D-010 chose — install the base system first, then
+derive the host's age recipient from its now-existing host key and encrypt the secrets. That made a
+host configuration valid in two states, and the second state was invisible: a missing secret
+silently omitted a binding instead of naming the file, which is the opposite of how every other
+secret in this repository behaves.
+
+**Decision:** The host secret file is mandatory at evaluation. Bindings that previously sat behind
+`lib.mkIf hasHostSecrets` are unconditional, and an absent file fails evaluation with its path
+named. Bring-up moves the secret ahead of the install: derive the persistent host key's age
+recipient, add it to `.sops.yaml`, create and encrypt `secrets/hosts/<host>/system.yaml`, then
+install. D-010 is superseded; its sibling D-011 (pre-generated host identity) describes exactly this
+order, so the two decisions collapse into one path.
+
+**Rejected:** A declared `fleet.foundation.hostSecrets` flag defaulting to true, which keeps the
+second state but writes it down. Also rejected: keeping the probe as a documented exception, because
+the exception is the whole class of error D-125 names — a configuration whose meaning depends on
+which files happen to exist when it is evaluated.
+
+**Consequences:** A new host needs its age recipient before it can be installed, and a reimage of an
+existing host no longer benefits from an interim secretless generation: the operator re-encrypts to
+the new host key first. Nothing changes on the three current hosts, whose secret files exist. A
+configuration that loses its secret file now fails loudly rather than deploying without backups, a
+push token, or a Tailscale auth key.

@@ -6,12 +6,11 @@
     { config, lib, ... }:
     let
       hostSystemSecret = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
-      hasHostSecrets = builtins.pathExists hostSystemSecret;
     in
     {
       imports = [ inputs.nix-fleet.modules.nixos.niks3-publisher ];
 
-      services.niks3-publisher = lib.mkIf hasHostSecrets {
+      services.niks3-publisher = {
         # One declaration for both sides: the provider listens on `endpoint.port`, this
         # client dials `endpoint.url`.
         serverUrl = lib.mkDefault config.repo.web.catalog."niks3-write".endpoint.url;

@@ -10,7 +10,6 @@ _: {
     }:
     let
       hostSecretFile = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
-      hasHostSecrets = builtins.pathExists hostSecretFile;
 
       cfg = config.services.admin.cockpit;
       svcUser = cfg.serviceUser;
@@ -210,7 +209,7 @@ _: {
             tailscaleServe.enable = true;
           };
 
-          sops.secrets = lib.optionalAttrs hasHostSecrets {
+          sops.secrets = {
             cockpit_service_user_password_hash = {
               sopsFile = hostSecretFile;
               key = "cockpit/service_user/password_hash";

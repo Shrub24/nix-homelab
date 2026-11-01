@@ -5,7 +5,6 @@
   ...
 }:
 let
-  hasHostSecrets = builtins.pathExists ../../../secrets/hosts/home-forge/system.yaml;
 
   # Host-owned physical music root; the music aspect derives the storage
   # library contract from it.
@@ -49,7 +48,7 @@ in
 
   # The physical console is the primary break-glass path; the rescue operator is
   # defense-in-depth and activates once host secrets exist.
-  services.hostRecovery = lib.mkIf hasHostSecrets {
+  services.hostRecovery = {
     enable = true;
     secretFile = ../../../secrets/hosts/home-forge/system.yaml;
     rescueUser.name = "rescue";

@@ -134,9 +134,8 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 
 1. **Adoption** (existing preinstalled NixOS on a live disk): consume a committed `nixos-facter` report directly (`hardware.facter.reportPath`) with only root/ESP by-UUID mounts hand-maintained, then apply the first generation with `nixos-rebuild boot --target-host <initial-user>@<addr> --use-remote-sudo --flake .#<host>` and reboot from the provider console. No reimage tooling is involved.
 2. **Reimage** (bare, foreign OS, or destructive layout): `just bootstrap` sources `scripts/resolve-host-config.sh`, which resolves the typed `fleet.hosts.<host>.bootstrap` projection (bootstrap metadata owned by the host's `nixos.hosts.<id>` record; `hostName` and `flake` derived from the record key by `modules/flake/deploy.nix`) and passes it to `deploy.sh`; `nixos-anywhere` runs over SSH with `--flake` target and `disko` partitioning — `deploy.sh`
-3. Host installs with base config, no host-scoped secrets yet (two-step bootstrap default)
-4. Post-install: retrieve SSH host key, derive age recipient via `ssh-to-age` — `just host-age <host>`
-5. Add age recipient to `.sops.yaml`, re-encrypt host secrets, deploy — operator workflow
+3. Before the first install: retrieve the SSH host key, derive the age recipient via `ssh-to-age` — `just host-age <host>` — add it to `.sops.yaml`, and create the encrypted host secrets. The file is mandatory, so a configuration without it does not evaluate (D-126)
+4. Install, then deploy — operator workflow
 
 **Deployment Flow:**
 

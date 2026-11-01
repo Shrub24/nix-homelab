@@ -177,7 +177,7 @@ Fleet-shared scope:
 Preferred baseline:
 
 - preinstalled NixOS hosts adopt non-destructively with `nixos-rebuild boot --target-host` through the existing sudo account, then reboot via the provider console; non-NixOS or repartitioned targets reimage with `nixos-anywhere`/`disko` through `just bootstrap <host> <addr>`
-- two-step secrets bootstrap is the default because it reduces pre-install key handling risk
+- host-scoped secrets exist before the first install: `secrets/hosts/<host>/system.yaml` is mandatory, so the configuration has one state rather than an unprovisioned phase (D-126)
 - the age recipient is derived only from the persistent SSH host key after its fingerprint is verified through the provider console; live `ssh-keyscan` results are diagnostic only and are never persisted as a recipient
 
 Accepted advanced alternative:
@@ -236,7 +236,7 @@ Current baseline:
 - each host writes to its own dedicated Cloudflare R2 bucket using host-scoped credentials and a host-unique restic password
 - non-secret transport defaults (`endpoint`, `region`, path-style behavior) stay canonical in `policy/globals.nix`
 - restic repositories are host-scoped: `shrublab-backup-la-admin-1`, `shrublab-backup-oci-melb-1`, and `shrublab-backup-home-forge`; the decommissioned host's repository was retained as migration recovery evidence
-- the operational capability is split (D-055): `state-backups` is `modules/backups/state-backups.nix` (its declaration surface, including the `services.state-backups.services.<name>` registry producers register in, is `modules/backups/state-backups/_consumer.nix`) and derives the conventional host secret path `secrets/hosts/<host>/system.yaml` plus the `shrublab-backup-<host>` bucket, gating enablement on the secret file's existence (two-step sops bootstrap); `cache-publisher` consumes the shared nix-fleet `niks3-publisher` mechanism (D-061) and supplies only the fleet's conventions: the write endpoint resolved through the `niks3Write` internal contract (D-056) and the host-scoped push token. Publication therefore uses upstream's post-build hook — every builder uploads what it builds — and the former activation-time post-deploy push with its public-key filter and the `nix-path-filter` package is retired with it. The OCI cache server leaf is `modules/cache/niks3-cache.nix`, owned by the `niks3-cache` aspect.
+- the operational capability is split (D-055): `state-backups` is `modules/backups/state-backups.nix` (its declaration surface, including the `services.state-backups.services.<name>` registry producers register in, is `modules/backups/state-backups/_consumer.nix`) and derives the conventional host secret path `secrets/hosts/<host>/system.yaml` plus the `shrublab-backup-<host>` bucket; the file is mandatory, not a gate (D-126); `cache-publisher` consumes the shared nix-fleet `niks3-publisher` mechanism (D-061) and supplies only the fleet's conventions: the write endpoint resolved through the `niks3Write` internal contract (D-056) and the host-scoped push token. Publication therefore uses upstream's post-build hook — every builder uploads what it builds — and the former activation-time post-deploy push with its public-key filter and the `nix-path-filter` package is retired with it. The OCI cache server leaf is `modules/cache/niks3-cache.nix`, owned by the `niks3-cache` aspect.
 
 Consistency model:
 

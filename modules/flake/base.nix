@@ -10,9 +10,7 @@
       ...
     }:
     let
-      # An absent host system scope keeps the two-step sops bootstrap working.
       hostSystemSecret = ../../secrets/hosts + "/${config.networking.hostName}/system.yaml";
-      hasHostSecrets = builtins.pathExists hostSystemSecret;
 
       foundation = config.fleet.foundation;
       hostIdentity = config.fleet.hostIdentity;
@@ -227,7 +225,7 @@
         # No override: restating a weaker schedule here would silently disable upstream's
         # root pruning.
 
-        fleet.hostIdentity.sshPrivateKeyFile = lib.mkIf hasHostSecrets hostSystemSecret;
+        fleet.hostIdentity.sshPrivateKeyFile = hostSystemSecret;
 
         programs.ssh.extraConfig = lib.mkIf (hostIdentity.sshPrivateKeyFile != null) ''
           Host *

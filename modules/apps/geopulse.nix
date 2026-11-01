@@ -62,8 +62,7 @@
       # A database row of the same name shadows the environment's approved client, so the
       # admin UI's copy must not survive a redeploy.
       oidcClient = config.services.identity.oidc.clients.geopulse or null;
-      hasOidcSecret = cfg.secretFiles.oidc != null && builtins.pathExists cfg.secretFiles.oidc;
-      oidcEnabled = oidcClient != null && hasOidcSecret;
+      oidcEnabled = oidcClient != null && cfg.secretFiles.oidc != null;
 
       # Owner-scoped: a rendered template sits under a 0750 root directory the service cannot traverse.
       secrets = {

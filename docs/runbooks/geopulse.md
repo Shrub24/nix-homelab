@@ -178,9 +178,8 @@ repeated here.
   that same file and key to provision the role, so the password has one
   authoritative source rather than a copy that can drift.
 - The encrypted file and the host binding that supplies its path belong to the
-  secrets task. Until that file exists the registration is withheld (two-step
-  bootstrap), so a host may bind the path before the operator has encrypted
-  anything, and evaluation stays valid in between.
+  secrets task. The binding is unconditional: the path must resolve at
+  evaluation, so the operator encrypts the credential before deploying.
 - Extensions are administrator-owned. The registration contributes
   `extensions = ps: [ ps.postgis ]` and `setupSQL` creating `postgis` and
   `postgis_topology`. The mechanism runs that SQL in the consumer's database as

@@ -7,7 +7,6 @@
   ...
 }:
 let
-  hasHostSecrets = builtins.pathExists ../../../secrets/hosts/oci-melb-1/system.yaml;
 in
 {
   imports = [
@@ -85,7 +84,7 @@ in
 
     tailscale.debugMtu = 1200;
 
-    hostRecovery = lib.mkIf hasHostSecrets {
+    hostRecovery = {
       enable = true;
       secretFile = ../../../secrets/hosts/oci-melb-1/system.yaml;
       rescueUser = {

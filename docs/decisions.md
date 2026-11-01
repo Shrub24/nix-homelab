@@ -3382,3 +3382,36 @@ existing host no longer benefits from an interim secretless generation: the oper
 the new host key first. Nothing changes on the three current hosts, whose secret files exist. A
 configuration that loses its secret file now fails loudly rather than deploying without backups, a
 push token, or a Tailscale auth key.
+
+## D-127: GeoPulse runs on upstream's images, not a source build
+
+**Context:** GeoPulse was built from a pinned source revision: a Maven fixed-output hash, an npm
+fixed-output hash, a Maven-version assertion, and a `patchPhase` that installed one SQL file. Every
+nixpkgs Maven bump or upstream release meant regenerating both hashes across two ecosystems. The
+only local artifact was `R__Add_oidc_session_code_verifier.sql`, which adds an
+`oidc_session_states.code_verifier` column nothing reads: upstream does not implement PKCE, and its
+own Authelia documentation says `require_pkce` must be `false` "because GeoPulse does not send a
+PKCE `code_challenge` or `code_verifier`". The patch survives from the Kanidm era, when the client
+demanded PKCE. The aspect also ran its own Caddy front to reproduce upstream's nginx surface —
+`config.js` generation, `/api` and `/mcp` proxying, a tile proxy, cache headers and a body limit.
+
+**Decision:** The aspect runs two digest-pinned upstream images. `tess1o/geopulse-backend:<v>-native`
+is the GraalVM backend (multi-arch, armv8-a, which is Ampere A1) and `tess1o/geopulse-ui:<v>` is
+nginx plus the built SPA, which already renders `config.js`, proxies the API and `/mcp`, proxies the
+OSM tiles and sets the cache headers — three env vars replace the generated Caddy configuration. The
+source build, its updater and its package registrations are deleted. Both containers share a
+dedicated Podman network; the backend is bridged with no published port and dials the cluster on the
+service address, so its consumer ACL admits the container supernet alongside loopback; the UI
+publishes the route's port on loopback only.
+
+**Rejected:** Keeping our Caddy front in front of the UI container, which would proxy to a proxy to
+reach the backend and leave two places to keep the tile and cache behaviour right. Also rejected:
+the `-native-compat` image, whose purpose is x86-64-v2 and Raspberry Pi class ARM and is not our
+target.
+
+**Consequences:** Upstream image bumps are Renovate's job against `policy/oci-images.nix` instead of
+a hash regeneration. The backend's own backup feature works inside the image, which bundles
+PostgreSQL 17 and 18 clients and picks the matching major, so the host binary path it used is gone.
+The backend runs as root inside its container so the 0400 root-owned AI key mount is readable. The
+memory bound that used to be a JVM flag is now the container's, and the aspect no longer owns a
+front-end runtime at all.

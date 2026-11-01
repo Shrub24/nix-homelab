@@ -37,6 +37,12 @@
 
   tududi = "docker.io/chrisvel/tududi:1.9.7@sha256:bd1191e04b1c4b32fb8fa68199bd6982520f89eed9445cc91f886fbbebd2086c";
 
+  # GeoPulse ships the backend as a GraalVM native binary and the UI as nginx plus the built
+  # SPA; both are multi-arch indexes, and `-native` targets armv8-a, which is Ampere A1.
+  geopulseBackend = "docker.io/tess1o/geopulse-backend:2.1.1-native@sha256:3b205c9951c6126d87d285c6a08778c1a61ffa96261529632bf7d058a56ce306";
+
+  geopulseUi = "docker.io/tess1o/geopulse-ui:2.1.1@sha256:5af09d8492e225c9fde60e765f413c1d13b6a056f78eaebb0590995bfd5dca29";
+
   # Multi-arch manifest index, including the OCI host's aarch64-linux platform.
   homarr = "ghcr.io/homarr-labs/homarr:v2.9.1@sha256:9421086c541f0e83057eaac7b6181c6d3044835227017bea9fc4d0fffee49aa6";
 

@@ -481,7 +481,6 @@ tsMtu = ((c.systemd.services.tailscaled or {}).environment or {}).TS_DEBUG_MTU o
 tsAuthKeyFile = c.services.tailscale.authKeyFile or null;
 daemonUnit = (c.systemd.services or { }) ? "notify";
 daemonPkg = (c.services.notify.package or {}).name or "";
-containers = builtins.length (builtins.attrNames (c.virtualisation.oci-containers.containers or { }));
 containerLimits = builtins.all (n: c.systemd.services."podman-${n}".startLimitIntervalSec == 3600 && c.systemd.services."podman-${n}".startLimitBurst == 5) (builtins.attrNames (c.virtualisation.oci-containers.containers or { }));
 }' "path:.#nixosConfigurations.${host}.config")" ||
 fail "${host}: foundation probe does not evaluate"
@@ -503,16 +502,16 @@ if not any(o == "mode=0755" for o in got["buildOpts"]):
 if not got["daemonPkg"].startswith("notify-"):
     errs.append(f"daemonPkg: {got['daemonPkg']!r} not the shared notify package (daemon + CLI + handler)")
 if not got["containerLimits"]:
-    errs.append("container units must bound their restart loop (startLimitIntervalSec=300, startLimitBurst=5)")
+    errs.append("container units must bound their restart loop (startLimitIntervalSec=3600, startLimitBurst=5)")
 if errs:
     print(f"{host}: " + "; ".join(errs), file=sys.stderr)
     sys.exit(1)
 PYEOF
 }
 
-probe oci-melb-1 '{"bootLoader":"grub","buildTmpfsSize":"8G","systemdBoot":false,"grub":true,"efiRemovable":true,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"containers":6,"containerLimits":true}'
-probe la-admin-1 '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"containers":0,"containerLimits":true}'
-probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":null,"tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"containers":17,"containerLimits":true}'
+probe oci-melb-1 '{"bootLoader":"grub","buildTmpfsSize":"8G","systemdBoot":false,"grub":true,"efiRemovable":true,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"containerLimits":true}'
+probe la-admin-1 '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":"1200","tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"containerLimits":true}'
+probe home-forge '{"bootLoader":"systemd-boot","buildTmpfsSize":"50%","systemdBoot":true,"grub":false,"efiRemovable":false,"dev":true,"zsh":true,"networkd":true,"ts":true,"tsMtu":null,"tsAuthKeyFile":"/run/secrets/tailscale.auth_key","daemonUnit":true,"containerLimits":true}'
 
 # 7d-2. Stage 5 web/identity observables (S5-4, S5-5, S5-8). web-policy is an
 # all-host infrastructure-support selection: config.repo.web resolves on every

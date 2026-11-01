@@ -3,21 +3,18 @@
 GeoPulse records location history (track ingest from OwnTracks/GPSLogger-style
 sources, PostGIS-backed tracks, OIDC login) and is placed on `oci-melb-1` by the
 `geopulse` aspect in `modules/apps/geopulse.nix`. This runbook covers the
-database seam, the operator-owned secrets and the native runtime the aspect
+database seam, the operator-owned secrets and the two containers the aspect
 delivers. The route is served; the policy's `posture` field is the only thing that withholds it
 (see [Publication gate](#publication-gate)).
 
-## Current state (2026-10-19)
+## Current state (2026-10-27)
 
 | Item | State |
 | --- | --- |
-| Aspect | selected on `oci-melb-1` (`modules/hosts/oci-melb-1/default.nix`) and deployed |
+| Aspect | selected on `oci-melb-1` (`modules/hosts/oci-melb-1/default.nix`) |
 | Secret file | `secrets/services/geopulse.yaml` exists (created 2026-10-14); its values are operator-owned |
-| Packages | `geopulse-backend` and `geopulse-frontend` build on `x86_64-linux` and `aarch64-linux` (one union `mvnHash`) |
-| `geopulse-web` | active, answers `200` on loopback |
-| `geopulse-backend` | active and running; `/api/health` answers `200` |
-| Start limits | 5 starts in 5 minutes on both units, so a crash loop reaches `failed` and notifies |
-| Publication | withheld: the policy route declares `posture = "private"` |
+| Runtime | two digest-pinned containers: `geopulse-backend` (`-native`) and `geopulse-ui` |
+| Publication | the route is served; `posture` withholds it |
 | Live login | not verified |
 
 ## Operator secret preparation
@@ -102,60 +99,45 @@ secrets mount is the opposite: a tmpfs mounted `mode=0751` (sops-nix
 world-traversable, so the account opens its own files by name and cannot list
 the directory.
 
-The runtime consumes them: `geopulse-backend.service` runs as the static
-`geopulse` account, reads every file by path, and restarts when one rotates (see
-`## Runtime`).
+The runtime consumes them: the backend container reads the key by mount and the
+password from a rendered environment file, and restarts when one rotates (see
+`## Runtime
 
-## Runtime
+Two containers on a dedicated `geopulse` Podman network, created by
+`podman-network-geopulse.service`:
 
-The aspect delivers two units, both on loopback. The front-end port comes from the
-route in `policy/web-services.nix`; the route's posture decides whether the edge
-publishes it.
-
-| Unit | Account | Listener | What it runs |
+| Container | Image | Listeners | What it runs |
 | --- | --- | --- | --- |
-| `geopulse-backend.service` | `geopulse` | `127.0.0.1:8086` | the Quarkus fast-jar from `pkgs/geopulse/` |
-| `geopulse-web.service` | `geopulse-web` | `127.0.0.1:8085` | the static front end and its proxy mappings |
+| `geopulse-backend` | `repo.ociImages.geopulseBackend` (`-native`) | `0.0.0.0:8080` on the bridge, unpublished | the GraalVM native backend |
+| `geopulse-ui` | `repo.ociImages.geopulseUi` | `127.0.0.1:<route port>` → `:80` | nginx, the SPA and the proxy mappings |
 
-- The two accounts are separate so the process serving static content cannot read
-the signing key or the database password, and both are static: sops chowns the
-delivered files at activation, which a `DynamicUser` cannot satisfy.
-- The front end reproduces upstream's nginx surface on the Caddy runtime the fleet
-already ships. `/api/*` and `/mcp*` proxy to the backend, `/config.js` serves the
-non-secret runtime configuration that `index.html` loads, `/assets/*` serves
-content-hashed build output, `/osm/tiles/*` is the fixed OpenStreetMap tile
-proxy, and every other path falls back to the app shell — which is how
-`/oidc/callback` resolves. `/mcp` is mapped but no route publishes it.
-- The listener is the private half of a two-hop path. Its site is hostless, because
-a site address is also a request-host matcher: naming a loopback host there made
-the canonical public host the edge forwards match nothing, so `/` came back as an
-empty 200 and `/api` never reached the backend. `bind 127.0.0.1` is what keeps the
-socket loopback-only. The edge forwards the client address and the scheme it
-terminated, so this hop trusts that one address for them (`trusted_proxies static
-127.0.0.1` — no range, no wildcard): the backend sees the real client and `https`
-instead of the edge's own address and `http`.
-- Deliberate deviations from that nginx config: the a/b/c tile subdomain
-collapses to nginx's own default `a`, so there is one fixed upstream and no
-arbitrary proxy; server-side tile caching is omitted in favour of the browser
-cache header nginx also set; and the 200M body limit is kept as a bound on the
-upload path, while Caddy's absent upstream timeout is at least as permissive as
-nginx's 3600 s.
-- Mutable state is on the data mount: `backups/` (with `.work/`), `import/` (with
-`tmp/` and `chunks/`, so a multi-gigabyte upload never lands on the root
-filesystem) and `dumps/` for heap dumps. The unit requires the mount before
-start and can write nowhere else (`ProtectSystem=strict`, `ReadWritePaths` = the
-data directory). The import drop folder itself stays at upstream's default,
-disabled; enable it explicitly if that ingest is wanted.
-- The database password is an environment value upstream, so the generated start
-wrapper reads it from the delivered file at start. No secret value is an
-environment literal, appears in a command line, or reaches the store; the same
-wrapper refuses to start when a delivered file is missing or empty, so an
-unfilled key is a legible failure instead of a JVM stack trace.
-- AI and MQTT stay off here. MQTT is switched off explicitly; AI has no
-server-side switch upstream, so it is off because no user enables it.
-- `GEOPULSE_PUBLIC_BASE_URL` is set from the route's identity, because it is public
-  identity and the OIDC callback is built from it (D-104). CORS stays disabled: the
-  front end proxies `/api` on the same origin.
+- The UI image carries the front end the aspect used to run itself: it renders
+  `config.js`, proxies `/api` and `/mcp` to `http://geopulse-backend:8080`, proxies
+  `/osm/tiles/*` to OpenStreetMap with a 30-day cache, serves content-hashed assets
+  and falls back to the app shell — which is how `/oidc/callback` resolves. Three
+  env vars configure it: `GEOPULSE_BACKEND_URL`, `CLIENT_MAX_BODY_SIZE=200M`, and
+  `OSM_RESOLVER`, left to the image's own detection.
+- Only the loopback publish is deliberate: the edge dials it, and the backend port
+  stays on the bridge with no published socket.
+- The backend runs as root inside its container so the 0400 root-owned AI key mount
+  is readable; that is the only reason for the override.
+- The database is dialled on the service address (`host.services.internal`), not
+  loopback: a bridged container cannot reach the host's `127.0.0.1`. The consumer's
+  ACL therefore admits the container supernet (`10.89.0.0/16`) as well as loopback.
+  PostgreSQL stays the host's own cluster.
+- Mutable state is on the data mount and bound into the backend: `backups/` (with
+  `.work/`) and `import/` (with `tmp/` and `chunks/`, so a multi-gigabyte upload
+  never lands on the root filesystem). Directories are `0700 root:root`.
+- The database password arrives through a rendered environment file, never a
+  declared environment value, and both it and the OIDC client secret restart
+  `podman-geopulse-backend.service` when they change.
+- AI and MQTT stay off. MQTT is switched off explicitly; AI has no server-side
+  switch upstream, so it is off because no user enables it.
+- `GEOPULSE_PUBLIC_BASE_URL` is set from the route's identity, because the OIDC
+  callback is built from it. CORS stays disabled: the front end proxies `/api` on
+  the same origin.
+- The backend image bundles PostgreSQL 17 and 18 clients and picks the matching
+  major for the server, so its own backup feature needs no host binary path.
 
 ## Database seam
 
@@ -195,13 +177,18 @@ repeated here.
   the schema migration; there is no separate migration step to schedule. Any
   start of a backend whose migrations have not run against this database applies
   them.
-- The verifier column `oidc_session_states.code_verifier` came from a repeatable
-  migration we still ship (`pkgs/geopulse/migrations/`), even though the login no
-  longer writes a verifier: Flyway records an applied repeatable migration by
-  description and checksum, so removing the file would leave it unresolved and
-  fail validation. The statement is `ADD COLUMN IF NOT EXISTS`, so it re-runs as
-  a no-op. A login started before that migration has no stored verifier; nothing
-  reads the column now.
+- A database that ran the retired source build carries an extra column and its
+  `flyway_schema_history` row: `oidc_session_states.code_verifier`, installed by the repeatable
+  migration that build shipped. Upstream does not send PKCE, so nothing reads the column and the
+  image no longer ships the file. The container sets
+  `QUARKUS_FLYWAY_IGNORE_MIGRATION_PATTERNS=repeatable:missing` so start-time validation does not
+  fail on it; the column is inert. To leave no trace, run before the first container start:
+
+  ```sql
+  DELETE FROM flyway_schema_history WHERE description = 'Add_oidc_session_code_verifier';
+  ```
+
+  The flag stays harmless afterwards — it only ignores applied repeatables that no longer exist.
 - A migration run needs the cluster's own server and extension versions (the
   substrate never upgrades a cluster to match an application), the role's
   credential in the file the host binds, and the PostGIS extensions already
@@ -319,13 +306,11 @@ application OIDC on — and its publication posture separately.
 - DNS and the Access-free hostname are already resolved in the exported policy
   while the gate is closed: the gate withholds the served site, not the identity.
   The flip therefore needs no re-export. A host that has not flipped the fact
-  answers that hostname with Caddy's default for an unmatched host — the contract
-  check records a bodyless `200` carrying no application content and no route to
-  the listener.
-- The app's own origin follows the route's posture: `GEOPULSE_PUBLIC_BASE_URL` is the
-  public origin once the route is published and the provider's own front while it is
-  withheld, so the callback always points at a host that actually serves the app
-  (D-104). CORS stays disabled because the front end proxies `/api` on the same origin.
+  answers that hostname with the edge's default for an unmatched host — a bodyless
+  `200` carrying no application content and no route to the listener.
+- The app's own origin is the route's public identity, because the OIDC callback is
+  built from it and the aspect requires one. CORS stays disabled because the front end
+  proxies `/api` on the same origin.
 
 ## Public surface denials
 
@@ -393,8 +378,7 @@ The registration was evaluated in isolation, then the seam was exercised on a
 disposable cluster that matches the host's versions — the same server package the
 mechanism composes for this consumer
 (`postgresql-and-plugins-17.11`: PostgreSQL 17.11 with PostGIS 3.6.4) — against
-the packaged backend from `pkgs/geopulse/`, whose migrations include
-`V36.53.0`.
+the packaged backend of that date, whose migrations included `V36.53.0`.
 
 What the isolation proves is the registration the mechanism acts on: the
 consumer's database, role, credential file and key, the loopback-only
@@ -458,7 +442,7 @@ Recovery has two halves, and neither one alone restores GeoPulse:
   is the only copy of the database. The live PostgreSQL directory is never captured raw.
 - **Mutable files** — `services.state-backups.services.geopulse` captures `backups/`
   and `import/` through the restic job, excluding the disposable `backups/.work`,
-  `import/tmp` and `import/chunks`. `dumps/` (heap dumps) is not state and is not captured.
+  `import/tmp` and `import/chunks`.
 - **Keys** — the SOPS-held `secrets/services/geopulse.yaml` is not in either payload. It
   must be recoverable from its Git history together with the matching export.
 
@@ -476,14 +460,14 @@ only rollback path.
    encrypts the provider client secret and any entered API keys; without the key
    that produced the export, those values are unreadable and must be re-entered.
    2.x keeps sessions in the database, so there is no signing key to regenerate.
-2. Stop `geopulse-backend.service`. Restore the database from the pre-upgrade
-   export into a cluster on the same PostgreSQL and PostGIS versions, and confirm
-   `flyway_schema_history` matches the export's schema version.
+2. Stop `podman-geopulse-backend.service` and `podman-geopulse-ui.service`. Restore the
+   database from the pre-upgrade export into a cluster on the same PostgreSQL and PostGIS
+   versions, and confirm `flyway_schema_history` matches the export's schema version.
 3. Stage the mutable files from the restic snapshot with
    `state-restore-stage <snapshot> <include-path>` (its usage line lists both
    arguments), then copy `backups/` and `import/` into `/srv/data/geopulse`,
-   owned by `geopulse:geopulse`.
-4. Start the backend.
+   owned by `root:root` with mode `0700`.
+4. Start both containers.
 
 Scratch evidence (PostgreSQL 17.11 with PostGIS 3.6.4, disposable clusters,
 synthetic data): a `pg_dumpall` export of a cluster holding 500 PostGIS track
@@ -497,7 +481,7 @@ provisioning on a host, and any real export.
 
 ## Resolved: backup maintenance database
 
-`geopulse-backend` used to crash-loop at startup. Its backup maintenance service
+The backend used to crash-loop at startup. Its backup maintenance service
 opens a JDBC connection to the `postgres` database by default, and the `geopulse`
 role is allowed only its own database, so `pg_hba` rejected every attempt
 (`FATAL: pg_hba.conf rejects connection for host "127.0.0.1", user "geopulse",
@@ -528,31 +512,20 @@ to the notifier.
   `secrets/hosts/oci-melb-1/oidc.yaml`, enters the same value into the provider row, and logs in at
   `https://geo.shrublab.xyz/`.
 - Owner account creation with registration closed, verified against the live instance.
-- Device ingest, the tile proxy (no tile has been fetched yet), and the JVM heap
-  bound (task 4.2) are unmeasured.
+- Device ingest and the tile proxy (no tile has been fetched yet) are unmeasured. The
+  former JVM heap bound is now the container's memory limit.
 - A real export and restore have not been exercised; the scratch evidence above
   covers the database seam only.
 
 ### Runtime verification
 
 `tests/check-geopulse-contract.sh` (registered in `just checks all`) evaluates the
-`oci-melb-1` configuration with a non-secret fixture file bound, and pins the
-things that can drift apart: the static accounts, both loopback listeners, the
-front-end port against its private route, the absence of a public identity or a
-rendered edge route, the backend's dial against the host's cluster port, the
-delivered credential key against the one the substrate provisions, the ordered
-start dependencies, and the fact that no value from the bound file reaches the
-store. It then builds a fixture for *both* halves of the package (the evaluated
-assertions above pin the real ones, and the check also reads the realised
-derivations' references to prove the run cannot build any GeoPulse release). With
-those fixtures it loads the *rendered* Caddyfile with the real Caddy binary and
-exercises it against a fixture upstream — app shell, `/oidc/callback` fallback,
-`/config.js`, a hashed asset, the `/api` and `/mcp` proxies, the cache headers,
-the canonical public host, the forwarded scheme and client address, and the
-loopback-only bind against a second loopback address — and finally pins the two
-named failures: a host that selects the aspect without a bound secret file, and
-one without a local cluster, both reported by name rather than degraded into a
-half-configuration. The `DynamicUser` check carries a control that injects an
-offender, so it cannot pass vacuously. That run uses an `x86_64-linux` evaluation
-of the same module, because the placement host is aarch64 and its binaries cannot
-run on the evaluation machine.
+`oci-melb-1` configuration and pins what can drift apart: both images against their
+`repo.ociImages` entry and their digest, the UI's published port against the route's
+upstream port, the dedicated network and its ordering before both containers, the
+backend's dial against the service address and the cluster's port, the consumer ACL
+admitting the container supernet as well as loopback, the password arriving through an
+environment file rather than a declared value, the AI key mounted read-only at the path
+the environment names, the state mounts and their backup registration, the failure
+notifications, and that the retired native units are gone. Two mutations — dropping the
+container CIDR and dialling loopback — make it fail, so those assertions are not vacuous.

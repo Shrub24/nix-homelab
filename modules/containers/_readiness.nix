@@ -1,6 +1,7 @@
-# Readiness for a container unit. `podman --sdnotify=healthy` on a container that declares no
-# healthcheck makes podman refuse to start, so the switch and the probe travel together: pass `cmd`
-# for an image that ships no HEALTHCHECK, and omit it for one that does.
+# Readiness for a container unit. `podman --sdnotify=healthy` requires an explicit
+# `--health-cmd`: an image's own HEALTHCHECK does not satisfy it, and podman refuses to start
+# (exit 125, "sdnotify policy \"healthy\" requires a healthcheck to be set"). So the switch and
+# the probe travel together, and `cmd` has no default.
 #
 # Merge it as a sibling of the container literal — `lib.mkMerge [ { ... } (mkReadyProbe { ... }) ]` —
 # so the probe's `extraOptions` concatenate with the container's rather than replace them.
@@ -15,13 +16,11 @@
 {
   mkReadyProbe =
     {
-      cmd ? null,
+      cmd,
       startPeriod ? "5s",
     }:
     {
       podman.sdnotify = "healthy";
-    }
-    // lib.optionalAttrs (cmd != null) {
       extraOptions = [
         "--health-cmd=${cmd}"
         "--health-interval=10s"

@@ -3425,22 +3425,29 @@ could start against a backend still applying migrations, and a deploy could go g
 crash-looping container that had merely started once.
 
 **Decision:** A container that serves a protocol reports ready through
-`modules/containers/_readiness.nix`: `podman.sdnotify = "healthy"`, plus a `--health-cmd` probe when
-the image ships no `HEALTHCHECK` of its own. The helper is merged as a sibling of the container
-literal so the probe's options concatenate with the container's rather than replacing them. The
-probe is chosen from what the pinned image actually contains — `curl`, busybox `wget`, `redis-cli` —
-and always dials the container's own port, never a host mapping.
+`modules/containers/_readiness.nix`: `podman.sdnotify = "healthy"` together with an explicit
+`--health-cmd`, which the helper requires because it has no default. The helper is merged as a sibling
+of the container literal so the probe's options concatenate with the container's rather than
+replacing them. The probe is chosen from what the pinned image actually contains — `curl`, busybox
+`wget`, `redis-cli` — and always dials the container's own port, never a host mapping.
 
-**Rejected:** Relying on an image's own `HEALTHCHECK`, because only two of the fleet's images
-declare one. Also rejected: a probe written from an assumed endpoint or binary, since a tool absent
-from the image turns a healthy service into a failed unit. And rejected: asserting the flags in a
-contract test, which restates what the module sets and can only fail when the module changes —
+**Rejected:** Relying on an image's own `HEALTHCHECK`. This is not a preference but a hard limit,
+established the hard way: podman refuses `--sdnotify=healthy` with exit 125 (`sdnotify policy
+"healthy" requires a healthcheck to be set`) even for an image that declares one — reproduced
+minimally with `podman run --sdnotify=healthy` on a container whose image carries a `HEALTHCHECK`,
+which errors, and the same command with an explicit `--health-cmd`, which runs. A first attempt
+accepted the image's declaration as sufficient and broke two containers that had been up for three
+days. Also rejected: a probe written from an assumed endpoint or binary, since a tool absent from the
+image turns a healthy service into a failed unit. And rejected: asserting the flags in a contract
+test, which restates what the module sets and can only fail when the module changes —
 misconfiguration fails the unit at start instead.
 
-**Consequences:** Nine of twenty-five containers carry it, chosen where a probe is derivable from the
-image itself; the remaining sixteen are left as a tentative expansion in `docs/plan.md`, because each
-is a leaf and readiness there buys only an earlier failure signal. A ready unit must also state its
-own `TimeoutStartSec`: podman sets it to 0 as a definition, so a probe that never passes would hold
-the activation open rather than fail it, and the budget belongs to the application rather than to a
-fleet-wide default. No test asserts any of this — the assertion that caught the real defect was the
-container/service-address coupling in the gateway contract, not a restatement of the helper.
+**Consequences:** Seven of twenty-five containers carry it. The binding criterion is that a unit
+depends on its readiness — the fleet has exactly two such edges (`geopulse-ui` → `geopulse-backend`,
+`langfuse-worker` → `langfuse-web`) — and the rest are leaves, where a probe buys only an earlier
+failure signal; the remaining eighteen are left as a tentative expansion in `docs/plan.md`. A ready
+unit must also state its own `TimeoutStartSec`: podman sets it to 0 as a definition, so a probe that
+never passes would hold the activation open rather than fail it, and the budget belongs to the
+application rather than to a fleet-wide default. No test asserts any of this — the assertion that
+caught the real defect was the container/service-address coupling in the gateway contract, not a
+restatement of the helper.

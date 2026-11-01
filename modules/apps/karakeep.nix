@@ -272,49 +272,46 @@ _: {
               ];
             };
 
-            karakeep-web = lib.mkMerge [
-              (readiness.mkReadyProbe { })
-              {
-                autoStart = true;
-                image = cfg.webImage;
-                extraOptions = [
-                  "--network=${cfg.networkName}"
-                  # The inference gateway is a native service on this host, so the container dials the
-                  # fleet's service address rather than a container gateway it does not share.
-                  "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
-                ];
-                ports = [
-                  "${cfg.listenAddress}:${toString cfg.port}:3000"
-                ];
-                environment = {
-                  MEILI_ADDR = "http://karakeep-meilisearch:7700";
-                  BROWSER_WEB_URL = "http://karakeep-chrome:9222";
-                  DATA_DIR = "/data";
-                  MEILI_NO_ANALYTICS = "true";
-                  NEXTAUTH_URL = cfg.publicUrl;
-                }
-                // {
-                  DISABLE_PASSWORD_AUTH = if cfg.oidc.disablePasswordAuth then "true" else "false";
-                }
-                // lib.optionalAttrs cfg.oidc.enable {
-                  OAUTH_WELLKNOWN_URL = cfg.oidc.wellknownUrl;
-                  OAUTH_SCOPE = cfg.oidc.scope;
-                  OAUTH_PROVIDER_NAME = cfg.oidc.providerName;
-                  OAUTH_AUTO_REDIRECT = if cfg.oidc.autoRedirect then "true" else "false";
-                  OAUTH_ALLOW_DANGEROUS_EMAIL_ACCOUNT_LINKING =
-                    if cfg.oidc.allowDangerousEmailAccountLinking then "true" else "false";
-                }
-                // lib.optionalAttrs cfg.storage.s3.enable {
-                  ASSET_STORE_S3_FORCE_PATH_STYLE = if cfg.storage.s3.forcePathStyle then "true" else "false";
-                };
-                environmentFiles = [
-                  cfg.environmentFile
-                ];
-                volumes = [
-                  "${cfg.dataDir}/app:/data"
-                ];
+            karakeep-web = {
+              autoStart = true;
+              image = cfg.webImage;
+              extraOptions = [
+                "--network=${cfg.networkName}"
+                # The inference gateway is a native service on this host, so the container dials the
+                # fleet's service address rather than a container gateway it does not share.
+                "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
+              ];
+              ports = [
+                "${cfg.listenAddress}:${toString cfg.port}:3000"
+              ];
+              environment = {
+                MEILI_ADDR = "http://karakeep-meilisearch:7700";
+                BROWSER_WEB_URL = "http://karakeep-chrome:9222";
+                DATA_DIR = "/data";
+                MEILI_NO_ANALYTICS = "true";
+                NEXTAUTH_URL = cfg.publicUrl;
               }
-            ];
+              // {
+                DISABLE_PASSWORD_AUTH = if cfg.oidc.disablePasswordAuth then "true" else "false";
+              }
+              // lib.optionalAttrs cfg.oidc.enable {
+                OAUTH_WELLKNOWN_URL = cfg.oidc.wellknownUrl;
+                OAUTH_SCOPE = cfg.oidc.scope;
+                OAUTH_PROVIDER_NAME = cfg.oidc.providerName;
+                OAUTH_AUTO_REDIRECT = if cfg.oidc.autoRedirect then "true" else "false";
+                OAUTH_ALLOW_DANGEROUS_EMAIL_ACCOUNT_LINKING =
+                  if cfg.oidc.allowDangerousEmailAccountLinking then "true" else "false";
+              }
+              // lib.optionalAttrs cfg.storage.s3.enable {
+                ASSET_STORE_S3_FORCE_PATH_STYLE = if cfg.storage.s3.forcePathStyle then "true" else "false";
+              };
+              environmentFiles = [
+                cfg.environmentFile
+              ];
+              volumes = [
+                "${cfg.dataDir}/app:/data"
+              ];
+            };
           };
         };
 
@@ -344,8 +341,6 @@ _: {
             };
 
             "podman-karakeep-web" = {
-              # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
-              serviceConfig.TimeoutStartSec = lib.mkForce 180;
               wants = [
                 "network-online.target"
                 "podman-network-${cfg.networkName}.service"

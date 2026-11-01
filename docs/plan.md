@@ -176,21 +176,23 @@ Current open items, newest first. Each names the artifact that closes it.
 ### Container readiness (wired where it earns something)
 
 `podman --sdnotify=healthy` turns a container unit's `Type=notify` into "the app answers", so a
-dependent unit's `After=` and a failed deploy both mean something. The probe comes from what the
-pinned image actually contains and dials the container's own port.
+dependent unit's `After=` and a failed deploy both mean something. It requires an explicit
+`--health-cmd` — an image's own `HEALTHCHECK` does not satisfy it and podman refuses to start the
+container (exit 125) — so the probe travels with the flag and names a tool the pinned image actually
+has, dialling the container's own port.
 
-Nine containers carry it: `geopulse-backend`, `geopulse-ui`, `homarr`, `karakeep-meilisearch`,
-`langfuse-web` and both redis instances probe with a tool their image ships; `karakeep-web` and
-`tududi` pass `sdnotify` alone because their images declare their own `HEALTHCHECK`. Each of those
-units also states a start budget, because podman sets `TimeoutStartSec = 0` on every container
-unit and an unpassed probe would otherwise hold the activation open instead of failing it.
+Seven containers carry it: `geopulse-backend` and `langfuse-web`, which have a dependent unit, and
+five that already probe with a tool their image ships (`geopulse-ui`, `homarr`,
+`karakeep-meilisearch`, both redis instances). Each also states a start budget, because podman sets
+`TimeoutStartSec = 0` on every container unit and an unpassed probe would otherwise hold the
+activation open instead of failing it.
 
-Every remaining container is a leaf, so readiness there changes only whether a deploy notices a
-broken app — it is a tentative expansion, not queued work, and it would add a probe runtime per
-image plus an endpoint guess per app to buy that. The sixteen fall into three groups if it is ever
-picked up: node and python images with no `curl`/`wget` (a TCP connect needs no endpoint knowledge),
-four worker containers that serve no listener at all and should stay on the default, and a handful
-whose endpoint or port still needs confirming. Confirming means one
+The remaining eighteen are leaves, so readiness there changes only whether a deploy notices a broken
+app — it is a tentative expansion, not queued work, and it would add a probe runtime per image plus
+an endpoint guess per app to buy that. They fall into three groups if it is ever picked up: node and
+python images with no `curl`/`wget` (a TCP connect needs no endpoint knowledge), four worker
+containers that serve no listener at all and should stay on the default, and a handful whose
+endpoint or port still needs confirming. Confirming means one
 `podman run --rm --entrypoint sh <image> -c 'command -v …'` against the pinned digest on the host
 that pulls it: a probe binary that does not exist converts a healthy service into a failed deploy.
 

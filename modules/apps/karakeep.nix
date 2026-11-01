@@ -14,6 +14,7 @@ _: {
       cfg = config.services.karakeep-pod;
       envDir = builtins.dirOf cfg.environmentFile;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
       # This application's canonical client record is the single source for its
       # issuer endpoints; the host supplies enablement and credentials only.
       oidcClient = config.services.identity.oidc.clients.karakeep or null;
@@ -230,29 +231,32 @@ _: {
           };
 
           oci-containers.containers = {
-            karakeep-meilisearch = {
-              autoStart = true;
-              image = cfg.meilisearchImage;
-              extraOptions = [
-                "--network=${cfg.networkName}"
-                # The pod's shared env file carries the gateway URL even though Meilisearch reads none of
-                # it, and every variable in a mounted file must resolve.
-                "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
-              ];
-              environment = {
-                MEILI_NO_ANALYTICS = "true";
-                # Meilisearch refuses to open a database written by an older release unless the upgrade is
-                # requested. The upgrade is one-way, so a rollback past this generation leaves the old
-                # server unable to read its own database.
-                MEILI_UPGRADE_DB = "true";
-              };
-              environmentFiles = [
-                cfg.environmentFile
-              ];
-              volumes = [
-                "${cfg.dataDir}/meilisearch:/meili_data"
-              ];
-            };
+            karakeep-meilisearch = lib.mkMerge [
+              (readiness.mkReadyProbe { cmd = "curl -fsS http://127.0.0.1:7700/health"; })
+              {
+                autoStart = true;
+                image = cfg.meilisearchImage;
+                extraOptions = [
+                  "--network=${cfg.networkName}"
+                  # The pod's shared env file carries the gateway URL even though Meilisearch reads none of
+                  # it, and every variable in a mounted file must resolve.
+                  "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
+                ];
+                environment = {
+                  MEILI_NO_ANALYTICS = "true";
+                  # Meilisearch refuses to open a database written by an older release unless the upgrade is
+                  # requested. The upgrade is one-way, so a rollback past this generation leaves the old
+                  # server unable to read its own database.
+                  MEILI_UPGRADE_DB = "true";
+                };
+                environmentFiles = [
+                  cfg.environmentFile
+                ];
+                volumes = [
+                  "${cfg.dataDir}/meilisearch:/meili_data"
+                ];
+              }
+            ];
 
             karakeep-chrome = {
               autoStart = true;
@@ -269,46 +273,49 @@ _: {
               ];
             };
 
-            karakeep-web = {
-              autoStart = true;
-              image = cfg.webImage;
-              extraOptions = [
-                "--network=${cfg.networkName}"
-                # The inference gateway is a native service on this host, so the container dials the
-                # fleet's service address rather than a container gateway it does not share.
-                "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
-              ];
-              ports = [
-                "${cfg.listenAddress}:${toString cfg.port}:3000"
-              ];
-              environment = {
-                MEILI_ADDR = "http://karakeep-meilisearch:7700";
-                BROWSER_WEB_URL = "http://karakeep-chrome:9222";
-                DATA_DIR = "/data";
-                MEILI_NO_ANALYTICS = "true";
-                NEXTAUTH_URL = cfg.publicUrl;
+            karakeep-web = lib.mkMerge [
+              (readiness.mkReadyProbe { })
+              {
+                autoStart = true;
+                image = cfg.webImage;
+                extraOptions = [
+                  "--network=${cfg.networkName}"
+                  # The inference gateway is a native service on this host, so the container dials the
+                  # fleet's service address rather than a container gateway it does not share.
+                  "--add-host=${globals.serviceNetwork.hostName}:${globals.serviceNetwork.address}"
+                ];
+                ports = [
+                  "${cfg.listenAddress}:${toString cfg.port}:3000"
+                ];
+                environment = {
+                  MEILI_ADDR = "http://karakeep-meilisearch:7700";
+                  BROWSER_WEB_URL = "http://karakeep-chrome:9222";
+                  DATA_DIR = "/data";
+                  MEILI_NO_ANALYTICS = "true";
+                  NEXTAUTH_URL = cfg.publicUrl;
+                }
+                // {
+                  DISABLE_PASSWORD_AUTH = if cfg.oidc.disablePasswordAuth then "true" else "false";
+                }
+                // lib.optionalAttrs cfg.oidc.enable {
+                  OAUTH_WELLKNOWN_URL = cfg.oidc.wellknownUrl;
+                  OAUTH_SCOPE = cfg.oidc.scope;
+                  OAUTH_PROVIDER_NAME = cfg.oidc.providerName;
+                  OAUTH_AUTO_REDIRECT = if cfg.oidc.autoRedirect then "true" else "false";
+                  OAUTH_ALLOW_DANGEROUS_EMAIL_ACCOUNT_LINKING =
+                    if cfg.oidc.allowDangerousEmailAccountLinking then "true" else "false";
+                }
+                // lib.optionalAttrs cfg.storage.s3.enable {
+                  ASSET_STORE_S3_FORCE_PATH_STYLE = if cfg.storage.s3.forcePathStyle then "true" else "false";
+                };
+                environmentFiles = [
+                  cfg.environmentFile
+                ];
+                volumes = [
+                  "${cfg.dataDir}/app:/data"
+                ];
               }
-              // {
-                DISABLE_PASSWORD_AUTH = if cfg.oidc.disablePasswordAuth then "true" else "false";
-              }
-              // lib.optionalAttrs cfg.oidc.enable {
-                OAUTH_WELLKNOWN_URL = cfg.oidc.wellknownUrl;
-                OAUTH_SCOPE = cfg.oidc.scope;
-                OAUTH_PROVIDER_NAME = cfg.oidc.providerName;
-                OAUTH_AUTO_REDIRECT = if cfg.oidc.autoRedirect then "true" else "false";
-                OAUTH_ALLOW_DANGEROUS_EMAIL_ACCOUNT_LINKING =
-                  if cfg.oidc.allowDangerousEmailAccountLinking then "true" else "false";
-              }
-              // lib.optionalAttrs cfg.storage.s3.enable {
-                ASSET_STORE_S3_FORCE_PATH_STYLE = if cfg.storage.s3.forcePathStyle then "true" else "false";
-              };
-              environmentFiles = [
-                cfg.environmentFile
-              ];
-              volumes = [
-                "${cfg.dataDir}/app:/data"
-              ];
-            };
+            ];
           };
         };
 

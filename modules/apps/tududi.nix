@@ -11,6 +11,7 @@ _: {
     let
       cfg = config.services.tududi;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
       route = config.repo.web.catalog.tududi or null;
       oidcClient = config.services.identity.oidc.clients.tududi or null;
 
@@ -91,35 +92,38 @@ _: {
           virtualisation = {
             podman.enable = true;
 
-            oci-containers.containers.tududi = {
-              autoStart = true;
-              image = config.repo.ociImages.tududi;
-              # Loopback publish: the socket stays edge-local, so the route is `direct`.
-              ports = [ "127.0.0.1:${toString route.upstreamPort}:${toString containerPort}" ];
-              environment = {
-                PORT = toString containerPort;
-                DB_FILE = containerDbFile;
-                TUDUDI_UPLOAD_PATH = "/app/uploads";
-                TUDUDI_BACKUP_PATH = "/app/backups";
-                BASE_URL = route.publicUrl;
-                TUDUDI_ALLOWED_ORIGINS = route.publicUrl;
-                # The only hop in front is the edge's proxy on this host.
-                TUDUDI_TRUST_PROXY = "true";
-                OIDC_ENABLED = "true";
-                OIDC_PROVIDER_NAME = oidcClient.providerName;
-                # The slug is the client id and forms its own callback path.
-                OIDC_PROVIDER_SLUG = oidcClient.clientId;
-                OIDC_ISSUER_URL = oidcClient.issuerUrl;
-                OIDC_CLIENT_ID = oidcClient.clientId;
-                OIDC_SCOPE = builtins.concatStringsSep " " oidcClient.scopes;
-              };
-              environmentFiles = [ config.sops.templates."tududi.environment".path ];
-              volumes = [
-                "${dataDir}/db:/app/db"
-                "${dataDir}/uploads:/app/uploads"
-                "${dataDir}/backups:/app/backups"
-              ];
-            };
+            oci-containers.containers.tududi = lib.mkMerge [
+              (readiness.mkReadyProbe { })
+              {
+                autoStart = true;
+                image = config.repo.ociImages.tududi;
+                # Loopback publish: the socket stays edge-local, so the route is `direct`.
+                ports = [ "127.0.0.1:${toString route.upstreamPort}:${toString containerPort}" ];
+                environment = {
+                  PORT = toString containerPort;
+                  DB_FILE = containerDbFile;
+                  TUDUDI_UPLOAD_PATH = "/app/uploads";
+                  TUDUDI_BACKUP_PATH = "/app/backups";
+                  BASE_URL = route.publicUrl;
+                  TUDUDI_ALLOWED_ORIGINS = route.publicUrl;
+                  # The only hop in front is the edge's proxy on this host.
+                  TUDUDI_TRUST_PROXY = "true";
+                  OIDC_ENABLED = "true";
+                  OIDC_PROVIDER_NAME = oidcClient.providerName;
+                  # The slug is the client id and forms its own callback path.
+                  OIDC_PROVIDER_SLUG = oidcClient.clientId;
+                  OIDC_ISSUER_URL = oidcClient.issuerUrl;
+                  OIDC_CLIENT_ID = oidcClient.clientId;
+                  OIDC_SCOPE = builtins.concatStringsSep " " oidcClient.scopes;
+                };
+                environmentFiles = [ config.sops.templates."tududi.environment".path ];
+                volumes = [
+                  "${dataDir}/db:/app/db"
+                  "${dataDir}/uploads:/app/uploads"
+                  "${dataDir}/backups:/app/backups"
+                ];
+              }
+            ];
           };
 
           systemd = {

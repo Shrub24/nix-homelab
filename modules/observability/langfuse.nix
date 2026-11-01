@@ -13,6 +13,7 @@
     let
       cfg = config.services.langfuse;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
 
       hasSecretFile = cfg.secretFiles.host != null;
 
@@ -409,21 +410,26 @@
         };
 
         # Host network, not published ports: a published port would bypass the firewall on every interface.
-        virtualisation.oci-containers.containers.langfuse-web = {
-          autoStart = true;
-          image = cfg.image;
-          environment = {
-            PORT = toString cfg.port;
-            HOSTNAME = "0.0.0.0";
-          };
-          environmentFiles = lib.optionals hasSecretFile [
-            config.sops.templates."langfuse.environment".path
-          ];
-          extraOptions = [
-            "--network=host"
-            "--add-host=${serviceHost}:${serviceAddress}"
-          ];
-        };
+        virtualisation.oci-containers.containers.langfuse-web = lib.mkMerge [
+          (readiness.mkReadyProbe {
+            cmd = "wget --spider -q http://127.0.0.1:${toString cfg.port}/api/public/health";
+          })
+          {
+            autoStart = true;
+            image = cfg.image;
+            environment = {
+              PORT = toString cfg.port;
+              HOSTNAME = "0.0.0.0";
+            };
+            environmentFiles = lib.optionals hasSecretFile [
+              config.sops.templates."langfuse.environment".path
+            ];
+            extraOptions = [
+              "--network=host"
+              "--add-host=${serviceHost}:${serviceAddress}"
+            ];
+          }
+        ];
 
         # No inbound ports; reaches the native roles through the service address.
         virtualisation.oci-containers.containers.langfuse-worker = {

@@ -3415,3 +3415,30 @@ PostgreSQL 17 and 18 clients and picks the matching major, so the host binary pa
 The backend runs as root inside its container so the 0400 root-owned AI key mount is readable. The
 memory bound that used to be a JVM flag is now the container's, and the aspect no longer owns a
 front-end runtime at all.
+
+## D-128: A container unit reports ready only when its probe passes
+
+**Context:** Every container unit is `Type=notify`, but nixpkgs passes `--sdnotify=conmon` by
+default, so the notification means "the container process started". A dependent unit's `After=`, and
+the deploy's success, therefore said nothing about whether the application answered — GeoPulse's UI
+could start against a backend still applying migrations, and a deploy could go green with a
+crash-looping container that had merely started once.
+
+**Decision:** A container that serves a protocol reports ready through
+`modules/containers/_readiness.nix`: `podman.sdnotify = "healthy"`, plus a `--health-cmd` probe when
+the image ships no `HEALTHCHECK` of its own. The helper is merged as a sibling of the container
+literal so the probe's options concatenate with the container's rather than replacing them. The
+probe is chosen from what the pinned image actually contains — `curl`, busybox `wget`, `redis-cli` —
+and always dials the container's own port, never a host mapping.
+
+**Rejected:** Relying on an image's own `HEALTHCHECK`, because only two of the fleet's images
+declare one. Also rejected: a probe written from an assumed endpoint or binary, since a tool absent
+from the image turns a healthy service into a failed unit. And rejected: asserting the flags in a
+contract test, which restates what the module sets and can only fail when the module changes —
+misconfiguration fails the unit at start instead.
+
+**Consequences:** Nine of twenty-five containers are covered; the rest are tracked in `docs/plan.md`
+with what each still needs. A worker container with no listener is deliberately left on the default,
+where the notification correctly means "running". Adding a container to a new host now includes
+choosing its readiness, and `tests/check-*` assert the couplings around it (port against route, dial
+against ACL) rather than the helper's own output.

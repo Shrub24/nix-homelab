@@ -13,6 +13,7 @@
     let
       cfg = config.services.geopulse;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
       serviceNetwork = (import ../../policy/globals.nix).serviceNetwork;
 
       networkName = "geopulse";
@@ -219,92 +220,87 @@
             };
           };
 
-          virtualisation.oci-containers.containers.${backendContainer} = {
-            image = config.repo.ociImages.geopulseBackend;
-            # Bridged with no published port: the UI reaches it by name on the shared network.
-            # sdnotify=healthy makes the unit's start (and the UI's After=) wait for this probe,
-            # and the probe dials the container's own port, not a host mapping.
-            podman.sdnotify = "healthy";
-            extraOptions = [
-              "--network=${networkName}"
-              # Podman's DNS does not resolve the service name on this network.
-              "--add-host=${serviceNetwork.hostName}:${serviceNetwork.address}"
-              # The image's own user cannot read a 0400 root-owned key mount.
-              "--user=0"
-              "--health-cmd=curl -fsS http://127.0.0.1:8080/api/v1/system/health"
-              "--health-interval=5s"
-              "--health-timeout=3s"
-              "--health-retries=10"
-              "--health-start-period=10s"
-            ];
-            environmentFiles = [
-              config.sops.templates."geopulse.env".path
-            ]
-            ++ lib.optional oidcEnabled config.sops.templates."geopulse.oidc.env".path;
-            volumes = [
-              "${cfg.dataDir}/backups:/data/geopulse-backups"
-              "${cfg.dataDir}/import:/data/geopulse-import"
-              "${aiKeyFile}:/app/keys/ai-encryption-key.txt:ro"
-            ];
-            environment = {
-              QUARKUS_HTTP_HOST = "0.0.0.0";
-              GEOPULSE_POSTGRES_URL = localPostgresUrl;
-              GEOPULSE_POSTGRES_USERNAME = "geopulse";
-              GEOPULSE_AI_ENCRYPTION_KEY_LOCATION = "file:/app/keys/ai-encryption-key.txt";
+          virtualisation.oci-containers.containers.${backendContainer} = lib.mkMerge [
+            (readiness.mkReadyProbe {
+              cmd = "curl -fsS http://127.0.0.1:8080/api/v1/system/health";
+              startPeriod = "10s";
+            })
+            {
+              image = config.repo.ociImages.geopulseBackend;
+              # Bridged with no published port: the UI reaches it by name on the shared network.
+              extraOptions = [
+                "--network=${networkName}"
+                # Podman's DNS does not resolve the service name on this network.
+                "--add-host=${serviceNetwork.hostName}:${serviceNetwork.address}"
+                # The image's own user cannot read a 0400 root-owned key mount.
+                "--user=0"
+              ];
+              environmentFiles = [
+                config.sops.templates."geopulse.env".path
+              ]
+              ++ lib.optional oidcEnabled config.sops.templates."geopulse.oidc.env".path;
+              volumes = [
+                "${cfg.dataDir}/backups:/data/geopulse-backups"
+                "${cfg.dataDir}/import:/data/geopulse-import"
+                "${aiKeyFile}:/app/keys/ai-encryption-key.txt:ro"
+              ];
+              environment = {
+                QUARKUS_HTTP_HOST = "0.0.0.0";
+                GEOPULSE_POSTGRES_URL = localPostgresUrl;
+                GEOPULSE_POSTGRES_USERNAME = "geopulse";
+                GEOPULSE_AI_ENCRYPTION_KEY_LOCATION = "file:/app/keys/ai-encryption-key.txt";
 
-              # A database that ran the retired source build records a repeatable migration the
-              # image no longer ships; undone, Flyway's start-time validation crash-loops.
-              QUARKUS_FLYWAY_IGNORE_MIGRATION_PATTERNS = "repeatable:missing";
+                # A database that ran the retired source build records a repeatable migration the
+                # image no longer ships; undone, Flyway's start-time validation crash-loops.
+                QUARKUS_FLYWAY_IGNORE_MIGRATION_PATTERNS = "repeatable:missing";
 
-              GEOPULSE_AUTH_SECURE_COOKIES = "true";
-              GEOPULSE_PUBLIC_BASE_URL = browserOrigin;
+                GEOPULSE_AUTH_SECURE_COOKIES = "true";
+                GEOPULSE_PUBLIC_BASE_URL = browserOrigin;
 
-              GEOPULSE_MQTT_ENABLED = "false";
-              GEOPULSE_AI_LOGGING_ENABLED = "false";
+                GEOPULSE_MQTT_ENABLED = "false";
+                GEOPULSE_AI_LOGGING_ENABLED = "false";
 
-              GEOPULSE_BACKUP_WORK_PATH = "/data/geopulse-backups/.work";
-              # The image carries PostgreSQL 17 and 18 clients and picks the matching major.
-              GEOPULSE_BACKUP_MAINTENANCE_DATABASE = "geopulse";
-              GEOPULSE_IMPORT_DROP_FOLDER_PATH = "/data/geopulse-import";
-              GEOPULSE_IMPORT_TEMP_DIR = "/data/geopulse-import/tmp";
-              GEOPULSE_IMPORT_CHUNKS_DIR = "/data/geopulse-import/chunks";
+                GEOPULSE_BACKUP_WORK_PATH = "/data/geopulse-backups/.work";
+                # The image carries PostgreSQL 17 and 18 clients and picks the matching major.
+                GEOPULSE_BACKUP_MAINTENANCE_DATABASE = "geopulse";
+                GEOPULSE_IMPORT_DROP_FOLDER_PATH = "/data/geopulse-import";
+                GEOPULSE_IMPORT_TEMP_DIR = "/data/geopulse-import/tmp";
+                GEOPULSE_IMPORT_CHUNKS_DIR = "/data/geopulse-import/chunks";
+              }
+              // lib.optionalAttrs (cfg.adminEmail != null) {
+                GEOPULSE_ADMIN_EMAIL = cfg.adminEmail;
+              }
+              // lib.optionalAttrs oidcEnabled {
+                GEOPULSE_OIDC_ENABLED = "true";
+                GEOPULSE_OIDC_CALLBACK_BASE_URL = browserOrigin;
+                GEOPULSE_OIDC_AUTO_LINK_ACCOUNTS = "true";
+
+                GEOPULSE_OIDC_PROVIDER_AUTHENTIK_ENABLED = "true";
+                GEOPULSE_OIDC_PROVIDER_AUTHENTIK_NAME = oidcClient.providerName;
+                GEOPULSE_OIDC_PROVIDER_AUTHENTIK_CLIENT_ID = oidcClient.clientId;
+                GEOPULSE_OIDC_PROVIDER_AUTHENTIK_DISCOVERY_URL = oidcClient.wellknownUrl;
+              };
             }
-            // lib.optionalAttrs (cfg.adminEmail != null) {
-              GEOPULSE_ADMIN_EMAIL = cfg.adminEmail;
+          ];
+
+          virtualisation.oci-containers.containers.${uiContainer} = lib.mkMerge [
+            (readiness.mkReadyProbe { cmd = "wget -q --spider http://127.0.0.1:80/"; })
+            {
+              image = config.repo.ociImages.geopulseUi;
+              # The image is nginx on Alpine, so the probe is busybox wget on its own port.
+              extraOptions = [
+                "--network=${networkName}"
+              ];
+              # The image's nginx renders config.js, proxies /api and /mcp, serves the SPA and
+              # proxies OSM tiles; the route dials this loopback listener.
+              ports = [ "127.0.0.1:${toString frontendPort}:80" ];
+              environment = {
+                GEOPULSE_BACKEND_URL = "http://${backendContainer}:8080";
+                CLIENT_MAX_BODY_SIZE = "200M";
+              };
+              dependsOn = [ backendContainer ];
             }
-            // lib.optionalAttrs oidcEnabled {
-              GEOPULSE_OIDC_ENABLED = "true";
-              GEOPULSE_OIDC_CALLBACK_BASE_URL = browserOrigin;
-              GEOPULSE_OIDC_AUTO_LINK_ACCOUNTS = "true";
-
-              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_ENABLED = "true";
-              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_NAME = oidcClient.providerName;
-              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_CLIENT_ID = oidcClient.clientId;
-              GEOPULSE_OIDC_PROVIDER_AUTHENTIK_DISCOVERY_URL = oidcClient.wellknownUrl;
-            };
-          };
-
-          virtualisation.oci-containers.containers.${uiContainer} = {
-            image = config.repo.ociImages.geopulseUi;
-            # The image is nginx on Alpine, so the probe is busybox wget on its own port.
-            podman.sdnotify = "healthy";
-            extraOptions = [
-              "--network=${networkName}"
-              "--health-cmd=wget -q --spider http://127.0.0.1:80/"
-              "--health-interval=5s"
-              "--health-timeout=3s"
-              "--health-retries=10"
-              "--health-start-period=5s"
-            ];
-            # The image's nginx renders config.js, proxies /api and /mcp, serves the SPA and
-            # proxies OSM tiles; the route dials this loopback listener.
-            ports = [ "127.0.0.1:${toString frontendPort}:80" ];
-            environment = {
-              GEOPULSE_BACKEND_URL = "http://${backendContainer}:8080";
-              CLIENT_MAX_BODY_SIZE = "200M";
-            };
-            dependsOn = [ backendContainer ];
-          };
+          ];
         }
       ];
     };

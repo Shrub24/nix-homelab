@@ -10,6 +10,7 @@ _: {
     let
       cfg = config.services.homarr;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
       route = config.repo.web.catalog.homarr or null;
       oidcClient = config.services.identity.oidc.clients.homarr or null;
 
@@ -107,27 +108,24 @@ _: {
           virtualisation = {
             podman.enable = true;
 
-            oci-containers.containers.homarr = {
-              autoStart = true;
-              image = config.repo.ociImages.homarr;
-              ports = [ "127.0.0.1:${toString route.upstreamPort}:${toString containerPort}" ];
-              environment = {
-                PUID = toString containerUid;
-                PGID = toString containerGid;
-              };
-              environmentFiles = [ config.sops.templates."homarr.environment".path ];
-              volumes = [ "${dataDir}:/appdata" ];
-              # No HEALTHCHECK ships in the image; sdnotify makes After= mean "listening", and the
-              # probe dials the container port rather than the host-mapped one.
-              podman.sdnotify = "healthy";
-              extraOptions = [
-                "--health-cmd=wget -q --spider http://127.0.0.1:${toString containerPort}/api/health/ready"
-                "--health-interval=5s"
-                "--health-timeout=3s"
-                "--health-retries=10"
-                "--health-start-period=5s"
-              ];
-            };
+            oci-containers.containers.homarr = lib.mkMerge [
+              (readiness.mkReadyProbe {
+                cmd = "wget -q --spider http://127.0.0.1:${toString containerPort}/api/health/ready";
+              })
+              {
+                autoStart = true;
+                image = config.repo.ociImages.homarr;
+                ports = [ "127.0.0.1:${toString route.upstreamPort}:${toString containerPort}" ];
+                environment = {
+                  PUID = toString containerUid;
+                  PGID = toString containerGid;
+                };
+                environmentFiles = [ config.sops.templates."homarr.environment".path ];
+                volumes = [ "${dataDir}:/appdata" ];
+                extraOptions = [
+                ];
+              }
+            ];
           };
 
           systemd = {

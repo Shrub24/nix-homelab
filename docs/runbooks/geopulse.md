@@ -17,7 +17,7 @@ private bootstrap is verified (see [Publication gate](#publication-gate)).
 | `geopulse-web` | active, answers `200` on loopback |
 | `geopulse-backend` | active and running; `/api/health` answers `200` |
 | Start limits | 5 starts in 5 minutes on both units, so a crash loop reaches `failed` and notifies |
-| Publication | withheld: the policy route declares `publish = false` |
+| Publication | withheld: the policy route declares `posture = "private"` |
 | Live login | not verified |
 
 ## Operator secret preparation
@@ -108,9 +108,9 @@ The runtime consumes them: `geopulse-backend.service` runs as the static
 
 ## Runtime
 
-The aspect delivers two units. Neither listener is public yet: the front-end port
-comes from the private route in `policy/web-services.nix` (`declarePublic =
-false`), and the public route with its operator gate belongs to the exposure task.
+The aspect delivers two units, both on loopback. The front-end port comes from the
+route in `policy/web-services.nix`; the route's posture decides whether the edge
+publishes it.
 
 | Unit | Account | Listener | What it runs |
 | --- | --- | --- | --- |
@@ -221,9 +221,8 @@ provider is a row in `oidc_providers`, created once through the admin API or UI,
 and its client secret is stored in the database encrypted with the AI key.
 Nothing in Nix declares that row, and no variable overrides a saved one.
 
-- The canonical input is the Kanidm client secret in the host OIDC file
-  (`secrets/hosts/oci-melb-1/oidc.yaml`, key `geopulse/client_secret`; the
-  identity task registers that client and binding). The operator enters *that same
+- The canonical input is the client secret in the host OIDC file
+  (`secrets/hosts/oci-melb-1/oidc.yaml`, key `geopulse/client_secret`). The operator enters *that same
   value* into the provider row — no second value is invented, and the file stays
   the source of truth for rotation.
 - Because the provider secret is ciphertext in the database, the AI key and the
@@ -232,33 +231,26 @@ Nothing in Nix declares that row, and no variable overrides a saved one.
   including any admin-entered geocoding, weather or backup credentials. A
   rotation is complete only once those values are re-entered with the new key.
 
-### Kanidm client
+### OIDC client
 
-The client is declared once in `policy/identity.nix` and reaches the provider
-through the rendered provisioning policy:
+The client is declared once in `policy/identity.nix` and both sides read it from
+there: the identity provider provisions it, and GeoPulse receives it as
+`GEOPULSE_OIDC_PROVIDER_AUTHENTIK_*` from a sops-rendered environment file.
 
 | Field | Value |
 | --- | --- |
 | client id | `geopulse` |
-| callback | `https://geo.shrublab.xyz/oidc/callback` |
-| scopes | `openid profile email`, mapped to `users` only |
-| signature algorithm | `enableLegacyCrypto` — Kanidm offers RS256 only in that mode, and the backend verifies RS256 |
-| PKCE | off: the backend sends no code challenge, so the client carries `allowInsecureClientDisablePkce`, declared in `policy/identity.nix` and applied by Kanidm's own provisioning (D-108) |
-
-The callback is written into the policy rather than derived from the route,
-because the GeoPulse web-policy route is still private and a private route
-publishes no public identity to derive from. The exposure task makes that route
-public and switches the client to the route-derived form (`routeKey` with
-`callbackPath`), which drops the literal; the callback the client must end up with
-is pinned in `tests/check-identity-contract-directionality.sh`.
+| callback | `https://geo.shrublab.xyz/oidc/callback` (derived from the route) |
+| scopes | `openid profile email`, for the `users` group |
+| signature algorithm | RS256, the provider's default |
+| PKCE | off: the backend sends no code challenge |
 
 The operator supplies the client secret. Add `geopulse/client_secret` to
 `secrets/hosts/oci-melb-1/oidc.yaml` and re-encrypt it (`just secrets …`, which
-runs `sops updatekeys`) — that file's rule already lists `oci-melb-1` and
-`la-admin-1`, so nothing else changes. The provider host reads the value as
-`/run/secrets/kanidm.oauth2.geopulse.basic_secret` when it provisions the client.
-It is not delivered to the GeoPulse account, which never reads it: the provider
-row holds it, encrypted with the AI key.
+runs `sops updatekeys`). The provider host reads that same key when it provisions
+the client; the backend reads it from its own rendered file
+(`config.sops.secrets."geopulse/oidc-client-secret"`), never from the unit
+environment.
 
 ### Provider row
 
@@ -268,10 +260,10 @@ service is private, and owned by the database afterwards:
 | Field | Value |
 | --- | --- |
 | name | `geopulse` (lower-case letters, digits and dashes, 2–50 characters) |
-| display name | what the sign-in button shows, for example `Kanidm` |
+| display name | what the sign-in button shows, for example `Shrublab` |
 | client id | `geopulse` |
 | client secret | the value of `geopulse/client_secret` |
-| discovery URL | `https://id.shrublab.xyz/oauth2/openid/geopulse/.well-known/openid-configuration` |
+| discovery URL | `https://auth.shrublab.xyz/application/o/geopulse/.well-known/openid-configuration` |
 | scopes | `openid profile email` |
 | enabled | on |
 
@@ -280,14 +272,15 @@ row whose test fails authenticates nobody: fix it before relying on the login.
 
 ### Account linking and the primary email
 
-Automatic linking stays off (upstream default). A Kanidm identity whose email
-matches an existing GeoPulse account is therefore not attached to it silently:
-the callback reports that linking is required, and the operator completes it
-through the password path. Later logins map by provider and subject.
+Automatic linking stays off (upstream default). An identity whose email matches an
+existing GeoPulse account is therefore not attached to it silently: the callback
+reports that linking is required, and the operator completes it through the
+password path. Later logins map by provider and subject.
 
-Kanidm emits `email` only when the account has a `mail_primary`, and the backend
-rejects an ID token without a non-empty one. The owner account needs a primary
-mail address before the first sign-in; an account without one cannot log in.
+The provider returns the account's email claim, and the backend rejects an ID token
+without a non-empty one. Every enrolled account has one — the fleet's login policy
+requires a verified address — so an account that cannot log in here has a missing or
+unverified address upstream.
 
 ### Registration precedence
 
@@ -309,19 +302,18 @@ alone), which is how the owner gets in without configuring an admin email.
 
 ## Publication gate
 
-The route declares its public identity from the start — `geo.shrublab.xyz`,
-Access-free, application OIDC on — but declares no publication, so the edge serves
-no site for it.
+The route declares its public identity — `geo.shrublab.xyz`, Access-free,
+application OIDC on — and its publication posture separately.
 
-| State | Route `publish` in policy | Route identity | Edge site |
+| State | Route `posture` in policy | Route identity | Edge site |
 | --- | --- | --- | --- |
-| Shipped default | `false` | `https://geo.shrublab.xyz` | withheld |
-| After bootstrap | `true` | unchanged | served |
+| Before bootstrap | `private` | unchanged | withheld |
+| Released | absent (defaults `public`) | unchanged | served |
 
-- Publication is the policy's own flag. Flipping it is one line in
-  `policy/web-services.nix`, followed by a deploy: `publish = true;` on the
-  `geopulse` route. There is no host-side release switch, so the policy is the
-  only place that answers whether the site is live.
+- Publication is the policy's own field. Flipping it is one line in
+  `policy/web-services.nix`, followed by a deploy: remove `posture = "private";`
+  from the `geopulse` route (D-124). There is no host-side release switch, so the
+  policy is the only place that answers whether the site is live.
 - Flip it only after the owner's login is verified and password and OIDC
   registration are closed. Registration is checked before a user is created, so a
   published site with open registration admits strangers.
@@ -406,7 +398,7 @@ reach the backend.
 What the check cannot establish, and the operator must confirm on the deployment:
 the `ssh -L` hop itself; port 443 and the browser's trust store (the check cannot
 bind 443, so its terminator runs on a high port with the public host stated
-explicitly); the real listener, secrets and database; and the Kanidm login that
+explicitly); the real listener, secrets and database; and the provider login that
 follows.
 
 ## Key recovery
@@ -560,13 +552,11 @@ to the notifier.
 
 ## Still open
 
-- Live Kanidm login with PKCE: the operator fills `geopulse/client_secret` in
+- Live provider login: the operator fills `geopulse/client_secret` in
   `secrets/hosts/oci-melb-1/oidc.yaml`, enters the same value into the provider row,
   and logs in from the private URL (see [Private bootstrap over HTTPS](#private-bootstrap-over-https)).
-- Owner account creation, registration closed, then publication: set
-  `publish = true` on the `geopulse` route in `policy/web-services.nix` (see
-  [Publication gate](#publication-gate)). Do it only after the login above is
-  verified.
+- Owner account creation with registration closed, verified against the live
+  instance (§Publication gate keeps the route private until then).
 - Device ingest, the tile proxy (no tile has been fetched yet), and the JVM heap
   bound (task 4.2) are unmeasured.
 - A real export and restore have not been exercised; the scratch evidence above

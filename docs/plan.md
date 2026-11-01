@@ -336,14 +336,13 @@ change; publishers neither prune objects nor change Cloudflare Access.
   `postgres-consumer-migration.md`, and stale facts went with it (the Kanidm provider name, the
   deleted Home Assistant port assertion, the retired `repo.internal` cross-host contract, and
   `publish` in the Home Assistant release step).
-- Kanidm staleness outside those four is not swept, and it is instruction-level wrong rather than
-  stylistic: `docs/runbooks/geopulse.md` still describes the Kanidm client (scope maps,
-  `enableLegacyCrypto`, `id.shrublab.xyz` discovery, the `kanidm.oauth2.*.basic_secret` path),
-  `docs/runbooks/bookorbit.md` names a Kanidm secret source, `docs/runbooks/home-assistant.md`
-  offered Kanidm as a future option (now named by capability), and `docs/runbooks/admin-host-migration.md`
-  lists `kanidm.service` among the services it moves. `docs/runbooks/identity-migration.md`
-  describes the completed migration and should be retired rather than kept current. Each needs its
-  Authentik-era replacement written from the pinned provider, not a rename.
+- Kanidm staleness outside the sweep: `docs/runbooks/geopulse.md` is done — its client section,
+  provider row, discovery URL, email-claim note and publication gate now describe the Authentik-era
+  reality, and its stale "route is still private" premise is corrected (the route is published). What
+  remains: `docs/runbooks/bookorbit.md` names a Kanidm secret source (renamed to the file, since the
+  provider name was the only wrong part), `docs/runbooks/admin-host-migration.md` still lists
+  `kanidm.service` among the services it moves, and `docs/runbooks/identity-migration.md` documents
+  the finished migration and should be retired rather than kept current.
 - Windows VM lifecycle: an idle reaper plus socket-activated RDP, gated first on proving a graceful `windows-vm-stop` (the deploy stall showed the guest did not stop inside its 180 s window).
 
 ### Known ceilings, no action planned

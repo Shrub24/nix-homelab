@@ -228,7 +228,7 @@ Host initialization is conditional on target state — see `docs/runbooks/host-i
 
 Their state lives under `/srv/data/{actual,memos,tududi}`. Each primary SQLite database is exported before backup; Actual's `user-files` remain a raw copy with consistency unverified. The [application runbook](docs/runbooks/actual-memos-tududi.md) covers secret preparation, provider acceptance and recovery. These placements are implemented, not yet deployed; the missing tududi encrypted secret blocks complete host evaluation.
 
-Homarr v2 is a separate user-facing dashboard being added for `oci-melb-1`, not a replacement for the operator Homepage on `la-admin-1` (D-092). Nix owns its digest-pinned container, OIDC client, private Tailscale bootstrap and backup contract; Homarr owns its users, groups, boards and service catalogue in `/appdata`, edited in the application rather than generated from web policy. The public route remains withheld until private OIDC acceptance. Host selection awaits the operator-provisioned Homarr service and OAuth client secrets; see [the Homarr runbook](docs/runbooks/homarr.md).
+Homarr v2 is a separate user-facing dashboard served on `oci-melb-1`, not a replacement for the operator Homepage on `la-admin-1` (D-092). Nix owns its digest-pinned container, OIDC client, sign-in options and backup contract; Homarr owns its users, groups, boards and service catalogue in `/appdata`, edited in the application rather than generated from web policy. `services.homarr.publicUrl` and `services.homarr.authProviders` are ordinary options rather than a lifecycle switch, and the local administrator they can re-enable is the break-glass path (D-125); see [the Homarr runbook](docs/runbooks/homarr.md).
 
 ## Key Abstractions
 

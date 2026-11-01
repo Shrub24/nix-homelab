@@ -3315,3 +3315,41 @@ dial names no front (`tailscale-upstream`) is reachable only on the tailnet, whi
 machine endpoints want. `check-web-service-catalog.sh` asserts a private entry is unpublished. Revisit if
 a route must be served publicly with no DNS record — a staging front — at which point the case earns its
 own field rather than sharing one by accident.
+
+## D-125: No supported bootstrap states — expose the configuration key, not a lifecycle flag
+
+**Context:** Homarr's module derived `BASE_URL` and `AUTH_PROVIDERS` from whether its route was
+published, so a "withheld route" was a second supported runtime: private origin, credentials
+provider, plus a second registered OIDC redirect URI at the tailnet front to make that instance
+reachable. Keeping it honest cost a whole-tree copy of the repository in the contract test, because
+`repo.web` is read-only and the withheld branch could not be constructed any other way. Nothing
+stopped there: the same shape appeared as `includePrivateEndpointCallback` in the redirect
+projection, and the GeoPulse runbook carried a hand-run TLS terminator, `/etc/hosts` override and SSH
+tunnel for reaching the withheld origin.
+
+**Decision:** A module exposes the application's own configuration keys as ordinary options and
+sets nothing from a lifecycle state. Homarr takes `services.homarr.publicUrl` (BASE_URL) and
+`services.homarr.authProviders` (AUTH_PROVIDERS), defaulting to the deployed values; a host that
+wants a different origin or sign-in method sets the option and deploys, so the result is a
+deployment rather than a phase of one. The `published` branch, the `tailscale-serve` assertion that
+existed only to keep the private callback reachable, and the `includePrivateEndpointCallback`
+mechanism are deleted, along with the tree-copy control and the bootstrap procedures in the Homarr
+and GeoPulse runbooks. Route `posture` remains policy: it is an exposure fact about where a site is
+served, not a state an application module reads.
+
+Breaking the invariant is now something an operator writes down. `authProviders = "credentials,oidc"`
+on a public route is representable, and that is the point: the break-glass step is a one-line
+deployment with a revert, not a special mode the module supports and the suite must test.
+
+**Rejected:** Keeping the withheld branch and test, which is what this repository did until now. It
+made an imperative pathway — reach a second, unpublished origin by hand, log in there, then flip a
+flag — look declarative, and it required every consumer of the module to reason about a state that
+exists only during setup. Also rejected: an override option on the derived value, which keeps the
+state switch and merely moves where it is set.
+
+**Consequences:** Homarr's route is `direct` again (loopback behind the local edge) rather than
+`tailscale-serve`, and no client registers a private endpoint callback. A login over a withheld
+origin is no longer supported; the public callback is the only one. D-104 (the posture switch) is
+superseded, and D-124's `posture` field survives because it publishes a route rather than shaping a
+module's configuration. Revisit if a service genuinely cannot be reached without a second origin
+during setup: that case earns an explicit, named option rather than a state machine.

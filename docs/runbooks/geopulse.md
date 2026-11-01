@@ -4,8 +4,8 @@ GeoPulse records location history (track ingest from OwnTracks/GPSLogger-style
 sources, PostGIS-backed tracks, OIDC login) and is placed on `oci-melb-1` by the
 `geopulse` aspect in `modules/apps/geopulse.nix`. This runbook covers the
 database seam, the operator-owned secrets and the native runtime the aspect
-delivers. The public route is withheld by the policy's `publish` posture until the owner's
-private bootstrap is verified (see [Publication gate](#publication-gate)).
+delivers. The route is served; the policy's `posture` field is the only thing that withholds it
+(see [Publication gate](#publication-gate)).
 
 ## Current state (2026-10-19)
 
@@ -305,15 +305,15 @@ alone), which is how the owner gets in without configuring an admin email.
 The route declares its public identity — `geo.shrublab.xyz`, Access-free,
 application OIDC on — and its publication posture separately.
 
-| State | Route `posture` in policy | Route identity | Edge site |
-| --- | --- | --- | --- |
-| Before bootstrap | `private` | unchanged | withheld |
-| Released | absent (defaults `public`) | unchanged | served |
+| Route `posture` in policy | Route identity | Edge site |
+| --- | --- | --- |
+| `private` | unchanged | withheld |
+| absent (defaults `public`) | unchanged | served |
 
-- Publication is the policy's own field. Flipping it is one line in
-  `policy/web-services.nix`, followed by a deploy: remove `posture = "private";`
-  from the `geopulse` route (D-124). There is no host-side release switch, so the
-  policy is the only place that answers whether the site is live.
+- Publication is the policy's own field, and the route is currently served. Withholding it again
+  is one line in `policy/web-services.nix` plus a deploy: `posture = "private";` on the `geopulse`
+  route (D-124). There is no host-side switch, so the policy is the only place that answers
+  whether the site is live.
 - Flip it only after the owner's login is verified and password and OIDC
   registration are closed. Registration is checked before a user is created, so a
   published site with open registration admits strangers.
@@ -369,37 +369,10 @@ and welcome copy: the front end fetches both from `Home.vue` and falls back to
 `Unknown` and a default release link when a fetch fails. The admin status page's
 metric panel degrades the same way.
 
-## Private bootstrap over HTTPS
+## Logging in
 
-Browser login must use the public callback
-`https://geo.shrublab.xyz/oidc/callback` even while the route is withheld, so
-private access preserves that origin rather than substituting a loopback URL. On
-the operator's machine:
-
-1. Resolve the name locally: `127.0.0.1 geo.shrublab.xyz` in `/etc/hosts`, or
-   the browser's own resolver override.
-2. Terminate TLS for that name on port 443 with a certificate your browser trusts.
-   A local CA is enough: the provider never fetches the redirect URI, so the
-   certificate only has to satisfy the browser.
-3. Forward the decrypted traffic to the app's loopback listener over SSH —
-   `ssh -N -L 8443:127.0.0.1:8085 <host>`, with the local TLS listener proxying to
-   `http://127.0.0.1:8443`. Port 8085 is the route's declared listener port.
-4. Open `https://geo.shrublab.xyz/` and create the owner account there.
-
-The app's front end trusts loopback alone, so the public host and the HTTPS scheme
-the local terminator produced survive to the backend. The GeoPulse contract check
-runs that half of the procedure with the real Caddy binary: a TLS terminator with a
-locally issued certificate, reached as this hostname through name resolution; a TCP
-forward standing in for the SSH hop; and a fixture backend that observes
-`Host: geo.shrublab.xyz` and `X-Forwarded-Proto: https`. It also shows the
-terminator owning the client chain, so a caller-supplied `X-Forwarded-For` does not
-reach the backend.
-
-What the check cannot establish, and the operator must confirm on the deployment:
-the `ssh -L` hop itself; port 443 and the browser's trust store (the check cannot
-bind 443, so its terminator runs on a high port with the public host stated
-explicitly); the real listener, secrets and database; and the provider login that
-follows.
+The route is served, so the browser login goes through `https://geo.shrublab.xyz/` directly; there
+is no second origin to reach and no private-bootstrap procedure to run.
 
 ## Key recovery
 
@@ -553,10 +526,9 @@ to the notifier.
 ## Still open
 
 - Live provider login: the operator fills `geopulse/client_secret` in
-  `secrets/hosts/oci-melb-1/oidc.yaml`, enters the same value into the provider row,
-  and logs in from the private URL (see [Private bootstrap over HTTPS](#private-bootstrap-over-https)).
-- Owner account creation with registration closed, verified against the live
-  instance (§Publication gate keeps the route private until then).
+  `secrets/hosts/oci-melb-1/oidc.yaml`, enters the same value into the provider row, and logs in at
+  `https://geo.shrublab.xyz/`.
+- Owner account creation with registration closed, verified against the live instance.
 - Device ingest, the tile proxy (no tile has been fetched yet), and the JVM heap
   bound (task 4.2) are unmeasured.
 - A real export and restore have not been exercised; the scratch evidence above

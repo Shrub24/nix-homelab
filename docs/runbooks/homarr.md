@@ -1,17 +1,15 @@
 # Homarr v2 Runbook
 
-Homarr is the user-facing dashboard on `oci-melb-1`, separate from the operator Homepage on `la-admin-1`. Its boards, service tiles, users, groups, and per-user home boards are edited in Homarr; they are not generated from web policy. The public route is `https://home.shrublab.xyz`, but it remains withheld until private OIDC acceptance is complete. Cloudflare Access is off; Homarr's own OIDC login is the browser gate.
+Homarr is the user-facing dashboard on `oci-melb-1`, separate from the operator Homepage on `la-admin-1`. Its boards, service tiles, users, groups, and per-user home boards are edited in Homarr; they are not generated from web policy. The route is `https://home.shrublab.xyz`; Cloudflare Access is off and Homarr's own OIDC login is the browser gate.
 
 ## Status (2026-10-20)
 
-- Installed on `oci-melb-1` and reachable on the tailnet at
-  `https://oci-melb-1.tail0fe19b.ts.net:7575/`.
-- The route is published: the edge serves `https://home.shrublab.xyz`, Cloudflare Access is off,
-  and Homarr's own OIDC login is the browser gate.
+- Installed on `oci-melb-1`; the edge serves `https://home.shrublab.xyz` from a loopback listener:
+  Cloudflare Access is off and Homarr's own OIDC login is the browser gate.
 - Group membership follows the provider's `groups` claim (D-103), so administration is granted by
   putting a person in `service-admins` in the identity provider — not by promoting them in Homarr.
-- There is no bootstrap switch. Whether the instance runs private or public is the route's
-  `posture` in `policy/web-services.nix`, and nothing else (D-104, D-124).
+- `services.homarr.publicUrl` and `services.homarr.authProviders` are the whole sign-in surface
+  (D-125 supersedes the posture switch in D-104).
 
 ## 1. Prepare secrets
 
@@ -55,55 +53,36 @@ bindings.
 
 ## 2. Private first-admin and OIDC setup
 
-The OIDC client accepts two exact redirect URIs:
+The OIDC client accepts one redirect URI, derived from the route:
 
-- Public: `https://home.shrublab.xyz/api/auth/callback/oidc`
-- Private: `https://oci-melb-1.tail0fe19b.ts.net:7575/api/auth/callback/oidc`
+`https://home.shrublab.xyz/api/auth/callback/oidc`
 
-The private URI uses the host and port from Homarr's provider endpoint, with `https` because Tailscale Serve terminates TLS.
+`NEXTAUTH_URL` is intentionally unset so the callback follows the forwarded request host.
 
-**Use the full tailnet name, not the short one.** Tailscale Serve terminates TLS with a certificate issued for the node's tailnet FQDN only (`/var/lib/tailscale/certs/oci-melb-1.tail0fe19b.ts.net.crt` on the host), so `https://oci-melb-1:7575/` fails the handshake — the browser reports "Secure connection failed" and curl reports `error:0A000438:SSL routines::tlsv1 alert internal error`. That is the certificate refusing an SNI it does not cover, not a broken proxy; the FQDN with the same port answers. `tailscale serve status` on the host lists the only reachable form. To obtain the current name from the resolved catalog:
+### Sign-in options
 
-```sh
-nix eval --raw .#nixosConfigurations.la-admin-1.config.repo.web.catalog.homarr.endpoint.host
-```
+`services.homarr.publicUrl` (BASE_URL) and `services.homarr.authProviders` (AUTH_PROVIDERS) are
+ordinary options whose defaults are the deployed values. There is no bootstrap state and no
+lifecycle switch: a host that needs a different origin or sign-in method sets the option and
+deploys, and the deployment is in that state rather than in a phase of one.
 
-`NEXTAUTH_URL` is intentionally unset so the callback follows the forwarded request host and can
-use either registered URI.
+`services.homarr.authProviders = "credentials,oidc"` beside the default `publicUrl` is the
+break-glass path: the local administrator account — which group sync never touches, because it is
+not an OIDC user — becomes usable. Set it, deploy, sign in, revert, deploy.
 
-### Posture: one field, no state
-
-`AUTH_PROVIDERS` and `BASE_URL` are derived from the route's `posture`, so there is no second
-switch and nothing to remember between deploys:
-
-| route `posture` | `BASE_URL` | `AUTH_PROVIDERS` | Use |
-| --- | --- | --- | --- |
-| absent or `public` | the public URL (`home.shrublab.xyz`) | `oidc` | the deployed state |
-| `private` | the private Tailscale Serve origin | `credentials,oidc` | first administrator, and recovery |
-
-A withheld route is a private instance, so it keeps the private origin and the credentials
-provider. Publishing a route therefore also disables local credentials — which is the point:
-the two cannot drift apart, and a public route can never keep a password login alive.
-
-**Recovery is the same field.** If identity breaks and no administrator can sign in, set
-`posture = "private"` on the `homarr` route and deploy; the instance returns to the private origin
-with the credentials provider, and the local administrator account — which group sync never
-touches, because it is not an OIDC user — is reachable again. The provider keeps rendering the
-tailnet front for a private route, so the private origin still answers.
-
-**Deploy order matters.** Homarr and the identity provider now share `oci-melb-1`, so one deploy
+**Deploy order matters.** Homarr and the identity provider share `oci-melb-1`, so one deploy
 carries both; the client's scopes come from the policy the provider provisions from
 (`policy/identity.nix`).
 
 ### First bring-up on a new host
 
-1. Leave the route's posture `private` and deploy the host that runs Homarr.
-2. Open the private origin on the tailnet, and create the first credentials administrator.
+1. Deploy the host that runs Homarr.
+2. Create the first local administrator through Homarr's setup page, at
+   `services.homarr.authProviders = "credentials"`.
 3. Sign in through the identity provider; that OIDC user gets its groups from the claim automatically.
 4. Create the Homarr group that matches the provider's admin group (`service-admins`) and give it the
    Administrator preset, then confirm the OIDC account is an administrator.
-5. Set the route's posture back to `public` and deploy. Local credentials are disabled by the same
-   change; keep the local account until you have confirmed provider administration works.
+5. Set `authProviders` back to `oidc` and deploy. Keep the local account: it is the break-glass path.
 
 ### Verifying the deployed state
 
@@ -176,7 +155,10 @@ Verify the run with `just backups status oci-melb-1` and `just backups logs oci-
 
 ## 4. Acceptance boundary
 
-Before release, the operator verifies private callback login, two distinct provider accounts, per-user board separation, and that the temporary credentials provider is removed. After release, verify the public callback and anonymous denial. The code contract proves routing, secret references, environment composition, and the SQLite export command; it does not substitute for live Homarr login or a restic restore.
+The operator verifies login through the public callback with two distinct provider accounts and
+per-user board separation. The code contract proves routing, secret references, environment
+composition and the SQLite export command; it does not substitute for a live login or a restic
+restore.
 
 ## App bookmarks are synced from the web policy
 

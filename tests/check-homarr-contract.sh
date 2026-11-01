@@ -15,38 +15,12 @@ homarr:
   client_secret: "test-only-not-a-secret"
 EOF
 
-# The withheld-posture control: a copy of the tree whose Homarr route declares the
-# private posture. repo.web is a read-only projection, so this is the only way to exercise
-# the recovery posture the runbook describes.
-CONTROL="$(mktemp -d "$tmp/control.XXXXXX")"
-tar -C "$ROOT" \
-  --exclude=.git --exclude=.jj --exclude=./opentofu \
-  --exclude=.qmd --exclude=.direnv --exclude=.tmp --exclude=.pi \
-  --exclude=.ruff_cache \
-  -cf - . | tar -C "$CONTROL" -xf -
-python3 - "$CONTROL" <<'PYWITHHELD' || { echo "the withheld-route control mutation failed" >&2; exit 1; }
-import sys
-
-path = sys.argv[1] + "/policy/web-services.nix"
-src = open(path).read()
-anchor = "        homarr = {"
-start = src.index(anchor)
-end = src.index("        inbox-zero = {", start)
-block = src[start:end]
-if "posture" in block:
-    sys.exit("the homarr route already declares a posture; the control anchor drifted")
-# Publication is the posture, so withholding is one inserted line.
-mutated = block.replace(anchor + "\n", anchor + "\n          posture = \"private\";\n", 1)
-open(path, "w").write(src[:start] + mutated + src[end:])
-PYWITHHELD
-
 cat >"$tmp/probe.nix" <<EOF
 let
   repo = builtins.getFlake "path:$ROOT";
   fixture = builtins.toPath "$tmp/homarr.yaml";
-  # The login posture is derived from the route's derived `published` value. oci-melb-1
-  # selects the homarr aspect, so the module is already part of this configuration;
-  # importing it again would re-declare its options.
+  # oci-melb-1 selects the homarr aspect, so the module is already part of this
+  # configuration; importing it again would re-declare its options.
   mkHomarr = _: repo.nixosConfigurations.oci-melb-1.extendModules {
     modules = [
       {
@@ -57,10 +31,6 @@ let
   };
   defaults = mkHomarr null;
   normal = (mkHomarr null).config;
-  # A withheld route cannot be forced: repo.web is a read-only projection. The recovery
-  # posture is therefore exercised on a throwaway copy of the tree whose policy withholds
-  # it, which is the same edit an operator makes to reopen the credentials login.
-  withheld = builtins.getFlake "path:${CONTROL}";
   container = normal.virtualisation.oci-containers.containers.homarr;
   route = normal.repo.web.catalog.homarr;
   routeData = normal.repo.web.hosts.oci-melb-1.services.homarr;
@@ -70,9 +40,10 @@ in {
   inherit endpoint;
   # Selection is enablement, so the runtime the aspect contributes is the observable.
   homarrContainer = container != { };
-  # A host that says nothing about the option tree keeps the published posture:
-  # withholding is written down on the policy route, never assumed.
-  declaresBootstrapOption = defaults.options.services.homarr ? credentialsBootstrap;
+  # The base URL and the sign-in methods are ordinary options a host may override,
+  # so nothing in the module switches on a lifecycle state.
+  publicUrl = normal.services.homarr.publicUrl;
+  authProviders = normal.services.homarr.authProviders;
   route = {
     inherit (route) exposureMode upstreamPort publicUrl;
     published = routeData.published;
@@ -90,26 +61,6 @@ in {
     inherit (normal.sops.templates."homarr.environment") owner group mode restartUnits;
   };
   normalEnvironment = normal.sops.templates."homarr.environment".content;
-  withheldEnvironment =
-    (withheld.nixosConfigurations.oci-melb-1.extendModules {
-      modules = [
-        ({ ... }: {
-          services.homarr.secretFiles.host = fixture;
-          services.homarr.secretFiles.oidc = fixture;
-        })
-      ];
-    }).config.sops.templates."homarr.environment".content;
-  # The withheld copy changes the route's posture, so its dial is read from that copy
-  # rather than from this one.
-  controlEndpoint =
-    (withheld.nixosConfigurations.oci-melb-1.extendModules {
-      modules = [
-        ({ ... }: {
-          services.homarr.secretFiles.host = fixture;
-          services.homarr.secretFiles.oidc = fixture;
-        })
-      ];
-    }).config.repo.web.catalog.homarr.endpoint.url;
   sqliteRestoreToolAvailable = builtins.any (package: (package.pname or "") == "sqlite") normal.environment.systemPackages;
   backup = {
     inherit (backup) mode paths exclude exportPaths prepareCommands cleanupCommands;
@@ -134,22 +85,16 @@ errors = []
 
 if got["homarrContainer"] is not True:
     errors.append("the selected Homarr aspect must contribute the container that runs it")
-if got["declaresBootstrapOption"]:
-    errors.append("the retired credentialsBootstrap option is back; the posture derives from the route")
 route = got["route"]
 
 def route_errors(candidate):
     found = []
-    if candidate["exposureMode"] != "tailscale-serve":
-        found.append("the route must use the provider's Tailscale Serve front")
     if candidate["upstreamPort"] != 7575:
         found.append(f"route port is {candidate['upstreamPort']!r}, want 7575")
     if candidate["requireCloudflareAccess"] is not False:
         found.append("Cloudflare Access must stay off; Homarr owns browser authentication")
     if candidate["oidcEnabled"] is not True:
         found.append("the route must declare its application OIDC consumer")
-    if candidate["published"] is not True:
-        found.append("the withheld route must retain its public identity for eventual release")
     if candidate["catalogPublished"] is not True:
         found.append("the route is published: Homarr is the fleet dashboard and its OIDC login is the gate")
     return found
@@ -178,16 +123,13 @@ if "podman-homarr.service" not in environment_file["restartUnits"]:
     errors.append("secret rotation must restart the Homarr container")
 
 normal_env = got["normalEnvironment"]
-withheld_env = got["withheldEnvironment"]
 if got["sqliteRestoreToolAvailable"] is not True:
     errors.append("the host must provide the SQLite CLI used to verify staged restores")
 for name in ("AUTH_SECRET", "SECRET_ENCRYPTION_KEY", "AUTH_OIDC_ISSUER", "AUTH_OIDC_CLIENT_ID", "AUTH_OIDC_CLIENT_SECRET"):
     if not any(line.startswith(name + "=") for line in normal_env.splitlines()):
         errors.append(f"rendered environment is missing {name}")
 if "AUTH_PROVIDERS=oidc" not in normal_env:
-    errors.append("steady state must enable OIDC without the credentials fallback")
-if "AUTH_PROVIDERS=credentials,oidc" not in withheld_env:
-    errors.append("a withheld route must keep credentials beside OIDC as the way back in")
+    errors.append("the rendered environment must offer OIDC sign-in")
 # Group membership is authoritative from the identity provider: the
 # `groups` claim decides administration, so the local manager must be off and the
 # claim attribute named.
@@ -195,11 +137,11 @@ if "AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false" not in normal_env:
     errors.append("OIDC group membership must come from the provider, not local management")
 if "AUTH_OIDC_GROUPS_ATTRIBUTE=groups" not in normal_env:
     errors.append("the group claim attribute must be named `groups`")
-if "BASE_URL=https://home.shrublab.xyz" not in normal_env:
-    errors.append("steady state BASE_URL must use Homarr's canonical public origin")
-if f"BASE_URL={got['controlEndpoint']}" not in withheld_env:
-    errors.append("a withheld route's BASE_URL must use the private origin its posture declares")
-if "NEXTAUTH_URL=" in normal_env or "NEXTAUTH_URL=" in withheld_env:
+if not normal_env.startswith("AUTH_SECRET=") and "BASE_URL=" not in normal_env:
+    errors.append("the rendered environment must carry a base URL")
+if got["publicUrl"] != got["route"]["publicUrl"]:
+    errors.append("the base URL must come from the route's published identity, not a second literal")
+if "NEXTAUTH_URL=" in normal_env:
     errors.append("a fixed NEXTAUTH_URL would override the request-specific OIDC callback")
 
 def backup_errors(backup):

@@ -396,7 +396,7 @@ Actual retains password login because its OpenID integration is upstream preview
 
 State resides under `/srv/data/{actual,memos,tududi}`, with export-first capture of the primary SQLite databases. Actual's raw `user-files` capture has not been proven coherent. These placements are not deployed, and the absent encrypted tududi file blocks the complete host derivation. The [runbook](runbooks/actual-memos-tududi.md) owns operator preparation, rollout and recovery checks.
 
-Homarr v2 is a separate user-facing dashboard being added for `oci-melb-1`, not a replacement for the operator Homepage on `la-admin-1` (D-092). Nix owns its digest-pinned runtime, OIDC, private Tailscale bootstrap and recovery contract. Homarr's users, groups, boards and catalogue entries are edited in the application and are not generated from web policy. The public route stays withheld until private OIDC acceptance; host selection awaits the operator-provisioned service and OAuth client secrets. See the [Homarr runbook](runbooks/homarr.md).
+Homarr v2 is a separate user-facing dashboard served on `oci-melb-1`, not a replacement for the operator Homepage on `la-admin-1` (D-092). Nix owns its digest-pinned runtime, OIDC client, sign-in options and recovery contract. Homarr's users, groups, boards and catalogue entries are edited in the application and are not generated from web policy. `services.homarr.publicUrl` and `services.homarr.authProviders` are ordinary options; re-enabling the local administrator is the break-glass path and a deployment, not a supported mode (D-125). See the [Homarr runbook](runbooks/homarr.md).
 
 ## Deployment Architecture
 

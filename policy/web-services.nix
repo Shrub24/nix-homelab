@@ -359,7 +359,6 @@ in
             provider = "oci-melb-1";
             port = 7575;
           };
-          exposureMode = "tailscale-serve";
           category = "app";
           access.oidc.enabled = true;
           access.requireCloudflareAccess = false;

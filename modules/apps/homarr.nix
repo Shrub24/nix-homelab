@@ -12,7 +12,6 @@ _: {
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
       route = config.repo.web.catalog.homarr or null;
       oidcClient = config.services.identity.oidc.clients.homarr or null;
-      published = if route == null then true else route.published;
 
       dataDir = "/srv/data/homarr";
       containerPort = 7575;
@@ -33,6 +32,21 @@ _: {
           oidc = secretHelpers.mkSecretFileOption "homarr-oidc-secrets";
         };
 
+        publicUrl = lib.mkOption {
+          type = lib.types.str;
+          default =
+            if route != null && route.published then
+              route.publicUrl
+            else
+              throw "services.homarr.publicUrl: the web-policy route 'homarr' is not published; set the option to the origin Homarr is served from";
+          description = "Origin Homarr builds links and its OIDC callback from (BASE_URL).";
+        };
+
+        authProviders = lib.mkOption {
+          type = lib.types.str;
+          default = "oidc";
+          description = "Sign-in methods Homarr offers (AUTH_PROVIDERS).";
+        };
       };
 
       config = lib.mkMerge [
@@ -47,10 +61,6 @@ _: {
               assertion = oidcClient != null;
               message = "services.homarr: canonical OIDC client 'homarr' is missing; check clients.homarr in policy/identity.nix.";
             }
-            {
-              assertion = route != null && route.exposureMode == "tailscale-serve";
-              message = "services.homarr: route must use tailscale-serve so the private OIDC callback remains reachable.";
-            }
           ];
 
           # NEXTAUTH_URL stays unset so Auth.js derives the callback from forwarded headers.
@@ -62,8 +72,8 @@ _: {
             content = ''
               AUTH_SECRET=${config.sops.placeholder.homarr_auth_secret}
               SECRET_ENCRYPTION_KEY=${config.sops.placeholder.homarr_secret_encryption_key}
-              BASE_URL=${if published then route.publicUrl else route.endpoint.url}
-              AUTH_PROVIDERS=${if published then "oidc" else "credentials,oidc"}
+              BASE_URL=${cfg.publicUrl}
+              AUTH_PROVIDERS=${cfg.authProviders}
               AUTH_OIDC_ISSUER=${oidcClient.issuerUrl}
               AUTH_OIDC_CLIENT_ID=${oidcClient.clientId}
               AUTH_OIDC_CLIENT_NAME=${oidcClient.providerName}

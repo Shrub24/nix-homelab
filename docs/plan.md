@@ -187,12 +187,11 @@ five that already probe with a tool their image ships (`geopulse-ui`, `homarr`,
 `TimeoutStartSec = 0` on every container unit and an unpassed probe would otherwise hold the
 activation open instead of failing it.
 
-The remaining eighteen are leaves, so readiness there changes only whether a deploy notices a broken
-app — it is a tentative expansion, not queued work, and it would add a probe runtime per image plus
-an endpoint guess per app to buy that. They fall into three groups if it is ever picked up: node and
-python images with no `curl`/`wget` (a TCP connect needs no endpoint knowledge), four worker
-containers that serve no listener at all and should stay on the default, and a handful whose
-endpoint or port still needs confirming. Confirming means one
+The remaining eighteen are leaves, so a probe there changes only whether a deploy notices a broken
+app, and it costs a probe runtime per image plus an endpoint guess per app: a wrong guess turns a
+healthy service into a failed deploy, which is the opposite of the trade. Closed rather than
+deferred, then. It reopens when a unit gains a dependent — which is what makes readiness
+load-bearing — or when a container failure starts costing a deploy without a probe explaining it. Confirming means one
 `podman run --rm --entrypoint sh <image> -c 'command -v …'` against the pinned digest on the host
 that pulls it: a probe binary that does not exist converts a healthy service into a failed deploy.
 

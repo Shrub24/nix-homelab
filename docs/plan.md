@@ -331,7 +331,19 @@ change; publishers neither prune objects nor change Cloudflare Access.
 - Identity acceptance beyond plan-level assertions: the MFA invariant, the email-proof policy and the redirect allowlist are all checked against the assembled document, which proves the plan and not the deployment. End-to-end truth (a real passkey, a real authenticator code, email recovery) belongs in the Authentik VM harness, which currently exercises the blueprint gate only.
 - The Gatus Cloudflare service token is one credential with a 8760h lifetime covering every Access-gated probe. Scoping headers per route (done) narrowed where it is sent, not what it can reach; shortening the lifetime or splitting the token is the remaining knob.
 
-- Runbook sweep under the new `AGENTS.md` rule: `actual-memos-tududi.md`, `homarr.md`, `home-assistant.md` and `postgres-consumer-migration.md` still carry mechanism prose that belongs in `docs/`.
+- Runbook sweep under the `AGENTS.md` rule — the four are done: mechanism prose and incident
+  narration left `actual-memos-tududi.md`, `homarr.md`, `home-assistant.md` and
+  `postgres-consumer-migration.md`, and stale facts went with it (the Kanidm provider name, the
+  deleted Home Assistant port assertion, the retired `repo.internal` cross-host contract, and
+  `publish` in the Home Assistant release step).
+- Kanidm staleness outside those four is not swept, and it is instruction-level wrong rather than
+  stylistic: `docs/runbooks/geopulse.md` still describes the Kanidm client (scope maps,
+  `enableLegacyCrypto`, `id.shrublab.xyz` discovery, the `kanidm.oauth2.*.basic_secret` path),
+  `docs/runbooks/bookorbit.md` names a Kanidm secret source, `docs/runbooks/home-assistant.md`
+  offered Kanidm as a future option (now named by capability), and `docs/runbooks/admin-host-migration.md`
+  lists `kanidm.service` among the services it moves. `docs/runbooks/identity-migration.md`
+  describes the completed migration and should be retired rather than kept current. Each needs its
+  Authentik-era replacement written from the pinned provider, not a rename.
 - Windows VM lifecycle: an idle reaper plus socket-activated RDP, gated first on proving a graceful `windows-vm-stop` (the deploy stall showed the guest did not stop inside its 180 s window).
 
 ### Known ceilings, no action planned

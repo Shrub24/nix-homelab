@@ -47,22 +47,17 @@ nothing, so everything in `/srv/data/home-assistant` is yours:
 The directory is mode `0700` and holds `.storage` with every integration
 credential and token. It is the sensitive part of this service.
 
-## 3. Ports, and why 8123 is load-bearing
+## 3. The port
 
-`services.hass.port` and the policy route's `origin.port` are held together by an
-assertion. If you change `http.server_port` in `configuration.yaml`, change
-`services.hass.port` and `policy/web-services.nix` in the same commit, or the
-edge will dial a port nothing listens on.
+The container listens on the host network, so nothing publishes a port and the
+listener must be unique per host. `services.hass.port` and the policy route's
+`origin.port` are held together by an assertion; if you change
+`http.server_port` in `configuration.yaml`, change both in the same commit, or the
+edge dials a port nothing listens on.
 
-A second collision to watch for: any other service on `home-forge` that wants
-`8123` cannot have it while this container runs. ClickHouse's HTTP interface was
-the first one — it defaults to `8123` and Langfuse and Latitude both queried it
-there, so the first deploy of this module left Home Assistant in recovery mode
-while ClickHouse answered `200` on the port and made the service look healthy.
-ClickHouse now reads `observability.clickhouseHttpPort` (`8124`) from
-`policy/globals.nix`, and this module's assertion fails at evaluation if the two
-ever meet again (D-102). A new host-networked service needs the same check, and
-the module that introduces it owns that assertion.
+`8123` is Home Assistant's default and `8124` is ClickHouse's HTTP interface on
+this host (`observability.clickhouseHttpPort` in `policy/globals.nix`). A service
+that starts on a port already in use fails its own unit, which fails the deploy.
 
 ## 4. Adding a radio later
 
@@ -92,7 +87,8 @@ is the reason discovery works at all.
 ## 5. Release to the public hostname
 
 1. Confirm the instance is reachable and healthy over the tailnet.
-2. Set the route's `publish = true` in `policy/web-services.nix`.
+2. Set the route's `posture` to `public` in `policy/web-services.nix` (it is the
+   default, so this means removing the explicit `private`).
 3. Set Home Assistant to trust the edge as a proxy, in `configuration.yaml`:
 
    ```yaml
@@ -110,9 +106,9 @@ is the reason discovery works at all.
    has to log in to Home Assistant.
 
 `access.oidc.enabled` stays off: this instance uses Home Assistant's own auth.
-Moving it to Kanidm later means the `hass-oidc-auth` custom component in
-`/config/custom_components`, which Nix does not manage in a container — decide
-that as its own change, not as a side effect of publishing.
+Moving it to the fleet identity provider later means the `hass-oidc-auth` custom
+component in `/config/custom_components`, which Nix does not manage in a
+container — decide that as its own change, not as a side effect of publishing.
 
 ## 6. Backups and restore
 

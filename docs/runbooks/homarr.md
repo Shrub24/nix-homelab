@@ -1,17 +1,17 @@
 # Homarr v2 Runbook
 
-Homarr is the user-facing dashboard on `oci-melb-1`, separate from the operator Homepage on `la-admin-1`. Its boards, service tiles, users, groups, and per-user home boards are edited in Homarr; they are not generated from web policy. The public route is `https://home.shrublab.xyz`, but it remains withheld until private OIDC acceptance is complete. Cloudflare Access is off; Homarr's own Kanidm OIDC is the browser gate.
+Homarr is the user-facing dashboard on `oci-melb-1`, separate from the operator Homepage on `la-admin-1`. Its boards, service tiles, users, groups, and per-user home boards are edited in Homarr; they are not generated from web policy. The public route is `https://home.shrublab.xyz`, but it remains withheld until private OIDC acceptance is complete. Cloudflare Access is off; Homarr's own OIDC login is the browser gate.
 
 ## Status (2026-10-20)
 
 - Installed on `oci-melb-1` and reachable on the tailnet at
   `https://oci-melb-1.tail0fe19b.ts.net:7575/`.
 - The route is published: the edge serves `https://home.shrublab.xyz`, Cloudflare Access is off,
-  and Homarr's own Kanidm login is the browser gate.
-- Group membership follows Kanidm's `groups` claim (D-103), so administration is granted by
-  putting a person in the `service-admins` group in Kanidm — not by promoting them in Homarr.
+  and Homarr's own OIDC login is the browser gate.
+- Group membership follows the provider's `groups` claim (D-103), so administration is granted by
+  putting a person in `service-admins` in the identity provider — not by promoting them in Homarr.
 - There is no bootstrap switch. Whether the instance runs private or public is the route's
-  `publish` posture in `policy/web-services.nix`, and nothing else (D-104).
+  `posture` in `policy/web-services.nix`, and nothing else (D-104, D-124).
 
 ## 1. Prepare secrets
 
@@ -55,7 +55,7 @@ bindings.
 
 ## 2. Private first-admin and OIDC setup
 
-The Kanidm client accepts two exact redirect URIs:
+The OIDC client accepts two exact redirect URIs:
 
 - Public: `https://home.shrublab.xyz/api/auth/callback/oidc`
 - Private: `https://oci-melb-1.tail0fe19b.ts.net:7575/api/auth/callback/oidc`
@@ -73,69 +73,59 @@ use either registered URI.
 
 ### Posture: one field, no state
 
-`AUTH_PROVIDERS` and `BASE_URL` are derived from the route's `publish` posture, so there is no
-second switch and nothing to remember between deploys:
+`AUTH_PROVIDERS` and `BASE_URL` are derived from the route's `posture`, so there is no second
+switch and nothing to remember between deploys:
 
-| route `publish` | `BASE_URL` | `AUTH_PROVIDERS` | Use |
+| route `posture` | `BASE_URL` | `AUTH_PROVIDERS` | Use |
 | --- | --- | --- | --- |
-| absent or `true` | the public URL (`home.shrublab.xyz`) | `oidc` | the deployed state |
-| `false` | the private Tailscale Serve origin | `credentials,oidc` | first administrator, and recovery |
+| absent or `public` | the public URL (`home.shrublab.xyz`) | `oidc` | the deployed state |
+| `private` | the private Tailscale Serve origin | `credentials,oidc` | first administrator, and recovery |
 
 A withheld route is a private instance, so it keeps the private origin and the credentials
 provider. Publishing a route therefore also disables local credentials — which is the point:
 the two cannot drift apart, and a public route can never keep a password login alive.
 
 **Recovery is the same field.** If identity breaks and no administrator can sign in, set
-`publish = false` on the `homarr` route and deploy; the instance returns to the private origin
+`posture = "private"` on the `homarr` route and deploy; the instance returns to the private origin
 with the credentials provider, and the local administrator account — which group sync never
-touches, because it is not an OIDC user — is reachable again.
+touches, because it is not an OIDC user — is reachable again. The provider keeps rendering the
+tailnet front for a private route, so the private origin still answers.
 
-**Deploy order matters.** Kanidm refuses an authorize request whose scopes are not in the
-client's granted scope maps, so `la-admin-1` must carry the `groups_name` grant before
-`oci-melb-1` starts asking for it. Deploy `la-admin-1` first, then `oci-melb-1`; the reverse
-order breaks Homarr's login until the grant lands.
+**Deploy order matters.** Homarr and the identity provider now share `oci-melb-1`, so one deploy
+carries both; the client's scopes come from the policy the provider provisions from
+(`policy/identity.nix`).
 
 ### First bring-up on a new host
 
-1. Leave `publish = false` on the route and deploy the provider host.
+1. Leave the route's posture `private` and deploy the host that runs Homarr.
 2. Open the private origin on the tailnet, and create the first credentials administrator.
-3. Sign in with Kanidm; its OIDC user gets its groups from the claim automatically.
-4. Create the Homarr group that matches the Kanidm admin group (`service-admins`) and give it the
-   Administrator preset, then confirm the Kanidm account is an administrator.
-5. Remove `publish = false` and deploy provider host, then edge. Local credentials are disabled by
-   the same change; keep the local account until you have confirmed Kanidm administration works.
+3. Sign in through the identity provider; that OIDC user gets its groups from the claim automatically.
+4. Create the Homarr group that matches the provider's admin group (`service-admins`) and give it the
+   Administrator preset, then confirm the OIDC account is an administrator.
+5. Set the route's posture back to `public` and deploy. Local credentials are disabled by the same
+   change; keep the local account until you have confirmed provider administration works.
 
 ### Verifying the deployed state
 
 - Anonymous requests to `https://home.shrublab.xyz` must not read dashboard content.
-- Kanidm sign-in must complete through the public callback.
-- An account in Kanidm's `service-admins` group must see the administration surface; an account
-  only in `users` must not.
+- The provider's sign-in must complete through the public callback.
+- An account in the provider's `service-admins` group must see the administration surface; an
+  account only in `users` must not.
 
-### Groups come from Kanidm
+### Group membership
 
-Homarr does not decide group membership. `AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false` makes the
-`groups` claim authoritative, and the claim arrives because the client requests the
-`groups_name` scope: Kanidm always emits it under the key `groups`, and the `_name` variant
-gives bare group names rather than `name@domain` service principal names. Both halves are
-required — Kanidm checks requested scopes against the client's *scope maps*, so the scope is
-granted to `service-admins` and `users` in `policy/identity.nix`, and Homarr names the claim
-with `AUTH_OIDC_GROUPS_ATTRIBUTE=groups`.
+Homarr does not decide group membership: the `groups` claim is authoritative
+(`AUTH_OIDC_GROUPS_LOCAL_MANAGEMENT=false`), and the client requests it through the policy in
+`policy/identity.nix`.
 
-Membership is then automatic in one direction and manual in the other:
+- **Automatic:** adding a person to `service-admins` in the provider grants whatever that group
+  holds in Homarr, at their next login.
+- **Manual, once:** create the Homarr group with the *same name* and give it the Administrator
+  preset. Homarr joins groups by name and never creates them.
 
-- **Automatic:** adding a person to the `service-admins` group in Kanidm grants whatever that
-  group holds in Homarr, at their next login.
-- **Manual, once:** create the Homarr group with the *same name* — `service-admins` — and give
-  it the Administrator preset. Homarr joins groups by name and never creates them, so a group
-  that exists only in Kanidm matches nothing.
-
-Two consequences worth knowing before you tidy anything up:
-
-- Sync is authoritative. An OIDC user is removed from every Homarr group the claim does not
-  name, except `Everyone`, so a group an OIDC user must keep has to exist in Kanidm too.
-- The credentials administrator is not an OIDC user, so sync never touches it. It stays the
-  way back in if a claim or a Kanidm group is misconfigured.
+Sync is authoritative: an OIDC user is removed from every Homarr group the claim does not name,
+except `Everyone`, so a group they must keep has to exist in the provider too. The credentials
+administrator is not an OIDC user, so sync never touches it.
 
 Homarr's board and catalogue configuration is imperative. Add only user-facing destinations; a route or hostname change in Nix policy may need a corresponding manual edit in Homarr.
 
@@ -186,7 +176,7 @@ Verify the run with `just backups status oci-melb-1` and `just backups logs oci-
 
 ## 4. Acceptance boundary
 
-Before release, the operator verifies private callback login, two distinct Kanidm users, per-user board separation, and that the temporary credentials provider is removed. After release, verify the public callback and anonymous denial. The code contract proves routing, secret references, environment composition, and the SQLite export command; it does not substitute for live Homarr login or a restic restore.
+Before release, the operator verifies private callback login, two distinct provider accounts, per-user board separation, and that the temporary credentials provider is removed. After release, verify the public callback and anonymous denial. The code contract proves routing, secret references, environment composition, and the SQLite export command; it does not substitute for live Homarr login or a restic restore.
 
 ## App bookmarks are synced from the web policy
 

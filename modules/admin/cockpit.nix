@@ -1,5 +1,5 @@
-# Cockpit: selection imports the leaf (enable defaults true) and owns the wiring common to
-# every host. `publicHost`, `urlRoot` and `loopbackTls.enable` stay host-local.
+# Cockpit: three contributors publish the one aspect, so selection is the whole enable.
+# `publicHost`, `urlRoot` and `loopbackTls.enable` stay host-local.
 _: {
   flake.modules.nixos.cockpit =
     {

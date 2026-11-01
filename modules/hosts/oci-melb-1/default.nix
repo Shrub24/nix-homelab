@@ -45,6 +45,7 @@ in
         aspects.inbox-zero
         aspects.homarr
         aspects.geopulse
+        aspects.sparkyfitness
         aspects.niks3-cache
         aspects.sops-systemd-activation
         aspects.base

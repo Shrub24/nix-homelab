@@ -84,6 +84,8 @@ in
     };
     geopulse.secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
 
+    sparkyfitness.secretFiles.oidc = ../../../secrets/hosts/oci-melb-1/oidc.yaml;
+
     tailscale.debugMtu = 1200;
 
     hostRecovery = {

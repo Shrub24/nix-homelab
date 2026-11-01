@@ -109,6 +109,47 @@
                 dialer in the host network namespace as the service address.
               '';
             };
+            additionalRoles = lib.mkOption {
+              default = { };
+              example = lib.literalExpression ''
+                {
+                  app = {
+                    password = {
+                      file = ../../secrets/services/example.yaml;
+                      key = "roles/app/password";
+                    };
+                  };
+                }
+              '';
+              description = ''
+                Further password logins for this consumer's database, keyed by role
+                name. They reach `database` from `allowedCIDRs` like the owning role
+                and own nothing: a workload that migrates as its owner and runs as a
+                restricted login declares both here, so every role and credential
+                exists before `setupSQL` runs and neither needs cluster-wide
+                role-creation rights.
+              '';
+              type = lib.types.attrsOf (
+                lib.types.submodule {
+                  options.password = lib.mkOption {
+                    type = lib.types.submodule {
+                      options = {
+                        file = lib.mkOption {
+                          type = lib.types.path;
+                          description = "SOPS-encrypted file holding this role's password.";
+                        };
+                        key = lib.mkOption {
+                          type = lib.types.str;
+                          description = "Key path of this role's password within that file.";
+                        };
+                      };
+                    };
+                    description = "Credential the substrate provisions and the consumer reads to authenticate.";
+                  };
+                }
+              );
+            };
+
             extraDatabases = lib.mkOption {
               type = lib.types.listOf lib.types.str;
               default = [ ];

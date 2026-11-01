@@ -145,8 +145,8 @@ users  ←  service-admins  ←  admins  ←  superusers
 - **`users`** — the root, and where enrollment lands a person who confirms their address.
   Every other group is beneath it, so an administrator also satisfies an access list that
   only asks for a confirmed person.
-- **`service-admins`** — the eight user-facing applications read it for their own admin roles.
-- **`admins`** — the operator-console clients read it (`grafana`, `beszel`, `termix`,
+- **`service-admins`** — the user-facing applications read it for their own admin roles.
+- **`admins`** — the operator-console clients read it (`grafana`, `beszel`,
   `cloudflare-access`). It does not reach the provider console.
 - **`superusers`** — administers the identity provider. The flag is `is_superuser`, and it
   sits on this leaf deliberately: Authentik resolves a user's superuser status from *any*
@@ -343,10 +343,14 @@ next to its client secret.
 | Actual | none; the account is the provider's `preferred_username` claim | re-enable the password method |
 | Memos | admin-role password, set on the host | not needed — upstream gates the password by role |
 | Beszel | PocketBase superuser password, set on the host | not needed — the gate is per collection |
+| SparkyFitness | none in SOPS; the account is created through the application's own sign-up while password login is temporarily enabled | re-enable password login (`services.sparkyfitness.disablePasswordLogin = false`) and sign in as that account |
 
 Only Langfuse, Paperless and Memos hold a credential that outlives an SSO-only deployment;
-Grafana gains one as soon as its host binds the secret path, and Karakeep and Actual have no
-supported seed for one, because the provider creates their accounts and never sets a password.
+Grafana gains one as soon as its host binds the secret path, and Karakeep, Actual and
+SparkyFitness have no supported seed for one, because the provider creates the first accounts
+and never sets a password. SparkyFitness is the exception in how the account comes to exist: its
+sign-up is open while password login is hidden, so the break-glass account is registered during
+the same temporary override that makes it usable, and `adminEmail` keeps it administrative.
 Where no credential exists the reset path is the redeploy itself, which is what the
 applications reset in this change rely on — they carry no durable account state. Seeding the
 rest is outstanding work, not a decision that they do without one.

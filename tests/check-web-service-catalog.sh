@@ -153,7 +153,7 @@ nix eval --impure --no-write-lock-file --json --expr '
     lib = flake.inputs.nixpkgs.lib;
   in
   {
-    isPrivate = catalog.published == false && catalog.posture == "private";
+    isPrivate = catalog.published == false;
     noPublicIdentity = catalog.publicUrl == null && catalog.publicHost == null;
     providerListensOnDeclaredPort = provider.services.niks3.httpAddr
       == "0.0.0.0:${toString catalog.endpoint.port}";

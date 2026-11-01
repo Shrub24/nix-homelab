@@ -1,7 +1,5 @@
-# Grafana, the store's read front end. It is its own aspect because it is a front end rather
-# than part of the store, and its provisioning surface is Grafana's: datasource uids and every
-# dashboard. A provisioned datasource resolves by uid, so changing one needs Grafana's
-# provisioned state cleared before activation (ARCHITECTURE.md, Observability).
+# Grafana, the store's read front end. A provisioned datasource resolves by uid, so changing
+# one needs Grafana's provisioned state cleared before activation (D-123).
 { inputs, ... }:
 {
   flake.modules.nixos.grafana =
@@ -255,7 +253,6 @@
         services.grafana = {
           enable = true;
 
-          # Datasources are declared here: the Victoria plugins, the Prometheus type upstream boards expect, and the built-in Jaeger datasource.
           declarativePlugins = [
             pkgs.grafanaPlugins.victoriametrics-metrics-datasource
             pkgs.grafanaPlugins.victoriametrics-logs-datasource

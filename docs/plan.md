@@ -196,24 +196,49 @@ that pulls it: a probe binary that does not exist converts a healthy service int
 
 ### Test-suite cleanup (prioritised)
 
-Assertions that restate configuration rather than behaviour break on unrelated changes, and each
-one costs an edit plus a gate. Ordered by what misleads most, not by size:
+A test may not restate configuration, repeat a check Nix already fails on verbosely, or
+assert that a superseded state is gone. It asserts behaviour and couplings we own. The
+inventory pass applied that rule to the whole suite (4,616 lines, 17 files):
 
-1. `tests/check-dendritic-scaffold-contract.sh` (1,698 lines). Extracting its `subset_probe`
-   aspect matrix and the placement tallies leaves the scaffold guarantees; per-host facts such as
-   `bootLoader`, `tsMtu` and `daemonUnit` belong to the host record, not to a fleet-wide contract.
-   The per-host container tally is already gone.
-2. `tests/check-identity-contract-directionality.sh` (494 lines). The per-host aspect-selection
-   expectations duplicate the host records and the scaffold contract, so one placement change is
-   three edits. Keep the four properties that survive a rewrite — the intrinsic contract resolves
-   no provider namespace, redirect URIs derive from the client, an unknown dashboard group fails
-   evaluation, and the assembled document renders.
-3. `tests/check-bifrost-gateway-contract.sh` (298 lines) carries a fleet-wide container and
-   service-address audit — the assertion that caught GeoPulse's missing `--add-host`. That check
-   is worth keeping and is in the wrong file: it belongs with the containers aspect, where every
-   container is in scope by construction.
-4. Deferred, unblocked by a VM harness rather than by editing: the blueprint gate's double
-   validation, and identity acceptance beyond plan level.
+- **`check-dendritic-scaffold-contract.sh` deleted** (1,698 lines). Almost all of it was
+  migration archaeology: the evacuated roots, the retired import-tree boundary, the Stage
+  5/6/7 mutations, and per-host facts (`bootLoader`, `tsMtu`, `daemonUnit`) that belong to
+  the host record. Its negative mutations for unknown deploy references and system drift
+  repeated `modules/flake/deploy.nix`'s own `throwIf`; its registry-key and per-host-system
+  assertions restated the host records, so adding a host meant editing the test. The one
+  invariant Nix cannot see — `pg_hba` format and ordering, which takes the cluster down
+  rather than degrading it — moved to `check-postgres-hba-safety.sh` (71 lines): a maskless
+  address fails because Postgres rejects the whole file, an allow row after a role's
+  catch-all reject can never match, and a registered consumer with no granted row is
+  silently unreachable. Each is proven against a hostile fixture.
+- **`check-user-app-placements.sh`** (323 → 292). Dropped the retired-option check, the
+  exact mount list, the tmpfiles ownership lines, two image flags (`TRUST_PROXY`,
+  `OIDC_SECRET_ENCRYPTION_KEY`), the image tag+digest regex (image policy owns that), and
+  the "placements leaked onto another host" block — an unselected aspect contributing
+  nothing is the module system's behaviour, not a contract. Kept the route-port ↔ listener
+  and route-URL ↔ app-URL joins, loopback bind, the secret-delivery boundary, and the
+  backup export/exclusion couplings.
+- **`check-shell-account-contract.sh`**. The three literal shell assertions and the
+  `defaultUserShell` rule became one relationship: root and rescue must not resolve to the
+  operator shell, so swapping the operator shell needs no change here. The rescue-secret
+  path, the activation-order dependency, the shared-key contract and the aliases-isolation
+  rule stay, with their non-vacuity controls.
+- **`check-web-service-catalog.sh`**. The hardcoded public URLs, `access.oidc` booleans and
+  `health.path` literal became derived shape invariants: no catalog entry carries the edge's
+  own routing fields, every entry carries a dialable endpoint, and both a published and a
+  withheld entry exist. The duplicate-ID rejection stays — it is the fail-closed behaviour
+  itself.
+
+Reviewed and kept as-is: `check-backup-surface-contract` and the two helper-script checks
+execute real code against hostile arguments with only the filesystem/network boundary
+stubbed; `check-build-account-contract` is a trust boundary with a pinned key fingerprint
+and accepted-mutation proofs; `check-telemetry-view-composition` delegates to nix-fleet's
+guard and mutates one pipeline to prove the guard is live; `check-flake-source-tracking`
+guards a trap that already cost 19 files from the index.
+
+Still worth moving, not pruning: `check-bifrost-gateway-contract.sh` carries the fleet-wide
+container/service-address audit (the assertion that caught GeoPulse's missing `--add-host`).
+It is a real coupling in the wrong file — it belongs with the containers aspect.
 
 ### Deployments pending
 
@@ -382,7 +407,7 @@ change; publishers neither prune objects nor change Cloudflare Access.
   the pair that must not collide is stated at the definition site (`policy/globals.nix`
   `clickhouseHttpPort = 8124`, against Home Assistant's `8123`). Reopens only if a collision reaches a
   deploy as a confusing rather than a named failure.
-- `tests/check-homarr-contract.sh` carries two posture mechanisms: a tar copy of the tree whose policy withholds the route, and an `extendModules` probe. The tar copy exists because `mkForce` on `repo.web.hosts.<host>.services.homarr.publish` cannot reach the module — `repo.web` is a read-only resolved projection, so the probe's `publish` parameter never had an effect. Deleting the copy needs the module to read its posture through an injectable seam first.
+- `tests/check-homarr-contract.sh` no longer carries a posture mechanism: the tar copy went with D-125, and what remains is one `extendModules` probe substituting a fixture secret file, so the configuration evaluates without real ciphertext. There is no withheld-route branch to control, because the module no longer reads a lifecycle state.
 - The blueprint gate's explicit `Importer.validate()` call duplicates what the applied-hash poll observes. Collapsing the two into one success-or-error report needs an experiment on the VM harness, not a deletion: the gate must still distinguish a rejected blueprint from a stale one.
 - Identity acceptance beyond plan-level assertions: the MFA invariant, the email-proof policy and the redirect allowlist are all checked against the assembled document, which proves the plan and not the deployment. End-to-end truth (a real passkey, a real authenticator code, email recovery) belongs in the Authentik VM harness, which currently exercises the blueprint gate only.
 - The Gatus Cloudflare service token is one credential with a 8760h lifetime covering every Access-gated probe. Scoping headers per route (done) narrowed where it is sent, not what it can reach; shortening the lifetime or splitting the token is the remaining knob.

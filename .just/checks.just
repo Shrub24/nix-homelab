@@ -12,7 +12,7 @@ all:
   @./tests/check-deploy-bootstrap-gate.sh
   @./tests/check-flake-source-tracking.sh
   @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).assets-publisher"
-  @./tests/check-dendritic-scaffold-contract.sh
+  @./tests/check-postgres-hba-safety.sh
   @./tests/check-web-services-policy.sh
   @./tests/check-web-service-catalog.sh
   @./tests/phase-la-admin-contract.sh
@@ -37,8 +37,8 @@ test-host-age-anchor:
 test-deploy-bootstrap-gate:
   @./tests/check-deploy-bootstrap-gate.sh
 
-test-dendritic-scaffold-contract:
-  @./tests/check-dendritic-scaffold-contract.sh
+test-postgres-hba-safety:
+  @./tests/check-postgres-hba-safety.sh
 
 test-web-policy:
   @./tests/check-web-services-policy.sh

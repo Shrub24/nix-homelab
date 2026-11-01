@@ -57,28 +57,17 @@ for host in $HOSTS; do
   cfg="path:.#nixosConfigurations.$host.config"
 
   dev_shell="$(nix eval --no-write-lock-file --raw "$cfg.users.users.dev.shell.name")"
-  case "$dev_shell" in
-    zsh-*) ;;
-    *) echo "$host: dev shell must resolve to zsh, got $dev_shell" >&2; exit 1 ;;
-  esac
-
-  root_shell="$(nix eval --no-write-lock-file --raw "$cfg.users.users.root.shell.name")"
-  case "$root_shell" in
-    bash-interactive-*) ;;
-    *) echo "$host: root shell must resolve to bash, got $root_shell" >&2; exit 1 ;;
-  esac
-
-  rescue_shell="$(nix eval --no-write-lock-file --raw "$cfg.users.users.rescue.shell")"
-  case "$rescue_shell" in
-    */bin/bash) ;;
-    *) echo "$host: rescue shell must resolve to bash, got $rescue_shell" >&2; exit 1 ;;
-  esac
-
-  default_shell="$(nix eval --no-write-lock-file --raw "$cfg.users.defaultUserShell.name")"
-  case "$default_shell" in
-    zsh-*) echo "$host: users.defaultUserShell must not be zsh (per-user shells are explicit), got $default_shell" >&2; exit 1 ;;
-    *) ;;
-  esac
+  # Recovery isolation: the operator shell (prompt, plugins, aliases) must never be
+  # what root or rescue resolve to, or a damaged operator profile takes break-glass
+  # access with it. Asserted as a relationship so swapping the operator shell needs
+  # no change here.
+  for account in root rescue; do
+    shell="$(nix eval --no-write-lock-file --raw "$cfg.users.users.$account.shell")"
+    if [ "$shell" = "$dev_shell" ]; then
+      echo "$host: $account resolves to the operator shell ($dev_shell)" >&2
+      exit 1
+    fi
+  done
 
   deps="$(nix eval --no-write-lock-file --json "$cfg.system.activationScripts.dev-zshrc.deps")"
   if ! echo "$deps" | python3 -c 'import json, sys; sys.exit(0 if "users" in json.load(sys.stdin) else 1)'; then

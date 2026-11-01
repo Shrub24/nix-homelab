@@ -200,6 +200,8 @@ in
               };
 
               "podman-omniroute-redis" = {
+                # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+                serviceConfig.TimeoutStartSec = lib.mkForce 120;
                 wants = [
                   "network-online.target"
                   "podman-network-${cfg.networkName}.service"

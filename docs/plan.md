@@ -173,33 +173,26 @@ Durable index of confirmed transition debt and acceptance boundaries — an inde
 
 Current open items, newest first. Each names the artifact that closes it.
 
-### Container readiness (part done)
+### Container readiness (wired where it earns something)
 
-`podman --sdnotify=healthy` turns a container unit's `Type=notify` into "the app answers", so
-`After=` and a failed deploy both mean something. The probe and the switch must travel together —
-podman refuses to start a container that asks for healthy notification without a healthcheck —
-which is why they are one helper, `modules/containers/_readiness.nix`.
+`podman --sdnotify=healthy` turns a container unit's `Type=notify` into "the app answers", so a
+dependent unit's `After=` and a failed deploy both mean something. The probe comes from what the
+pinned image actually contains and dials the container's own port.
 
-Nine of twenty-five containers are covered: `geopulse-backend`, `geopulse-ui`, `homarr`,
-`karakeep-meilisearch`, `langfuse-web` and both redis instances with a probe from a tool their
-image ships (`curl`, busybox `wget`, `redis-cli`), and `karakeep-web` / `tududi` with the switch
-alone because their images declare their own `HEALTHCHECK`.
+Nine containers carry it: `geopulse-backend`, `geopulse-ui`, `homarr`, `karakeep-meilisearch`,
+`langfuse-web` and both redis instances probe with a tool their image ships; `karakeep-web` and
+`tududi` pass `sdnotify` alone because their images declare their own `HEALTHCHECK`. Each of those
+units also states a start budget, because podman sets `TimeoutStartSec = 0` on every container
+unit and an unpassed probe would otherwise hold the activation open instead of failing it.
 
-The remaining sixteen ship no `HEALTHCHECK` (checked per pinned digest) and their probe is
-unsettled, not merely unimplemented:
-
-- `docs-mcp`, `hindsight`, `inbox-zero`, `omniroute`, `tagr`, `audiomuse-web` are node or python
-  images with no `curl`/`wget`, so the probe is `node -e` or `python -c` — either a TCP connect to
-  the container's own port, which needs no endpoint knowledge, or an HTTP path still to confirm.
-- `audiomuse-worker`, `langfuse-worker`, `latitude-workers`, `latitude-workflows` serve no
-  listener; their readiness is process liveness, and a probe there would be worse than the
-  default. Leave them.
-- `home-assistant`, `latitude-web`, `latitude-api`, `latitude-ingest`, `latitude-temporal`,
-  `karakeep-chrome` need their endpoint or port confirmed before wiring.
-
-Confirming means one `podman run --rm --entrypoint sh <image> -c 'command -v …'` against the
-pinned digest on the host that pulls it: a probe binary that does not exist converts a healthy
-service into a failed deploy.
+Every remaining container is a leaf, so readiness there changes only whether a deploy notices a
+broken app — it is a tentative expansion, not queued work, and it would add a probe runtime per
+image plus an endpoint guess per app to buy that. The sixteen fall into three groups if it is ever
+picked up: node and python images with no `curl`/`wget` (a TCP connect needs no endpoint knowledge),
+four worker containers that serve no listener at all and should stay on the default, and a handful
+whose endpoint or port still needs confirming. Confirming means one
+`podman run --rm --entrypoint sh <image> -c 'command -v …'` against the pinned digest on the host
+that pulls it: a probe binary that does not exist converts a healthy service into a failed deploy.
 
 ### Test-suite cleanup (prioritised)
 

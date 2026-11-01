@@ -139,6 +139,8 @@ _: {
             ];
 
             services."podman-tududi" = {
+              # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+              serviceConfig.TimeoutStartSec = lib.mkForce 180;
               wants = [ "network-online.target" ];
               after = [ "network-online.target" ];
               # The restart budget is the foundation's per-container default.

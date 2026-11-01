@@ -1,5 +1,4 @@
-# Karakeep deployment aspect: selection supplies the pod's top-level enablement; OIDC wiring, the S3
-# asset store toggle, and both secret sources stay explicit host variants.
+# Karakeep deployment aspect: selection supplies the pod's top-level enablement; OIDC wiring, the S3# asset store toggle, and both secret sources stay explicit host variants.
 
 _: {
   flake.modules.nixos.karakeep =
@@ -328,6 +327,7 @@ _: {
         systemd = {
           services = {
             "podman-network-${cfg.networkName}" = {
+
               description = "Create Podman network ${cfg.networkName}";
               wantedBy = [ "multi-user.target" ];
               before = [
@@ -344,6 +344,8 @@ _: {
             };
 
             "podman-karakeep-web" = {
+              # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+              serviceConfig.TimeoutStartSec = lib.mkForce 180;
               wants = [
                 "network-online.target"
                 "podman-network-${cfg.networkName}.service"
@@ -366,6 +368,8 @@ _: {
             };
 
             "podman-karakeep-meilisearch" = {
+              # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+              serviceConfig.TimeoutStartSec = lib.mkForce 120;
               wants = [
                 "network-online.target"
                 "podman-network-${cfg.networkName}.service"

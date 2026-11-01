@@ -390,11 +390,6 @@
           '';
         };
 
-        # Restarting on rotation re-runs upstream's idempotent LANGFUSE_INIT seed.
-        systemd.services.podman-langfuse-web.restartTriggers =
-          lib.optional hasSecretFile
-            config.sops.templates."langfuse.environment".path;
-
         virtualisation.podman.enable = true;
 
         systemd.services."podman-network-${cfg.networkName}" = {
@@ -454,6 +449,10 @@
           services = {
             "podman-langfuse-web" = {
               description = "Langfuse web (UI, ingestion API, OTLP endpoint)";
+              # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+              serviceConfig.TimeoutStartSec = lib.mkForce 300;
+              # Restarting on rotation re-runs upstream's idempotent LANGFUSE_INIT seed.
+              restartTriggers = lib.optional hasSecretFile config.sops.templates."langfuse.environment".path;
               wants = [ "network-online.target" ];
               after = [
                 "network-online.target"

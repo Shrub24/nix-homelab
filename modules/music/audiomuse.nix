@@ -283,7 +283,11 @@ _: {
           ];
           requires = [ "podman-network-${cfg.networkName}.service" ];
           unitConfig.RequiresMountsFor = [ cfg.dataDir ];
-          serviceConfig.ExecStartPre = "${pkgs.coreutils}/bin/chown 999:999 '${cfg.dataDir}/redis'";
+          serviceConfig = {
+            ExecStartPre = "${pkgs.coreutils}/bin/chown 999:999 '${cfg.dataDir}/redis'";
+            # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+            TimeoutStartSec = lib.mkForce 120;
+          };
         };
 
         systemd.services."podman-audiomuse-worker" = {

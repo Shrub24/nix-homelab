@@ -3437,8 +3437,10 @@ from the image turns a healthy service into a failed unit. And rejected: asserti
 contract test, which restates what the module sets and can only fail when the module changes —
 misconfiguration fails the unit at start instead.
 
-**Consequences:** Nine of twenty-five containers are covered; the rest are tracked in `docs/plan.md`
-with what each still needs. A worker container with no listener is deliberately left on the default,
-where the notification correctly means "running". Adding a container to a new host now includes
-choosing its readiness, and `tests/check-*` assert the couplings around it (port against route, dial
-against ACL) rather than the helper's own output.
+**Consequences:** Nine of twenty-five containers carry it, chosen where a probe is derivable from the
+image itself; the remaining sixteen are left as a tentative expansion in `docs/plan.md`, because each
+is a leaf and readiness there buys only an earlier failure signal. A ready unit must also state its
+own `TimeoutStartSec`: podman sets it to 0 as a definition, so a probe that never passes would hold
+the activation open rather than fail it, and the budget belongs to the application rather than to a
+fleet-wide default. No test asserts any of this — the assertion that caught the real defect was the
+container/service-address coupling in the gateway contract, not a restatement of the helper.

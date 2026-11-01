@@ -301,6 +301,10 @@
               dependsOn = [ backendContainer ];
             }
           ];
+          # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
+          # The backend applies migrations on start, so it gets the longer budget.
+          systemd.services."podman-${backendContainer}".serviceConfig.TimeoutStartSec = lib.mkForce 300;
+          systemd.services."podman-${uiContainer}".serviceConfig.TimeoutStartSec = lib.mkForce 120;
         }
       ];
     };

@@ -173,6 +173,27 @@ Durable index of confirmed transition debt and acceptance boundaries — an inde
 
 Current open items, newest first. Each names the artifact that closes it.
 
+### Test-suite cleanup (prioritised)
+
+Assertions that restate configuration rather than behaviour break on unrelated changes, and each
+one costs an edit plus a gate. Ordered by what misleads most, not by size:
+
+1. `tests/check-dendritic-scaffold-contract.sh` (1,698 lines). Extracting its `subset_probe`
+   aspect matrix and the placement tallies leaves the scaffold guarantees; per-host facts such as
+   `bootLoader`, `tsMtu` and `daemonUnit` belong to the host record, not to a fleet-wide contract.
+   The per-host container tally is already gone.
+2. `tests/check-identity-contract-directionality.sh` (494 lines). The per-host aspect-selection
+   expectations duplicate the host records and the scaffold contract, so one placement change is
+   three edits. Keep the four properties that survive a rewrite — the intrinsic contract resolves
+   no provider namespace, redirect URIs derive from the client, an unknown dashboard group fails
+   evaluation, and the assembled document renders.
+3. `tests/check-bifrost-gateway-contract.sh` (298 lines) carries a fleet-wide container and
+   service-address audit — the assertion that caught GeoPulse's missing `--add-host`. That check
+   is worth keeping and is in the wrong file: it belongs with the containers aspect, where every
+   container is in scope by construction.
+4. Deferred, unblocked by a VM harness rather than by editing: the blueprint gate's double
+   validation, and identity acceptance beyond plan level.
+
 ### Deployments pending
 
 - `oci-melb-1`: the deployed generation predates the `auth.shrublab.xyz` route, so the edge answers that hostname with an empty body; redeploying closes the identity staging step as well as the meilisearch qualification below. It was rolled back on `podman-karakeep-meilisearch` (unqualified image reference), now `docker.io/getmeili/meilisearch`.
@@ -308,7 +329,13 @@ change; publishers neither prune objects nor change Cloudflare Access.
   is withheld by posture alone and is absent from both the edge routes and the export. A first attempt
   derived publication from the dial instead and lost Homarr's recovery posture (tailnet-served but
   unpublished); the homarr contract caught it before it shipped.
-- GeoPulse's source build is a historical default, not a decision. `pkgs/geopulse/` predates the OCI image policy and carries two hand-verified fixed-output hashes (`mvnHash`, `npmDepsHash`) plus a Maven-version assertion, so every nixpkgs Maven bump or upstream release is a manual hash regeneration across two ecosystems. Its original justification is gone: the PKCE patch was removed (D-108) and the last local artifact, `pkgs/geopulse/migrations/R__Add_oidc_session_code_verifier.sql`, installs a column the pinned 2.1.1 sources never read. Upstream publishes multi-arch images for the exact compose tags (`tess1o/geopulse-backend:<v>-native` and `tess1o/geopulse-ui:<v>` are both amd64+arm64), so `aarch64-linux` is first-class. Moving it to digest-pinned containers costs a two-container shape (backend + UI nginx, or our Caddy front proxying the UI container) and a mount rewrite (`/app/keys`, `/data/geopulse-import`, `/data/geopulse-backups`), while PostgreSQL stays ours. Worth doing as its own change.
+- GeoPulse runs on digest-pinned upstream images — done (D-127). The source build and its coupled
+  updater are deleted: two hand-verified fixed-output hashes and a Maven-version assertion went with
+  them, because upstream's `-native` backend and nginx UI are both amd64+arm64. The Caddy front is
+  gone as well — the UI image renders `config.js`, proxies `/api` and `/mcp`, proxies the OSM tiles and
+  serves the SPA, so three env vars replaced the generated configuration. The bridged backend dials
+  the cluster on the service address and the consumer ACL admits the container supernet; PostgreSQL
+  stays ours.
 - Service-scoped secret defaults — done. Every `secrets/services/*.yaml` and `secrets/applications/*.yaml` path now defaults in its owning module through `secretHelpers.mkSecretFileOptionWithDefault`, and the two options nix-fleet declares (`services.notify.secretFiles.host`, `services.niks3-cache.secretFiles.host`) default from this repository's convention contributors with `lib.mkDefault`. The assertions that required a host to set them, and the `secretFiles.navidrome` and `services.ntfy.auth.secretFiles.auth` guards, are deleted: a default makes them unreachable. `services.ntfy.secretFiles.firebase` keeps its `nullOr` type so a public instance can opt out. Host records bind only host-scoped paths (`secrets/hosts/<host>/...`), so no `secrets/services` or `secrets/applications` path appears in a host composition.
 - Grafana split out of the `victoria` aspect — done (D-123). `modules/observability/grafana.nix` owns
   everything Grafana, `modules/observability/victoria.nix` keeps the three stores, and `home-forge`

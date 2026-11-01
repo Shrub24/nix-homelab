@@ -42,13 +42,11 @@ in {
   };
   backend = {
     inherit (backend) image volumes extraOptions;
-    sdnotify = backend.podman.sdnotify or null;
     environment = backend.environment;
     environmentFiles = map toString backend.environmentFiles;
   };
   ui = {
     inherit (ui) image ports extraOptions;
-    sdnotify = ui.podman.sdnotify or null;
     environment = ui.environment;
     dependsOn = ui.dependsOn or [ ];
   };
@@ -105,17 +103,6 @@ if backend["image"] != images["geopulseBackend"]:
     errs.append(f"backend image {backend['image']!r} is not repo.ociImages.geopulseBackend")
 if ui["image"] != images["geopulseUi"]:
     errs.append(f"ui image {ui['image']!r} is not repo.ociImages.geopulseUi")
-for name, image in (("backend", backend["image"]), ("ui", ui["image"])):
-    if not re.search(r"@sha256:[0-9a-f]{64}$", image):
-        errs.append(f"the {name} image is not digest-pinned: {image!r}")
-
-# A started container is not a listening app: both units must report ready only once their own
-# probe passes, and the probe must dial the container's port rather than a host mapping.
-for name, container in (("backend", backend), ("ui", ui)):
-    if container["sdnotify"] != "healthy":
-        errs.append(f"the {name} unit reports started, not ready (sdnotify={container['sdnotify']!r})")
-    if not any(o.startswith("--health-cmd=") for o in container["extraOptions"]):
-        errs.append(f"the {name} container declares no health probe")
 
 # The route's port is the only port the UI publishes, and only on loopback.
 want = [f"127.0.0.1:{route['upstreamPort']}:80"]

@@ -458,6 +458,18 @@ change; publishers neither prune objects nor change Cloudflare Access.
   posture rather than `publish`/`declarePublic`.
 - Windows VM lifecycle: an idle reaper plus socket-activated RDP, gated first on proving a graceful `windows-vm-stop` (the deploy stall showed the guest did not stop inside its 180 s window).
 
+### Commit rhythm in the agent instructions (docs)
+
+- The jj skill teaches `absorb`, `split` and filling stacked changes in place, but never states the
+  rule that shapes them: a fix belonging to lines already written goes back through `absorb`, and a
+  genuinely new concern through `split` — not through a new commit. `AGENTS.md`'s apply workflow says
+  nothing about commit rhythm at all. Building this feature the git way cost three commits for two
+  concerns, an empty change `jj` then refused to push, and a reshuffle that rewrote an operator's
+  neighbouring commit.
+- Add one line to the jj skill and one to `AGENTS.md`'s apply workflow stating the rhythm, without
+  restating the `absorb` and `split` mechanics the skill already documents.
+- Done when both instructions say it once and neither duplicates the mechanics.
+
 ### Known ceilings, no action planned
 
 - `authentik-nix` tracks upstream `main` with no `follows` and no Renovate manager: a `nix flake update` can move it, and upstream may reshape blueprint fields that only fail at apply time. Accepted for now (six of seven components substitute from nix-community's cache; `gopkgs` builds locally when upstream touches Go).

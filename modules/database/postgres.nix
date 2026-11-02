@@ -267,7 +267,12 @@ _: {
 
           systemd.services.postgresql = lib.mkIf (instance != null) {
             # A provisioning-script change restarts postgresql; partOf carries the restart to provisioning.
-            restartTriggers = lib.optionals (provisionable != [ ]) [ provisionScript ];
+            # The rendered `pg_hba.conf` sits at a store path, which the data-dir symlink only picks up
+            # on start, so a new consumer's access rules take effect through this restart — the
+            # trampoline above never changes with the consumer set.
+            restartTriggers =
+              lib.optionals (provisionable != [ ]) [ provisionScript ]
+              ++ lib.optional (instance != null) config.services.postgresql.authentication;
             serviceConfig.ReadWritePaths = [ instance.dataDir ];
           };
 

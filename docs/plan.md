@@ -249,6 +249,18 @@ guards a trap that already cost 19 files from the index.
   so the assertion belongs with the target (Navidrome binds `0.0.0.0`, which is why
   AudioMuse's default dial is functional though off-convention).
 
+### Notification debounce (nix-fleet change)
+
+- `OnFailure=` fires whenever the unit enters the failed state, and a unit with `Restart=on-failure`
+  does that on every failed start attempt. A crash loop therefore sends one notification per attempt:
+  `podman-sparkyfitness-server` produced five in ~0.5 s before its own start limit stopped the retries.
+  systemd has no final-failure hook, so this belongs in nix-fleet's daemon: a
+  `services.notify.debounceSeconds` window keyed on `(unit, event)` in `_handle_event`, in memory so a
+  daemon restart does not resurrect stale suppressions. Our side then binds one line. A local wrapper
+  around `notify-event@` would re-declare a shared module's body, which `CONVENTIONS.md` forbids. Until
+  then `modules/notifications/notify.nix` disables the handler's own start limit, so the reporter cannot
+  be the unit that fails.
+
 ### SparkyFitness rate limiting behind the proxy
 
 - The application's nginx rate-limits its auth endpoints by client IP, and behind Caddy and

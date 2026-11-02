@@ -261,6 +261,16 @@ guards a trap that already cost 19 files from the index.
   then `modules/notifications/notify.nix` disables the handler's own start limit, so the reporter cannot
   be the unit that fails.
 
+### SparkyFitness OIDC issuer (fork pin)
+
+- The backend runs from a pinned fork image (`ghcr.io/shrub24/sparkyfitness-backend:oidc-fix`) because
+  upstream stores the issuer with its trailing slash stripped (`oidcEnvConfig.ts`), which no Authentik
+  issuer can match — the provider row is poisoned whenever discovery fails at boot and the comparison
+  fails on every login after. Upstream tracks it as
+  [#2772](https://github.com/CodeWithCJ/SparkyFitness/issues/2772); the fork keeps the issuer verbatim.
+- Revert the pin to `docker.io/codewithcj/sparkyfitness_server` once a release carries the fix, and
+  delete this entry.
+
 ### SparkyFitness rate limiting behind the proxy
 
 - The application's nginx rate-limits its auth endpoints by client IP, and behind Caddy and

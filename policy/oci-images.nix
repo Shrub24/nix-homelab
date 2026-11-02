@@ -57,7 +57,9 @@
   # multi-arch indexes; the frontend's nginx is what serves the application.
   sparkyFitness = "docker.io/codewithcj/sparkyfitness:v1.11.0@sha256:5eb77135ccd8e58492ee9bd19b8714ea4a73a99623b863a9287ccecb0557cd17";
 
-  sparkyFitnessServer = "docker.io/codewithcj/sparkyfitness_server:v1.11.0@sha256:51a2d7c19bd99b50ea17e579fe8d9d4febed895595356b1ddafe0fa808caf75e";
+  # Fork pin: upstream strips the issuer's trailing slash (`oidcEnvConfig.ts`), which Authentik's
+  # issuer can never match (upstream #2772). Revert to codewithcj/sparkyfitness_server on its fix.
+  sparkyFitnessServer = "ghcr.io/shrub24/sparkyfitness-backend:oidc-fix@sha256:2d2d650cf582f60eccc983bc94e38a399d6891a19cc629bdfe729e9ec1721c2b";
 
   # Latitude ships one release tag across all six images, so they move together; the digests
   # are multi-arch index digests, valid on both architectures.

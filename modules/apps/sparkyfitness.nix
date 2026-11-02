@@ -288,9 +288,22 @@ _: {
             };
             dependsOn = [ backendContainer ];
           };
-          # podman's unit sets the start timeout to 0, so an unpassed probe would hang activation.
-          # The backend applies migrations on start, so it gets the longer budget.
-          systemd.services."podman-${backendContainer}".serviceConfig.TimeoutStartSec = lib.mkForce 300;
+          # Starts after the cluster and its provisioning are current: a fresh consumer otherwise
+          # crash-loops past the start limit before its access rules exist. The budget is explicit
+          # because podman's unit sets the timeout to 0, and the backend migrates on start.
+          systemd.services."podman-${backendContainer}" = {
+            wants = [ "network-online.target" ];
+            after = [
+              "podman-network-${networkName}.service"
+              "postgresql.service"
+              "postgresql-provision.service"
+            ];
+            requires = [
+              "podman-network-${networkName}.service"
+              "postgresql-provision.service"
+            ];
+            serviceConfig.TimeoutStartSec = lib.mkForce 300;
+          };
         }
       ];
     };

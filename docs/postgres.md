@@ -46,6 +46,27 @@ A login name is provisioned by one consumer only; the substrate fails evaluation
 
 The behaviour is proven on a booted node rather than asserted from the configuration: `nix build .#checks.x86_64-linux.postgres-consumer-roles` provisions an ephemeral cluster with an owner, an application login and an unrelated consumer, then authenticates as each role, re-provisions, and rotates one password.
 
+## Activation order
+
+The rendered `pg_hba.conf` lives at a store path, and the cluster's `postgresql.conf` symlink only adopts a new one when the server starts. So the substrate names the rendered authentication rules as a `postgresql.service` restart trigger: adding or removing a consumer restarts the cluster, and the new rules are live when activation finishes. Other consumers see a brief restart, which is the cost of the store-path indirection rather than a choice.
+
+A consumer whose unit runs before that restart is refused with `no pg_hba.conf entry for host …`, and a container that retries it quickly exhausts systemd's start limit, which fails the whole activation. A unit that connects over TCP therefore orders itself after the cluster and its provisioning:
+
+```nix
+wants = [ "network-online.target" ];
+after = [
+  "podman-network-<app>.service"
+  "postgresql.service"
+  "postgresql-provision.service"
+];
+requires = [
+  "podman-network-<app>.service"
+  "postgresql-provision.service"
+];
+```
+
+`requires` on the provisioning unit also means a failed provisioning fails that consumer's start rather than leaving it authenticated but empty.
+
 ## Recovery
 
 The database is not backed up by copying its data directory. `postgresqlBackup` writes a logical export of every cluster database and role into `services.state-backups.stagingRoot/postgres`, restic captures it, and the export is removed after the run. Restoring it re-creates the databases and roles, so `pg_hba` and the consumer registry must be current before the roles authenticate. `docs/runbooks/state-restore.md` covers the staged restore.

@@ -65,6 +65,8 @@ _: {
             port = route.upstreamPort;
             loginMethod = "openid";
             allowedLoginMethods = [ "openid" ];
+            # "manual" is the upstream default and refuses an unknown identity without a trace.
+            userCreationMode = "login";
             openId = {
               discoveryURL = oidcClient.wellknownUrl;
               client_id = oidcClient.clientId;

@@ -43,10 +43,10 @@ invitation for a username that already exists fails.
 
 - **Invited person** — create an invitation in **Directory > Invitations** (choose
   `expires` and `single_use`) and hand over its link:
-  `https://auth.shrublab.xyz/if/flow/enrollment/?itoken=<token>`. They set their own
-  password, answer **Add a passkey now?** (declining is fine), and confirm their address
-  with the emailed code. A passkey declined at enrollment is added later from
-  **Settings > MFA Devices > Enroll > Passkey**.
+  `https://auth.shrublab.xyz/if/flow/enrollment/?itoken=<token>`. They enter username/email
+  and choose a method. Passkey setup is followed by an email code, without a password prompt.
+  Email-code setup is followed by a password prompt, without a second verification code.
+  Authenticator-app setup remains available and requires a password plus email verification.
 - **Password recovery** — the login page carries the recovery link; anyone signed out can
   also open `https://auth.shrublab.xyz/if/flow/recovery/` directly.
 - **Seeded person** — add the entry to `users` in `policy/identity.nix`, deploy, then set
@@ -58,23 +58,25 @@ invitation for a username that already exists fails.
 
 Groups nest, so add a person to the most privileged group they need and they inherit the
 rest: `superusers` (administers the provider) → `admins` (operator console apps) →
-`service-admins` (user-facing apps) → `users` (every confirmed person, where enrollment
-lands). Membership is set in **Directory > Groups**.
+`service-admins` (user-facing apps) → `users` (where invited enrollment places the account). Membership is set in **Directory > Groups**.
 
 Use each person's existing address: continuity is matched on the email claim, so a new
 address orphans their application accounts.
 
 ### Verifying an address
 
-1. Start login or invitation enrollment and stop at the email-code screen. For an already
-   signed-in account, open `https://auth.shrublab.xyz/if/flow/verify-email/`.
+1. Start login or invitation enrollment with an address that has no confirmed email device
+   and stop at the email-code screen. For an already signed-in account, open
+   `https://auth.shrublab.xyz/if/flow/verify-email/`.
 2. Read the message on any device and enter its code in the original browser.
 3. Confirm enrollment reaches **Email verified**, or login returns to its original destination.
-4. Try an incorrect code first on a test account; confirm it does not activate or verify it,
-   then submit the correct code.
-5. Sign in again and confirm no email code is requested for an unchanged verified address.
-6. Change the test account's address and verify it again. Confirm the old address no longer
-   reports verified and a fresh code to the new address succeeds.
+4. Try an incorrect code first on a test account; confirm it grants no session or verified
+   claim, then submit the correct code after any retry delay.
+5. Sign in again and confirm there is no additional address-verification challenge beyond
+   the selected sign-in method. Password/email sign-in still requires its factor code.
+6. Change the test account's address to one with no confirmed device and verify its code.
+   Confirm the old email authenticator remains usable. Switch the account address back and
+   confirm its existing confirmed device is reused without another verification code.
 7. Confirm the record before treating the claim as true:
 
 ```sh
@@ -84,6 +86,43 @@ ssh oci-melb-1 'sudo -u postgres psql -p 5432 -d authentik -tAc \
 
 `email_verified_address` must equal the account's current `email`; the claim reports true only
 while they match, so changing an address un-verifies it until the flow runs again.
+
+### Interrupted signup and recovery
+
+1. In a fresh browser, open `https://auth.shrublab.xyz/if/flow/recovery/` and enter the
+   reserved username or email. Use this path if signup stopped before any usable credential,
+   after email setup but before the password, or after passkey setup but before verification.
+2. Open the recovery message, confirm the link, and set a strong password. Confirm the
+   flow signs in without forcing TOTP setup.
+3. Sign out and test password plus emailed code in a fresh browser.
+4. For a never-verified reservation, confirm any passkey attached before recovery no longer
+   signs in. For an established verified account, confirm its other devices remain available.
+5. If no account was created and the single-use invitation was consumed, issue a replacement
+   invitation. Do not enable passwordless entry by username or widen invitation eligibility.
+
+For a previously stranded inactive account, review its identity and why it was disabled in
+**Directory > Users**. Enable only the individually approved account, then use recovery above.
+Do not activate deliberately disabled accounts or run a blanket activation update.
+
+### Enrollment rollout acceptance
+
+1. Retain a working administrator session and SSH access. Back up the Authentik database.
+2. Before deployment, run the isolated acceptance command from the indexed source tree:
+
+   ```sh
+   git add -A
+   bash tests/check-authentik-enrollment.sh
+   ```
+
+3. After an explicitly approved provider deploy, test a disposable invitation on each path,
+   interruption recovery, an existing TOTP account and actual mail delivery. Record browser
+   and device results; the isolated test's passkey is virtual, not a physical-device check.
+4. Reject rollout if an unfinished or disabled account receives a session, or if an
+   established account loses its existing authenticator unexpectedly.
+5. On rollback, restore the previous provider configuration. Do not assume this restores
+   credentials removed during recovery; use the database backup only after reviewing all
+   intervening identity changes. Do not close the retained administrator session until
+   acceptance is complete.
 
 ### Passkeys
 

@@ -142,7 +142,7 @@ they need:
 users  ←  service-admins  ←  admins  ←  superusers
 ```
 
-- **`users`** — the root, and where enrollment lands a person who confirms their address.
+- **`users`** — the root, and where invited enrollment places a new account.
   Every other group is beneath it, so an administrator also satisfies an access list that
   only asks for a confirmed person.
 - **`service-admins`** — the user-facing applications read it for their own admin roles.
@@ -187,27 +187,23 @@ model stores no verification state. The fleet therefore declares `homelab-email`
 `email_verified` is true only while `user.attributes["email_verified_address"]` equals the
 account's current address.
 
-That attribute is written by one expression policy after the native email authenticator
-setup stage accepts a code. The policy accepts only a confirmed device belonging to the
-pending user, the fleet's verification stage, and the account's current address. It records
-that address and activates the enrollment account in one transaction, then removes this
-verification-only device. Other email MFA devices are not removed. Changing an address drops
-the claim to false until the new address is confirmed; `verify-email` is the signed-in path.
+One expression policy records the current address when a confirmed email authenticator
+belongs to that user and matches it. An already-confirmed address needs no new code or device.
+Otherwise the native email setup stage sends a code and retains the confirmed authenticator.
+The policy associates it with the sign-in stage, leaving the verification setup stage free
+for a later address. Verification never activates a user or deletes an authenticator.
+Devices for other addresses remain independent sign-in factors until the user removes them;
+they cannot verify the current account address. `verify-email` is the signed-in entrypoint.
 
-The setup stage supplies the stock code-entry UI without a frontend fork. Its temporary
-device is consumed so verification does not enroll a second factor or prevent a later
-address change. This is not email MFA on every login. The native stage has no resend
-cooldown setting: the former link stage's one-minute limit does not transfer to it. A visible
-resend countdown and server-side issuance limit remain unimplemented. An existing email MFA
-device for the same user and address conflicts with the setup stage's uniqueness constraint;
-this needs acceptance before enabling separate email MFA.
+The code-entry UI is native, with no frontend fork. The setup stage has no resend cooldown
+setting; a visible resend countdown and server-side issuance limit remain unimplemented.
 
 Verification is a gate on login, not a prompt. One email stage is shared by three flows —
 `enrollment`, `verify-email` and the upstream `default-authentication-flow`, where it is
 bound at order 40, between the credential stages and the flow's own `user-login` stage at
 order 100. Since only a login stage creates a session, an unverified person's plan halts at
-the code stage and no session exists until the code is accepted; the accepting policy consumes
-the proof and records the address in the same evaluation. A verified person's binding policy
+the code stage and no session exists until the code is accepted; the accepting policy records
+the address while retaining the confirmed device. A verified person's binding policy
 fails, the stage is skipped, and login proceeds unchanged. The binding cannot instead hold two
 policies, nor an unconditional recording policy, because it is evaluated once while the plan is
 built, before a person is in context.
@@ -232,10 +228,10 @@ rejected alternative (deriving the claim from `is_active`) and its consequences.
 
 | Flow | Purpose | Shape |
 | --- | --- | --- |
-| `enrollment` | invitation-gated self-registration | invitation stage → credential and detail prompts → user write (inactive, into the enrollment group) → email confirmation (activates) → **method enrolment (passkey or authenticator code), required** → login → confirmation |
+| `enrollment` | invitation-gated self-registration | invitation → username/email → create active account without a usable credential → passkey or password setup → password only without a confirmed passkey → remaining email verification → guarded login → confirmation |
 | `verify-email` | confirm an address for an existing account | current authenticated user → email code → login (records the address) → confirmation |
-| `default-authentication-flow` | signing in (upstream, extended) | identification → password → **second factor, required (passkey or authenticator code)** → email confirmation, gated to unverified accounts → login |
-| `recovery` | password reset and method replacement | identification → email → new password → user write (`never_create`) → **authenticator-code enrolment, required** → login |
+| `default-authentication-flow` | signing in (upstream, extended) | passkey, or password plus a required factor (passkey, email code or TOTP) → remaining email verification → login |
+| `recovery` | interrupted signup or lost-credential recovery | identification → emailed link and confirmation → address-bound mailbox proof → strength-checked password → user write (`never_create`) → guarded login |
 
 Email ownership verification uses codes; password recovery retains its upstream link mechanism.
 
@@ -246,6 +242,28 @@ Both flows previously ended on a static redirect to the dashboard; that stage co
 
 Registration is closed: the enrollment flow stops without a valid invitation token, and an
 invitation for an existing username fails because the flow creates the person.
+
+The credentials step also refuses a name or an address that is already in use and says which,
+on the form, instead of failing at account creation. Both comparisons are case-insensitive,
+matching the login identification stage, which an exact-match check would not: `Foo` beside an
+existing `foo` would sign in against the wrong person. The address check is a policy on the
+prompt stage, so it is not atomic — two signups racing for one address can both pass, because
+Authentik's user model carries no unique constraint on email.
+
+## Installing the sign-in page
+
+Authentik generates the dashboard's HTML at request time, so that page cannot carry a manifest and
+the dashboard URL is not itself installable. The edge serves an install page beside it at
+`https://auth.shrublab.xyz/pwa`: a manifest whose `start_url` is the dashboard and whose scope is
+`/`, so an installed app opens at `/if/user/` and stays in its own window. Icons are rendered
+from `assets/icon.svg` at build time — 192, 512, a maskable 512 for Android's adaptive mask, and
+an `apple-touch-icon` — and the page carries the `apple-mobile-web-app-*` tags iOS reads.
+
+The identity aspect declares these files and mounts them through `services.ingress.staticPages`;
+the edge serves them ahead of the route's proxy handler without knowing which application is
+behind it. Android installs from the page through the browser's install prompt, iOS through
+Share → Add to Home Screen. Adding the dashboard itself to a home screen still gives a generic
+icon on iOS, because iOS reads the tags of the page it was opened from.
 
 ## Passkeys and login identity
 
@@ -266,25 +284,38 @@ Enrollment is the only flow reached out of band, by an invitation link the opera
 would land on a flow that refuses anyone without a token.
 
 Second factor is mandatory for every password sign-in. Upstream's MFA validation stage skips
-users with no compatible device; the fleet requires it instead, with `webauthn` and `totp` device
-classes and `configure` as the no-device action, and the passkey and authenticator-code setup
-stages as its configuration stages. A user with no method is therefore enrolled on the way to a
-session rather than let through, and an account with both methods chooses between them on one
-screen.
+users with no compatible device; the fleet requires it instead, accepting passkeys, email codes
+and TOTP, with `configure` as the no-device action. A user with no method is therefore
+enrolled on the way to a session rather than let through, and an account with two methods
+chooses between them on one screen. The setup chooser offers two options, a passkey or a
+password, and an authenticator app is added later under **Settings > MFA Devices**; TOTP
+remains an accepted device class, so its holders sign in unchanged.
 
 Passkey sign-in stays one step: a user-verified assertion from the username field skips the
 password and the second factor, and upstream's policy for that is left unchanged.
 
-A lost device is recovered by email, in one flow reachable from the sign-in page without a
-password: the emailed link, a new password, and a replacement authenticator code before the
-session is created. Resetting only the password would strand the user at the next sign-in, so the
-replacement method is part of recovery rather than a later prompt. Old devices stay enrolled
-until removed under **Settings > MFA Devices**. This makes mailbox control the root of trust for
-recovery, which is why the verified-email gate is load-bearing.
+Recovery is reachable without a credential from the sign-in page. The native emailed link
+captures the recipient in its flow token. Before offering or saving a new password or creating
+a session, a policy checks that recipient against the account's current address and refuses a
+disabled account. Mailbox proof records ownership and establishes an email authenticator, so
+the next password sign-in works without forcing TOTP setup. An address changed after link
+issuance requires a new recovery link.
 
-Enrollment ends in the same requirement, before the session: the stage's no-device action injects
-the passkey and authenticator-code setup stages, so a new account picks one. There is no optional
-passkey checkbox. Passkeys require a discoverable credential and user verification (PIN or
+For an account that has never recorded email ownership, recovery removes its pre-verification
+passkeys, TOTP and email devices and invalidates its password before completing the reset.
+This prevents adoption of credentials someone attached to another person's address. Established
+verified accounts retain their other devices until removed under **Settings > MFA Devices**.
+Mailbox control remains the recovery root of trust.
+
+Leaving enrollment after account creation grants no session. A usable passkey or password
+returns through ordinary sign-in and its remaining gates. A reservation with no usable first
+factor returns through recovery; account activity alone is not authentication.
+
+Enrollment uses that same requirement before the session. The choice is a passkey or a
+password, and the email step behind the password option is implicit: a passkey enrollee next
+proves the email address, without setting a password, while the password branch sets up the
+email factor — which proves the address — and then asks for the password, so no second code is
+needed. The password prompt enforces the strength policy. There is no optional passkey checkbox. Passkeys require a discoverable credential and user verification (PIN or
 biometric), with no platform-only attachment restriction: synced passkeys and compatible roaming
 security keys are both allowed. No credential is created declaratively. Additional methods are
 added later from the user menu under **Settings > MFA Devices > Enroll**.
@@ -292,19 +323,19 @@ added later from the user menu under **Settings > MFA Devices > Enroll**.
 ### The verified-email gate
 
 The login path challenges an unverified address with a code, and the proof that grants the
-session is the confirmed device for the address the account currently carries. The two policies
-that consume that proof hold the same block, and the gate — not only the standalone verification
-flow — is a consumer because the main login path re-evaluates it after the code stage.
-`tests/assert-authentik-email-policy.py` fails when the two copies diverge.
+session is the confirmed device for the address the account currently carries. The gate calls the same verification policy as the standalone flow and re-evaluates it after
+the code stage. `tests/assert-authentik-email-policy.py` exercises address ownership, device
+reuse and administrative-status preservation.
 
-An account with no address is not challenged: there is nothing to verify, so the exemption is
-"no address, no proof required" rather than a fail-open. Making it fail closed is the stronger
-position and needs the accounts to have addresses first; two of the six on the live provider do
-not, which is drift from before enrollment required one.
+An account without an address cannot pass the gate. Set and verify its address before relying
+on it for sign-in, including the break-glass administrator.
 
-`tests/assert-authentik-mfa-invariants.py` asserts the plan-level property that makes this safe:
-no flow reaches its login stage before a method requirement. The interactive behaviour — a real
-passkey, a real authenticator code, a recovery run — is operator acceptance.
+`bash tests/check-authentik-enrollment.sh` exercises the shipped flows in an isolated official
+image of the fleet's Authentik release. It checks actual session issuance, subsequent passkey,
+email-OTP and TOTP sign-in, interrupted enrollment and recovery denial. Mail uses an in-memory
+backend and the passkey is a virtual authenticator with valid signatures. Physical devices,
+frontend presentation and real mail delivery remain operator acceptance; the test does not
+claim to execute the Nix-built runtime.
 
 ## Account continuity
 
@@ -374,11 +405,34 @@ ownership decision — never a duplicate identity that quietly owns nothing.
 Application-side state written by a login (Paperless social accounts, Homarr user rows)
 changes with the provider, and reverting the route does not revert it.
 
+## Application user provisioning
+
+Authentik decides who may reach an application; the application decides whether an admitted
+identity gets a local account. The fleet sets the second half explicitly wherever the upstream
+default refuses, because that refusal surfaces as an app login error with no fleet-side record:
+
+| Application | Provisioning |
+| ----------- | ------------ |
+| Actual | `userCreationMode = "login"` — upstream defaults to `manual`, which refuses an unknown identity silently |
+| Paperless | `PAPERLESS_SOCIAL_AUTO_SIGNUP=true` — upstream defaults off, which stops the identity on allauth's signup form |
+| Grafana | `allow_sign_up`, with role from the groups claim and a strict role that refuses non-admins |
+| SparkyFitness | `SPARKY_FITNESS_OIDC_AUTO_REGISTER`, admin from the client's admin group |
+| tududi | `OIDC_AUTO_PROVISION`; a provisioned account carries no password |
+| GeoPulse | `GEOPULSE_AUTH_OIDC_REGISTRATION_ENABLED` |
+| Memos | provisions on first SSO login while instance registration stays allowed |
+| Homarr, Karakeep, Langfuse | create the account on first OIDC sign-in; roles stay application-owned |
+| BookOrbit | its own settings hold an auto-provision toggle; the provider is configured there too |
+
 ## Dashboard visibility
 
 An OIDC client's optional `showInDashboard` controls only its launcher card, projected through
 Authentik's `meta_hide`. Cloudflare Access is hidden because it is the federation gate, not a
 user-facing destination. Its provider, grant types and group access bindings remain unchanged.
+
+Who sees a tile is otherwise the entry's `access`: those groups receive the card, so narrowing
+Langfuse to `service-admins` both removes it from everyone else's dashboard and refuses them at
+its OIDC login. A destination without single sign-on is a `links` entry — a launch-URL
+application with no provider — which is how Search appears for `users`.
 
 ## Brand and login theme
 

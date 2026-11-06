@@ -45,6 +45,17 @@ just deploy oci-melb-1
 
 Check `actual.service`, `memos.service` and `podman-tududi.service` and their journals. Test browser login for each app with an authorized identity. Also test Actual's sync client and Memos' token/API or mobile access: a browser-only success does not establish client compatibility. Actual keeps password login available because its OpenID integration is upstream preview functionality. Its user provisioning and the inferred RS256 compatibility settings for Actual and tududi require a real login test.
 
+### Actual account admission
+
+Actual creates a user on first login (`userCreationMode = "login"`), taking the Authentik
+`preferred_username` as `user_name`. A refused login answers HTTP 400 with body
+`{"status":"error","reason":"openid-grant-failed"}` and writes nothing to the journal — the
+unmatched-login path returns from an inner catch — so the server-side evidence is the earlier
+`authorize_application` entry naming the Authentik username. That happens when the row exists but
+is disabled, or when an existing row was created under a different name. Compare the browser's
+Authentik account with `select user_name, enabled from users` in
+`/srv/data/actual/server-files/account.sqlite`, read-only.
+
 ## Memos provider-file acceptance
 
 The provider arrives as a systemd credential bound at Memos' fixed `/etc/secrets` path; D-091 records why that is the delivery shape. After the first deployment:

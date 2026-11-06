@@ -6,8 +6,8 @@ entries:
   - attrs:
       authentication: require_unauthenticated
       designation: recovery
-      name: Password recovery
-      title: Reset your password
+      name: Account recovery
+      title: Finish setting up or recover your account
       background: !Context flow-background
     id: recovery-flow
     identifiers:
@@ -22,6 +22,7 @@ entries:
       name: recovery-identification
     model: authentik_stages_identification.identificationstage
   - attrs:
+      activate_user_on_success: false
       template: email/password_reset.html
       token_expiry: minutes=30
       use_global_settings: true
@@ -55,6 +56,8 @@ entries:
       fields:
         - !KeyOf recovery-field-password
         - !KeyOf recovery-field-password-repeat
+      validation_policies:
+        - !KeyOf enrollment-password-policy
     id: recovery-prompt-password
     identifiers:
       name: recovery-prompt-password
@@ -69,6 +72,48 @@ entries:
     identifiers:
       name: recovery-user-login
     model: authentik_stages_user_login.userloginstage
+  - attrs:
+      expression: |
+        from django.db import transaction
+        from authentik.core.models import User
+        from authentik.flows.planner import PLAN_CONTEXT_IS_RESTORED
+        from authentik.stages.authenticator_email.models import AuthenticatorEmailStage, EmailDevice
+        from authentik.stages.authenticator_totp.models import TOTPDevice
+        from authentik.stages.authenticator_webauthn.models import WebAuthnDevice
+
+        token = request.context.get(PLAN_CONTEXT_IS_RESTORED)
+        pending = request.context.get("pending_user")
+        if not token or token.is_expired or not pending or token.user_id != pending.pk:
+            return False
+        recipient = token.plan.context.get("pending_user")
+        if not recipient or not recipient.email:
+            return False
+        with transaction.atomic():
+            user = User.objects.select_for_update().get(pk=pending.pk)
+            if not user.is_active or user.email != recipient.email:
+                return False
+            if not user.attributes.get("email_verified_address"):
+                # Mailbox recovery must not adopt an attacker's reservation credentials.
+                for model in (WebAuthnDevice, TOTPDevice, EmailDevice):
+                    model.objects.filter(user=user).delete()
+                user.set_unusable_password()
+                user.save(update_fields=["password"])
+            stage = AuthenticatorEmailStage.objects.get(name="email-authenticator")
+            device, _ = EmailDevice.objects.get_or_create(
+                user=user, email=recipient.email,
+                defaults={"stage": stage, "confirmed": True, "name": "Email Device"},
+            )
+            if not device.confirmed:
+                device.confirmed = True
+                device.save(update_fields=["confirmed"])
+            user.attributes["email_verified_address"] = recipient.email
+            user.save(update_fields=["attributes"])
+        pending.refresh_from_db()
+        return True
+    id: policy-recovery-mailbox
+    identifiers:
+      name: homelab-recovery-mailbox
+    model: authentik_policies_expression.expressionpolicy
   - attrs:
       order: 10
       stage: !KeyOf recovery-identification
@@ -88,7 +133,9 @@ entries:
       target: !KeyOf recovery-flow
     model: authentik_flows.flowstagebinding
   - attrs:
+      evaluate_on_plan: false
       order: 30
+      re_evaluate_policies: true
       stage: !KeyOf recovery-prompt-password
       target: !KeyOf recovery-flow
     id: binding-recovery-recovery-prompt-password
@@ -97,7 +144,18 @@ entries:
       target: !KeyOf recovery-flow
     model: authentik_flows.flowstagebinding
   - attrs:
+      order: 0
+      policy: !KeyOf policy-recovery-mailbox
+      target: !KeyOf binding-recovery-recovery-prompt-password
+    identifiers:
+      order: 0
+      policy: !KeyOf policy-recovery-mailbox
+      target: !KeyOf binding-recovery-recovery-prompt-password
+    model: authentik_policies.policybinding
+  - attrs:
+      evaluate_on_plan: false
       order: 40
+      re_evaluate_policies: true
       stage: !KeyOf recovery-user-write
       target: !KeyOf recovery-flow
     id: binding-recovery-recovery-user-write
@@ -105,25 +163,24 @@ entries:
       stage: !KeyOf recovery-user-write
       target: !KeyOf recovery-flow
     model: authentik_flows.flowstagebinding
-  # A reset that skips enrolment would strand the user at the next sign-in without
-  # the device they lost, so recovery replaces the method before creating a session.
   - attrs:
-      order: 50
-      stage: !Find [
-          authentik_stages_authenticator_totp.authenticatortotpstage,
-          [name, default-authenticator-totp-setup],
-        ]
-      target: !KeyOf recovery-flow
-    id: binding-recovery-totp-setup
+      order: 0
+      policy: !KeyOf policy-recovery-mailbox
+      target: !KeyOf binding-recovery-recovery-user-write
     identifiers:
-      stage: !Find [
-          authentik_stages_authenticator_totp.authenticatortotpstage,
-          [name, default-authenticator-totp-setup],
-        ]
+      order: 0
+      policy: !KeyOf policy-recovery-mailbox
+      target: !KeyOf binding-recovery-recovery-user-write
+    model: authentik_policies.policybinding
+  - identifiers:
+      stage: !Find [authentik_stages_authenticator_totp.authenticatortotpstage, [name, default-authenticator-totp-setup]]
       target: !KeyOf recovery-flow
     model: authentik_flows.flowstagebinding
+    state: absent
   - attrs:
+      evaluate_on_plan: false
       order: 100
+      re_evaluate_policies: true
       stage: !KeyOf recovery-user-login
       target: !KeyOf recovery-flow
     id: binding-recovery-recovery-user-login
@@ -131,3 +188,12 @@ entries:
       stage: !KeyOf recovery-user-login
       target: !KeyOf recovery-flow
     model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 0
+      policy: !KeyOf policy-recovery-mailbox
+      target: !KeyOf binding-recovery-recovery-user-login
+    identifiers:
+      order: 0
+      policy: !KeyOf policy-recovery-mailbox
+      target: !KeyOf binding-recovery-recovery-user-login
+    model: authentik_policies.policybinding

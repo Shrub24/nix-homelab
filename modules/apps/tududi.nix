@@ -112,6 +112,7 @@ _: {
                 OIDC_ISSUER_URL = oidcClient.issuerUrl;
                 OIDC_CLIENT_ID = oidcClient.clientId;
                 OIDC_SCOPE = builtins.concatStringsSep " " oidcClient.scopes;
+                OIDC_AUTO_PROVISION = "true";
               };
               environmentFiles = [ config.sops.templates."tududi.environment".path ];
               volumes = [

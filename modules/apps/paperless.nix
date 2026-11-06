@@ -190,6 +190,7 @@
             ''
             + lib.optionalString oidcEnabled ''
               PAPERLESS_SOCIALACCOUNT_PROVIDERS="${socialAccountProvidersEnv}"
+              PAPERLESS_SOCIAL_AUTO_SIGNUP="true"
             '';
           };
 

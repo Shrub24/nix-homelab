@@ -17,10 +17,40 @@ entries:
       continue_flow_without_invitation: false
     id: enrollment-invitation
     identifiers:
-      name: !Format
-        - '%s-invitation'
-        - !Context enrollment-flow
+      name: !Format ['%s-invitation', !Context enrollment-flow]
     model: authentik_stages_invitation.invitationstage
+  - attrs:
+      field_key: welcome_copy
+      label: Welcome
+      order: 0
+      initial_value: You've been invited!
+      initial_value_expression: false
+      required: false
+      type: static
+    id: enrollment-field-welcome-copy
+    identifiers:
+      name: !Format ['%s-field-welcome-copy', !Context enrollment-flow]
+    model: authentik_stages_prompt.prompt
+  - attrs:
+      field_key: welcome_marker
+      label: Welcome marker
+      order: 1
+      placeholder: welcome
+      placeholder_expression: false
+      required: false
+      type: hidden
+    id: enrollment-field-welcome-marker
+    identifiers:
+      name: !Format ['%s-field-welcome-marker', !Context enrollment-flow]
+    model: authentik_stages_prompt.prompt
+  - attrs:
+      fields:
+        - !KeyOf enrollment-field-welcome-copy
+        - !KeyOf enrollment-field-welcome-marker
+    id: enrollment-prompt-welcome
+    identifiers:
+      name: !Format ['%s-prompt-welcome', !Context enrollment-flow]
+    model: authentik_stages_prompt.promptstage
   - attrs:
       field_key: username
       label: Username
@@ -31,51 +61,7 @@ entries:
       type: username
     id: enrollment-field-username
     identifiers:
-      name: !Format
-        - '%s-field-username'
-        - !Context enrollment-flow
-    model: authentik_stages_prompt.prompt
-  - attrs:
-      field_key: password
-      label: Password
-      order: 1
-      placeholder: Password
-      placeholder_expression: false
-      required: true
-      type: password
-    id: enrollment-field-password
-    identifiers:
-      name: !Format
-        - '%s-field-password'
-        - !Context enrollment-flow
-    model: authentik_stages_prompt.prompt
-  - attrs:
-      field_key: password_repeat
-      label: Password (repeat)
-      order: 2
-      placeholder: Password (repeat)
-      placeholder_expression: false
-      required: true
-      type: password
-    id: enrollment-field-password-repeat
-    identifiers:
-      name: !Format
-        - '%s-field-password-repeat'
-        - !Context enrollment-flow
-    model: authentik_stages_prompt.prompt
-  - attrs:
-      field_key: name
-      label: Name
-      order: 0
-      placeholder: Name
-      placeholder_expression: false
-      required: true
-      type: text
-    id: enrollment-field-name
-    identifiers:
-      name: !Format
-        - '%s-field-name'
-        - !Context enrollment-flow
+      name: !Format ['%s-field-username', !Context enrollment-flow]
     model: authentik_stages_prompt.prompt
   - attrs:
       field_key: email
@@ -87,47 +73,99 @@ entries:
       type: email
     id: enrollment-field-email
     identifiers:
-      name: !Format
-        - '%s-field-email'
-        - !Context enrollment-flow
+      name: !Format ['%s-field-email', !Context enrollment-flow]
     model: authentik_stages_prompt.prompt
+  - attrs:
+      field_key: password
+      label: Password
+      order: 0
+      placeholder: Password
+      placeholder_expression: false
+      required: true
+      type: password
+    id: enrollment-field-password
+    identifiers:
+      name: !Format ['%s-field-password', !Context enrollment-flow]
+    model: authentik_stages_prompt.prompt
+  # The username validator only rejects an exact match, and nothing checks the address at all;
+  # identification matches both case-insensitively, so a variant would collide at sign-in.
+  - attrs:
+      expression: |
+        from authentik.core.models import User
+
+        data = request.context.get("prompt_data", {})
+        pending = request.context.get("pending_user")
+        users = User.objects.all()
+        if pending and pending.pk:
+            users = users.exclude(pk=pending.pk)
+
+        username = (data.get("username") or "").strip()
+        email = (data.get("email") or "").strip()
+
+        if username and users.filter(username__iexact=username).exists():
+            ak_message("Username is already taken.")
+            return False
+        if email and users.filter(email__iexact=email).exists():
+            ak_message(
+                "An account already uses that email address. Sign in, or use the password "
+                "reset link if you have lost access."
+            )
+            return False
+        return True
+    id: policy-enrollment-taken
+    identifiers:
+      name: homelab-enrollment-taken
+    model: authentik_policies_expression.expressionpolicy
   - attrs:
       fields:
         - !KeyOf enrollment-field-username
-        - !KeyOf enrollment-field-password
-        - !KeyOf enrollment-field-password-repeat
+        - !KeyOf enrollment-field-email
+      validation_policies:
+        - !KeyOf policy-enrollment-taken
     id: enrollment-prompt-credentials
     identifiers:
-      name: !Format
-        - '%s-prompt-credentials'
-        - !Context enrollment-flow
+      name: !Format ['%s-prompt-credentials', !Context enrollment-flow]
     model: authentik_stages_prompt.promptstage
   - attrs:
       fields:
-        - !KeyOf enrollment-field-name
-        - !KeyOf enrollment-field-email
-    id: enrollment-prompt-details
+        - !KeyOf enrollment-field-password
+      validation_policies:
+        - !KeyOf enrollment-password-policy
+    id: enrollment-prompt-password
     identifiers:
-      name: !Format
-        - '%s-prompt-details'
-        - !Context enrollment-flow
+      name: !Format ['%s-prompt-password', !Context enrollment-flow]
     model: authentik_stages_prompt.promptstage
   - attrs:
-      create_users_as_inactive: true
+      create_users_as_inactive: false
       create_users_group: !Context enrollment-group
       user_creation_mode: always_create
       user_type: internal
     id: enrollment-user-write
     identifiers:
-      name: !Format
-        - '%s-user-write'
-        - !Context enrollment-flow
+      name: !Format ['%s-user-write', !Context enrollment-flow]
     model: authentik_stages_user_write.userwritestage
+  - attrs:
+      user_creation_mode: never_create
+    id: enrollment-password-write
+    identifiers:
+      name: !Format ['%s-password-write', !Context enrollment-flow]
+    model: authentik_stages_user_write.userwritestage
+  - attrs:
+      expression: |
+        from authentik.stages.authenticator_webauthn.models import WebAuthnDevice
+
+        ak_call_policy("homelab-email-verification")
+        user = request.context.get("pending_user")
+        return bool(user and user.pk) and not WebAuthnDevice.objects.filter(
+            user=user, confirmed=True,
+        ).exists()
+    id: policy-enrollment-password
+    identifiers:
+      name: homelab-enrollment-password
+    model: authentik_policies_expression.expressionpolicy
   - id: enrollment-user-login
     identifiers:
-      name: !Format
-        - '%s-user-login'
-        - !Context enrollment-flow
+      name: !Format ['%s-user-login', !Context enrollment-flow]
     model: authentik_stages_user_login.userloginstage
   - attrs:
       evaluate_on_plan: true
@@ -141,21 +179,21 @@ entries:
       target: !KeyOf enrollment-flow
     model: authentik_flows.flowstagebinding
   - attrs:
+      order: 7
+      stage: !KeyOf enrollment-prompt-welcome
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-prompt-welcome
+    identifiers:
+      stage: !KeyOf enrollment-prompt-welcome
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
       order: 10
       stage: !KeyOf enrollment-prompt-credentials
       target: !KeyOf enrollment-flow
     id: binding-enrollment-prompt-credentials
     identifiers:
       stage: !KeyOf enrollment-prompt-credentials
-      target: !KeyOf enrollment-flow
-    model: authentik_flows.flowstagebinding
-  - attrs:
-      order: 15
-      stage: !KeyOf enrollment-prompt-details
-      target: !KeyOf enrollment-flow
-    id: binding-enrollment-prompt-details
-    identifiers:
-      stage: !KeyOf enrollment-prompt-details
       target: !KeyOf enrollment-flow
     model: authentik_flows.flowstagebinding
   - attrs:
@@ -168,7 +206,56 @@ entries:
       target: !KeyOf enrollment-flow
     model: authentik_flows.flowstagebinding
   - attrs:
+      order: 25
+      stage: !KeyOf mfa-validation
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-mfa
+    identifiers:
+      stage: !KeyOf mfa-validation
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      evaluate_on_plan: false
       order: 30
+      re_evaluate_policies: true
+      stage: !KeyOf enrollment-prompt-password
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-password
+    identifiers:
+      stage: !KeyOf enrollment-prompt-password
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 0
+      policy: !KeyOf policy-enrollment-password
+      target: !KeyOf binding-enrollment-password
+    identifiers:
+      order: 0
+      policy: !KeyOf policy-enrollment-password
+      target: !KeyOf binding-enrollment-password
+    model: authentik_policies.policybinding
+  - attrs:
+      evaluate_on_plan: false
+      order: 35
+      re_evaluate_policies: true
+      stage: !KeyOf enrollment-password-write
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-password-write
+    identifiers:
+      stage: !KeyOf enrollment-password-write
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+  - attrs:
+      order: 0
+      policy: !KeyOf policy-enrollment-password
+      target: !KeyOf binding-enrollment-password-write
+    identifiers:
+      order: 0
+      policy: !KeyOf policy-enrollment-password
+      target: !KeyOf binding-enrollment-password-write
+    model: authentik_policies.policybinding
+  - attrs:
+      order: 40
       re_evaluate_policies: true
       stage: !KeyOf verify-email
       target: !KeyOf enrollment-flow
@@ -187,17 +274,6 @@ entries:
       policy: !KeyOf policy-email-unverified
       target: !KeyOf binding-enrollment-email-confirmation
     model: authentik_policies.policybinding
-  # Enrollment asks for a method before the session: the stage injects its configuration
-  # stages because a new account has none.
-  - attrs:
-      order: 60
-      stage: !KeyOf mfa-validation
-      target: !KeyOf enrollment-flow
-    id: binding-enrollment-mfa
-    identifiers:
-      stage: !KeyOf mfa-validation
-      target: !KeyOf enrollment-flow
-    model: authentik_flows.flowstagebinding
   - attrs:
       order: 100
       re_evaluate_policies: true
@@ -206,15 +282,6 @@ entries:
     id: binding-enrollment-user-login
     identifiers:
       stage: !KeyOf enrollment-user-login
-      target: !KeyOf enrollment-flow
-    model: authentik_flows.flowstagebinding
-  - attrs:
-      order: 200
-      stage: !KeyOf verify-confirmed
-      target: !KeyOf enrollment-flow
-    id: binding-enrollment-confirmed
-    identifiers:
-      stage: !KeyOf verify-confirmed
       target: !KeyOf enrollment-flow
     model: authentik_flows.flowstagebinding
   - attrs:
@@ -227,15 +294,33 @@ entries:
       policy: !KeyOf policy-email-verified
       target: !KeyOf binding-enrollment-user-login
     model: authentik_policies.policybinding
+  - attrs:
+      order: 200
+      stage: !KeyOf verify-confirmed
+      target: !KeyOf enrollment-flow
+    id: binding-enrollment-confirmed
+    identifiers:
+      stage: !KeyOf verify-confirmed
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
   - identifiers:
-      name: !Format
-        - '%s-redirect'
-        - !Context enrollment-flow
+      order: 15
+      target: !KeyOf enrollment-flow
+    model: authentik_flows.flowstagebinding
+    state: absent
+  - identifiers:
+      name: !Format ['%s-prompt-details', !Context enrollment-flow]
+    model: authentik_stages_prompt.promptstage
+    state: absent
+  - identifiers:
+      name: !Format ['%s-field-name', !Context enrollment-flow]
+    model: authentik_stages_prompt.prompt
+    state: absent
+  - identifiers:
+      name: !Format ['%s-redirect', !Context enrollment-flow]
     model: authentik_stages_redirect.redirectstage
     state: absent
   - identifiers:
-      name: !Format
-        - '%s-email-verification'
-        - !Context enrollment-flow
+      name: !Format ['%s-email-verification', !Context enrollment-flow]
     model: authentik_stages_email.emailstage
     state: absent

@@ -130,18 +130,20 @@ AI-8: The policy-derived IdP SHALL remain outside its own Cloudflare Access gate
 
 ### Requirement: Email ownership SHALL be proven by a code entered in the initiating browser
 
-AI-9: Enrollment, unverified login and signed-in re-verification SHALL use the native email-code stage. Recording proof SHALL require a confirmed device belonging to the pending user, the verification stage and the account's current address. Verification-only devices SHALL be consumed without changing unrelated MFA devices. A verified unchanged address SHALL NOT require an email code on every login.
+AI-9: Enrollment, unverified login and signed-in re-verification SHALL reuse a confirmed email device belonging to that user and matching the account's current address, or obtain proof through the native email-code stage when none exists. Confirmed devices SHALL remain usable as independent authenticators. Verification SHALL NOT change administrative activation status. A previously confirmed exact address SHALL NOT require another ownership code, independently of any email-OTP sign-in challenge.
 
 #### Scenario: Code is accepted during enrollment
 
 - **WHEN** an invited person enters the code sent to their registered address
-- **THEN** that address is recorded as verified and the account is activated
+- **THEN** that address is recorded as verified and the email authenticator remains enrolled
+- **AND** administrative activation status is unchanged
 - **AND** the original browser completes its flow without a verification link or polling
 
 #### Scenario: Address changed while verification was in progress
 
 - **WHEN** a code proves an address other than the account's current address
 - **THEN** it does not record the current address as verified or activate the account
+- **AND** the old-address authenticator may remain independently enrolled
 
 ### Requirement: Login SHALL support passkeys alongside username-or-email password fallback
 

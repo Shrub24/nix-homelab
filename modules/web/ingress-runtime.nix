@@ -200,13 +200,12 @@ _: {
                     file_server
                   }
                 ''
-              ) (routeByName name).staticPages
+              ) (cfg.staticPages.${name} or { })
             )
-          ) redirectNames;
+          ) namesForHost;
           routeBlocks =
             if redirectNames != [ ] then
               ''
-                ${staticPages}
                 handle {
                   ${lib.concatMapStringsSep "\n" (
                     name: "redir ${(routeByName name).redirectTo}{uri} permanent"
@@ -222,6 +221,7 @@ _: {
               ${mTlsBlock host}
             }
             encode zstd
+          ${staticPages}
           ${routeBlocks}
           }
         '';
@@ -247,6 +247,8 @@ _: {
       ) routeNames;
     in
     {
+      imports = [ ./_ingress-static.nix ];
+
       options.services.ingress = {
         enable = lib.mkEnableOption "the host-level ingress composition (edge or origin role)";
 
@@ -352,12 +354,6 @@ _: {
                   default = null;
                   description = "Absolute URL the apex answers with a permanent redirect. Mutually exclusive with upstream.";
                 };
-                staticPages = lib.mkOption {
-                  type = lib.types.attrsOf lib.types.path;
-                  default = { };
-                  description = "HTML files served at exact public paths before this site's redirect.";
-                };
-
                 exposureMode = lib.mkOption {
                   type = lib.types.enum [
                     "direct"

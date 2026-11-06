@@ -6,6 +6,7 @@
   wallpaperUrl,
   logoUrl,
   iconUrl,
+  inviteUrl,
   groups,
 }:
 let
@@ -43,6 +44,7 @@ else
       --shrublab-wallpaper: url("${wallpaperUrl}");
       --shrublab-logo: url("${logoUrl}");
       --shrublab-icon: url("${iconUrl}");
+      --shrublab-invite: url("${inviteUrl}");
     }
   ''
   + builtins.concatStringsSep "\n" (map rule groups)

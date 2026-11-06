@@ -18,6 +18,7 @@ in
     icon = own "icon.svg" ../assets/icon.svg;
     logo = own "logo-horizontal.svg" ../assets/logo-horizontal.svg;
     logoStacked = own "logo-stacked.svg" ../assets/logo-stacked.svg;
+    invite = own "invite-animated.svg" ../assets/shrublab-invite-animated.svg;
     # No tracked source: a timer replaces the object behind this fixed URL.
     wallpaper.url = "${globals.assets.baseUrl}/background.png";
   };
@@ -35,6 +36,7 @@ in
     karakeep.url = "https://cdn.jsdelivr.net/gh/selfhst/icons@02dd039d62a8e7132f4828e69162fca30bd43bb5/svg/karakeep.svg";
     langfuse.url = "https://raw.githubusercontent.com/langfuse/langfuse/fc3680f9b1472fc10b33dc4e7d99d18c076a1faa/web/public/icon.svg";
     memos.url = "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons@83f32e08257b66fbd971ac8d7645f5b38d52e85d/svg/memos.svg";
+    search.url = "https://raw.githubusercontent.com/degoog-org/degoog/1.1.0/src/public/images/degoog-logo.svg";
     paperless.url = "https://cdn.jsdelivr.net/gh/selfhst/icons@02dd039d62a8e7132f4828e69162fca30bd43bb5/svg/paperless-ngx.svg";
     tududi.url = "https://cdn.jsdelivr.net/gh/selfhst/icons@02dd039d62a8e7132f4828e69162fca30bd43bb5/svg/tududi-light.svg";
   };

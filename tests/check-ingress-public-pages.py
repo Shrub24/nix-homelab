@@ -42,7 +42,7 @@ class PublicPages(unittest.TestCase):
                       caddyfile = c.services.caddy.configFile.text;
                       domain = c.services.ingress.primaryDomain;
                       redirect = c.services.ingress.routes.apex.redirectTo;
-                      page = builtins.readFile c.services.ingress.routes.apex.staticPages."/privacy";
+                      page = builtins.readFile c.services.ingress.staticPages.apex."/privacy";
                     }""",
                 ],
                 cwd=ROOT,

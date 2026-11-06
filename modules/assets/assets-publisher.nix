@@ -29,15 +29,16 @@
           throw "assets-publisher: ${entry.url} is outside ${policy.publicUrl}, so its file has no destination";
       published = lib.filterAttrs (_name: entry: entry ? file) policy.brand;
       objects = map (entry: {
-        inherit (entry) file;
+        inherit (entry) file url;
         key = keyOf entry;
       }) (lib.attrValues published);
       secretFile = ../../secrets/services/assets.yaml;
       python = pkgs.python3.withPackages (ps: [ ps.boto3 ]);
+      scripts = import ./_scripts.nix { inherit lib; };
       credentialFile = config.sops.templates."assets-publisher.env".path;
       specification = pkgs.writeText "assets-publish.json" (
         builtins.toJSON {
-          inherit (policy) bucket endpoint;
+          inherit (policy) bucket endpoint zoneName;
           inherit objects;
         }
       );
@@ -61,6 +62,11 @@
           key = "secret_access_key";
           path = "/run/secrets/assets-secret-access-key";
         };
+        assets-cf-purge-token = {
+          sopsFile = secretFile;
+          key = "cf_purge_token";
+          path = "/run/secrets/assets-cf-purge-token";
+        };
       };
       sops.templates."assets-publisher.env" = {
         mode = "0400";
@@ -68,6 +74,7 @@
         content = ''
           AWS_ACCESS_KEY_ID=${config.sops.placeholder.assets-access-key-id}
           AWS_SECRET_ACCESS_KEY=${config.sops.placeholder.assets-secret-access-key}
+          CF_PURGE_TOKEN=${config.sops.placeholder.assets-cf-purge-token}
         '';
       };
 
@@ -93,7 +100,7 @@
             "AWS_EC2_METADATA_DISABLED=true"
             "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
           ];
-          ExecStart = "${python}/bin/python ${./_publish.py} ${specification}";
+          ExecStart = "${python}/bin/python ${scripts}/_publish.py ${specification}";
           DynamicUser = true;
           ProtectSystem = "strict";
           ProtectHome = true;

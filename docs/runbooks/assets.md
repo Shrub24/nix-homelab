@@ -2,9 +2,9 @@
 
 Mechanism and ownership: [Shared assets](../assets.md).
 
-## Cache purging after a rotation
+## Cache purging
 
-Rotation purges the replaced object so a new image appears without waiting out the edge cache.
+Publishing and rotation both purge the replaced objects so a new image appears without waiting out the edge cache.
 That needs a Cloudflare API token with **Zone Read** and **Cache Purge** on the zone.
 
 1. Create the token, then put it in its own service scope — not `common.yaml`, because only the

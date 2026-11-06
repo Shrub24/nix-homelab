@@ -106,8 +106,6 @@ _: {
             };
 
           virtualisation = {
-            podman.enable = true;
-
             oci-containers.containers.homarr = lib.mkMerge [
               (readiness.mkReadyProbe {
                 cmd = "wget -q --spider http://127.0.0.1:${toString containerPort}/api/health/ready";

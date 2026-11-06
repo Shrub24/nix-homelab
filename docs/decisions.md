@@ -3451,3 +3451,69 @@ never passes would hold the activation open rather than fail it, and the budget 
 application rather than to a fleet-wide default. No test asserts any of this — the assertion that
 caught the real defect was the container/service-address coupling in the gateway contract, not a
 restatement of the helper.
+
+## D-129: A consumer declares every login its database needs
+
+**Context:** The PostgreSQL substrate provisioned one role per consumer registration: the login that
+owned the database and authenticated with the registered password. SparkyFitness is the first
+workload in the fleet that needs two — a migration owner and a restricted application login — and
+upstream expects the owner to hold `CREATEROLE` so it can create the second one at first start. The
+alternative was a per-application role-creation script, which puts cluster-level privilege in an
+application image and gives the fleet no control over when it runs.
+
+**Decision:** `services.postgres.consumers.<name>` accepts `additionalRoles`, an attrset keyed by role
+name whose value carries the same `{ file, key }` password contract as the owning role. The substrate
+renders all of them from one registration: `LOGIN`, the password, `pg_hba` allow rows for that
+consumer's database followed by the role's own catch-all reject, and one `sops.secrets` entry per
+login. Every role and credential exists before the consumer's `setupSQL` runs, so setup SQL may grant
+to them. Additional logins never own the database, are never members of the owning role, and never
+receive `CREATEROLE` or superuser; a role name reused across consumers fails evaluation rather than
+letting whichever provisions last win.
+
+**Rejected:** Granting the owner `CREATEROLE`, which is what upstream's external-database guide
+requires for the default path and what its own reduced-privilege option exists to avoid. Also
+rejected: a second consumer entry owning the same database, since database ownership would transfer
+between the two registrations on every provision run. And rejected: an application-owned provisioning
+script, which moves role creation into an image the fleet does not audit.
+
+**Consequences:** A workload with a restricted runtime login is expressed entirely in the registry, so
+the credential rotation path is unchanged — edit the secret, redeploy, and the provisioning unit
+re-applies it. The one new invariant is naming: two consumers cannot share an additional role name,
+because the password each would apply is different. `docs/postgres.md` documents the contract and
+`checks.x86_64-linux.postgres-consumer-roles` exercises it on a booted node: both roles authenticate, the
+restricted login owns nothing and cannot create roles or reach another consumer's database, a
+re-provision keeps the owner, and a rotated password reaches only its own role.
+
+## D-130: SparkyFitness runs on upstream's images, not its flake module
+
+**Context:** SparkyFitness publishes a flake with a NixOS module as well as official OCI frontend and
+backend images. The maintainers state they do not use Nix or NixOS and do not test or support that
+install method, and its Nix CI workflow only refreshes dependency-fetch hashes, so a green run proves
+neither a full build nor a running deployment. Comparing the two deployment configurations found the
+gap that matters: the module serves the SPA and proxies `/api`, `/uploads` and `/mcp`, but has no
+handler for `/.well-known/oauth-*` or `/.well-known/openid-configuration`, so remote MCP OAuth
+discovery falls through to the SPA fallback, and it omits the container path's auth-endpoint rate
+limiting and header rules.
+
+**Decision:** The aspect runs two tag-and-digest-pinned upstream images on the fleet's PostgreSQL
+substrate. Both roles are declared through the consumer registry (D-129) instead of granting the owner
+`CREATEROLE`. The frontend image keeps its nginx, which is the application-serving layer: the fleet's
+Caddy owns ingress and forwards the whole site to the loopback-published frontend, so the browser
+reaches the API on the same origin with no second hostname or CORS surface. Authentik is the sign-in
+path, with the administrator claim taken from the provider's groups and the application's own password
+login hidden by an ordinary option. Placements is `oci-melb-1`, beside the identity provider.
+
+**Rejected:** Consuming the upstream flake's module behind one aspect. It is the smaller diff today,
+but it means owning a proxy configuration that lags the container path the maintainers actually
+exercise, and the drift is invisible until someone tries MCP OAuth discovery. Also rejected: replacing
+the frontend's nginx with Caddy routes, which would obtain and serve the frontend assets ourselves and
+take over part of the application's packaging — the same parity problem in a new place. And rejected:
+the upstream Compose-shaped PostgreSQL container, which would give the host a second database.
+
+**Consequences:** Image bumps are Renovate's job against `policy/oci-images.nix`. The two-role model
+is a registry feature, so it is not SparkyFitness-specific. The application keeps its own store of
+uploaded files, which restic captures live while the database comes from the substrate's export — the
+two are captured at different moments, so a restore is verified per record rather than assumed
+consistent. Break-glass is a password account created while the hidden login is temporarily re-enabled
+and kept administrative through `adminEmail`; `docs/identity.md` records it beside the fleet's other
+local administrator credentials.

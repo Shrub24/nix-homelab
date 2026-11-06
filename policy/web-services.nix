@@ -417,6 +417,21 @@ in
           ];
         };
 
+        # The application's own sign-in is the access path, so the edge adds no second gate.
+        # The port is also what the aspect publishes on loopback.
+        sparkyfitness = {
+          subdomain = "fit";
+          origin = {
+            scheme = "http";
+            provider = "oci-melb-1";
+            port = 3105;
+          };
+          exposureMode = "direct";
+          category = "app";
+          access.oidc.enabled = true;
+          access.requireCloudflareAccess = false;
+        };
+
         webhook-admin = {
           subdomain = "webhook";
           origin = {

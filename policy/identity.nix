@@ -4,11 +4,14 @@
 let
   assets = import ./assets.nix;
   globals = import ./globals.nix;
+  # The active provider: its key here is also the identifier an application's OIDC callback
+  # path embeds, so the two cannot drift.
+  provider = "authentik";
 in
 {
   # The provider serving application SSO; a retained provider is selected through its
   # own aspect and is not redirected by this value.
-  provider = "authentik";
+  inherit provider;
 
   # A provider's route carries its public identity; a null route makes selecting that
   # provider fail closed instead of inventing a URL.
@@ -90,7 +93,6 @@ in
   clients = {
     beszel = {
       displayName = "Beszel";
-      # Dashboard grouping: the library renders one section per group.
       group = "Observability";
       route = "beszel-admin";
       callbackPath = "/api/oauth2-redirect";
@@ -104,7 +106,6 @@ in
     termix = {
       enable = false;
       displayName = "Termix";
-      # Dashboard grouping: the library renders one section per group.
       group = "Admin";
       route = "termix-admin";
       callbackPath = "/users/oidc/callback";
@@ -117,7 +118,6 @@ in
 
     karakeep = {
       displayName = "Karakeep";
-      # Dashboard grouping: the library renders one section per group.
       group = "Capture";
       route = "karakeep";
       callbackPath = "/api/auth/callback/custom";
@@ -137,7 +137,6 @@ in
 
     paperless = {
       displayName = "Paperless";
-      # Dashboard grouping: the library renders one section per group.
       group = "Utility";
       route = "paperless";
       callbackPath = "/accounts/oidc/paperless/login/callback/";
@@ -159,7 +158,6 @@ in
 
     langfuse = {
       displayName = "Langfuse";
-      # Dashboard grouping: the library renders one section per group.
       group = "Observability";
       route = "langfuse";
       callbackPath = "/api/auth/callback/custom";
@@ -179,7 +177,6 @@ in
 
     grafana = {
       displayName = "Grafana";
-      # Dashboard grouping: the library renders one section per group.
       group = "Observability";
       route = "grafana";
       callbackPath = "/login/generic_oauth";
@@ -193,7 +190,6 @@ in
 
     actual = {
       displayName = "Actual Budget";
-      # Dashboard grouping: the library renders one section per group.
       group = "Utility";
       route = "actual";
       callbackPath = "/openid/callback";
@@ -213,7 +209,6 @@ in
 
     memos = {
       displayName = "Memos";
-      # Dashboard grouping: the library renders one section per group.
       group = "Capture";
       route = "memos";
       callbackPath = "/auth/callback";
@@ -233,7 +228,6 @@ in
 
     bookorbit = {
       displayName = "BookOrbit";
-      # Dashboard grouping: the library renders one section per group.
       group = "Media";
       route = "bookorbit";
       callbackPath = "/oauth2-callback";
@@ -256,7 +250,6 @@ in
 
     tududi = {
       displayName = "tududi";
-      # Dashboard grouping: the library renders one section per group.
       group = "Capture";
       route = "tududi";
       callbackPath = "/api/oidc/callback/tududi";
@@ -276,7 +269,6 @@ in
 
     geopulse = {
       displayName = "GeoPulse";
-      # Dashboard grouping: the library renders one section per group.
       group = "Everyday";
       route = "geopulse";
       callbackPath = "/oidc/callback";
@@ -287,9 +279,31 @@ in
       ];
     };
 
+    sparkyfitness = {
+      displayName = "SparkyFitness";
+      group = "Everyday";
+      route = "sparkyfitness";
+      # The application's own callback embeds the provider slug it is configured with.
+      callbackPath = "/api/auth/sso/callback/${provider}";
+      access = {
+        # The `groups` scope is what carries the administrator claim, so the application's
+        # admin mapping has something to match.
+        service-admins = [
+          "openid"
+          "profile"
+          "email"
+          "groups"
+        ];
+        users = [
+          "openid"
+          "profile"
+          "email"
+        ];
+      };
+    };
+
     homarr = {
       displayName = "Homarr";
-      # Dashboard grouping: the library renders one section per group.
       group = "Everyday";
       route = "homarr";
       callbackPath = "/api/auth/callback/oidc";
@@ -313,7 +327,6 @@ in
     # provider's console: no application module consumes this client.
     cloudflare-access = {
       displayName = "Cloudflare Access";
-      # Dashboard grouping: the library renders one section per group.
       group = "Admin";
       showInDashboard = false;
       originUrl = "https://shrublab.cloudflareaccess.com/cdn-cgi/access/callback";

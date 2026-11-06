@@ -28,12 +28,29 @@ _: {
       ) cfg.consumers;
 
       hasCredential = c: c.password != null;
-      credentialled = lib.filter hasCredential (lib.filter (c: c.auth == "scram") consumers);
+
+      # Every role provisioned with a password: a scram-authenticated owning role, plus each
+      # additional restricted login the consumer declares.
+      passwordRoles = lib.concatMap (
+        c:
+        lib.optional (c.auth == "scram" && hasCredential c) {
+          consumer = c;
+          inherit (c) role;
+          inherit (c) password;
+        }
+        ++ lib.mapAttrsToList (role: r: {
+          consumer = c;
+          inherit role;
+          inherit (r) password;
+        }) c.additionalRoles
+      ) consumers;
 
       provisionEtcName = "postgres/provision.sh";
       provisionScriptPath = "/etc/${provisionEtcName}";
 
-      provisionable = lib.filter (c: c.setupSQL != "" || hasCredential c) consumers;
+      provisionable = lib.filter (
+        c: c.setupSQL != "" || hasCredential c || c.additionalRoles != { }
+      ) consumers;
 
       # The trampoline reads its script from /etc, so a stale definition still runs the current consumer set.
       provisionScript = pkgs.writeShellScript "postgresql-provision" ''
@@ -41,9 +58,12 @@ _: {
         export PGPORT=${if instance == null then "5432" else toString instance.port}
         ${lib.concatMapStringsSep "\n" (
           c:
-          ensureRole c
+          ensureRole c c.role
           + ensureDatabase c
-          + lib.optionalString (hasCredential c) (setRolePassword c)
+          + lib.optionalString (c.auth == "scram" && hasCredential c) (applyPassword c c.role)
+          + lib.concatMapStringsSep "\n" (role: ensureRole c role + applyPassword c role) (
+            lib.attrNames c.additionalRoles
+          )
           + runSetupSQL c
         ) provisionable}
       '';
@@ -55,35 +75,48 @@ _: {
 
       authLine =
         c:
-        if c.auth == "peer" then
-          [ "local ${c.database} ${c.role} peer" ]
-        else
-          # Owned and extra databases get one allow row each; the role's catch-all reject follows.
-          lib.concatMap (
-            cidr:
-            map (db: "host ${db} ${c.role} ${withMask cidr} scram-sha-256") ([ c.database ] ++ c.extraDatabases)
-          ) c.allowedCIDRs
-          ++ [ "host all ${c.role} all reject" ];
+        (
+          if c.auth == "peer" then
+            [ "local ${c.database} ${c.role} peer" ]
+          else
+            # Owned and extra databases get one allow row each; the role's catch-all reject follows.
+            lib.concatMap (
+              cidr:
+              map (db: "host ${db} ${c.role} ${withMask cidr} scram-sha-256") ([ c.database ] ++ c.extraDatabases)
+            ) c.allowedCIDRs
+            ++ [ "host all ${c.role} all reject" ]
+        )
+        # An additional login reaches this consumer's database only, so its allow rows and its own
+        # catch-all reject follow the owning role's.
+        ++ lib.concatMap (
+          role:
+          lib.concatMap (cidr: [ "host ${c.database} ${role} ${withMask cidr} scram-sha-256" ]) c.allowedCIDRs
+          ++ [ "host all ${role} all reject" ]
+        ) (lib.attrNames c.additionalRoles);
 
-      secretName = c: "postgres_${c.name}_password";
+      # One encrypted password per login. A consumer's owning role keeps the original name and
+      # path, so an existing deployment re-reads the same file.
+      passwordSecret =
+        c: role: "postgres_${c.name}${lib.optionalString (role != c.role) "_${role}"}_password";
+      passwordPath =
+        c: role:
+        "/run/secrets/postgres/${c.name}${lib.optionalString (role != c.role) "-${role}"}.password";
 
       psql = "${config.services.postgresql.finalPackage}/bin/psql";
 
       # Converged here, not via ensureDatabases: a start from a stale definition would skip a new consumer.
-      ensureRole = c: ''
-        if [ "$(${psql} -tAc ${lib.escapeShellArg "SELECT 1 FROM pg_roles WHERE rolname = '${c.role}'"})" != "1" ]; then
-          ${psql} -tAc ${lib.escapeShellArg "CREATE ROLE \"${c.role}\""} ||
-            { echo "services.postgres.consumers.${c.name}: failed to create role '${c.role}'" >&2; exit 1; }
+      # Any role other than the consumer's owner is a login; the owner is one only when the consumer
+      # authenticates with a password.
+      ensureRole = c: role: ''
+        if [ "$(${psql} -tAc ${lib.escapeShellArg "SELECT 1 FROM pg_roles WHERE rolname = '${role}'"})" != "1" ]; then
+          ${psql} -tAc ${lib.escapeShellArg "CREATE ROLE \"${role}\""} ||
+            { echo "services.postgres.consumers.${c.name}: failed to create role '${role}'" >&2; exit 1; }
         fi
-        ${loginClause c}
+        ${lib.optionalString (role != c.role || c.auth == "scram") ''
+          ${psql} -tAc ${lib.escapeShellArg "ALTER ROLE \"${role}\" LOGIN"} ||
+            { echo "services.postgres.consumers.${c.name}: failed to enable login for role '${role}'" >&2; exit 1; }
+        ''}
       '';
-
-      loginClause =
-        c:
-        lib.optionalString (c.auth == "scram") ''
-          ${psql} -tAc ${lib.escapeShellArg "ALTER ROLE \"${c.role}\" LOGIN"} ||
-            { echo "services.postgres.consumers.${c.name}: failed to enable login for role '${c.role}'" >&2; exit 1; }
-        '';
 
       ensureDatabase = c: ''
         if [ "$(${psql} -tAc ${lib.escapeShellArg "SELECT 1 FROM pg_database WHERE datname = '${c.database}'"})" != "1" ]; then
@@ -95,17 +128,15 @@ _: {
       '';
 
       # Restarting this unit re-applies a rotated password.
-      setRolePassword =
-        c:
+      applyPassword =
+        c: role:
         let
-          query = "SELECT format('ALTER ROLE ${c.role} PASSWORD %L', pg_read_file('${
-            config.sops.secrets.${secretName c}.path
-          }'))";
+          query = "SELECT format('ALTER ROLE ${role} PASSWORD %L', pg_read_file('${passwordPath c role}'))";
         in
         ''
           ${psql} --set=ON_ERROR_STOP=1 --tuples-only --no-align --command ${lib.escapeShellArg query} \
             | ${psql} --set=ON_ERROR_STOP=1 ||
-              { echo "services.postgres.consumers.${c.name}: failed to apply the role password" >&2; exit 1; }
+              { echo "services.postgres.consumers.${c.name}: failed to apply the password for role '${role}'" >&2; exit 1; }
         '';
 
       # Named failure: a setup-SQL typo otherwise aborts the cluster start with no hint of its source.
@@ -137,7 +168,37 @@ _: {
             lib.optionals (lib.hasInfix "CREATEDB" c.setupSQL && c.extraDatabases == [ ]) [
               "services.postgres.consumers.${c.name}: setupSQL grants CREATEDB but extraDatabases is empty — declare every database the role creates (and 'postgres', where it first connects to create them), or its own 'host all <role> all reject' row will refuse them"
             ]
-        ) consumers;
+          ++ lib.optionals (lib.hasAttr c.role c.additionalRoles) [
+            "services.postgres.consumers.${c.name}: additionalRoles.${c.role} collides with the consumer's owning role"
+          ]
+          ++ lib.concatMap (
+            role:
+            lib.optionals (!(builtins.pathExists c.additionalRoles.${role}.password.file)) [
+              "services.postgres.consumers.${c.name}: additionalRoles.${role} password file '${
+                toString c.additionalRoles.${role}.password.file
+              }' does not exist"
+            ]
+          ) (lib.attrNames c.additionalRoles)
+        ) consumers
+        # One login carries one password and one set of HBA rows, so a name declared by two
+        # consumers would have them applied in turn and shadow each other.
+        ++ (
+          let
+            logins = lib.concatMap (
+              c:
+              map (role: {
+                inherit role;
+                consumer = c.name;
+              }) ([ c.role ] ++ lib.attrNames c.additionalRoles)
+            ) consumers;
+            shared = lib.filter (
+              role: lib.length (lib.unique (map (l: l.consumer) (lib.filter (l: l.role == role) logins))) > 1
+            ) (lib.unique (map (l: l.role) logins));
+          in
+          lib.optionals (shared != [ ]) [
+            "services.postgres: a login name belongs to one consumer, but ${lib.concatStringsSep ", " shared} is declared by more than one"
+          ]
+        );
     in
     {
       imports = [
@@ -190,23 +251,28 @@ _: {
           sops.secrets = lib.mkIf (instance != null) (
             lib.listToAttrs (
               map (
-                c:
-                lib.nameValuePair (secretName c) {
-                  sopsFile = c.password.file;
-                  key = c.password.key;
-                  path = "/run/secrets/postgres/${c.name}.password";
+                p:
+                lib.nameValuePair (passwordSecret p.consumer p.role) {
+                  sopsFile = p.password.file;
+                  key = p.password.key;
+                  path = passwordPath p.consumer p.role;
                   owner = "postgres";
                   group = "postgres";
                   mode = "0400";
                   restartUnits = [ "postgresql-provision.service" ];
                 }
-              ) credentialled
+              ) passwordRoles
             )
           );
 
           systemd.services.postgresql = lib.mkIf (instance != null) {
             # A provisioning-script change restarts postgresql; partOf carries the restart to provisioning.
-            restartTriggers = lib.optionals (provisionable != [ ]) [ provisionScript ];
+            # The rendered `pg_hba.conf` sits at a store path, which the data-dir symlink only picks up
+            # on start, so a new consumer's access rules take effect through this restart — the
+            # trampoline above never changes with the consumer set.
+            restartTriggers =
+              lib.optionals (provisionable != [ ]) [ provisionScript ]
+              ++ lib.optional (instance != null) config.services.postgresql.authentication;
             serviceConfig.ReadWritePaths = [ instance.dataDir ];
           };
 

@@ -14,6 +14,12 @@ entry, which replaces the object when the bytes or the credential change and ski
 digest already matches. An entry with a URL but no file is served by whoever hosts it, so it
 gets no unit; pointing a brand asset at another public location is a one-line policy edit.
 
+The edge holds these objects for a year, so a run that replaces an object purges that object's
+URL: an upload alone would stay invisible until the year expired. A failed purge fails the unit
+so it is visible, and recovery is the manual purge in the runbook, because the next run finds
+nothing changed and has nothing to purge. Rotation purges the same way through the same helper
+and credential.
+
 Publishing is a bucket write rather than a host fact, so one host owns it: `oci-melb-1` selects
 `assets-publisher`, and it also owns rotation. Publishing from every host that references the
 URLs would repeat the same idempotent upload and materialise the bucket credential three times.

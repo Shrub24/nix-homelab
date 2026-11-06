@@ -50,6 +50,7 @@ in
       brand = {
         title = "shrublab";
         logo = assets.brand.logo.url;
+        invite = assets.brand.invite.url;
         favicon = assets.brand.icon.url;
         flowBackground = assets.brand.wallpaper.url;
         # Same image as the flows; Authentik takes this one as a CSS declaration on the
@@ -86,6 +87,12 @@ in
       displayName = "Inbox Zero";
       group = "Utility";
       route = "inbox-zero";
+      access = [ "users" ];
+    };
+    search = {
+      displayName = "Search";
+      group = "Everyday";
+      route = "search";
       access = [ "users" ];
     };
   };
@@ -161,18 +168,11 @@ in
       group = "Observability";
       route = "langfuse";
       callbackPath = "/api/auth/callback/custom";
-      access = {
-        service-admins = [
-          "openid"
-          "profile"
-          "email"
-        ];
-        users = [
-          "openid"
-          "profile"
-          "email"
-        ];
-      };
+      access.service-admins = [
+        "openid"
+        "profile"
+        "email"
+      ];
     };
 
     grafana = {

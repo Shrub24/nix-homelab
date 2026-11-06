@@ -1,13 +1,14 @@
 import importlib.util
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from botocore.exceptions import ClientError
 
-loader = importlib.util.spec_from_file_location(
-    "publisher", Path(__file__).resolve().parents[1] / "modules/assets/_publish.py"
-)
+ASSETS = Path(__file__).resolve().parents[1] / "modules/assets"
+sys.path.insert(0, str(ASSETS))
+loader = importlib.util.spec_from_file_location("publisher", ASSETS / "_publish.py")
 publisher = importlib.util.module_from_spec(loader)
 loader.loader.exec_module(publisher)
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0h10v10z"/></svg>'
@@ -88,25 +89,46 @@ class PublicationListTests(unittest.TestCase):
         self.spec = {
             "bucket": "assets",
             "objects": [
-                {"key": "icon.svg", "file": str(changed)},
-                {"key": "logo.svg", "file": str(unchanged)},
+                {"key": "icon.svg", "url": "https://a/icon.svg", "file": str(changed)},
+                {
+                    "key": "logo.svg",
+                    "url": "https://a/logo.svg",
+                    "file": str(unchanged),
+                },
             ],
         }
         self.storage = Storage()
 
     def test_identical_objects_publish_once(self):
-        self.assertEqual(publisher.publish_all(self.spec, self.storage), 0)
+        replaced, failures = publisher.publish_all(self.spec, self.storage)
+        self.assertEqual((len(replaced), failures), (2, []))
         self.assertEqual(self.storage.writes, 2)
-        self.assertEqual(publisher.publish_all(self.spec, self.storage), 0)
+        self.assertEqual(publisher.publish_all(self.spec, self.storage), ([], []))
         self.assertEqual(self.storage.writes, 2)
 
     def test_a_failed_object_does_not_block_the_rest(self):
         self.spec["objects"].append(
             {"key": "gone.svg", "file": "/nonexistent/gone.svg"}
         )
-        self.assertEqual(publisher.publish_all(self.spec, self.storage), 1)
-        self.assertEqual(self.storage.writes, 2)
+        replaced, failures = publisher.publish_all(self.spec, self.storage)
+        self.assertEqual((len(replaced), failures), (2, ["gone.svg"]))
         self.assertIn("icon.svg", self.storage.objects)
+
+    def test_only_replaced_urls_are_purged(self):
+        purged = []
+
+        def purge(urls):
+            purged.append(list(urls))
+            return True
+
+        self.assertEqual(publisher.run(self.spec, self.storage, purge), 0)
+        self.assertEqual(purged, [["https://a/icon.svg", "https://a/logo.svg"]])
+        self.assertEqual(publisher.run(self.spec, self.storage, purge), 0)
+        self.assertEqual(len(purged), 1)
+
+    def test_a_failed_purge_fails_the_run(self):
+        self.assertEqual(publisher.run(self.spec, self.storage, lambda urls: False), 1)
+        self.assertEqual(publisher.run(self.spec, self.storage, lambda urls: True), 0)
 
 
 if __name__ == "__main__":

@@ -29,13 +29,10 @@ _: {
             enable = true;
             caCertFile = toString ../../certs/authenticated_origin_pull_ca.pem;
           };
-          routes =
-            edgeRoutes
-            // lib.optionalAttrs (edgeRoutes ? apex) {
-              apex = edgeRoutes.apex // {
-                staticPages."/privacy" = ./_pages/privacy.html;
-              };
-            };
+          routes = edgeRoutes;
+          staticPages = lib.optionalAttrs (edgeRoutes ? apex) {
+            apex."/privacy" = ./_pages/privacy.html;
+          };
         })
       ];
     };

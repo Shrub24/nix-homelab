@@ -1,11 +1,14 @@
 import hashlib
 import json
+import os
 import struct
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from botocore.exceptions import ClientError
+
+import _purge
 
 MAX_BYTES = 4 * 1024 * 1024
 CACHE_CONTROL = "public, max-age=300"
@@ -71,14 +74,24 @@ def publish(spec, storage):
 
 
 def publish_all(spec, storage):
-    failures = []
+    """Publish every declared object; return the replaced URLs and the keys that failed."""
+    replaced, failures = [], []
     for object in spec["objects"]:
         try:
-            publish({**object, "bucket": spec["bucket"]}, storage)
+            if publish({**object, "bucket": spec["bucket"]}, storage):
+                replaced.append(object["url"])
         except Exception as error:  # one bad object must not block the others
             print(f"{object['key']}: {error}", file=sys.stderr)
             failures.append(object["key"])
-    return 1 if failures else 0
+    return replaced, failures
+
+
+def run(spec, storage, purge):
+    """Publish, then purge the URLs this run replaced. The edge holds an object for a year, so a
+    replaced one stays invisible until its own URL is purged."""
+    replaced, failures = publish_all(spec, storage)
+    purged = not replaced or purge(replaced)
+    return 1 if failures or not purged else 0
 
 
 def main():
@@ -98,7 +111,15 @@ def main():
             response_checksum_validation="when_required",
         ),
     )
-    sys.exit(publish_all(spec, storage))
+    sys.exit(
+        run(
+            spec,
+            storage,
+            lambda urls: _purge.purge(
+                urls, spec["zoneName"], os.environ.get("CF_PURGE_TOKEN")
+            ),
+        )
+    )
 
 
 if __name__ == "__main__":

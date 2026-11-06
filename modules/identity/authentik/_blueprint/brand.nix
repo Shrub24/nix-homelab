@@ -23,6 +23,7 @@
         inherit (brand) backgroundTint;
         logoUrl = brand.logo;
         iconUrl = brand.favicon;
+        inviteUrl = brand.invite;
         wallpaperUrl = brand.dashboardBackground;
       };
       attributes.settings = {

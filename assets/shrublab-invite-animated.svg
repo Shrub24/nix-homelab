@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="500" height="500" role="img" aria-labelledby="title desc">
+<title id="title">Shrublab invitation</title>
+<desc id="desc">A rounded turquoise envelope with a lime flask seal. A sprout-marked letter rises from the pocket while small sparkles twinkle.</desc>
+<style>
+  .paper-move { animation: invite-rise 1.8s cubic-bezier(.2,.72,.25,1) 0s 1 both; }
+  .twinkle { transform-box: fill-box; transform-origin: center; animation: invite-sparkle 2.4s ease-in-out 1s infinite backwards; }
+  .twinkle.t2 { animation-delay: 1.5s; }
+  .twinkle.t3 { animation-delay: 2s; }
+  @keyframes invite-rise {
+    0%, 14% {transform:translateY(92px)}
+    39% {transform:translateY(-6px)}
+    47%,100% {transform:translateY(0)}
+  }
+  @keyframes invite-sparkle {
+    0%,100% {opacity:0;transform:scale(.4)}
+    35% {opacity:1;transform:scale(1.15)}
+    65% {opacity:.8;transform:scale(1)}
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .paper-move,.twinkle {animation:none!important}
+    .paper-move {transform:translateY(0)}
+    .twinkle {opacity:1;transform:scale(1)}
+  }
+</style>
+<defs>
+  <linearGradient id="left-cyan" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#38DADD"/><stop offset=".48" stop-color="#15C4CC"/><stop offset="1" stop-color="#0CABB7"/></linearGradient>
+  <linearGradient id="right-cyan" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#29D7DB"/><stop offset=".65" stop-color="#08B8C1"/><stop offset="1" stop-color="#009EA9"/></linearGradient>
+  <linearGradient id="lower-teal" x1="0" y1="0" x2=".85" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#0A9BA8"/><stop offset="1" stop-color="#00717E"/></linearGradient>
+  <linearGradient id="paper-surface" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF"/><stop offset=".65" stop-color="#F0FCFF"/><stop offset="1" stop-color="#DDF5F8"/></linearGradient>
+  <linearGradient id="green-seal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D8FF65"/><stop offset=".48" stop-color="#B9F44F"/><stop offset="1" stop-color="#91E938"/></linearGradient>
+  <linearGradient id="top-blue" x1="0" y1="0" x2="1" y2=".8"><stop stop-color="#29D0F5"/><stop offset="1" stop-color="#06AEE2"/></linearGradient>
+  <clipPath id="envelope-bound"><rect x="76" y="229" width="348" height="240" rx="42"/></clipPath>
+  <clipPath id="paper-bound"><rect x="128" y="78" width="244" height="328" rx="23"/></clipPath>
+  <clipPath id="card-window"><rect x="75" y="57" width="350" height="406"/></clipPath>
+</defs>
+<!-- Unobtrusive open back flap; kept stationary for a pop-out-focused motion. -->
+<path d="M88 267 L222 135 Q249 113 277 135 L412 267 Z" fill="#057985"/>
+<path d="M88 267 L250 148 L412 267 Z" fill="#0B8490" opacity=".4"/>
+<!-- Envelope back and dark pocket. -->
+<rect x="76" y="230" width="348" height="239" rx="42" fill="#0B7F8C"/>
+<path d="M83 280 Q82 254 106 248 L250 341 L394 248 Q418 254 417 280 L250 373 Z" fill="#066D79"/>
+<!-- Paper is BEHIND all of the foreground envelope planes; it can never cross the pocket's rim improperly. -->
+<g clip-path="url(#card-window)">
+  <g class="paper-move">
+    <rect x="128" y="78" width="244" height="328" rx="23" fill="url(#paper-surface)"/>
+    <g clip-path="url(#paper-bound)">
+      <rect x="128" y="78" width="244" height="42" fill="url(#top-blue)"/>
+      <path d="M128 114 C162 93 195 105 223 112 S285 123 314 108 S354 101 372 109 L372 135 C354 118 330 123 310 127 S246 124 216 120 S153 117 128 133 Z" fill="#B4F953"/>
+    </g>
+    <!-- Centered two-leaf sprout, low-detail geometric faceting. -->
+    <g transform="translate(185 172)">
+      <path d="M0 9 C-18 10 -31 -5 -31 -29 C-12 -29 0 -16 0 9Z" fill="#66DA20"/>
+      <path d="M0 9 L-31 -29 Q-30 -4 0 9" fill="#41C735"/>
+      <path d="M0 9 C18 10 31 -5 31 -29 C12 -29 0 -16 0 9Z" fill="#53D51C"/>
+      <path d="M0 9 L31 -29 Q30 -4 0 9" fill="#20B64A"/>
+      <path d="M0 8 V34" stroke="#55CF26" stroke-width="10" stroke-linecap="round"/>
+    </g>
+    <rect x="230" y="158" width="115" height="16" rx="8" fill="#007F85"/>
+    <rect x="155" y="220" width="190" height="14" rx="7" fill="#5CCBCB"/>
+    <rect x="155" y="250" width="190" height="14" rx="7" fill="#70D0D0"/>
+    <rect x="155" y="280" width="190" height="14" rx="7" fill="#80D5D6"/>
+    <rect x="155" y="310" width="170" height="14" rx="7" fill="#98DBDF"/>
+  </g>
+</g>
+<!-- Front wings and base clipped to ONE clean rounded silhouette. -->
+<g clip-path="url(#envelope-bound)">
+  <path d="M76 278 L250 354 L76 469Z" fill="url(#left-cyan)"/>
+  <path d="M424 278 L250 354 L424 469Z" fill="url(#right-cyan)"/>
+  <path d="M76 469 L250 342 L424 469Z" fill="url(#lower-teal)"/>
+  <!-- Only the lip edges, not an outline or line through the upper letter. -->
+  <path d="M76 278 L250 354 L424 278" fill="none" stroke="#44DBD8" stroke-width="5.5" stroke-linejoin="round"/>
+</g>
+<!-- Seal crosses the V, like the selected reference. -->
+<path d="M250 315 C253 315 257 317 260 319 L289 337 Q296 341 296 349 V391 Q296 399 289 403 L260 421 Q250 426 240 421 L211 403 Q204 399 204 391 V349 Q204 341 211 337 L240 319 Q246 315 250 315 Z" fill="url(#green-seal)"/>
+<g transform="translate(250 367)">
+  <path d="M-15 -24 H15 M-10 -24 V-11 L-29 17 Q-36 30 -21 30 H21 Q36 30 29 17 L10 -11 V-24" stroke="#007A79" stroke-width="7" stroke-linejoin="round" stroke-linecap="round" fill="none"/>
+  <path d="M-23 13 C-12 8 -3 17 7 13 C16 9 21 13 24 17 L26 26 H-26 Z" fill="#0F8F7C"/>
+  <circle cx="3" cy="-2" r="4.3" fill="#D5FF6B"/>
+  <circle cx="-6" cy="7" r="3.6" fill="#D5FF6B"/>
+</g>
+<!-- Small sparkle set remains readable at page icon sizes. -->
+<g class="twinkle t1"><path d="M102 137 C104 149 110 155 122 157 C110 159 104 165 102 177 C100 165 94 159 82 157 C94 155 100 149 102 137Z" fill="#20D2E0"/></g>
+<g class="twinkle t2"><path d="M396 135 C398 146 403 152 415 154 C403 156 398 162 396 173 C394 162 389 156 377 154 C389 152 394 146 396 135Z" fill="#1AC9E0"/></g>
+<g class="twinkle t3"><path d="M250 42 C252 52 258 58 268 60 C258 62 252 68 250 78 C248 68 242 62 232 60 C242 58 248 52 250 42Z" fill="#86E326"/></g>
+</svg>

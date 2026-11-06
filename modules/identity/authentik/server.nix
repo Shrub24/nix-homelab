@@ -28,6 +28,7 @@
         inputs.authentik-nix.nixosModules.default
         ../../database/postgres/_consumer.nix
         ../_oidc.nix
+        ./_pwa.nix
       ];
 
       config = {
@@ -130,6 +131,8 @@
               name = "authentik";
               user = "authentik";
             };
+            # Shadows the shipped `email/base.html`; stage templates resolve through it.
+            email.template_dir = "${./_email}";
           };
         };
 

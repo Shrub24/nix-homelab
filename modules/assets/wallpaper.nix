@@ -19,7 +19,7 @@ _: {
         }
       );
       python = pkgs.python3.withPackages (ps: [ ps.boto3 ]);
-      purgeSecret = ../../secrets/services/assets.yaml;
+      scripts = import ./_scripts.nix { inherit lib; };
     in
     {
       options.services.assets.wallpaper = {
@@ -48,20 +48,6 @@ _: {
       };
 
       config = lib.mkIf cfg.enable {
-        sops.secrets."assets-cf-purge-token" = {
-          sopsFile = purgeSecret;
-          key = "cf_purge_token";
-          path = "/run/secrets/assets-cf-purge-token";
-        };
-
-        sops.templates."assets-wallpaper.env" = {
-          mode = "0400";
-          restartUnits = [ "assets-wallpaper.service" ];
-          content = ''
-            CF_PURGE_TOKEN=${config.sops.placeholder.assets-cf-purge-token}
-          '';
-        };
-
         systemd.services.assets-wallpaper = {
           description = "Replace the published background with a random candidate";
           # Activation picks one too, so the object exists before the first timer elapse.
@@ -74,21 +60,17 @@ _: {
           restartTriggers = [
             spec
             config.sops.templates."assets-publisher.env".path
-          ]
-          ++ [ config.sops.templates."assets-wallpaper.env".path ];
+          ];
           serviceConfig = {
             Type = "oneshot";
             Restart = "no";
             TimeoutStartSec = 180;
-            EnvironmentFile = [
-              config.sops.templates."assets-publisher.env".path
-            ]
-            ++ [ config.sops.templates."assets-wallpaper.env".path ];
+            EnvironmentFile = config.sops.templates."assets-publisher.env".path;
             Environment = [
               "AWS_EC2_METADATA_DISABLED=true"
               "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
             ];
-            ExecStart = "${python}/bin/python ${./_rotate.py} ${spec}";
+            ExecStart = "${python}/bin/python ${scripts}/_rotate.py ${spec}";
             ProtectSystem = "strict";
             ProtectHome = true;
             PrivateTmp = true;

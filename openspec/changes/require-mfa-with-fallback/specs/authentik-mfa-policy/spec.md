@@ -8,7 +8,7 @@ Require a second factor for every Authentik sign-in, with an email recovery rout
 
 ### Requirement: Every password sign-in SHALL require a verified second factor
 
-MFA-1: A session created after a password SHALL require passkey or authenticator-code verification. A user with no enrolled method SHALL be required to enrol one before a session exists.
+MFA-1: A session created after a password SHALL require passkey, email-code or TOTP verification. A user with no enrolled method SHALL be required to enrol one before a session exists.
 
 #### Scenario: Password user with no method enrolled
 
@@ -31,17 +31,18 @@ MFA-2: Signing in with a user-verified passkey from the username field SHALL ski
 
 ### Requirement: A lost device SHALL be recoverable by email in one flow
 
-MFA-3: The email recovery flow SHALL be reachable without a password and SHALL, in one flow, set a new password and enrol a replacement authenticator code before creating a session.
+MFA-3: The email recovery flow SHALL be reachable without a credential and SHALL, in one flow, prove the current mailbox, establish a usable email authenticator and set a strength-checked password before creating a session. It SHALL NOT force TOTP enrollment or reactivate a disabled account.
 
 #### Scenario: Passkey device lost
 
 - **WHEN** a user without their passkey device requests recovery and follows the emailed link
-- **THEN** they set a new password and enrol an authenticator code
-- **AND** the session is created only after that enrolment
+- **THEN** mailbox proof establishes an email authenticator and they set a strong password
+- **AND** the session is created only after completion
+- **AND** subsequent password/email-code sign-in works
 
 ### Requirement: Enrollment SHALL require a method
 
-MFA-4: Invitation enrollment SHALL NOT complete until the new user has enrolled a passkey or authenticator code, and SHALL keep the verified-email gate.
+MFA-4: Invitation enrollment SHALL NOT complete until the new user has enrolled a passkey, email authenticator or TOTP and proven the account address. A password SHALL be required only without a confirmed passkey.
 
 #### Scenario: Optional passkey previously skipped
 
@@ -55,7 +56,8 @@ MFA-5: A recovery session SHALL NOT be created until at least one MFA method is 
 #### Scenario: Recovery with no method enrolled
 
 - **WHEN** a user with no enrolled method completes the password step of recovery
-- **THEN** the flow requires enrolment before the session exists
+- **THEN** mailbox proof has established an email authenticator before the session exists
+- **AND** pre-verification credentials on a never-verified reservation cannot authenticate after recovery
 
 ### Requirement: The panel SHALL NOT change size between screens
 

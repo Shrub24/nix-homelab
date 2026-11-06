@@ -1,3 +1,7 @@
+## Current scope
+
+Enrollment and recovery now follow `../resumable-passkey-email-enrollment/design.md` (D-131). The mandatory-factor requirement remains; email codes are an accepted alternative and TOTP remains available. Live rollout acceptance is still separate from isolated flow acceptance.
+
 ## Context
 
 The pinned default authentication flow binds `default-authentication-mfa-validation` at order 30 with all device classes and `not_configured_action: skip`, gated by a policy that skips it after passwordless sign-in (`auth_method == auth_webauthn_pwl`). The identification stage already offers passkey autofill (`webauthn_stage`), so a registered passkey signs in with one step. Authentik offers no native "other ways to sign in" link from the passkey prompt; the native fallback is the validation stage's device picker (checked against the pinned source and a local preview).
@@ -6,15 +10,15 @@ The pinned default authentication flow binds `default-authentication-mfa-validat
 
 **Goals:** every sign-in ends with a verified second factor or a user-verified passkey; a lost device has a recovery route; no frontend patch; the panel does not resize between screens.
 
-**Non-Goals:** passkey-only landing page, SMS/email MFA, remembering devices, changing the passkey-autofill path.
+**Non-Goals:** passkey-only landing page, SMS MFA, remembering devices, changing the passkey-autofill path.
 
 ## Decisions
 
-1. **Reuse the upstream MFA stage, change its action.** Set `not_configured_action: configure`, device classes `webauthn` and `totp`, and configuration stages for the passkey and TOTP setup stages. With several enrolled devices the stage shows its picker; with one it prompts directly. Rejected: two separate flows (needs a prompt stage, policy routing and cross-flow redirects for no gain).
-2. **Email recovery is the lost-device route, in one flow.** The recovery link is requested from the sign-in page and needs no password. The flow is: identify, email link, new password, enrol a replacement authenticator code, sign in. Resetting only the password would strand the user, because the MFA stage would then demand the lost device. The flow signs in directly after enrolment because the email link already proved mailbox control; old devices stay enrolled until removed under Settings. Rejected: recovery codes (an extra forced step for everyone, to avoid trusting the mailbox the recovery flow already trusts) and a separate "reset MFA" flow (two flows for one situation).
-3. **Password stays at signup.** Password plus an authenticator code is the route for someone without their passkey device. Rejected: passwordless-only accounts, which have no fallback at all.
-4. **Enrollment.** Replace the optional passkey checkbox and its conditional stage with a required configuration step: the enrollment flow ends with the same MFA-setup injection before the first session. The email-verification gate order (40) is unchanged and runs before login.
-5. **Recovery does not skip MFA setup.** The recovery flow ends in a required TOTP enrolment (a passkey can be added later in Settings), so a recovered account never reaches a session with no method. The mailbox is the root of trust for recovery; the email-verification gate (order 40) is therefore load-bearing.
+1. **Reuse the upstream MFA stage, change its action.** Set `not_configured_action: configure`, accepting passkeys, email codes and TOTP, with native setup stages for all three. With several enrolled devices the stage shows its picker; with one it prompts directly. Rejected: two separate flows (needs a prompt stage, policy routing and cross-flow redirects for no gain).
+2. **Email recovery is the lost-device route, in one flow.** The recovery link is requested from the sign-in page without a credential. Its captured recipient must match the current account address. Mailbox proof establishes an email factor, followed by a strength-checked password and guarded login. Established verified accounts retain their devices; never-verified reservations lose pre-verification credentials before the recovered session. Disabled accounts remain disabled. Rejected: recovery codes (an extra forced step for everyone, to avoid trusting the mailbox the recovery flow already trusts) and a separate "reset MFA" flow (two flows for one situation).
+3. **Password is required only without a confirmed passkey.** Passkey enrollment needs no password. Password plus email code or TOTP remains supported, and mailbox recovery can establish a password after passkey loss.
+4. **Enrollment.** Create an active username/email reservation before native method setup. Without a confirmed passkey, require a password. Record confirmed exact-address ownership and complete any remaining email verification before login.
+5. **Recovery leaves a usable factor.** Mailbox proof creates or confirms the current-address email authenticator without forcing TOTP setup. The same mailbox proof guards password prompting, password write and session creation.
 6. **Fixed pane.** Already done in the theme: one desktop pane size, scaled by viewport, flow titles visually hidden so no flow exceeds the login form.
 
 ## Risks / Trade-offs
@@ -28,10 +32,10 @@ The pinned default authentication flow binds `default-authentication-mfa-validat
 ## Migration Plan
 
 1. Deploy the blueprint; the activation gate validates and applies it.
-2. Sign in as the admin (password, then setup); run the email recovery flow once and confirm it ends signed in with a new authenticator code.
+2. Sign in as the admin; exercise mailbox recovery and confirm a subsequent password/email-code login works without forcing TOTP setup.
 3. Verify passkey autofill still signs in in one step.
 4. Verify a new invitation enrolls with a required method.
-Rollback: revert the blueprint; the upstream default skips unenrolled users again.
+Rollback restores configuration, not user/device state. Follow the stateful rollback procedure in `docs/runbooks/identity-migration.md`.
 
 ## Open Questions
 

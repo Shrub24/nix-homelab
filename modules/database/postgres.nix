@@ -236,7 +236,8 @@ _: {
             settings = {
               inherit (instance) port;
               listen_addresses = lib.mkForce "127.0.0.1,${serviceNetwork.address}";
-              max_connections = lib.mkDefault "40";
+              # 100 fits the whole consumer set: at 40 the cluster sat at 35 live connections.
+              max_connections = lib.mkDefault "100";
               shared_buffers = lib.mkDefault "64MB";
               effective_cache_size = lib.mkDefault "128MB";
               maintenance_work_mem = lib.mkDefault "16MB";

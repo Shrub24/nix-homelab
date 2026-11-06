@@ -293,11 +293,12 @@ else
       ++ lib.optional needsGroupsClaim (fragment ./fragments/groups-claim.yaml)
       ++ userEntries
       ++ map fragment [
+        ./fragments/passwords.yaml
         ./fragments/recovery.yaml
         ./fragments/passkeys.yaml
+        ./fragments/verification.yaml
         ./fragments/mfa.yaml
         ./fragments/wording.yaml
-        ./fragments/verification.yaml
         ./fragments/enrollment.yaml
       ]
       ++ lib.concatLists (lib.mapAttrsToList clientEntries activeClients)

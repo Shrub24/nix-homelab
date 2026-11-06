@@ -3,27 +3,27 @@ version: 1
 metadata:
   name: homelab-verification
 entries:
-  # Both policies carry the proof-consuming block verbatim: the login path re-evaluates this
-  # gate after the code stage, so it is where that path consumes the proof.
   - attrs:
       expression: |
         from django.db import transaction
-        from authentik.stages.authenticator_email.models import EmailDevice
+        from authentik.stages.authenticator_email.models import AuthenticatorEmailStage, EmailDevice
 
         user = request.context.get("pending_user") or request.user
         if not user or not user.pk:
             return False
         user.refresh_from_db()
+        if not user.is_active:
+            return False
         with transaction.atomic():
-            proof = EmailDevice.objects.filter(
-                user=user, stage__name="verify-email-code",
-                email=user.email, confirmed=True,
-            ).first()
-            if proof:
-                user.attributes["email_verified_address"] = proof.email
-                user.is_active = True
-                user.save(update_fields=["attributes", "is_active"])
-                proof.delete()
+            devices = EmailDevice.objects.filter(user=user, confirmed=True)
+            # Free the setup stage for a later address; the device stays as the authenticator.
+            devices.filter(stage__name="verify-email-code").update(
+                stage=AuthenticatorEmailStage.objects.get(name="email-authenticator"),
+            )
+            if user.email and devices.filter(email=user.email).exists():
+                if user.attributes.get("email_verified_address") != user.email:
+                    user.attributes["email_verified_address"] = user.email
+                    user.save(update_fields=["attributes"])
         return bool(user.email) and user.attributes.get("email_verified_address") == user.email
     id: policy-email-verified
     identifiers:
@@ -31,38 +31,14 @@ entries:
     model: authentik_policies_expression.expressionpolicy
   - attrs:
       expression: |
-        from django.db import transaction
-        from authentik.core.models import User
-        from authentik.stages.authenticator_email.models import EmailDevice
-
-        pending = request.context.get("pending_user") or request.user
-        if not pending or not pending.pk:
-            return True
-        user = User.objects.get(pk=pending.pk)
-        with transaction.atomic():
-            proof = EmailDevice.objects.filter(
-                user=user, stage__name="verify-email-code",
-                email=user.email, confirmed=True,
-            ).first()
-            if proof:
-                user.attributes["email_verified_address"] = proof.email
-                user.is_active = True
-                user.save(update_fields=["attributes", "is_active"])
-                proof.delete()
-        return not user.email or user.attributes.get("email_verified_address") != user.email
+        return not ak_call_policy("homelab-email-verification").passing
     id: policy-email-gate
     identifiers:
       name: homelab-email-gate
     model: authentik_policies_expression.expressionpolicy
   - attrs:
       expression: |
-        from authentik.core.models import User
-
-        pending = request.context.get("pending_user") or request.user
-        if not pending or not pending.pk:
-            return True
-        user = User.objects.get(pk=pending.pk)
-        return bool(user.email) and user.attributes.get("email_verified_address") != user.email
+        return not ak_call_policy("homelab-email-verification").passing
     id: policy-email-unverified
     identifiers:
       name: homelab-email-unverified
@@ -78,6 +54,26 @@ entries:
       slug: verify-email
     model: authentik_flows.flow
   - attrs:
+      friendly_name: Email code
+      subject: Your shrublab sign-in code
+      token_expiry: minutes=10
+      use_global_settings: true
+    id: email-authenticator
+    identifiers:
+      name: email-authenticator
+    model: authentik_stages_authenticator_email.authenticatoremailstage
+  # A second stage for the same device type, so the picker's label can read Password.
+  - attrs:
+      friendly_name: Password
+      subject: Your shrublab sign-up code
+      token_expiry: minutes=10
+      use_global_settings: true
+    id: enrollment-email-setup
+    identifiers:
+      name: enrollment-email-setup
+    model: authentik_stages_authenticator_email.authenticatoremailstage
+  - attrs:
+      friendly_name: Email code
       subject: Verify your shrublab email address
       token_expiry: minutes=10
       use_global_settings: true

@@ -274,6 +274,8 @@
                 GEOPULSE_OIDC_ENABLED = "true";
                 GEOPULSE_OIDC_CALLBACK_BASE_URL = browserOrigin;
                 GEOPULSE_OIDC_AUTO_LINK_ACCOUNTS = "true";
+                # Admission is the provider's group binding, so auto-creation adds no access.
+                GEOPULSE_AUTH_OIDC_REGISTRATION_ENABLED = "true";
 
                 GEOPULSE_OIDC_PROVIDER_AUTHENTIK_ENABLED = "true";
                 GEOPULSE_OIDC_PROVIDER_AUTHENTIK_NAME = oidcClient.providerName;

@@ -2,8 +2,9 @@
 
 `assets.shrublab.xyz` is the public custom domain of the existing R2 bucket
 `shrublab-assets`. It is not a web-policy route and is not behind Cloudflare Access.
-The bucket and domain remain operator-managed; this repository manages selected objects,
-not the whole bucket.
+The Cloudflare foundation configuration declares the bucket and custom domain;
+[adoption](runbooks/cloudflare-split.md) remains pending. The publisher manages selected
+objects, not the whole bucket.
 
 ## What the bucket holds
 

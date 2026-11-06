@@ -25,6 +25,7 @@ sops --decrypt --output-type json "${OIDC_SECRET_FILE}" > "${tmp_oidc_json}"
 
 python3 - <<'PY' "${tmp_json}" "${tmp_oidc_json}" "${SECRETS_VARS_FILE}"
 import json
+import os
 import pathlib
 import sys
 
@@ -72,11 +73,19 @@ for key, value in optional_secret_tfvars:
     if value is not None and str(value).strip() != "":
         secret_tfvars[key] = value
 
-tfvars_lines = []
-for key, value in secret_tfvars.items():
-    tfvars_lines.append(f"{key} = {json.dumps(value)}")
+service_keys = {"cloudflare_api_token", "cloudflare_account_id", "cloudflare_zone_id", "edge_record_target"}
+service_vars = {key: value for key, value in secret_tfvars.items() if key in service_keys}
+foundation_vars = {key: value for key, value in secret_tfvars.items() if key != "edge_record_target"}
 
-secrets_vars_path.write_text("\n".join(tfvars_lines) + "\n", encoding="utf-8")
+for path, values in [
+    (secrets_vars_path, service_vars),
+    (secrets_vars_path.parent / "foundation" / "secrets.auto.tfvars", foundation_vars),
+]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = "".join(f"{key} = {json.dumps(value)}\n" for key, value in values.items())
+    with open(path, "w", encoding="utf-8", opener=lambda name, flags: os.open(name, flags, 0o600)) as stream:
+        stream.write(content)
+    path.chmod(0o600)
 PY
 
-echo "Rendered ${SECRETS_VARS_FILE}"
+echo "Rendered Cloudflare runtime variables for services and foundation"

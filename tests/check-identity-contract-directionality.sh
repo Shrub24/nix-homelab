@@ -460,7 +460,7 @@ idp_json="$(report ".#nixosConfigurations.oci-melb-1.config" 'c: let k = c.servi
   tokenUrl = k.tokenUrl;
   certsUrl = k.jwksUrl;
 }')" || fail "the Cloudflare Access client does not resolve"
-python3 - "$idp_json" "$ROOT/opentofu/cloudflare/config.auto.tfvars" <<'PYEOF' || fail "Cloudflare Access must federate with the client contract"
+python3 - "$idp_json" "$ROOT/opentofu/cloudflare/foundation/config.auto.tfvars" <<'PYEOF' || fail "Cloudflare Access must federate with the client contract"
 import json, re, sys
 
 contract = json.loads(sys.argv[1])

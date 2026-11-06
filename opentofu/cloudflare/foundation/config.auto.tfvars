@@ -11,7 +11,7 @@ aop_enabled = true
 
 managed_waf_enabled                = true
 firewall_country_allowlist_enabled = true
-firewall_allowed_countries         = ["AU", "GB", "US", "JP", "IN"]
+firewall_allowed_countries         = ["AU", "GB", "US", "JP"]
 rate_limit_enabled                 = true
 rate_limit_characteristics         = ["ip.src", "cf.colo.id"]
 rate_limit_requests_per_period     = 300
@@ -40,3 +40,22 @@ resend_dkim_records = [
     value = "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDWBeOoeZAktdJIVDMtb6W6oLBkMDQJdOXvXF4F/3TymtaT/f0eyU5TsZksDjBicQf3b4S6oZI9sFSmImEXZAI+aJkqOhnA4zuCPKG/jfkTO0qrZ9sJckZmtUMnSNlpiAKs7e0AZ0XgZT0W5m16wK9GSAjBLYosTcuzyXmhLOWaJwIDAQAB"
   },
 ]
+
+# Existing R2 infrastructure. Objects remain owned by their application or publisher.
+r2_buckets = [
+  "karakeep",
+  "langfuse",
+  "langfuse-events",
+  "langfuse-media",
+  "langfuse-state",
+  "nix-cache",
+  "shrublab-assets",
+  "shrublab-backup-home-forge",
+  "shrublab-backup-la-admin-1",
+  "shrublab-backup-oci-melb-1",
+]
+
+r2_custom_domains = {
+  "assets.shrublab.xyz" = "shrublab-assets"
+  "cache.shrublab.xyz"  = "nix-cache"
+}

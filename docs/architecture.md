@@ -449,7 +449,7 @@ Operator commands:
 - Cloudflare policy export sync: `just tofu::sync`
 - Cloudflare runtime render: `just tofu::_runtime`
 - Cloudflare apply with policy sync and validation first: `just tofu::apply --sync -auto-approve`
-- OpenTofu arguments pass through to the selected subcommand: `just tofu::plan -out="saved plan"`, then `just tofu::apply "saved plan"`; `init` also accepts extra arguments
+- OpenTofu apply passes native arguments through: `just tofu::apply -parallelism=3`. Use `--foundation` for shared Cloudflare infrastructure; the default manages service DNS and Access applications. Follow `docs/runbooks/cloudflare-split.md` before the first apply with the split configuration.
 - backups: `just backups run <host>`, `just backups status <host>`, `just backups logs <host>`, `just backups restore-stage <host> <snapshot> <path>`
 
 Runbooks:

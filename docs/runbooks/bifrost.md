@@ -37,3 +37,34 @@ To stop routing through Merge, remove any routes you subsequently assign before
 removing the provider or its secret. Inbox Zero uses this route for generative
 work and fallback after a decision error; Perplexity Decider still handles supported
 decision tasks through AI Gateway.
+
+## Add Neuralwatt
+
+1. Open `secrets/services/bifrost.yaml` with SOPS and add `neuralwatt_api_key`
+   under the existing `bifrost` mapping. Do not re-bootstrap the file or rotate
+   unrelated keys. This service-scoped credential is consumed by both
+   `oci-melb-1` and `home-forge`.
+2. Deploy the Bifrost-placing hosts deliberately. Confirm the gateway starts with
+   the `neuralwatt` custom provider at `https://api.neuralwatt.com/v1` without
+   printing the rendered environment or credential.
+3. Send a synthetic Chat Completions request using `text-fast`; confirm Neuralwatt
+   reports `deepseek-v4.1-flash` on the standard tier.
+4. Send a synthetic **streaming** Chat Completions request using `text-flex`
+   (`stream: true`); confirm Neuralwatt reports `deepseek-v4.1-flash-flex` and
+   inspect the served tier and charged price in its usage metadata. Allow for
+   delayed first-token admission. Non-streaming calls do not qualify for Flex
+   pricing; even streaming requests may be served outside Flex under upstream's
+   documented fallback conditions.
+
+These aliases are standalone and have no cross-provider fallback. No existing
+application or fleet alias moves to Neuralwatt. `text-fast` uses the standard
+model, not Neuralwatt's separate energy-accounting-only Speed tier. Check provider
+privacy terms before assigning sensitive production workloads; this addition
+makes no Neuralwatt ZDR claim.
+
+If reverting, stop any consumers you subsequently assign to these aliases before
+removing the routes, provider or credential.
+
+References: [API overview](https://docs.neuralwatt.com/api/overview),
+[models](https://docs.neuralwatt.com/api/models), and
+[Flex behaviour and pricing](https://docs.neuralwatt.com/guides/flex-tier).

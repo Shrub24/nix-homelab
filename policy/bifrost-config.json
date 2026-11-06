@@ -93,6 +93,25 @@
         }
       ]
     },
+    "neuralwatt": {
+      "custom_provider_config": {
+        "base_provider_type": "openai"
+      },
+      "network_config": {
+        "base_url": "https://api.neuralwatt.com/v1"
+      },
+      "keys": [
+        {
+          "name": "neuralwatt-primary",
+          "value": "env.NEURALWATT_API_KEY",
+          "weight": 1,
+          "models": [
+            "deepseek-v4.1-flash",
+            "deepseek-v4.1-flash-flex"
+          ]
+        }
+      ]
+    },
     "merge-gateway": {
       "custom_provider_config": {
         "base_provider_type": "openai"
@@ -126,6 +145,36 @@
   },
   "governance": {
     "routing_rules": [
+      {
+        "id": "text-fast",
+        "name": "text-fast",
+        "enabled": true,
+        "priority": 6,
+        "scope": "global",
+        "cel_expression": "model == 'text-fast'",
+        "targets": [
+          {
+            "provider": "neuralwatt",
+            "model": "deepseek-v4.1-flash",
+            "weight": 1.0
+          }
+        ]
+      },
+      {
+        "id": "text-flex",
+        "name": "text-flex",
+        "enabled": true,
+        "priority": 7,
+        "scope": "global",
+        "cel_expression": "model == 'text-flex'",
+        "targets": [
+          {
+            "provider": "neuralwatt",
+            "model": "deepseek-v4.1-flash-flex",
+            "weight": 1.0
+          }
+        ]
+      },
       {
         "id": "inbox-zero-text",
         "name": "inbox-zero-text",

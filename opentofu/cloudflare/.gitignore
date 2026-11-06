@@ -4,7 +4,6 @@ secrets.auto.tfvars
 backend.hcl
 !config.auto.tfvars
 .terraform/
-.terraform.lock.hcl
 terraform.tfstate
 terraform.tfstate.backup
 terraform.tfstate.pre-r2.bak

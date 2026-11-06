@@ -51,7 +51,7 @@
   homeAssistant = "ghcr.io/home-assistant/home-assistant:2026.10.4@sha256:23f4dfbb69ce76315dbc4de7915504f1c2dcecd7ca2648113a493a385972e133";
 
   # Multi-arch index digest: the arm64 manifest is selected on oci-melb-1.
-  inboxZero = "ghcr.io/elie222/inbox-zero:2.30.0@sha256:e9970c499a79b8a15bbab21363d1b87ea247c75b2721f036c7cee0e2c78d1fcc";
+  inboxZero = "ghcr.io/elie222/inbox-zero:82004cd@sha256:182ca110030c6505e74d67d996deb46f4a5424f57263b222745cc26bd5571a97";
 
   # The frontend image serves the application; the API is a separate image.
   sparkyFitness = "docker.io/codewithcj/sparkyfitness:v1.11.0@sha256:5eb77135ccd8e58492ee9bd19b8714ea4a73a99623b863a9287ccecb0557cd17";

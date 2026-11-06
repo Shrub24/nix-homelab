@@ -440,13 +440,16 @@ Fleet tooling posture:
 Operator commands:
 
 - deploy: `just deploy oci-melb-1` (or `just deploy la-admin-1`)
-- deploy without rollback: `just deploy la-admin-1 --rollback false`
+- deploy without rollback: `just deploy la-admin-1 --auto-rollback false` (rollback remains enabled by default)
+- deploy-rs flags pass through directly: `just deploy la-admin-1 --debug-logs`; Nix build flags follow `--`: `just deploy la-admin-1 --debug-logs -- -v`
 - network-owner cutover: `nix run .#deploy-rs -- --skip-checks --boot .#la-admin-1`, then reboot from console
 - dry-activate: `just _activate oci-melb-1`
 - checks: `just checks all` (repo-owned validation checks: secret scope, ssh fingerprint, web policy/catalog, host-phase contracts, restore contracts)
 - local prebuild: `just prebuild-local <host>` (builds `.#host-<host>`, the addressable form of the deploy profile, and publishes its closure to the fleet cache so the host substitutes instead of compiling)
-- Cloudflare policy export sync: `just tofu-sync`
-- Cloudflare runtime render: `just tofu-runtime`
+- Cloudflare policy export sync: `just tofu::sync`
+- Cloudflare runtime render: `just tofu::_runtime`
+- Cloudflare apply with policy sync and validation first: `just tofu::apply --sync -auto-approve`
+- OpenTofu arguments pass through to the selected subcommand: `just tofu::plan -out="saved plan"`, then `just tofu::apply "saved plan"`; `init` also accepts extra arguments
 - backups: `just backups run <host>`, `just backups status <host>`, `just backups logs <host>`, `just backups restore-stage <host> <snapshot> <path>`
 
 Runbooks:
@@ -541,7 +544,7 @@ Operator workflow (la-admin-1 edge host):
 
 - precheck: `just check`
 - deploy: `just deploy la-admin-1`
-- deploy without rollback waiter: `just deploy la-admin-1 --rollback false`
+- deploy without rollback waiter: `just deploy la-admin-1 --auto-rollback false`
 - rollback (generation): `just rollback la-admin-1`
 - runtime checks: `sudo scripts/edge-ingress-operational-checks.sh termix.shrublab.xyz /`
 

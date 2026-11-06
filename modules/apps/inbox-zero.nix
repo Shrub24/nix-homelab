@@ -23,7 +23,7 @@ _: {
       environmentFile = config.sops.templates."inbox-zero.environment".path;
       localPostgres = config.services.postgres.localEndpoint;
       bifrost = config.services.bifrost.endpoint.containerBaseUrl or "";
-      model = globals.bifrost.aliases.text;
+      model = "inbox-zero-text";
 
       # Checked at unit start on the rendered file: upstream catches startup errors and
       # keeps running, so an empty credential would otherwise look healthy.
@@ -39,6 +39,7 @@ _: {
         "CRON_SECRET"
         "INTERNAL_API_KEY"
         "AUTH_ALLOWED_EMAILS"
+        "AI_GATEWAY_API_KEY"
       ];
 
       validateEnvironment = pkgs.writeShellScript "inbox-zero-validate-environment" ''
@@ -166,6 +167,10 @@ _: {
               key = "inbox-zero/auth_allowed_emails";
               path = "/run/secrets/inbox-zero.allowed_emails";
             };
+            inbox_zero_ai_gateway_api_key = {
+              key = "inbox-zero/ai_gateway_api_key";
+              path = "/run/secrets/inbox-zero.ai_gateway_api_key";
+            };
           };
 
           sops.templates."inbox-zero.environment" = {
@@ -184,6 +189,7 @@ _: {
               CRON_SECRET=${config.sops.placeholder.inbox_zero_cron_secret}
               INTERNAL_API_KEY=${config.sops.placeholder.inbox_zero_internal_api_key}
               AUTH_ALLOWED_EMAILS=${config.sops.placeholder.inbox_zero_allowed_emails}
+              AI_GATEWAY_API_KEY=${config.sops.placeholder.inbox_zero_ai_gateway_api_key}
             '';
           };
 
@@ -209,8 +215,10 @@ _: {
                 QUEUE_BACKEND = "internal";
                 # The web process calls its own internal handlers inside its namespace.
                 INTERNAL_API_URL = "http://127.0.0.1:${toString containerPort}";
-                DEFAULT_LLM_PROVIDER = "openai-compatible";
-                DEFAULT_LLM_MODEL = model;
+                DEFAULT_LLMS = "openai-compatible:${model}";
+                DEFAULT_DECISION_MODEL = "aigateway:perplexity/pplx-decider-v1.2";
+                DEFAULT_DECISION_MODEL_ENABLED = "true";
+                DECISION_MODEL_COLD_EMAIL_ENABLED = "true";
                 OPENAI_COMPATIBLE_MODEL = model;
                 OPENAI_COMPATIBLE_BASE_URL = bifrost;
               };

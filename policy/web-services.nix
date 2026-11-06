@@ -342,8 +342,8 @@ in
           health.path = "/api/v1/health";
         };
 
-        # The apex is a permanent redirect with no application behind it.
-        # No login or Access application: the redirect carries no data, and Access would block arrivals.
+        # The apex redirects to identity; ingress serves public policy pages before that fallback.
+        # No login or Access application: both the policy and the redirect must be publicly readable.
         apex = {
           subdomain = null;
           redirectTo = "https://auth.${globals.domain}";

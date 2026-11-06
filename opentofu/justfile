@@ -4,19 +4,36 @@ set no-cd
 # The host is the edge host from lib/deploy/hosts.nix; the scripts resolve it
 # themselves when no argument is given.
 sync host="":
-  @./scripts/export-web-services-policy.sh {{host}}
-  @./tests/check-web-services-policy.sh {{host}}
+    @./scripts/export-web-services-policy.sh {{ host }}
+    @./tests/check-web-services-policy.sh {{ host }}
 
 _runtime:
     @PYTHONHASHSEED=random ./scripts/render-opentofu-cloudflare-runtime.sh
 
-init: _runtime
-    @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
+[positional-arguments]
+init *args: _runtime
+    @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl "$@"
 
-plan: _runtime
+[positional-arguments]
+plan *args: _runtime
     @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
-    @tofu -chdir=opentofu/cloudflare plan
+    @tofu -chdir=opentofu/cloudflare plan "$@"
 
-apply: _runtime
-    @tofu -chdir=opentofu/cloudflare init -reconfigure -backend-config=backend.hcl
-    @tofu -chdir=opentofu/cloudflare apply
+# --sync refreshes and validates policy first; other arguments go to tofu apply.
+[positional-arguments]
+apply *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ARGS=()
+    SYNC=false
+    while (( $# )); do
+        case $1 in
+            --sync) SYNC=true ;;
+            --) ARGS+=("$@"); break ;;
+            *) ARGS+=("$1") ;;
+        esac
+        shift
+    done
+    if [[ $SYNC == true ]]; then just tofu::sync; fi
+    just tofu::init
+    tofu -chdir=opentofu/cloudflare apply "${ARGS[@]}"

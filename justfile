@@ -27,31 +27,42 @@ bootstrap host target:
         --flake "$FLAKE" \
         "$@"
 
-[arg("rollback", long="rollback")]
-[arg("verbose", long="verbose")]
-deploy host="la-admin-1" rollback="true" verbose="false":
-    @HOST="{{ host }}"; ROLLBACK="{{ rollback }}"; VERBOSE="{{ verbose }}"; EXIT=0; \
-    if [[ -z "$HOST" ]]; then echo "Error: host required (use --host <nixosConfiguration>)"; exit 1; fi; \
-    STRICT="$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' ".#fleet.hosts.\"$HOST\".strictSubstituteOnly")"; \
-    ARGS=(--skip-checks); \
-    NIX_ARGS=(); \
-    [[ "$ROLLBACK" != "false" ]] || ARGS+=(--auto-rollback false); \
-    if [[ "$VERBOSE" == "true" ]]; then ARGS+=(--debug-logs); fi; \
-    if [[ "$STRICT" == "true" || "$VERBOSE" == "true" ]]; then \
-        NIX_ARGS=(--); \
-        if [[ "$STRICT" == "true" ]]; then NIX_ARGS+=(--option max-jobs 0 --option builders ""); fi; \
-        if [[ "$VERBOSE" == "true" ]]; then NIX_ARGS+=(-v); fi; \
-    fi; \
-    nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST" "${NIX_ARGS[@]}" || EXIT=$?; \
-    if [ "$EXIT" -eq 0 ]; then \
-        printf 'deploy-rs succeeded for %s' "$HOST" | ssh "$HOST" notify send info "Deploy $HOST" --topic system || true; \
-    else \
-        printf 'deploy-rs failed for %s (exit %d)' "$HOST" "$EXIT" | ssh "$HOST" notify send warning "Deploy $HOST" --topic system || true; \
-    fi; \
+# Forward deploy-rs options; Nix build options follow --. Rollback stays enabled.
+[positional-arguments]
+deploy host="la-admin-1" *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    HOST=$1
+    shift
+    if [[ -z "$HOST" ]]; then echo "Error: host required" >&2; exit 1; fi
+    STRICT=$(nix eval --raw --no-write-lock-file --apply 'value: if value then "true" else "false"' ".#fleet.hosts.\"$HOST\".strictSubstituteOnly")
+    ARGS=(--skip-checks)
+    NIX_ARGS=()
+    while (( $# )); do
+        if [[ $1 == -- ]]; then
+            shift
+            NIX_ARGS=("$@")
+            break
+        fi
+        ARGS+=("$1")
+        shift
+    done
+    if [[ $STRICT == true ]]; then
+        NIX_ARGS+=(--option max-jobs 0 --option builders "")
+    fi
+    if (( ${#NIX_ARGS[@]} )); then NIX_ARGS=(-- "${NIX_ARGS[@]}"); fi
+    EXIT=0
+    nix run .#deploy-rs -- "${ARGS[@]}" ".#$HOST" "${NIX_ARGS[@]}" || EXIT=$?
+    if (( EXIT == 0 )); then
+        printf 'deploy-rs succeeded for %s' "$HOST" | ssh "$HOST" notify send info "Deploy $HOST" --topic system || true
+    else
+        printf 'deploy-rs failed for %s (exit %d)' "$HOST" "$EXIT" | ssh "$HOST" notify send warning "Deploy $HOST" --topic system || true
+    fi
     exit "$EXIT"
 
-host host:
-    @nix run .#deploy-rs -- --skip-checks ".#{{ host }}"
+[positional-arguments]
+host host *args:
+    @HOST=$1; shift; nix run .#deploy-rs -- --skip-checks ".#$HOST" "$@"
 
 _preflight host:
     @HOST="{{ host }}"; \

@@ -10,10 +10,12 @@ all:
   @./tests/check-ssh-host-fingerprint.sh
   @./tests/check-host-age-anchor.sh
   @./tests/check-deploy-bootstrap-gate.sh
+  @python3 tests/test-just-command-surface.py
   @./tests/check-flake-source-tracking.sh
   @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).assets-publisher"
   @./tests/check-postgres-hba-safety.sh
   @./tests/check-web-services-policy.sh
+  @python3 tests/check-ingress-public-pages.py
   @./tests/check-web-service-catalog.sh
   @./tests/phase-la-admin-contract.sh
   @./tests/check-identity-contract-directionality.sh
@@ -37,6 +39,9 @@ test-host-age-anchor:
 
 test-deploy-bootstrap-gate:
   @./tests/check-deploy-bootstrap-gate.sh
+
+test-command-surface:
+  @python3 tests/test-just-command-surface.py
 
 test-postgres-hba-safety:
   @./tests/check-postgres-hba-safety.sh

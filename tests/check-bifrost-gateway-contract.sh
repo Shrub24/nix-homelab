@@ -140,9 +140,11 @@ elif [(t.get("provider"), t.get("model")) for t in targets] != [("voyage", "voya
 # refusal, which arrives as a 400 rather than a 429 — so a chain that never
 # leaves the provider that failed just re-fails and surfaces the error. The
 # embedding rule is exempt: only Voyage serves it, and a different embedding
-# provider would silently change the vector space of an existing index.
+# provider would silently change the vector space of an existing index. A route
+# with no fallback deliberately fails closed (for example, to retain a provider
+# privacy boundary); check diversity only when a fallback chain is configured.
 for rid, rule in rules.items():
-    if rid == "embedding":
+    if rid == "embedding" or not rule.get("fallbacks"):
         continue
     target_providers = {t.get("provider") for t in rule.get("targets", [])}
     fallback_providers = set()

@@ -127,6 +127,7 @@ in
             OPENCODE_API_KEY_2=${config.sops.placeholder.bifrost_opencode_api_key_2}
             OPENROUTER_API_KEY=${config.sops.placeholder.bifrost_openrouter_api_key}
             VOYAGE_API_KEY=${config.sops.placeholder.bifrost_voyage_api_key}
+            MERGE_GATEWAY_API_KEY=${config.sops.placeholder.bifrost_merge_gateway_api_key}
           '';
         };
 
@@ -166,6 +167,10 @@ in
           bifrost_voyage_api_key = {
             key = "bifrost/voyage_api_key";
             path = "/run/secrets/bifrost.voyage_api_key";
+          };
+          bifrost_merge_gateway_api_key = {
+            key = "bifrost/merge_gateway_api_key";
+            path = "/run/secrets/bifrost.merge_gateway_api_key";
           };
         };
 

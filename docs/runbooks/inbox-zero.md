@@ -6,7 +6,7 @@ The Inbox Zero service is deployed on `oci-melb-1`. The encrypted service file a
 
 ## Google resources
 
-Use one Google Cloud project for the OAuth client and the Gmail topic. Enable the Gmail API and the Pub/Sub API.
+Use one Google Cloud project for the OAuth client and the Gmail topic. Enable the Gmail API, People API (`people.googleapis.com`) and Pub/Sub API.
 
 ### OAuth client
 
@@ -112,6 +112,56 @@ Only the operator creates or edits encrypted secrets. The template generates the
 4. The file's `sops:` metadata should list only the owner and `oci-melb-1` age recipients. Run `sops updatekeys` again after any recipient change. Do not print decrypted values into logs or tickets.
 
 The encrypted file is present and bound on `oci-melb-1`; these bootstrap steps are retained for recovery or deliberate re-bootstrap. Do not re-bootstrap merely to add a user, because that regenerates other credentials. Use `sops` to edit only the comma-separated `auth_allowed_emails` value, then deploy the updated configuration.
+
+## Decision models and the image upgrade
+
+The deployment pins upstream commit `82004cd7aac1dc2de7f1ebcdb8afe1df96f80af3`
+(`82004cd`, multi-architecture index
+`sha256:182ca110030c6505e74d67d996deb46f4a5424f57263b222745cc26bd5571a97`).
+The latest server release, 2.30.0, does not contain decision-model support.
+
+Before deploying:
+
+1. In the existing encrypted `secrets/services/inbox-zero.yaml`, add
+   `inbox-zero.ai_gateway_api_key` with your AI Gateway key using the SOPS editor.
+   Do not re-bootstrap the file: that would regenerate auth and encryption keys.
+   The module renders it as `AI_GATEWAY_API_KEY`, not the shared `LLM_API_KEY`.
+   Startup rejects a missing or empty value.
+2. Check the gateway/provider agreements and console controls enforce no training
+   on email data, including ordinary LLM fallbacks through Bifrost. This app does
+   not send AI Gateway's per-request `disallowPromptTraining` filter. Do not assume
+   the model's no-training label enables an enforcement setting. If the required
+   controls cannot be established, do not enable mailbox processing.
+3. Publish the updated `/privacy` disclosure and inform users before sending mail
+   content to the new providers. See [privacy policy context](../privacy.md).
+4. Take a protected database export before upgrading. There are 96 added migration
+   directories relative to the old image. A generation rollback does not reverse
+   those migrations; retain the old image and the export for recovery.
+5. Deploy deliberately, then verify Prisma migration status independently using
+   the checks below. The web process may start even when migrations fail.
+6. Confirm the running container has `DEFAULT_DECISION_MODEL` set to
+   `aigateway:perplexity/pplx-decider-v1.2`, with
+   `DEFAULT_DECISION_MODEL_ENABLED=true` and `DECISION_MODEL_COLD_EMAIL_ENABLED=true`.
+   Do not print its full environment, which contains secrets.
+7. Test a synthetic decision through AI Gateway, then a controlled mailbox rule.
+   Confirm the decision provider actually served it rather than silently falling
+   back to the LLM. Check usage metadata without enabling email-content logging.
+
+The deployment default applies to users without a personal AI key or explicit
+choice; existing user choices win. Drafting and other generative work remain on
+Bifrost's `inbox-zero-text` alias, as does the fallback after decision errors.
+That alias selects Merge Gateway's `deepseek/deepseek-v4.1-flash-1017`, with no
+cross-provider fallback; the operator configures upstream ZDR restrictions in the
+Merge console. Other fleet aliases remain unchanged. Cold-email decisions are
+explicitly enabled here, although upstream defaults them off after false negatives
+on unsolicited pitches mentioning the recipient's company (PR #4162). Include
+those cases in acceptance before enabling unattended automation.
+
+Configuration evaluation does not establish successful migrations, provider
+privacy enforcement or live decision inference. Those are operator acceptance
+steps. If the upgrade fails, stop processing and restore the pre-upgrade database
+with the old image if schema compatibility requires it; do not assume image-only
+rollback is safe.
 
 ## Database migrations
 

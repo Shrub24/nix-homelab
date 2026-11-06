@@ -182,13 +182,37 @@ _: {
           sortedNames = lib.sort (
             a: b: builtins.stringLength (routeByName a).path > builtins.stringLength (routeByName b).path
           ) namesForHost;
-          # A redirect owns its whole site: there is no upstream to share a site with.
           redirectNames = builtins.filter (name: (routeByName name).redirectTo != null) sortedNames;
+          staticPages = lib.concatMapStringsSep "\n" (
+            name:
+            lib.concatStringsSep "\n" (
+              lib.mapAttrsToList (
+                path: file:
+                let
+                  id = sanitize "${name}_${path}";
+                  root = builtins.dirOf file;
+                in
+                ''
+                  @${id} path ${path} ${path}/
+                  handle @${id} {
+                    root * ${root}
+                    rewrite * /${builtins.baseNameOf file}
+                    file_server
+                  }
+                ''
+              ) (routeByName name).staticPages
+            )
+          ) redirectNames;
           routeBlocks =
             if redirectNames != [ ] then
-              lib.concatStringsSep "\n" (
-                map (name: "redir ${(routeByName name).redirectTo}{uri} permanent") redirectNames
-              )
+              ''
+                ${staticPages}
+                handle {
+                  ${lib.concatMapStringsSep "\n" (
+                    name: "redir ${(routeByName name).redirectTo}{uri} permanent"
+                  ) redirectNames}
+                }
+              ''
             else
               lib.concatStringsSep "\n" (map (name: mkRouteHandle name (routeByName name)) sortedNames);
         in
@@ -328,6 +352,12 @@ _: {
                   default = null;
                   description = "Absolute URL the apex answers with a permanent redirect. Mutually exclusive with upstream.";
                 };
+                staticPages = lib.mkOption {
+                  type = lib.types.attrsOf lib.types.path;
+                  default = { };
+                  description = "HTML files served at exact public paths before this site's redirect.";
+                };
+
                 exposureMode = lib.mkOption {
                   type = lib.types.enum [
                     "direct"

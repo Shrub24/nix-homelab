@@ -93,6 +93,24 @@
         }
       ]
     },
+    "merge-gateway": {
+      "custom_provider_config": {
+        "base_provider_type": "openai"
+      },
+      "network_config": {
+        "base_url": "https://api-gateway.merge.dev/v1/openai"
+      },
+      "keys": [
+        {
+          "name": "merge-gateway-primary",
+          "value": "env.MERGE_GATEWAY_API_KEY",
+          "weight": 1,
+          "models": [
+            "deepseek/deepseek-v4.1-flash-1017"
+          ]
+        }
+      ]
+    },
     "openrouter": {
       "keys": [
         {
@@ -108,6 +126,21 @@
   },
   "governance": {
     "routing_rules": [
+      {
+        "id": "inbox-zero-text",
+        "name": "inbox-zero-text",
+        "enabled": true,
+        "priority": 50,
+        "scope": "global",
+        "cel_expression": "model == 'inbox-zero-text'",
+        "targets": [
+          {
+            "provider": "merge-gateway",
+            "model": "deepseek/deepseek-v4.1-flash-1017",
+            "weight": 1.0
+          }
+        ]
+      },
       {
         "id": "embedding",
         "name": "embedding",

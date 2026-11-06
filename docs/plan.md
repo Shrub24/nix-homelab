@@ -249,6 +249,28 @@ guards a trap that already cost 19 files from the index.
   so the assertion belongs with the target (Navidrome binds `0.0.0.0`, which is why
   AudioMuse's default dial is functional though off-convention).
 
+### Notification debounce (nix-fleet change)
+
+- `OnFailure=` fires whenever the unit enters the failed state, and a unit with `Restart=on-failure`
+  does that on every failed start attempt. A crash loop therefore sends one notification per attempt:
+  `podman-sparkyfitness-server` produced five in ~0.5 s before its own start limit stopped the retries.
+  systemd has no final-failure hook, so this belongs in nix-fleet's daemon: a
+  `services.notify.debounceSeconds` window keyed on `(unit, event)` in `_handle_event`, in memory so a
+  daemon restart does not resurrect stale suppressions. Our side then binds one line. A local wrapper
+  around `notify-event@` would re-declare a shared module's body, which `CONVENTIONS.md` forbids. Until
+  then `modules/notifications/notify.nix` disables the handler's own start limit, so the reporter cannot
+  be the unit that fails.
+
+### SparkyFitness OIDC issuer (fork pin)
+
+- The backend runs from a pinned fork image (`ghcr.io/shrub24/sparkyfitness-backend:oidc-fix`) because
+  upstream stores the issuer with its trailing slash stripped (`oidcEnvConfig.ts`), which no Authentik
+  issuer can match — the provider row is poisoned whenever discovery fails at boot and the comparison
+  fails on every login after. Upstream tracks it as
+  [#2772](https://github.com/CodeWithCJ/SparkyFitness/issues/2772); the fork keeps the issuer verbatim.
+- Revert the pin to `docker.io/codewithcj/sparkyfitness_server` once a release carries the fix, and
+  delete this entry.
+
 ### SparkyFitness rate limiting behind the proxy
 
 - The application's nginx rate-limits its auth endpoints by client IP, and behind Caddy and
@@ -445,6 +467,18 @@ change; publishers neither prune objects nor change Cloudflare Access.
   were stale independent of the provider: the route is published, and publication is the route's
   posture rather than `publish`/`declarePublic`.
 - Windows VM lifecycle: an idle reaper plus socket-activated RDP, gated first on proving a graceful `windows-vm-stop` (the deploy stall showed the guest did not stop inside its 180 s window).
+
+### Commit rhythm in the agent instructions (docs)
+
+- The jj skill teaches `absorb`, `split` and filling stacked changes in place, but never states the
+  rule that shapes them: a fix belonging to lines already written goes back through `absorb`, and a
+  genuinely new concern through `split` — not through a new commit. `AGENTS.md`'s apply workflow says
+  nothing about commit rhythm at all. Building this feature the git way cost three commits for two
+  concerns, an empty change `jj` then refused to push, and a reshuffle that rewrote an operator's
+  neighbouring commit.
+- Add one line to the jj skill and one to `AGENTS.md`'s apply workflow stating the rhythm, without
+  restating the `absorb` and `split` mechanics the skill already documents.
+- Done when both instructions say it once and neither duplicates the mechanics.
 
 ### Known ceilings, no action planned
 

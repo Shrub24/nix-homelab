@@ -25,6 +25,7 @@ all:
   @./tests/check-bifrost-gateway-contract.sh oci-melb-1
   @./tests/check-bifrost-gateway-contract.sh home-forge
   @./tests/check-build-account-contract.sh
+  @./tests/check-notify-recovery-contract.sh
   @./tests/check-telemetry-view-composition.sh
   @./tests/check-user-app-placements.sh
   @./tests/check-geopulse-contract.sh
@@ -67,6 +68,9 @@ test-bifrost-gateway:
 
 test-build-account:
   @./tests/check-build-account-contract.sh
+
+test-notify-recovery:
+  @./tests/check-notify-recovery-contract.sh
 
 test-telemetry-views:
   @./tests/check-telemetry-view-composition.sh

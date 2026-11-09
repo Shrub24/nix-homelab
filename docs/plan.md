@@ -249,17 +249,16 @@ guards a trap that already cost 19 files from the index.
   so the assertion belongs with the target (Navidrome binds `0.0.0.0`, which is why
   AudioMuse's default dial is functional though off-convention).
 
-### Notification debounce (nix-fleet change)
+### Notification debounce (resolved by D-131)
 
-- `OnFailure=` fires whenever the unit enters the failed state, and a unit with `Restart=on-failure`
-  does that on every failed start attempt. A crash loop therefore sends one notification per attempt:
-  `podman-sparkyfitness-server` produced five in ~0.5 s before its own start limit stopped the retries.
-  systemd has no final-failure hook, so this belongs in nix-fleet's daemon: a
-  `services.notify.debounceSeconds` window keyed on `(unit, event)` in `_handle_event`, in memory so a
-  daemon restart does not resurrect stale suppressions. Our side then binds one line. A local wrapper
-  around `notify-event@` would re-declare a shared module's body, which `CONVENTIONS.md` forbids. Until
-  then `modules/notifications/notify.nix` disables the handler's own start limit, so the reporter cannot
-  be the unit that fails.
+- Superseded. `OnFailure=` fires whenever the unit enters the failed state, and a unit with
+  `Restart=on-failure` does that on every failed start attempt, so a crash loop sent one notification
+  per attempt: `podman-sparkyfitness-server` produced five in ~0.5 s before its own start limit
+  stopped the retries. The per-attempt trigger is removed rather than debounced —
+  `modules/notifications/notify.nix` puts every registered unit that restarts in `RestartMode=direct`
+  with a finite start limit, so the event reports the failure that ends the retries. The handler keeps
+  systemd's default start limit, and the daemon stays a delivery component with no suppression state.
+  The contract is `tests/check-notify-recovery-contract.sh`.
 
 ### SparkyFitness OIDC issuer (fork pin)
 

@@ -3517,3 +3517,37 @@ two are captured at different moments, so a restore is verified per record rathe
 consistent. Break-glass is a password account created while the hidden login is temporarily re-enabled
 and kept administrative through `adminEmail`; `docs/identity.md` records it beside the fleet's other
 local administrator credentials.
+
+## D-131: A failure notification reports exhausted recovery, not a failed attempt
+
+**Context:** systemd's default restart mode passes through a failed state for every attempt it is
+about to retry, and `OnFailure=` fires on that transition. A crash-looping container or agent
+therefore paged once per retry — noise for something that recovers by itself, and enough
+`notify-event@<unit>` jobs to outrun the handler's own start limit, which drops notifications
+silently. Per-attempt evidence has a better home: journald and the telemetry pipelines already
+carry it.
+
+**Decision:** `modules/notifications/notify.nix` puts every unit registered under
+`services.notify.events` that auto-restarts into `RestartMode=direct`, and gives it a finite start
+limit — the ending whose failure the notification reports. The budget is a fleet constant of five
+starts an hour, matching the bound the container units already carry, applied as `mkDefault` so an
+owner's explicit value wins. A registered unit that disables its own start limit fails evaluation
+with a named `notify:` error, because direct mode would then restart it silently for ever with no
+event to send. `tests/check-notify-recovery-contract.sh` holds the contract on all three hosts,
+with three single-field mutations as negative controls.
+
+**Rejected:** Debouncing in the daemon — a second policy layer that hides the trigger instead of
+removing it, and still pays a handler job per attempt. Splitting severities into "transient" and
+"real" — the fleet would classify from systemd's result field alone, which cannot tell the two
+apart. A global `RestartMode=direct` default — it would also change the recovery of units nobody
+monitors.
+
+**Consequences:** A transient crash is no longer announced at all; the per-attempt trail is
+journald, VictoriaLogs and the Grafana boards. Direct mode also stops systemd propagating the
+restart to dependent units, so a monitored provider (`podman-geopulse-backend`,
+`podman-sparkyfitness-server`) no longer restarts its consumer — the consumer stays up across the
+outage and reconnects, which is the simpler recovery. Package-provided units (`tailscaled`,
+`nix-daemon`) take the mode and keep their upstream budget, because their unit text is not ours to
+budget. The sentence "notify on failure means notify when systemd exposes a failure transition"
+already lives in nix-fleet's `lib/notify-contract.nix`; this change is the fleet's realization of
+its direct-mode clause, and that seam moves upstream if a second consumer needs the same semantics.

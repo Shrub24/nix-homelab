@@ -7,6 +7,38 @@
     let
       globals = import ../../policy/globals.nix;
       cfg = config.services.notify;
+
+      # A failure notification means automatic recovery ended, not that one attempt
+      # failed. In its default mode systemd exposes a failed state — and so fires
+      # OnFailure= — for every restart attempt, which pages once per retry and lets a
+      # crash loop outrun the handler's own start limit. Direct mode keeps the
+      # transition internal, still fires the hook when the start limit gives out, and
+      # leaves the per-attempt record to the journal and telemetry.
+      monitored = lib.attrNames (
+        lib.filterAttrs (_: ev: ev.failure != null || ev.success != null) cfg.events
+      );
+
+      restarts = unit: (config.systemd.services.${unit}.serviceConfig.Restart or "no") != "no";
+
+      # Five starts an hour, matching the container invariant: systemd's default
+      # window is 5 starts per 10 s, which only catches a loop that dies fast — a
+      # service failing after 20 s of startup retries for ever, and direct mode would
+      # then silence it with no failure to report at all.
+      recoveryBudget = {
+        interval = "3600";
+        burst = "5";
+      };
+
+      startLimitDisabled =
+        unit:
+        let
+          value = config.systemd.services.${unit}.unitConfig.StartLimitIntervalSec or null;
+        in
+        value != null
+        && lib.elem (toString value) [
+          "0"
+          "infinity"
+        ];
     in
     {
       imports = [ inputs.nix-fleet.modules.nixos.notify ];
@@ -42,7 +74,24 @@
           };
         };
 
+        systemd.services = lib.genAttrs monitored (unit: {
+          serviceConfig.RestartMode = lib.mkDefault "direct";
+          # A unit that never restarts has no recovery to bound; bounding it would
+          # only refuse a sixth deploy of the same generation.
+          unitConfig = lib.mkIf (config.systemd.services ? ${unit} && restarts unit) {
+            StartLimitIntervalSec = lib.mkDefault recoveryBudget.interval;
+            StartLimitBurst = lib.mkDefault recoveryBudget.burst;
+          };
+        });
+
         assertions = [
+          {
+            # Direct mode reports only the failure that ends the retries. An
+            # unlimited window has no such failure, so the unit would restart
+            # silently for ever with no notification ever sent.
+            assertion = !(lib.any startLimitDisabled monitored);
+            message = "notify: ${lib.concatStringsSep ", " (lib.filter startLimitDisabled monitored)} disables its start limit while registered for notification, so automatic recovery never fails and the failure event would never fire. Leave the limit finite (it bounds the retries a notification reports) or unregister the unit.";
+          }
           {
             assertion =
               !cfg.telegram.enable

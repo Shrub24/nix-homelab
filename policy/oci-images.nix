@@ -33,7 +33,7 @@
 
   docsMcpServer = "ghcr.io/arabold/docs-mcp-server:3.4.0@sha256:9e54b534cc2f34610a03d4d2e40b18a10fc71365a8e3148fe4a48dcb6eb0089b";
 
-  hindsight = "ghcr.io/vectorize-io/hindsight:1.1.0-slim@sha256:fbc37d194bce007b6cce2fd9f66cd7f8c050bd18b80e662090a92835d9cb191d";
+  hindsight = "ghcr.io/vectorize-io/hindsight:1.2.0-slim@sha256:c7d494c309fde53d07e79158be08d7a61f3f309b23cc417c7e4b0b8fc8adc77a";
 
   tududi = "docker.io/chrisvel/tududi:1.9.7@sha256:bd1191e04b1c4b32fb8fa68199bd6982520f89eed9445cc91f886fbbebd2086c";
 

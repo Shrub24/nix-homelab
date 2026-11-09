@@ -3078,6 +3078,40 @@ There is **no consumer registry**, which is the one place this deliberately diff
 
 **Consequences:** `services.clickhouse` is now enabled by aspect selection, so a host that runs a consumer without the substrate fails evaluation by name instead of starting with a fragment for a server nobody enabled. The `ExecStartPre` chmod now carries a `-` prefix, because the substrate cannot know whether any consumer has rendered a template yet. The scaffold contract's package-provenance pin moved from the Langfuse module to `modules/database/clickhouse.nix`. Langfuse's users fragment moved from nixpkgs' `extraUsersConfig` (rendered as `users.d/200-nixos-module-extra-config.xml`) to an explicit `users.d/250-langfuse.xml`, so both consumers are now shaped alike — a filename change only; the XML is identical.
 
+## D-112: Nixbot starts with GitHub login and the existing cache-token model
+
+**Status:** Accepted; deployment pending.
+
+**Evidence:** Confirmed. The owner selected GitHub login rather than a Kanidm PKCE exception, required homelab-only implementation, and explicitly accepted the existing static admin cache token after its scope was verified.
+
+**Context:** Nixbot's login implementation at `d020013f` sends no PKCE challenge or verifier. Kanidm enforces PKCE, so adopting it immediately would require a client-specific exception. GitHub login also derives repository permissions without a second viewer/admin mapping. Whole-hostname application authentication lets signed GitHub webhooks reach the same hostname without pretending that a path-level Cloudflare Access exception protects the application.
+
+The proposed write-only static cache credential does not exist: niks3 `server/auth.go` at `27d6bdbf` grants its static API token read, write and admin scope. Native nixbot publication supports this token through a systemd credential, but cannot restrict its authority.
+
+**Decision:** Use GitHub OAuth and disable Cloudflare Access for the entire nixbot hostname. Leave Kanidm unchanged. Keep builder authorization consumer-owned in homelab, deriving membership and scheduling from nix-fleet's canonical `ci` profile without changing nix-fleet. Use upstream's native niks3 integration and the existing static admin-token model; no automatic pin-writing or deployment workflow is added.
+
+**Rejected:** A Kanidm PKCE exception, waiting for an upstream auth patch, and expanding this change into scoped cache federation. A separate credential file was not treated as a separately scoped server identity. Nixbot does not replace update-candidate or the existing deployment path during the pilot.
+
+**Consequences:** The coordinator can control public builds only through GitHub authorization, but public project information remains anonymously readable. Its cache credential can alter pins if compromised, and its trusted builder accounts are effectively root-level access; no least-privilege claim is made. Static-token rotation must be coordinated with other users. Production placement and route publication remain disabled in `policy/nixbot.nix` until operator provisioning and approval. Revisit Kanidm when PKCE is supported, and cache scope when short-lived publisher federation is implemented. Bootstrap, acceptance and recovery are in `docs/runbooks/nixbot.md`.
+
+## D-113: Nixbot owns CI and cache reconciliation, not deployment
+
+**Status:** Accepted direction; observed cutover pending.
+
+**Evidence:** Confirmed by the owner's CI/cache change request and subsequent exclusion of deployment from nixbot. Local effect/policy contracts are not evidence of live acceptance.
+
+**Supersedes:** D-110's candidate/build authority, D-112's informative-only and no-main-pin-writer limits, and deploy-nixbot NB-7. D-112's authentication and static-token risk decisions remain in force.
+
+**Context:** Retaining a second candidate lifecycle beside nixbot would leave two verdicts and two publication authorities. The warn-only uploader also cannot establish that a retention root is present before a rolling pin moves. Host activation is a separate authority and is not needed to make build artefacts available.
+
+**Decision:** Put the complete verdict in buildable checks. After observed acceptance, require nixbot's App-sourced evaluation/build checks and up-to-date branches; GitHub merges green automation PRs while human PRs wait for the operator. Main always runs cache reconciliation: push both roots, then pin them through an exact repository/main/push/effect-bound workload identity. Restarting that effect is the repair path. It receives an explicitly empty secrets map and runs no PR or event effects.
+
+Keep deployment workflows, tooling and their credentials outside nixbot. Retain the Actions scheduled update producer and its automation App boundary; its move to a native schedule is not part of this decision. Retire old CI/candidate authority only after the ordered activation and acceptance gates in `openspec/changes/deploy-nixbot/tasks.md`.
+
+**Rejected:** Preserving update-candidate as a second controller, treating green builds as proof of cache presence, relying on the warn-only uploader for pins, or granting the coordinator deploy credentials. Scoped reconciliation does not make the existing static uploader token least-privilege.
+
+**Consequences:** The uploader still holds the accepted admin token and could move pins. Webhooks lost during controller downtime need a rerun or subsequent push, not an assumed replay. Admitted PR builds share home-forge with the controller; the sandbox is their boundary. The effect outage/repair, negative-token and downtime experiments must be recorded as observations in `docs/runbooks/nixbot.md`; until then live cutover and dependent deletions remain pending. The owner supplies the producer's future auto-merge input upstream; this change does not edit nix-fleet.
+
 ## D-114: Equal source trees must yield reusable host outputs
 
 **Status:** Accepted; live PR/main reuse pending.
@@ -3551,3 +3585,44 @@ outage and reconnects, which is the simpler recovery. Package-provided units (`t
 budget. The sentence "notify on failure means notify when systemd exposes a failure transition"
 already lives in nix-fleet's `lib/notify-contract.nix`; this change is the fleet's realization of
 its direct-mode clause, and that seam moves upstream if a second consumer needs the same semantics.
+
+## D-132: One update transaction, and a retention effect that proves its own work
+
+**Context:** The scheduled package refresh and the main-push cache reconciliation both lived in
+GitHub Actions. The refresh was two jobs — one ran the batch and recorded a patch, the other held an
+App key and published it — because `nix-update` executes the update scripts of the packages it
+updates, and those scripts must not hold a credential that can push. Flake input updates had their
+own producer, so a week that moved both produced two intermediate states (new inputs, then new pins
+on top) that CI built and cached separately, and the combination was never what a reviewer saw.
+Retention moved a rolling pin and trusted the cache; nothing checked that the artefact a pin named
+was actually fetchable.
+
+**Decision:** nixbot runs both, and Actions keeps only validation and deployment.
+
+- **One transaction.** `onSchedule.package-updates` runs `update-packages --refresh-inputs` in the
+  effect's checkout and proposes the result as a single commit. Inputs and pins therefore reach CI
+  together, with no intermediate branch. The effect uses nixbot's forge token for the push and the
+  pull request — no operator-provisioned credential, no second App, no producer-specific adapter —
+  and holds the `package-updates` lock so two runs cannot refresh from a moving base.
+- **The credential does not reach the updaters.** The two-job split existed for that property, so it
+  is preserved inside one effect instead: the token is read from the secrets file and the file's path
+  leaves the environment before the batch starts. A `package-updates` check fails if the batch ever
+  sees it again.
+- **Retention verifies.** `cache-retain` pushes each root, moves its rolling pin, then queries the
+  public substitution endpoint for that same root and fails the effect on an error or a missing root.
+  `when.changed` stays unset: reconciliation must still repair a missed streaming upload on an
+  unchanged root, and an explicit restart remains the repair mechanism.
+
+**Rejected:** chaining nixbot's `flakeUpdate` helper with a package effect (two intermediate
+branches and their combination, which is the state CI should never build); keeping the Actions
+producer alongside nixbot (two producers for one branch, and the token-handling split would have to
+be maintained twice); gating retention on `when.changed` (it would stop repairing the case the effect
+exists for); publishing the update PR from a patch artefact (it exists to keep the publishing job
+credential-light, which the in-effect token handling now does without a second job).
+
+**Consequences:** GitHub App permissions grow to contents write and pull requests write, and only
+the updater uses them. A `partial` batch is proposed and names what failed; `aborted` publishes
+nothing. The updater's publish call needs the forge, so it is exercised live rather than in a check —
+the decision path (aborted publishes nothing, an unchanged tree touches nothing, the batch runs
+without the token) is checked. The flake now publishes `herculesCI`: it was absent from the
+default-deny surface, so nixbot would have seen no effects at all.

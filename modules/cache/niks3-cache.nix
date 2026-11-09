@@ -28,6 +28,7 @@
         "agent-radar"
       ];
       niks3WritePort = config.repo.web.catalog."niks3-write".endpoint.port;
+      route = config.repo.web.catalog.nixbot;
       # The scrape binding exists only where nix-fleet's telemetry registry does.
       hasTelemetryScrape = lib.hasAttrByPath [ "services" "telemetry" "scrape" ] options;
     in
@@ -77,6 +78,22 @@
               )
             ]
           ) ciRepositories;
+        };
+        oidc.providers.nixbot = {
+          issuer = route.publicUrl;
+          audience = config.services.niks3-cache.cacheUrl;
+          rules = [
+            {
+              boundClaims = {
+                repository = [ "Shrub24/nix-homelab" ];
+                ref = [ "refs/heads/main" ];
+                event = [ "push" ];
+                effect = [ "default.cache-retain" ];
+              };
+              scopes = [ "write" ];
+              pins = [ "nix-homelab-main-*" ];
+            }
+          ];
         };
         # Listen port comes from the private service policy, shared with every publisher.
         httpAddr = lib.mkDefault "0.0.0.0:${toString niks3WritePort}";

@@ -20,6 +20,9 @@
       apps.enable = true;
       deploy.enable = true;
       fleet.enable = true;
+      # nixbot evaluates the effects through this output; dropping it leaves the
+      # repository with no effects at all.
+      herculesCI.enable = true;
 
       # nix-fleet's test fixture is upstream's surface, not this repository's:
       # nothing here, and none of its reusable workflows, reads it through this

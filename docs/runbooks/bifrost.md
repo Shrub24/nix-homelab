@@ -1,5 +1,48 @@
 # Bifrost provider credentials
 
+## Add Command Code
+
+Command Code serves the fleet twice from one upstream, `https://api.commandcode.ai/provider`:
+chat completions through the `command-code` custom provider, and typed decisions through
+`command-code-decisions`, a custom provider on Bifrost's TypeSafe base type that admits only
+the decision request type.
+
+1. Open the existing encrypted service file as the operator and add
+   `command_code_api_key` under the existing `bifrost` mapping. Do not re-bootstrap
+   the file or rotate unrelated credentials.
+
+   ```sh
+   sops secrets/services/bifrost.yaml
+   ```
+
+2. Confirm the account's plan covers the decision model and that its terms permit the
+   content the route carries. Decisions are gated on Command Code's upper tiers; an
+   account without them fails at the upstream, not at evaluation.
+
+3. Deploy the Bifrost-placing hosts deliberately. Confirm the gateway starts and lists
+   both providers. Do not print the rendered environment or the key.
+
+4. Send a synthetic decision to the native route, naming the provider and Command
+   Code's vendor prefix, and confirm the answers come back and that Command Code's
+   usage metadata shows `typesafe/jev-1.14.0`:
+
+   ```sh
+   curl -sS localhost:7411/typesafe/v1/systemone -H 'Content-Type: application/json' \
+     -d '{"model":"command-code-decisions/typesafe/jev-1.14.0","state":"probe",
+          "questions":{"q":{"type":"noul","instructions":"Is this a probe?"}}}'
+   ```
+
+5. Send a synthetic chat completion naming `command-code/<model>` and confirm Command
+   Code reports the model.
+
+The base URL stops after `provider` because the gateway appends its own `/v1/<operation>`.
+Bifrost strips one path segment from the model to pick the provider, so the consumer keeps
+Command Code's vendor prefix and the gateway forwards `typesafe/jev-1.14.0` unchanged.
+Anthropic models on this upstream are served on `/messages`, not chat completions.
+
+To stop using it, remove the routes naming these providers before removing the provider
+entries or the credential.
+
 ## Add Merge Gateway
 
 1. Open the existing encrypted service file as the operator:

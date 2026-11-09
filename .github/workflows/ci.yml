@@ -1,7 +1,6 @@
 # Validation: the fleet's reusable validator plus this repository's own contract
-# tests. Routine CI evaluates and formats; it never builds a fleet output — that
-# is fleet-build's dispatched path, and two publishers for one closure is how a
-# cache starts lying.
+# tests. Actions no longer build or publish anything; nixbot builds on this
+# repository's own machines and keeps the cache from there.
 #
 # `fleet` runs nix-fleet's validate.yml at the pinned revision: formatting
 # (`checks.<system>.treefmt`), an evaluation of every output on both systems with
@@ -14,8 +13,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  # Callable by fleet-build.yml so validation gates the privileged build.
-  workflow_call:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -27,8 +24,6 @@ jobs:
     permissions:
       contents: read
     with:
-      # The pull request's head, not the merge ref: the candidate pipeline
-      # validates the same revision, and acceptance is bound to it.
       revision: ${{ github.event.pull_request.head.sha || github.sha }}
       generated_files: check
   repo:

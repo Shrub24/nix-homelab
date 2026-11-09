@@ -3,6 +3,7 @@
 {
   config,
   inputs,
+  lib,
   ...
 }:
 let
@@ -78,9 +79,14 @@ in
         # LLM observability backends, colocated with the telemetry stores.
         aspects.langfuse
         aspects.latitude
+        aspects.nixbot
+        aspects.ingress
       ];
 
-      fragments = [ ./_nixos.nix ];
+      fragments = [
+        ./_nixos.nix
+        { services.ingress.role = "origin"; }
+      ];
     };
   };
 }

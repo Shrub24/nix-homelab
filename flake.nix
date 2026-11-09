@@ -42,6 +42,13 @@
       url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nixbot = {
+      url = "github:Mic92/nixbot/88246b4cfa43c4fb1c9cf6f78b875b3a312d31e7";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        treefmt-nix.follows = "treefmt-nix";
+      };
+    };
     nixpkgs.follows = "nix-fleet/nixpkgs";
     nixpkgs-paperless.url = "github:NixOS/nixpkgs/fe13242281a67641c0102cdb1087f0ebe586c7df";
     sops-nix.follows = "nix-fleet/sops-nix";

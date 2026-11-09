@@ -38,8 +38,8 @@ nix-homelab/
 **`.github/workflows/`:**
 
 - Purpose: CI/CD automation
-- Contains: `ci.yml` (validation only — formatting, the repository's contract tests and the generated `flake.nix` freshness check — callable so the build workflow reuses it rather than restating the steps), `fleet-build.yml` (the fleet build plane: hand-dispatched on `main`, validation first, calling nix-fleet's reusable `build-push-cache` workflow on `.#checks`), `package-updates-refresh.yml` (weekly refresh of the registered package pins, evaluated, opening one pull request), `deploy.yml` (manual full deploy pipeline), `deploy-host.yml` (reusable host deploy: verifies the profile is substitutable, then activates)
-- Key files: `.github/workflows/deploy.yml`, `.github/workflows/ci.yml`, `.github/workflows/fleet-build.yml`, `.github/workflows/package-updates-refresh.yml`
+- Contains: `ci.yml` (validation only — formatting, the repository's contract tests and the generated `flake.nix` freshness check), `deploy.yml` (manual full deploy pipeline), `deploy-host.yml` (reusable host deploy: verifies the profile is substitutable, then activates). Building, cache reconciliation and the update pull request are nixbot's effects (D-132)
+- Key files: `.github/workflows/deploy.yml`, `.github/workflows/ci.yml`, `.github/workflows/deploy-host.yml`
 
 **`.github/prompts/`:**
 
@@ -81,6 +81,12 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 - `home-assistant.nix` places Home Assistant as the digest-pinned upstream container on `home-forge`: `--network=host` because discovery integrations need the LAN namespace, no published port, `/srv/data/home-assistant` created `0700` and otherwise operator-owned (Nix renders no Home Assistant configuration), an export-first recorder backup, and a route withheld by policy until the instance is accepted. Options live under `services.hass`, because nixpkgs owns `services.home-assistant` for its native Core module (D-100); see `docs/runbooks/home-assistant.md`.
 - `sparkyfitness.nix` places SparkyFitness on `oci-melb-1` from its official frontend and backend images, on the fleet's PostgreSQL substrate with both of its database roles declared in the consumer registry (`additionalRoles`, D-129). The frontend image's nginx serves the application and proxies the API on the same origin; the fleet's edge only forwards the whole site to the loopback listener. Authentik is the sign-in path with the administrator claim taken from the provider's groups, the application's own password login hidden by an ordinary option, and `adminEmail` naming the retained local administrator (D-130); see `docs/sparkyfitness.md` and `docs/runbooks/sparkyfitness.md`.
 - Key files: `modules/apps/paperless.nix`, `modules/apps/karakeep.nix`, `modules/apps/actual.nix`, `modules/apps/memos.nix`, `modules/apps/tududi.nix`, `modules/apps/homarr.nix`, `modules/apps/sparkyfitness.nix`, `modules/apps/home-assistant.nix`
+
+**`modules/ci/`:**
+
+- Purpose: The homelab nixbot CI pilot, disabled by `policy/nixbot.nix` until operator preparation.
+- Contains: `nixbot.nix` (upstream runtime, GitHub auth, PostgreSQL, backups, credential wiring and native niks3 integration), `nixbot-build-account.nix` (dedicated coordinator authorization derived from canonical profile membership), `effects.nix` (the repository's `herculesCI` output: main-push retention and the scheduled update transaction), `checks.nix` (the three contracts, bodies in `tests/`), and the private effects implementation `_cache-retain.nix`, `_package-updates.nix`, `_package-updates-publish.py`.
+- Operator guide: `docs/runbooks/nixbot.md`; repository build target and PR-effects policy: root `nixbot.toml`.
 
 **`modules/ai/`:**
 

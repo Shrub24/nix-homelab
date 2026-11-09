@@ -1,10 +1,7 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set no-cd
 
-# The local battery: the repository's own contract tests plus the generated
-# flake.nix freshness check. The wiring gate is CI: the fleet's validator
-# evaluates the whole flake with import-from-derivation disabled (D-110), and the
-# dispatched build realises `.#checks` on the fleet's builders.
+# The same shell contracts run locally and inside checks.repository-contracts.
 all:
   @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).check-flake-file"
   @./tests/check-ssh-host-fingerprint.sh
@@ -31,7 +28,8 @@ all:
   @./tests/check-geopulse-contract.sh
   @./tests/check-homarr-contract.sh
   @./tests/check-home-assistant-contract.sh
-
+  @bash ./scripts/run-repository-contracts.sh
+  @nix build --no-link .#checks.x86_64-linux.nixbot-contract .#checks.x86_64-linux.cache-retain .#checks.x86_64-linux.package-updates
 test-ssh-fingerprint:
   @./tests/check-ssh-host-fingerprint.sh
 

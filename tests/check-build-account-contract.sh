@@ -10,6 +10,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOSTS=(oci-melb-1 la-admin-1 home-forge)
+export NIXBOT_PUBLIC_KEY
+NIXBOT_PUBLIC_KEY="$(nix eval --raw --file "$ROOT/policy/nixbot.nix" --apply 'p: p.builderPublicKey')"
 
 # The canonical coordinator key's fingerprint, from nix-fleet's
 # fleet.ci.sshPublicKey. Pinning it here is the anchor that lets this check
@@ -44,6 +46,7 @@ projection() { # $1 host
         keys = u.openssh.authorizedKeys.keys;
         trustedUsers = cfg.config.nix.settings.trusted-users;
         buildMachines = builtins.length cfg.config.nix.buildMachines;
+        nixbotCoordinator = cfg.config.services.nixbot.enable or false;
       };
       real = cfg;
     in {
@@ -58,7 +61,7 @@ projection() { # $1 host
 # Accepts the contract, or prints why it does not hold.
 validate() {
   python3 -c '
-import json, sys
+import json, os, sys
 
 account = json.load(sys.stdin)
 keys = account["keys"]
@@ -76,12 +79,16 @@ if account["extraGroups"]:
     sys.exit("account carries extra groups: %r" % account["extraGroups"])
 if account["accountName"] not in account["trustedUsers"]:
     sys.exit("dispatch account %r is absent from trusted-users %r" % (account["accountName"], account["trustedUsers"]))
-if len(keys) != 1:
-    sys.exit("authorized keys are %r, expected exactly the coordinator key" % keys)
-if not keys[0].startswith("ssh-ed25519 "):
-    sys.exit("authorized key is not an ed25519 key: %r" % keys[0])
-if account["buildMachines"]:
-    sys.exit("host schedules %d build machines; CI is the build path" % account["buildMachines"])
+extra = os.environ.get("NIXBOT_PUBLIC_KEY", "")
+if extra and keys.count(extra) != 1:
+    sys.exit("dedicated nixbot coordinator key missing or duplicated")
+actions_keys = [key for key in keys if key != extra]
+if len(actions_keys) != 1:
+    sys.exit("expected exactly the Actions key plus the enabled nixbot key: %r" % keys)
+if not actions_keys[0].startswith("ssh-ed25519 "):
+    sys.exit("Actions key is not ed25519")
+if account["buildMachines"] and not account["nixbotCoordinator"]:
+    sys.exit("a non-coordinator host schedules build machines")
 print("ok")
 '
 }
@@ -104,7 +111,7 @@ for host in "${HOSTS[@]}"; do
   fi
 
   # The authorized key must be the canonical coordinator key.
-  printf '%s' "$real" | python3 -c 'import json,sys; print(json.load(sys.stdin)["keys"][0])' >"$KEY_FILE" ||
+  printf '%s' "$real" | python3 -c 'import json,os,sys; print(next(k for k in json.load(sys.stdin)["keys"] if k != os.environ.get("NIXBOT_PUBLIC_KEY", "")))' >"$KEY_FILE" ||
     fail "$host: authorized key is not readable"
   fingerprint="$(ssh-keygen -lf "$KEY_FILE" | awk '{print $2}')" ||
     fail "$host: authorized key is not a valid public key"

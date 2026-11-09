@@ -63,6 +63,20 @@ in
       defaults = { };
 
       services = {
+        nixbot = {
+          subdomain = "nixbot";
+          posture = "public";
+          category = "infra";
+          origin = {
+            scheme = "http";
+            provider = "home-forge";
+            port = 8010;
+          };
+          exposureMode = "tailscale-serve";
+          access.requireCloudflareAccess = false;
+          access.oidc.enabled = false;
+          health.path = "/health";
+        };
         navidrome = {
           subdomain = "music";
           origin = {

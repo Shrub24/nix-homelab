@@ -309,7 +309,7 @@ Ownership model:
 Automation boundaries:
 
 - Renovate runs on a schedule and opens PRs for flake input and OCI image updates.
-- `package-updates-refresh` (GitHub Actions, `.github/workflows/package-updates-refresh.yml`) runs weekly and on manual dispatch, runs the batch, evaluates the refreshed tree, and opens or updates one PR. Refresh is not acceptance: the `ci` workflow's validate gate decides on that PR.
+- The scheduled update transaction is nixbot's `onSchedule.package-updates` effect (`modules/ci/_package-updates.nix`): weekly at 04:43 UTC it runs `update-packages --refresh-inputs` in the checkout, so the refreshed lock and the refreshed package pins land in one commit, pushes `automation/package-updates`, and opens or updates that branch's pull request with the generated report as its body before requesting auto-merge. A run that changed nothing leaves the branch and the pull request alone, and the effect holds the `package-updates` lock so two runs cannot refresh from a moving base. Refresh is not acceptance: the validation gate decides on that PR.
 - No path pushes dependency updates directly to `main`, and neither writes `flake.lock` outside Renovate.
 
 Operator commands:
@@ -429,7 +429,7 @@ Fleet tooling posture:
   - the deploy path never builds: `deploy-host.yml` verifies the exact profile it is about to activate is substitutable (`--option max-jobs 0 --option builders ""`) and then activates with `--remote-build`, so a cache miss fails loudly in CI instead of compiling on the host
   - deploy auth relies on Tailscale SSH policy for the `dev` user rather than a repository-stored CI deploy private key, and the build coordinator key is never a deployment key
   - CI-specific SSH relaxations for deploy-rs are passed inline as workflow command options rather than through a generated SSH config file
-  - routine validation and the build path are separate files: `ci.yml` validates (formatting, the contract tests, the generated `flake.nix` freshness comparator) and builds no fleet output, while `fleet-build.yml` is hand-dispatched on `main`, runs that validation first through a reusable call, and then builds `.#checks`
+  - validation is Actions' only remaining CI job: `ci.yml` runs formatting, the contract tests and the generated `flake.nix` freshness comparator, and builds no fleet output. Building, cache reconciliation and the update pull request are nixbot's, on `.#checks` and its two effects
   - there is no whole-flake evaluation-only gate in CI: evaluating the flake realises degoog's bun2nix import-from-derivation (`runCommandLocal`, so unsubstitutable) and cannot pass on a cold runner — the freshness comparator covers the changed surface, and building `.#checks` in the dispatched build is the same wiring gate with a builder available
 - Host-side Nix consumption remains substitute-only:
   - hosts inherit one shared substitute/trust baseline through the `base` foundation aspect (`modules/flake/base.nix`), which is nix-fleet's `nix-baseline`; the catalog is upstream's and is not restated in `policy/globals.nix`

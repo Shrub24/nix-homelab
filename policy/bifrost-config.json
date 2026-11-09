@@ -130,6 +130,45 @@
         }
       ]
     },
+    "command-code": {
+      "custom_provider_config": {
+        "base_provider_type": "openai"
+      },
+      "network_config": {
+        "base_url": "https://api.commandcode.ai/provider"
+      },
+      "keys": [
+        {
+          "name": "command-code-primary",
+          "value": "env.COMMAND_CODE_API_KEY",
+          "weight": 1,
+          "models": [
+            "*"
+          ]
+        }
+      ]
+    },
+    "command-code-decisions": {
+      "custom_provider_config": {
+        "base_provider_type": "typesafe",
+        "allowed_requests": {
+          "decisions": true
+        }
+      },
+      "network_config": {
+        "base_url": "https://api.commandcode.ai/provider"
+      },
+      "keys": [
+        {
+          "name": "command-code-decisions-primary",
+          "value": "env.COMMAND_CODE_API_KEY",
+          "weight": 1,
+          "models": [
+            "typesafe/jev-1.14.0"
+          ]
+        }
+      ]
+    },
     "openrouter": {
       "keys": [
         {

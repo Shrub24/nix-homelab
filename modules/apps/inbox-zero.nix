@@ -24,6 +24,11 @@ _: {
       localPostgres = config.services.postgres.localEndpoint;
       bifrost = config.services.bifrost.endpoint.containerBaseUrl or "";
       model = "inbox-zero-text";
+      # Typed decisions go through the gateway's System One route. Bifrost strips one
+      # segment from the model to pick the provider, so the vendor prefix stays, and the
+      # route hangs off the listener root rather than the OpenAI base it publishes.
+      decisionModel = "command-code-decisions/typesafe/jev-1.14.0";
+      systemOneUrl = "${lib.removeSuffix "/v1" bifrost}/typesafe/v1/systemone";
 
       # Checked at unit start on the rendered file: upstream catches startup errors and
       # keeps running, so an empty credential would otherwise look healthy.
@@ -216,7 +221,8 @@ _: {
                 # The web process calls its own internal handlers inside its namespace.
                 INTERNAL_API_URL = "http://127.0.0.1:${toString containerPort}";
                 DEFAULT_LLMS = "openai-compatible:${model}";
-                DEFAULT_DECISION_MODEL = "aigateway:perplexity/pplx-decider-v1.2";
+                DEFAULT_DECISION_MODEL = "systemone-compatible:${decisionModel}";
+                SYSTEMONE_COMPATIBLE_URL = systemOneUrl;
                 DEFAULT_DECISION_MODEL_ENABLED = "true";
                 DECISION_MODEL_COLD_EMAIL_ENABLED = "true";
                 OPENAI_COMPATIBLE_MODEL = model;

@@ -115,37 +115,42 @@ The encrypted file is present and bound on `oci-melb-1`; these bootstrap steps a
 
 ## Decision models and the image upgrade
 
-The deployment pins upstream commit `82004cd7aac1dc2de7f1ebcdb8afe1df96f80af3`
-(`82004cd`, multi-architecture index
-`sha256:182ca110030c6505e74d67d996deb46f4a5424f57263b222745cc26bd5571a97`).
-The latest server release, 2.30.0, does not contain decision-model support.
+The deployment pins the fork's `systemone-test` image by digest
+(`sha256:ffffa35d230a922f1d7562d5d38c4cea11be158e17cd8b947ccabbcad453bbbf`, a
+single arm64 manifest) while the System One-compatible decision provider is
+trialled. It replaces upstream commit `82004cd`, whose release 2.30.0 lacked
+decision-model support.
+
+Decisions run through the fleet gateway's System One route, not AI Gateway:
+`DEFAULT_DECISION_MODEL=systemone-compatible:command-code-decisions/typesafe/jev-1.14.0`
+with `SYSTEMONE_COMPATIBLE_URL` on `http://host.services.internal:7411/typesafe/v1/systemone`.
+The fork takes that endpoint whole, so it names the listener root; the model string
+carries the provider the gateway resolves and keeps Command Code's vendor prefix. The
+[gateway runbook](bifrost.md) covers the provider registration and its credential.
 
 Before deploying:
 
-1. In the existing encrypted `secrets/services/inbox-zero.yaml`, add
-   `inbox-zero.ai_gateway_api_key` with your AI Gateway key using the SOPS editor.
-   Do not re-bootstrap the file: that would regenerate auth and encryption keys.
-   The module renders it as `AI_GATEWAY_API_KEY`, not the shared `LLM_API_KEY`.
-   Startup rejects a missing or empty value.
-2. Check the gateway/provider agreements and console controls enforce no training
-   on email data, including ordinary LLM fallbacks through Bifrost. This app does
-   not send AI Gateway's per-request `disallowPromptTraining` filter. Do not assume
-   the model's no-training label enables an enforcement setting. If the required
-   controls cannot be established, do not enable mailbox processing.
+1. In the encrypted `secrets/services/bifrost.yaml`, the operator adds
+   `command_code_api_key`; both gateway hosts read it. Check Command Code's plan tier
+   and terms permit the classification content the route sends.
+2. `AI_GATEWAY_API_KEY` remains bound from `inbox-zero/ai_gateway_api_key` and is
+   still required by the module's start check, although no route reaches AI Gateway
+   any more. Removing it is a separate change.
 3. Publish the updated `/privacy` disclosure and inform users before sending mail
-   content to the new providers. See [privacy policy context](../privacy.md).
+   content to the new provider. See [privacy policy context](../privacy.md).
 4. Take a protected database export before upgrading. There are 96 added migration
    directories relative to the old image. A generation rollback does not reverse
    those migrations; retain the old image and the export for recovery.
 5. Deploy deliberately, then verify Prisma migration status independently using
    the checks below. The web process may start even when migrations fail.
-6. Confirm the running container has `DEFAULT_DECISION_MODEL` set to
-   `aigateway:perplexity/pplx-decider-v1.2`, with
-   `DEFAULT_DECISION_MODEL_ENABLED=true` and `DECISION_MODEL_COLD_EMAIL_ENABLED=true`.
-   Do not print its full environment, which contains secrets.
-7. Test a synthetic decision through AI Gateway, then a controlled mailbox rule.
-   Confirm the decision provider actually served it rather than silently falling
-   back to the LLM. Check usage metadata without enabling email-content logging.
+6. Confirm the running container has the decision model and endpoint above, with
+   `DEFAULT_DECISION_MODEL_ENABLED=true` and `DECISION_MODEL_COLD_EMAIL_ENABLED=true`,
+   and no `SYSTEMONE_COMPATIBLE_API_KEY`. Do not print its full environment, which
+   contains secrets.
+7. Test a synthetic decision, then a controlled mailbox rule. Confirm the gateway
+   logged the decision route and Command Code reports the model, rather than the
+   decision silently falling back to the LLM. Check usage metadata without enabling
+   email-content logging.
 
 The deployment default applies to users without a personal AI key or explicit
 choice; existing user choices win. Drafting and other generative work remain on

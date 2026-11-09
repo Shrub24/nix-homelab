@@ -129,6 +129,7 @@ in
             VOYAGE_API_KEY=${config.sops.placeholder.bifrost_voyage_api_key}
             MERGE_GATEWAY_API_KEY=${config.sops.placeholder.bifrost_merge_gateway_api_key}
             NEURALWATT_API_KEY=${config.sops.placeholder.bifrost_neuralwatt_api_key}
+            COMMAND_CODE_API_KEY=${config.sops.placeholder.bifrost_command_code_api_key}
           '';
         };
 
@@ -176,6 +177,10 @@ in
           bifrost_neuralwatt_api_key = {
             key = "bifrost/neuralwatt_api_key";
             path = "/run/secrets/bifrost.neuralwatt_api_key";
+          };
+          bifrost_command_code_api_key = {
+            key = "bifrost/command_code_api_key";
+            path = "/run/secrets/bifrost.command_code_api_key";
           };
         };
 

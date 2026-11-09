@@ -50,8 +50,9 @@
   # and the multi-arch index keeps the pin valid on either architecture.
   homeAssistant = "ghcr.io/home-assistant/home-assistant:2026.10.4@sha256:23f4dfbb69ce76315dbc4de7915504f1c2dcecd7ca2648113a493a385972e133";
 
-  # Multi-arch index digest: the arm64 manifest is selected on oci-melb-1.
-  inboxZero = "ghcr.io/elie222/inbox-zero:82004cd@sha256:182ca110030c6505e74d67d996deb46f4a5424f57263b222745cc26bd5571a97";
+  # Temporary fork pin for system testing: a single arm64 manifest, which is what oci-melb-1
+  # runs, with no multi-arch index. Revert to elie222/inbox-zero.
+  inboxZero = "ghcr.io/shrub24/inbox-zero:systemone-test@sha256:ffffa35d230a922f1d7562d5d38c4cea11be158e17cd8b947ccabbcad453bbbf";
 
   # The frontend image serves the application; the API is a separate image.
   sparkyFitness = "docker.io/codewithcj/sparkyfitness:v1.11.0@sha256:5eb77135ccd8e58492ee9bd19b8714ea4a73a99623b863a9287ccecb0557cd17";

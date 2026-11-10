@@ -82,6 +82,8 @@
         oidc.providers.nixbot = {
           issuer = route.publicUrl;
           audience = config.services.niks3-cache.cacheUrl;
+          # Discovery at startup would tie this cache's boot to nixbot being up.
+          jwksUrl = "${route.publicUrl}/.well-known/jwks.json";
           rules = [
             {
               boundClaims = {

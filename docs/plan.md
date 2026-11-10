@@ -1,545 +1,109 @@
 # Plan
 
-This plan is intentionally strategic, not a command-by-command runbook. The goal is to preserve intent, decision quality, and migration clarity while implementation details are researched incrementally.
-
-## Planning Objective
-
-Transition this repository from legacy `dev-vps` orientation to a clean, modular fleet-infrastructure repository that can reliably bootstrap and operate `oci-melb-1` and the active admin/edge host `la-admin-1` (the decommissioned host has been removed).
-
-## Planning Constraints
-
-- first host is cloud-hosted and architecture differs from local control machine
-- repository currently contains significant legacy configuration and documentation
-- migration should reduce confusion, not increase parallel architectures
-- initial service baseline should remain operationally simple
-- active package baseline is `nixos-unstable` by default; fallback package-set divergence is exception-only and must be explicitly documented
-
-## Execution Strategy
-
-## 1) Stabilize architecture intent first
-
-- keep architecture and decision documents authoritative
-- avoid implementation drift that contradicts accepted decisions
-
-## 2) Migrate repository shape aggressively but safely
-
-- remove or archive obsolete paths tied to old mission
-- establish host-centric and module-centric structure for the new mission
-- keep changes coherent enough that future fleet tooling can be introduced without major reshaping
-
-## 3) Bootstrap first host with minimum sharp edges
-
-- prioritize deterministic and debuggable first-host bring-up
-- preserve break-glass access assumptions during early networking transitions
-
-## 4) Add service baseline, then iterate with observed behavior
-
-- `syncthing` + `navidrome` are initial service baseline
-- tune behavior from real usage and sync conflict observations
-
-## 5) Defer high-complexity systems until pressure exists
-
-- orchestration stack, worker graph, and internet edge concerns are deferred by design
-
-## Working Tracks
-
-Track A: Repository migration
-
-- simplify repository mission expression
-- align naming and structure to fleet model
-- eliminate stale documentation that implies old operating model
-
-Track B: Secrets and identity model
-
-- enforce scoped secret topology via `.sops.yaml`
-- use topology-aligned secret buckets:
-  - `secrets/applications/<name>.yaml` for multi-service application stacks
-  - `secrets/services/<name>.yaml` for standalone leaf services
-  - `secrets/hosts/<host>/system.yaml` for host-only bootstrap/system material
-  - `secrets/hosts/<host>/oidc.yaml` for cross-host OIDC handshake material
-- keep ciphertext encrypted directly to host/admin recipients via `age`
-- derive normal secret reader scope from host feature enables (`applications.<name>.enable`, `services.<domain>.<name>.enable`)
-- maintain explicit exception handling for cross-host readers (OIDC handshakes)
-- keep `secrets/templates/*.yaml` as unencrypted reference templates for each encrypted bucket
-- deep leaf modules own their own `sops.secrets`/`sops.templates` registrations; application modules pass through `secretFiles.*` bindings
-- keep `lib/secrets.nix` as a light reusable helper library for common secret-contract patterns
-- keep validation separate from configuration authority: `.sops.yaml` remains SSOT, while repo checks live under `tests/`
-- default host recipient bootstrap via live SSH host key to age derivation, with injected-key override available
-- keep host enrollment artifacts and policies explicit
-
-Track C: Host and storage baseline
-
-- establish reliable host bootstrap path
-- stage remote network-owner transitions so access survives the change window
-- maintain a console-only break-glass user baseline with host-scoped recovery password material and a routine reboot exercise on active remote hosts
-- apply predictable persistent storage contracts with explicit mounts for service state, media, and host-critical store paths where required
-- map service directories on those mounts predictably
-- keep provider-specific storage contracts isolated so new hosts do not couple to `oci-melb-1` bootstrap config
-- preserve a documented rescue workflow for storage/mount breakage, including offline rebuild of bootable generations
-
-Track D: Service baseline
-
-- deploy private-only Tailscale access model
-- deploy bidirectional Syncthing with safety controls
-- deploy Navidrome reading direct sync path
-- deploy AudioMuse as an optional Navidrome similarity extension (Podman containers, Postgres, Navidrome plugin); deployment lifecycle distinguishes infrastructure deployed from E2E Symfonium-validated behavior
-- keep quarantine in synced scope and visible playback surface while library remains canonical promotion target
-- keep music service composition explicit through the discovered `music` deployment aspect `modules/music/music.nix` (selected on `home-forge` only; selection provides `applications.music.enable`), with the service contributors beside it under `modules/music/`
-- keep music service modules regrouped under `modules/music/` for navigability without changing option namespaces
-- run the complete music application on `home-forge` under the host-selected music application root `/srv/storage/media/music/{library,playlists,inbox,quarantine,.versions}`, with AudioMuse's database in OCI's shared Postgres over Tailscale and LA edge routes for music/slskd/tagr pointing at `home-forge`; playlist export/import for Engine DJ is owned by a separate repository
-- keep admin service composition in independently selected aspects: `identity-provider`, `cockpit`, and the individual workload aspects `termix`, `vaultwarden`, `homepage`, `gatus`, `beszel`, and `webhook`; there is no `admin-hub` bundle (D-054), and Quantum is fully retired (TD-07)
-- keep the admin surface split between reusable service modules and host-owned inputs (Cockpit host overlays, per-workload secret sources, and the LA host-local `/srv/data` ACL/reconcile remainder)
-- evolve Beets via native systemd-based inbox-to-library promotion under `home-forge` `/srv/storage/media/music/library` while keeping library and quarantine playback visibility
-- support a secondary approved-quarantine promotion runner for manual re-attempt workflows
-
-Track E: Future-ready evolution
-
-- adopt the accepted staged Dendritic transition (D-047): Stage 1 scaffold (flake-parts + `denful/import-tree` + typed host registry under `modules/hosts/`) landed in `dendritic-stage-1-scaffold-hosts`; Stage 2 landed foundation-first in `dendritic-stage-2-foundation-aspects` (five foundation aspects with typed `fleet.foundation` facts, `modules/core/` + `modules/profiles/` removed) — implementation-complete but not deployed or archived; Stage 3 landed operational aspects in `dendritic-stage-3-operational-aspects` (`builder-access` and `observability-agent`, plus the then-combined `backups` aspect, selected by all three hosts, folding the five deferred operational leaves under them, D-049) — implementation-complete but not deployed or archived; Stage 4 (`dendritic-stage-4-source-model-realignment`, D-050) realigned the documented model: source ownership and deployment granularity are independent axes, the central `aspects.nix` was replaced by concern-owned contributors, the support trio is classified as infrastructure wiring, `dj` selection enables the application, and plain class-oriented leaves plus the filter are transitional; Stage 5 (`dendritic-stage-5-shared-source-contributors`, D-051) removed the `shared`/`storage` roots, relocated the remaining private leaves to the concern-owned `_aspects`/`_backups`/`_builder-access` paths, promoted `web-policy` to the all-host support quartet, merged the two identity contributors into the single `identity-client` aspect, and shrank the filter to four entries (D-059 later retired that bundle: the OIDC contract is the intrinsic `modules/identity/_oidc.nix` and the capability is `kanidm-host-auth`); Stage 6 (`dendritic-stage-6-music-composition`, D-052) converted the music stack into the discovered home-forge-only `music` aspect `modules/flake/music.nix`, moved Beets secret/template/CLI ownership plus the ingest and storage/permission mechanisms into private leaves in the then-current service tree, added the typed read-only `applications.music.contract` consumed by `dj` with a named assertion, and kept the four-root filter unchanged; Stage 7 (`dendritic-stage-7-placement-aspects`, D-053) published the remaining placement aspects (`oci`, `edge`, `cockpit`, `push-server`, `identity-provider`, `admin-hub`, `paperless`, `postgres`, `ai-gateway`, `karakeep`, `niks3-cache`, `phoenix`, `omniroute`), relocated the admin/edge/DJ/OCI implementations beside their concern owners, deleted `modules/applications/` and `modules/providers/`, and shrank the filter to exactly `hosts` and `services` — the Stage 6 and Stage 7 changes (`dendritic-stage-6-music-composition`, `dendritic-stage-7-placement-aspects`) are archived, and the transition analysis's music-exemplar Stage 2 sequencing is superseded. The identity/admin decoupling change (`decouple-identity-admin-capabilities`, D-054) then dissolved `admin-hub` and `applications.admin` into the individual aspects `termix`, `vaultwarden`, `homepage`, `gatus`, `beszel`, and `webhook`, made identity consumption directional, and removed Quantum from the active module graph as disabled/deferred; Stage 8 (`dendritic-stage-8-host-identity-contracts`, D-056) then made host identity a typed discovered record with a generic materializer, reduced `modules/flake/bootstrap.nix` to the `flake.bootstrap.nodes` projection, added canonical-host-ID validation to deploy and web metadata, published the two internal transport contracts under `modules/fleet/`, and moved the settled concern contributors into domain directories — and the post-Stage-8 services-tree conversion then converted every remaining service leaf into a discovered contributor, emptying the import-tree exclusion entirely
-- keep layout compatible with later fleet deployment tooling
-- reserve integration points for future media processing hooks
-- reserve path for later `rclone`/VFS transition
-- defer app-based review UX and higher-complexity orchestration while report-first promotion remains sufficient
-
-Track F: Admin/edge host migration
-
-- `la-admin-1` is the active admin and edge host; the previous rollback host was decommissioned after the LA backup/recovery gates passed
-- serial deploy order is `la-admin-1` before `oci-melb-1`; the local-admin Cockpit path is `/la-admin-1`
-- LA adoption (preinstalled NixOS, non-destructive) is separate from later AU edge and US-East workload work
-- cross-host consumers use stable service IDs from the policy catalog (`config.repo.web.catalog`); physical deployment facts (`edgeHost`, `deployOrder`) stay only in `lib/deploy/hosts.nix`
-- canonical bring-up and transfer documentation: `docs/runbooks/host-initialization.md` (generic) and `docs/runbooks/admin-host-migration.md` (LA facts only)
-- source freeze/rollback: DO decommission is complete; LA is authoritative
-- encrypted-secret actions are operator-owned (host-key-verified recipient, ciphertext from templates, Tailscale/R2/ntfy handoff); repository work provides policy, contracts, and templates only
-- Open WebUI deployment is deferred until the migration cutover and backup gates pass
-
-## Success Criteria (Strategic)
-
-The plan is succeeding when:
-
-- repository intent is unambiguous from docs and directory structure
-- legacy `dev-vps` assumptions no longer drive active configuration
-- first host bootstrap path is reliable and repeatable
-- service baseline is operational with current data flow expectations
-- unresolved concerns remain explicitly documented rather than implicit
-
-## Technical Debt Ledger (Dendritic Transition)
-
-Durable index of confirmed transition debt and acceptance boundaries — an index and criteria record, not a task list. Items owned by active OpenSpec changes are referenced, never duplicated; their task bodies live under `openspec/changes/<name>/`.
-
-**Stop condition (high-level):** the Dendritic architecture is declared established only when identity decoupling is complete, Stage 8 is complete, the host registry is generic, host IDs are canonical, internal contracts are narrow, hosts are explicit contributors, the import filter is exactly `[ "services" ]`, and docs and gates pass. Notification normalization (`TD-06`) and the backup/cache split (`TD-05`) are valuable ownership changes but do not gate that declaration; if the backup/cache split lands first, Stage 8 consumes its final owner.
-
-**In-change**
-
-- `TD-01` (`resolved by decouple-identity-admin-capabilities`, D-054) — the identity/admin decoupling residue is gone: `applications.admin` and `admin-hub` are deleted, the six former hub members are self-contained placement aspects, the equivalence capture, ratchet group, and both reviews closed with the change (archived 2026-09-18), and the decision criterion was updated with it.
-- `TD-02` (`resolved by dendritic-stage-8-host-identity-contracts`) — canonical host identity completion: typed canonical host records, discovered host contributors, the generic registry, the exact `[ "services" ]` boundary, and typed PostgreSQL / Niks3-write contracts (D-056). Implementation tasks 1.1-5.1 are complete (same-tree A/B drvPath equality per host, 35 publications, all contract suites green); task 5.3 closed the gate battery (treefmt 0-changed, `just checks all`, `nix flake check --no-build path:.`, three host evaluations, strict OpenSpec validation, LA/home-forge closure comparison showing only the source-provenance object, OCI structured observables with one intended audiomuse `aspectOption` delta) and two independent reviews (architecture ACCEPT; correctness review returned no P0 after its blocker was disproven as a `.#`-vs-`path:.` methodology artifact).
-- `TD-13` (`resolved by Stage 8 task 5.2`) — documentation debt: the `admin-hub` architecture text and the revised aspect-boundary criterion were reconciled by D-054's documentation pass; Stage 8 task 5.2 closed the code-header residue — the stale `identity-provider.nix` header (which described the removed provider→`identity-client` URL consumption; the provider reads the canonical URL from web policy and the Kanidm leaf asserts agreement with `services.identity.oidc.providerUrl`) and the six extracted-aspect headers (`termix`/`vaultwarden`/`gatus`/`beszel`/`homepage`/`webhook`), whose `D-053` provenance now records the D-054 self-containment.
-
-**Deferred**
-
-- `TD-03` (`deferred`, partial `resolved`) — flat `modules/flake/` contributor bucket vs feature locality. Stage 8 task 5.1 landed the bounded move of settled touched concerns into domain directories (`modules/identity/`, `modules/notifications/`, `modules/cache/`, `modules/music/`, `modules/admin/`, `modules/web/`, `modules/oci/`, `modules/fleet/`); broader relocation remains deferred and must not become a repo-wide path-only shuffle. Retirement: an explicit semantic-locality decision driven by touched concerns after Stage 8.
-- `TD-04` (`resolved by the post-Stage-8 services-tree conversion`) — the service-root import-tree exclusion held an empty list when the transition finished: every former leaf is now a discovered contributor, a sibling contributor of its owner aspect, or an underscore-private helper. The boundary file itself was deleted with the flake-file change (D-060): the generated `outputs` discovers `modules/` unfiltered, and the scaffold contract asserts the converted roots stay evacuated.
-- `TD-05` (`resolved by split-state-backups-cache-publication`) — the combined `backups` aspect was split into independent `state-backups` and `cache-publisher` aspects (D-055); the Niks3 publication leaves are now the sibling contributors `modules/cache/cache-publisher/{upload-client,post-deploy}.nix` beside their owner (path corrected again by the post-Stage-8 services-tree conversion; D-055 recorded the pre-Stage-8 `modules/flake/_backups/` location and D-056 the intermediate `modules/cache/_backups/` one). The Stage 8 Niks3-write contract migration now consumes `cache-publisher` directly (`TD-02`).
-- `TD-06` (`resolved by normalize-notification-policy`, revised by the principal-publisher contract) — the ntfy publisher policy is a typed map in `modules/notifications/push-server.nix`, keyed by ntfy principal (a fleet host, a dotfiles machine, a CLI) rather than by canonical host ID, and passed into the aspect by value. The module renders the map into `auth-access`; the encrypted auth file carries only credentials, and activation fails by name when a declared publisher has no `auth-users`/`auth-tokens` entry, when the file carries `auth-access`, or when an `auth-users` entry is malformed. LA's literal list is gone.
-- `TD-07` (`resolved`) — Quantum residue is fully retired rather than reserved: the service and host modules, the `/srv/data` operator ACL/reconcile unit, the admin SSH SOPS registrations, the Kanidm catalog entry, the `policy/identity.nix` client, and the `kanidm_oauth2_quantum_basic_secret` OIDC client registration are gone from `modules/` and `policy/`, the OIDC and admin secret templates no longer carry a Quantum stub, and `tests/check-identity-contract-directionality.sh` fails if any of those surfaces returns. Re-enablement, if it ever happens, lands as a self-contained aspect consuming canonical identity contracts without restoring `admin-hub` coupling. The operator's encrypted `secrets/applications/admin.yaml` / `secrets/hosts/<host>/oidc.yaml` may still carry the retired keys until their next re-encryption; nothing reads them.
-
-**Follow-up**
-
-- `TD-08` (`resolved`) — Termix is deselected on every host, so the low-priority experiment no longer ships; the aspect and its canonical `termix-admin` web-policy route remain for re-enablement.
-- `TD-09` (`follow-up`) — Cockpit still resolves its published identity from the hardcoded canonical key `"cockpit-admin"` (`modules/admin/cockpit.nix`, `modules/admin/cockpit-loopback-tls.nix`), but the route was retired with the demoted cockpit during the edge cutover (it leaked LA-only TLS material into the edge's config): the module now treats the key as optional and requires a `services.admin.cockpit.publicHost` override when it is absent, and the dashboard entry is gone. Re-enablement must re-declare the route (or finish the typed/explicit route-key contract).
-- `TD-10` (`follow-up`) — feature-owned monitoring residual semantics: `ExecStopPost` success labeling after failures, shallow composition/self-monitoring hardening, and the real-service predicate intentionally excluding arbitrary raw units. Provenance: completed `openspec/changes/feature-owned-service-monitoring/`; the residuals are deliberate follow-ups, not regressions.
-- `TD-11` (`partly resolved`) — `tests/check-identity-contract-directionality.sh` was becoming a monolithic second specification that rebuilt its inputs instead of exercising the production projection. The provider-specific half is gone: the Kanidm project/SPN assertions and the source-regex reads of `policy/identity.nix` were deleted with the provider retirement (D-122), and the redirect allowlist is now asserted from the rendered document. What remains is security-owned and behavioural — the intrinsic contract resolves no provider namespace, redirect URIs derive from the client id, an unknown dashboard group fails evaluation, the assembled document renders, and disabled clients are tombstoned. Still open: splitting the file into focused contract tests with shared fixtures, and the per-host aspect-selection expectations now duplicated across the three host records and the two contract suites (Stage 8 moved selections from the bootstrap projection into `modules/hosts/<host>/default.nix`).
-
-**Superseded cleanup**
-
-- `TD-12` (`superseded-reference`) — `openspec/changes/normalize-fleet-boundaries/` is superseded after its useful requirements were harvested by the landed stages, and it is not a live implementation source. It must not be archived: `openspec archive` would enter never-implemented requirements into the canonical specs, so it is retained deliberately as a reference record (`TD-23`).
-- `TD-16` (`resolved`) — `services.identity.kanidm.dataDir` is a typed option carrying the conventional default in `modules/identity/kanidm/server.nix` and the provider body references the option rather than a literal, so a host storing identity state elsewhere declares the path instead of editing the provider.
-- `TD-17` (`follow-up`) — support-quartet placement: `provenance`, `oci-images`, `fleet-packages`, and `web-policy` remain contributors in `modules/flake/` (recorded as accepted wiring by `TD-14`). Stage 8 task 5.1 deliberately left them there under the "no repo-wide path-only shuffle" rule; moving them into a fleet/materialization domain is a separate decision to take only when a real ownership pressure appears. Related evidence, not a resolution: the intrinsic OIDC contract (`modules/identity/_oidc.nix`, D-059) is now a working instance of the same shape — a shared surface its consumers import instead of a host selecting it — which is the candidate form for the quartet if a consumer-driven retirement is ever taken up.
-- `TD-18` (`resolved`) — the scaffold contract's private-leaf ownership check was worse than layout-dependent: it grepped for `_oci/default.nix`, `_edge/edge-ingress.nix`, and `_dj/*.nix`, filenames retired by the services-tree conversion, so it could not fire and its mutation proved nothing. It is now a path-resolving pass (`private_leaf_strays` in `tests/check-dendritic-scaffold-contract.sh`): relative import expressions are resolved against the tree and an underscore entry under `modules/` is reachable only from inside its owning concern (the domain, or `hosts/<host>` for host fragments), with the three declared intrinsic contracts exempt (`database/postgres/_consumer.nix`, `backups/state-backups/_consumer.nix`, `identity/_oidc.nix`). Verified by measurement: the clean tree reports nothing, a cross-concern `_beets` import and a `homepage/_data.nix` import are both detected, an `identity/kanidm/_packages.nix` import is detected, and a cross-domain `identity/_oidc.nix` import stays allowed. The 7n-3f-2 mutation now exercises the predicate directly.
-- `TD-19` (`resolved by restrict-provenance-source-copy`, D-057) — the `/etc/nixos-source` provenance copy shipped the whole working tree, including `.git`, `opentofu/**/.terraform`, `.hp-forge-esp-backup`, editor caches, and plaintext credential files, at ~440 MB per host closure. Resolved by evaluating the flake through the Git-tree form `.#`, which publishes the tracked configuration set (~5.5 MB) and restores a non-null `system.configurationRevision`; the fallback `cleanSourceWith` exclusion list was deleted so tracking stays the single filtering authority.
-- `TD-20` (`operational-constraint`) — the `.#` Git-tree form reads the Git index, so a tracked file missing from the index is silently absent from evaluation and from the published provenance. Colocated jj keeps the index in sync and `tests/check-flake-source-tracking.sh` (in `just checks all`) fails with the repair (`git add -A`) when it diverges; index-mutating Git commands (`git reset`, `git checkout`, `git stash`) must not be used in this repository (D-057).
-
-- `TD-22` (`resolved`) — the 20 placeholder capability Purposes are replaced with real sentences derived from each capability's requirements, and one further canonical scenario that the PostgreSQL migration had made false (AudioMuse's database described as remote OCI) now states the local-cluster shape. `openspec validate --all --strict` reports 54 passed, 0 failed, so the repo-wide strict gate is again a usable signal; a stale delta in `navidrome-m3u-itunes-worker` that would have dropped five canonical scenarios was repaired in the same pass.
-
-- `TD-23` (`superseded-reference`) — `openspec/changes/normalize-fleet-boundaries` remains active with 0/22 tasks by its own status header, because it was superseded by the staged Dendritic transition before implementation. Its ownership findings were harvested into the follow-up changes that did execute (notification policy, identity/admin decoupling, host identity and internal contracts, state-backup/cache-publication split) and into the ledger entries above. It is kept as a reference record rather than archived: `openspec archive` applies every delta spec to the canonical capabilities, which would enter requirements the repository never implemented.
-
-**Accepted boundaries — not completion debt**
-
-- `TD-14` (accepted support wiring, not debt) — all-host support contributors (`modules/flake/provenance.nix`, `oci-images.nix`, `fleet-packages.nix`, `web-policy.nix`). Retirement is consumer-driven and optional; recorded here to prevent misclassification as transition completion debt.
-
-**Explicit non-gates**
-
-- `TD-15` (not-a-gate) — full conversion of every service leaf, Den/flake-file adoption, universal service topology, internal DNS, and premature `nix-fleet` extraction are explicitly not completion gates.
-
-## Outstanding Work
-
-Current open items, newest first. Each names the artifact that closes it.
-
-### Container readiness (wired where it earns something)
-
-`podman --sdnotify=healthy` turns a container unit's `Type=notify` into "the app answers", so a
-dependent unit's `After=` and a failed deploy both mean something. It requires an explicit
-`--health-cmd` — an image's own `HEALTHCHECK` does not satisfy it and podman refuses to start the
-container (exit 125) — so the probe travels with the flag and names a tool the pinned image actually
-has, dialling the container's own port.
-
-Seven containers carry it: `geopulse-backend` and `langfuse-web`, which have a dependent unit, and
-five that already probe with a tool their image ships (`geopulse-ui`, `homarr`,
-`karakeep-meilisearch`, both redis instances). Each also states a start budget, because podman sets
-`TimeoutStartSec = 0` on every container unit and an unpassed probe would otherwise hold the
-activation open instead of failing it.
-
-The remaining eighteen are leaves, so a probe there changes only whether a deploy notices a broken
-app, and it costs a probe runtime per image plus an endpoint guess per app: a wrong guess turns a
-healthy service into a failed deploy, which is the opposite of the trade. Closed rather than
-deferred, then. It reopens when a unit gains a dependent — which is what makes readiness
-load-bearing — or when a container failure starts costing a deploy without a probe explaining it. Confirming means one
-`podman run --rm --entrypoint sh <image> -c 'command -v …'` against the pinned digest on the host
-that pulls it: a probe binary that does not exist converts a healthy service into a failed deploy.
-
-### Test-suite cleanup (prioritised)
-
-A test may not restate configuration, repeat a check Nix already fails on verbosely, or
-assert that a superseded state is gone. It asserts behaviour and couplings we own. The
-inventory pass applied that rule to the whole suite (4,616 lines, 17 files):
-
-- **`check-dendritic-scaffold-contract.sh` deleted** (1,698 lines). Almost all of it was
-  migration archaeology: the evacuated roots, the retired import-tree boundary, the Stage
-  5/6/7 mutations, and per-host facts (`bootLoader`, `tsMtu`, `daemonUnit`) that belong to
-  the host record. Its negative mutations for unknown deploy references and system drift
-  repeated `modules/flake/deploy.nix`'s own `throwIf`; its registry-key and per-host-system
-  assertions restated the host records, so adding a host meant editing the test. The one
-  invariant Nix cannot see — `pg_hba` format and ordering, which takes the cluster down
-  rather than degrading it — moved to `check-postgres-hba-safety.sh` (71 lines): a maskless
-  address fails because Postgres rejects the whole file, an allow row after a role's
-  catch-all reject can never match, and a registered consumer with no granted row is
-  silently unreachable. Each is proven against a hostile fixture.
-- **`check-user-app-placements.sh`** (323 → 292). Dropped the retired-option check, the
-  exact mount list, the tmpfiles ownership lines, two image flags (`TRUST_PROXY`,
-  `OIDC_SECRET_ENCRYPTION_KEY`), the image tag+digest regex (image policy owns that), and
-  the "placements leaked onto another host" block — an unselected aspect contributing
-  nothing is the module system's behaviour, not a contract. Kept the route-port ↔ listener
-  and route-URL ↔ app-URL joins, loopback bind, the secret-delivery boundary, and the
-  backup export/exclusion couplings.
-- **`check-shell-account-contract.sh`**. The three literal shell assertions and the
-  `defaultUserShell` rule became one relationship: root and rescue must not resolve to the
-  operator shell, so swapping the operator shell needs no change here. The rescue-secret
-  path, the activation-order dependency, the shared-key contract and the aliases-isolation
-  rule stay, with their non-vacuity controls.
-- **`check-web-service-catalog.sh`**. The hardcoded public URLs, `access.oidc` booleans and
-  `health.path` literal became derived shape invariants: no catalog entry carries the edge's
-  own routing fields, every entry carries a dialable endpoint, and both a published and a
-  withheld entry exist. The duplicate-ID rejection stays — it is the fail-closed behaviour
-  itself.
-
-Reviewed and kept as-is: `check-backup-surface-contract` and the two helper-script checks
-execute real code against hostile arguments with only the filesystem/network boundary
-stubbed; `check-build-account-contract` is a trust boundary with a pinned key fingerprint
-and accepted-mutation proofs; `check-telemetry-view-composition` delegates to nix-fleet's
-guard and mutates one pipeline to prove the guard is live; `check-flake-source-tracking`
-guards a trap that already cost 19 files from the index.
-
-- **`check-container-service-address.sh`** (new, 100 lines). The fleet-wide audit that had
-  been living inside `check-bifrost-gateway-contract.sh` — the assertion that caught
-  GeoPulse's missing `--add-host` — moved out, because every container is in scope by
-  construction there rather than only the ones naming the gateway. It asserts the
-  target-independent coupling: a bridged container whose environment names the service
-  address must carry `--add-host` resolving it to the declared address, and a run that
-  inspects no bridged container fails rather than passing. Deliberately not asserted:
-  that nothing dials `host.containers.internal`, because whether that works depends on what
-  the target binds — it fails against a loopback listener and succeeds against `0.0.0.0`,
-  so the assertion belongs with the target (Navidrome binds `0.0.0.0`, which is why
-  AudioMuse's default dial is functional though off-convention).
-
-### Notification debounce (resolved by D-131)
-
-- Superseded. `OnFailure=` fires whenever the unit enters the failed state, and a unit with
-  `Restart=on-failure` does that on every failed start attempt, so a crash loop sent one notification
-  per attempt: `podman-sparkyfitness-server` produced five in ~0.5 s before its own start limit
-  stopped the retries. The per-attempt trigger is removed rather than debounced —
-  `modules/notifications/notify.nix` puts every registered unit that restarts in `RestartMode=direct`
-  with a finite start limit, so the event reports the failure that ends the retries. The handler keeps
-  systemd's default start limit, and the daemon stays a delivery component with no suppression state.
-  The contract is `tests/check-notify-recovery-contract.sh`.
-
-### SparkyFitness OIDC issuer (fork pin)
-
-- The backend runs from a pinned fork image (`ghcr.io/shrub24/sparkyfitness-backend:oidc-fix`) because
-  upstream stores the issuer with its trailing slash stripped (`oidcEnvConfig.ts`), which no Authentik
-  issuer can match — the provider row is poisoned whenever discovery fails at boot and the comparison
-  fails on every login after. Upstream tracks it as
-  [#2772](https://github.com/CodeWithCJ/SparkyFitness/issues/2772); the fork keeps the issuer verbatim.
-- Revert the pin to `docker.io/codewithcj/sparkyfitness_server` once a release carries the fix, and
-  delete this entry.
-
-### SparkyFitness rate limiting behind the proxy
-
-- The application's nginx rate-limits its auth endpoints by client IP, and behind Caddy and
-  Cloudflare every request arrives from the proxy, so the limit is per-proxy rather than
-  per-client. Upstream reads the client from a configured real-IP header; decide whether the
-  fleet sets one once the acceptance run shows the limit firing on ordinary traffic, and if so
-  set it together with the trusted-hop count rather than a header alone.
-
-### Deployments pending
-
-- `oci-melb-1`: the deployed generation predates the `auth.shrublab.xyz` route, so the edge answers that hostname with an empty body; redeploying closes the identity staging step as well as the meilisearch qualification below. It was rolled back on `podman-karakeep-meilisearch` (unqualified image reference), now `docker.io/getmeili/meilisearch`.
-- **Paperless pin (D-117)** — `nixpkgs-paperless` holds paperless at 3.3.1, the revision the fleet already runs, because 3.3.3 has no aarch64 build upstream and costs hours on the A1. Remove the input and the overlay in `modules/apps/paperless.nix` once a newer paperless substitutes or the fleet cache holds it, then re-evaluate the host to confirm the path moved.
-- `home-forge`: rolled back at `navidrome.service` (226/NAMESPACE). The fix — bundling the AudioMuse plugin via `services.navidrome.withPlugins` and dropping the bind whose target the package did not ship — is staged and evaluated; the host also carries the `docker.io` Langfuse image refs. The Windows VM unit needed no restart work: it is a `oneshot` unit with `RemainAfterExit` and a 240 s `TimeoutStopSec`, so a switch never bounces a running guest. Redeploy closes it.
-- `la-admin-1`: last in the queue behind the two above; nothing blocks it.
-- `la-admin-1` also carries the identity projection changes since the last activation: the
-  Authentik `web.base_url` seed, the invitation stage and enrollment flow, the group chain,
-  and the redirect after confirmation.
-- `oci-melb-1` additionally carries SparkyFitness (`docs/runbooks/sparkyfitness.md`): it needs
-  the `sparkyfitness` provider, client and route applied, and the same deploy seeds the
-  invitation flow, so accept sign-in there before closing either.
-
-### Machine access to Access-gated routes (operator-gated)
-
-- The monitoring service token is declared but not created yet: `just tofu-apply` in
-  `opentofu/cloudflare` creates it, `tofu output -json machine_access_token` reads it, and
-  `just secrets edit secrets/services/gatus.yaml` stores `cf_access_client_id` /
-  `cf_access_client_secret` for `owner_age` and `la-admin-1`. LA already binds the path, and
-  Gatus switches from accepting the Access login page as healthy to expecting the real status
-  as soon as the file exists.
-- Turn on **strict service token authentication** (Zero Trust → Settings) once the token is in
-  use. Organisations created before 2026-10-05 have it off; organisations created on or after
-  that date cannot turn it off. With it on, only Service Auth policies authorise a request
-  carrying token headers — Allow policies and any `CF_Authorization` cookie are ignored for that
-  request — failures return `401`/`403` instead of a redirect to the login page, and no cookie is
-  issued. That converts a token that is silently falling back to cookie auth, or one whose policy
-  was mis-shaped, into a loud failure the Gatus conditions already treat as down.
-
-### Gatus probes and route health paths
-
-- Every route in `policy/web-services.nix` still declares `health.path = "/"` with
-  `expectedStatus = 200`, which the token does not make more meaningful: behind a service token
-  `/` is the application's own login page — `200` for Grafana, Homepage and Cockpit, but a `302`
-  to `/accounts/login/` for Paperless. Landing the token before this refactor turns those routes
-  red for a reason that is not an outage.
-- Refactor each route's `health.path` toward an endpoint that answers without application
-  authentication and reflects a dependency where the app offers one — Grafana `/api/health`
-  reports its database, Syncthing `/rest/noauth/health` reports the daemon. A route with no such
-  endpoint keeps its login-page `200`; that is a truthful "up" signal and must not be read as
-  "healthy".
-- Decide the second probe class explicitly. The public URL through the edge is the only probe
-  that can see DNS, certificate, Authenticated Origin Pulls, the edge-to-origin front and the
-  origin listener; `repo.web.catalog.<id>.endpoint` sees the application and skips all of it.
-  Default is public-only, with the endpoint probe added where an edge fault would otherwise
-  page for an application that is fine.
-
-### Identity cutover (operator-gated)
-
-- `<app>-user` / `<app>-admin` roles are declared and bound, but no client reads them yet:
-  application role mappings still name fleet groups. Migrate them one application at a time
-  once a live token proves the claim carries both, so a per-app role becomes a binding
-  change rather than a group-tree change.
-
-- Authentik is the active provider and the observation window is closed: the Kanidm
-  implementation is retired (D-122), and `kanidm-admin` (`id.shrublab.xyz`) is gone from policy,
-  so the next `just tofu apply` destroys its DNS record.
-- Deploy `oci-melb-1`, then `home-forge`, then `la-admin-1`. The provider host last, because its
-  deploy carries the blueprint.
-- Operator steps before the deploys: add `Access: Service Tokens → Edit` to the Cloudflare API
-  token, delete geopulse's `authentik` row from `oidc_providers` (a database row shadows the
-  declarative configuration), and move `beszel` and `bookorbit` to the Authentik issuer in
-  their own admin UIs.
-- Accept the replacement email-code flows live: invitation enrollment, unverified login, and
-  verification after an address change. Link-based address recording was observed; native-code
-  integration still needs its own acceptance. Follow `docs/runbooks/identity-migration.md`.
-
-### Email verification enforcement (partly landed)
-
-- **Implemented, awaiting acceptance — email codes.** One native code stage serves enrollment,
-  login gating and signed-in re-verification. Proof must match the user, current address and
-  verification stage before activation/recording; its temporary device is then consumed.
-  The code is entered in the original browser, replacing link-based continuation.
-- **Outstanding — the application policy.** The gate withholds a *session*; a session that
-  predates an address change still passes into applications. The enforcement point for that is an
-  application-level policy (`email and email_verified_address == email`) with
-  `policy_engine_mode = "all"`, so it ANDs with the group policy. Off for the console clients
-  (grafana, beszel, termix) and `cloudflare-access`, so whoever holds the console can repair an
-  account. Not blocking the cutover; the login gate already keeps new sessions verified.
-- **Outstanding — the courtesy prompt.** An authorize attempt by an already-signed-in unverified
-  user is denied by the application policy with the stock access-denied screen. A nicer path
-  needs a dynamic `next` back into the authorize URL, which a redirect stage cannot express
-  (no templating), so this stays as-is unless custom code is ever justified.
-- **Deferred — MFA enrolment at registration.** An authenticator-validate stage at order 150 in
-  `enrollment` with `not_configured_action = configure` was attempted and reverted: the apply
-  failed because `configuration_stages` is a many-to-many to **Stage**, not to the
-  `default-authenticator-*-setup` flows, and the configure path either inserts one configuration
-  stage directly or presents a chooser. Wiring it means declaring or referencing the webauthn and
-  totp authenticator stages and choosing single-versus-chooser. Until then enrolment ends logged in
-  with MFA available from user settings.
-- Groups are the wrong lever for either: they carry no policies, and verification is a property of
-  the person, not of membership. A change-email flow reuses `verify-email` unchanged — the recorded
-  address stops matching, so the gates close and re-verification reopens them.
-- **Deferred — resend controls.** The pinned native code-entry screen has no Resend button, so
-  accidental repeated clicks are not a current risk. The operator accepts the remaining scripted
-  send/restarted-flow risk; no backend patch or send limiter blocks rollout. Revisit if a resend
-  action is added or actual abuse appears. Link-page polling/continuation is superseded by code entry.
-- **Implemented, awaiting acceptance — passkeys.** Enrollment requires discoverable credentials
-  and user verification; identification offers passkeys plus username/email password fallback.
-  Test a new credential and fresh passwordless sign-in before cutover. Automatic enrollment
-  during registration remains deferred; credentials are enrolled in user settings.
-
-### Perimeter topology (to review, not blocking)
-
-- Whether Cloudflare Access should carry per-route authorization at all. Today the twelve gated
-  routes split into thirteen Access applications whose policies (`allow_admins` email constant,
-  `allow_users` OIDC group claim) restate a decision the identity provider already makes in its
-  own vocabulary — `admins`, `service-admins`, per-app entitlements. Cloudflare's own guidance
-  points the other way from a collapse: use multiple domains in one application only for genuine
-  cross-domain dependencies, and otherwise one primary domain per application with automated
-  policy management, which is what the current shape already does. So the question is not
-  topology but authority: either Access stays a perimeter and its policy becomes one coarse
-  household rule, or route-level authz moves to the origin (`forward_auth` in Caddy against
-  Authentik) and Access keeps the per-host applications. Revisit when a second person enrolls or
-  a route genuinely diverges; nothing here blocks the cutover.
-
-### Shared assets publication (awaiting deployment acceptance)
-
-- The existing `shrublab-assets` R2 bucket serves `assets.shrublab.xyz`. `policy/assets.nix` is
-the single source: it declares the two published brand files and, per application, the icon its
-tile renders. `oci-melb-1` is the only host selecting `assets-publisher`, so it alone runs
-`assets-publish` and `assets-wallpaper`; application icons are commit-pinned CDN URLs resolved by
-their consumer, so nothing third-party is redistributed from the bucket.
-- Remaining work is operator deployment and live acceptance: deploy `oci-melb-1`, supply
-`secrets/services/assets.yaml`, and record the acceptance in
-[the asset runbook](runbooks/assets.md).
-- Wallpaper stays manually uploaded and outside Git. Bucket/domain ownership stays outside this
-change; publishers neither prune objects nor change Cloudflare Access.
-
-### Follow-ups agreed in review
-
-- `publish` / `declarePublic` / `exposureMode` collapsed — done (D-124). Publication is one field,
-  `posture`, and `exposureMode` keeps only the dial, so the edge filter, the public identity fields and
-  the Cloudflare export read the same value. The DNS defect this fixed: a route withheld with
-  `publish = false` still emitted a record, because the export keyed on `declarePublic`. `home-assistant`
-  is withheld by posture alone and is absent from both the edge routes and the export. A first attempt
-  derived publication from the dial instead and lost Homarr's recovery posture (tailnet-served but
-  unpublished); the homarr contract caught it before it shipped.
-- GeoPulse runs on digest-pinned upstream images — done (D-127). The source build and its coupled
-  updater are deleted: two hand-verified fixed-output hashes and a Maven-version assertion went with
-  them, because upstream's `-native` backend and nginx UI are both amd64+arm64. The Caddy front is
-  gone as well — the UI image renders `config.js`, proxies `/api` and `/mcp`, proxies the OSM tiles and
-  serves the SPA, so three env vars replaced the generated configuration. The bridged backend dials
-  the cluster on the service address and the consumer ACL admits the container supernet; PostgreSQL
-  stays ours.
-- Service-scoped secret defaults — done. Every `secrets/services/*.yaml` and `secrets/applications/*.yaml` path now defaults in its owning module through `secretHelpers.mkSecretFileOptionWithDefault`, and the two options nix-fleet declares (`services.notify.secretFiles.host`, `services.niks3-cache.secretFiles.host`) default from this repository's convention contributors with `lib.mkDefault`. The assertions that required a host to set them, and the `secretFiles.navidrome` and `services.ntfy.auth.secretFiles.auth` guards, are deleted: a default makes them unreachable. `services.ntfy.secretFiles.firebase` keeps its `nullOr` type so a public instance can opt out. Host records bind only host-scoped paths (`secrets/hosts/<host>/...`), so no `secrets/services` or `secrets/applications` path appears in a host composition.
-- Grafana split out of the `victoria` aspect — done (D-123). `modules/observability/grafana.nix` owns
-  everything Grafana, `modules/observability/victoria.nix` keeps the three stores, and `home-forge`
-  selects both. The uids stayed byte-identical because provisioning resolves a datasource by uid; the
-  datasource URLs read their ports from the same policy entries the stores bind, so no read-only
-  datasource contract was needed. The OIDC switch and its host-scoped binding moved with the option.
-- Route-derived module defaults — done for the two that have a route. `services.karakeep-pod.publicUrl`
-  and `services.paperless.publicUrl` now default from `repo.web.catalog` instead of naming
-  `keep.`/`paper.` again, so a hostname change is one policy edit. Both throw by name when the route is
-  unpublished, and the option stays the override: a withheld instance behind a `direct` route has no
-  browser origin to derive (its catalog `endpoint` is loopback), which is the ambiguity D-116 named and
-  the reason the derivation stops at "published". Two of the four are not derivable and are no longer
-  tracked as work: Cockpit already reads `cockpitRoute.publicHost` with a named throw and an override,
-  and `niks3-cache.cacheUrl` is the R2-served cache host, which has no edge route at all — its source
-  is `policy/globals.nix` `domain`, not the catalog.
-- Port collisions have no general check, and none is wanted (question, kept open). The scaffold
-  contract's duplicate-port case was removed during the Authentik cutover because it inferred
-  listeners from option shapes and flagged Authentik's own `9002`, and the last collision assertion
-  (Home Assistant against ClickHouse) was removed because a placement fact is not the aspect's
-  contract. A `repo.listeners` registry was proposed — each binding service declares its
-  `{ address, port; }`, the host asserts uniqueness — and rejected: a native listener that cannot bind
-  already fails its own unit and therefore the deploy, so the runtime failure surface covers it, and
-  the pair that must not collide is stated at the definition site (`policy/globals.nix`
-  `clickhouseHttpPort = 8124`, against Home Assistant's `8123`). Reopens only if a collision reaches a
-  deploy as a confusing rather than a named failure.
-- `tests/check-homarr-contract.sh` no longer carries a posture mechanism: the tar copy went with D-125, and what remains is one `extendModules` probe substituting a fixture secret file, so the configuration evaluates without real ciphertext. There is no withheld-route branch to control, because the module no longer reads a lifecycle state.
-- The blueprint gate's explicit `Importer.validate()` call duplicates what the applied-hash poll observes. Collapsing the two into one success-or-error report needs an experiment on the VM harness, not a deletion: the gate must still distinguish a rejected blueprint from a stale one.
-- Identity acceptance beyond plan-level assertions: the MFA invariant, the email-proof policy and the redirect allowlist are all checked against the assembled document, which proves the plan and not the deployment. End-to-end truth (a real passkey, a real authenticator code, email recovery) belongs in the Authentik VM harness, which currently exercises the blueprint gate only.
-- The Gatus Cloudflare service token is one credential with a 8760h lifetime covering every Access-gated probe. Scoping headers per route (done) narrowed where it is sent, not what it can reach; shortening the lifetime or splitting the token is the remaining knob.
-
-- Runbook sweep under the `AGENTS.md` rule — the four are done: mechanism prose and incident
-  narration left `actual-memos-tududi.md`, `homarr.md`, `home-assistant.md` and
-  `postgres-consumer-migration.md`, and stale facts went with it (the Kanidm provider name, the
-  deleted Home Assistant port assertion, the retired `repo.internal` cross-host contract, and
-  `publish` in the Home Assistant release step).
-- Kanidm references outside the sweep are now only historical: `admin-host-migration.md` and
-  `identity-migration.md` already carry a status line marking them records of a completed move,
-  `docs/research/*` are dated research notes, and the app runbooks are swept. `geopulse.md` needed
-  real work rather than a rename — its client section described scope maps, `enableLegacyCrypto`,
-  `allowInsecureClientDisablePkce` and a `/run/secrets/kanidm.oauth2.*` path, and two of its premises
-  were stale independent of the provider: the route is published, and publication is the route's
-  posture rather than `publish`/`declarePublic`.
-- Windows VM lifecycle: an idle reaper plus socket-activated RDP, gated first on proving a graceful `windows-vm-stop` (the deploy stall showed the guest did not stop inside its 180 s window).
-
-### Commit rhythm in the agent instructions (docs)
-
-- The jj skill teaches `absorb`, `split` and filling stacked changes in place, but never states the
-  rule that shapes them: a fix belonging to lines already written goes back through `absorb`, and a
-  genuinely new concern through `split` — not through a new commit. `AGENTS.md`'s apply workflow says
-  nothing about commit rhythm at all. Building this feature the git way cost three commits for two
-  concerns, an empty change `jj` then refused to push, and a reshuffle that rewrote an operator's
-  neighbouring commit.
-- Add one line to the jj skill and one to `AGENTS.md`'s apply workflow stating the rhythm, without
-  restating the `absorb` and `split` mechanics the skill already documents.
-- Done when both instructions say it once and neither duplicates the mechanics.
-
-### Known ceilings, no action planned
-
-- `authentik-nix` tracks upstream `main` with no `follows` and no Renovate manager: a `nix flake update` can move it, and upstream may reshape blueprint fields that only fail at apply time. Accepted for now (six of seven components substitute from nix-community's cache; `gopkgs` builds locally when upstream touches Go).
-- Senders share one domain and one relay, so a blocklist or reputation hit takes all of them. Revisit if one service's volume starts affecting the others' delivery (`docs/mail.md`).
-
-## Non-Goals During Current Planning Window
-
-- writing full operational runbooks before baseline architecture settles
-- selecting long-term orchestration and worker framework now
-- optimizing for hypothetical future scale at the cost of current clarity
-
-## Documentation Maintenance Rule
-
-Any major implementation decision that changes behavior, trust boundaries, or migration direction must update:
-
-- `docs/architecture.md`
-- `docs/decisions.md`
-- `docs/plan.md`
-- `docs/context-history.md`
-- the relevant `docs/runbooks/*.md` when bring-up or transfer procedures change
-
-These documents are intended to remain current and drive implementation, not trail it.
-
-Active implementation anchor paths that must stay reflected in docs:
-
-- `modules/hosts/oci-melb-1/default.nix` (host record) + `modules/hosts/oci-melb-1/_nixos.nix` (private composition)
-- `modules/hosts/la-admin-1/default.nix` (host record) + `modules/hosts/la-admin-1/_nixos.nix` (private composition)
-- `modules/hosts/home-forge/default.nix` (host record) + `modules/hosts/home-forge/_nixos.nix` (private composition)
-- `modules/music/music.nix` (home-forge-only `music` deployment aspect: selection provides `applications.music.enable`, nests the music composition, imports the private music leaves)
-- `modules/identity/identity-provider.nix`, `modules/admin/{cockpit,termix,homepage,webhook}.nix` (the operator-tooling capability aspects; the `modules/applications/admin/default.nix` coordinator was deleted and `admin-hub` was dissolved by D-054, and the user-facing workloads later moved to `modules/apps/` and `modules/observability/`)
-- `modules/music/` (canonical music service module subtree: `navidrome.nix`, `audiomuse.nix`, `syncthing.nix`, `slskd.nix`, `tagr.nix`, `beets.nix` with its asset directory `beets/files/` and runner helper `_beets/runners.nix`, and the `ingest.nix` and `storage.nix` contributors with `files/ffmpeg-preprocess.sh`)
-- domain aspect contributors: the intrinsic identity contracts (`modules/identity/_oidc.nix`, `_redirects.nix`, `_secret-sources.nix`) beside the composition aspect `modules/identity/identity-provider.nix` and the one implementation directory `modules/identity/authentik/` (runtime `server.nix`, delivery `blueprints.nix`, and the private generator `_blueprint/`); `modules/notifications/{notify,push-server}.nix`; `modules/backups/state-backups.nix` with `modules/backups/state-backups/_consumer.nix`; `modules/cache/{cache-publisher,niks3-cache}.nix`; `modules/music/{music,dj}.nix`; `modules/admin/{cockpit,termix,homepage,webhook}.nix`; `modules/apps/{paperless,karakeep,vaultwarden}.nix`; `modules/observability/{beszel,gatus,phoenix}.nix`; `modules/ai/{bifrost,omniroute}.nix`; `modules/web/web-policy.nix`; `modules/containers/oci-images.nix`; `modules/web/ingress.nix`; `modules/oci/oci.nix`; plus the fleet-baseline and materialization contributors in `modules/flake/` (`base.nix`, `base-host-recovery.nix`, `shell.nix`, `networking.nix`, `tailscale.nix`, `builder-access.nix`, `build-account.nix`, `observability-agent.nix`, `telemetry.nix`, `node-exporter.nix`, `provenance.nix`, `fleet-packages.nix`, `host-registry.nix`, `deploy.nix`), the sibling contributors beside their owners (`modules/music/{dj-engine,windows-vm}.nix`, `modules/web/ingress.nix`, `modules/database/postgres.nix` with `postgres/_consumer.nix`), and the `_` helpers `modules/flake/shell/p10k.zsh`, `modules/music/_beets/runners.nix`, `modules/admin/homepage/_data.nix`, `modules/backups/state-backups/_consumer.nix`, `modules/identity/{_oidc,_redirects,_secret-sources}.nix`
-- `modules/flake/host-registry.nix` (typed `nixos.hosts.<id>` schema + generic materializer) and `modules/flake/deploy.nix` (deploy-rs wiring plus the published `fleet` facts, including each host's `bootstrap` slice)
-- `modules/flake/tailscale.nix` (tailscale aspect service leaf)
-- `modules/notifications/notify.nix` (notify aspect convention contributor: nix-fleet owns the daemon, the CLI, the `unit-notify` handler and the `services.notify.events` registration contract; this file binds the fleet's Telegram/ntfy policy, topics and secret-file conventions)
-- `modules/admin/termix.nix`
-- `modules/hosts/la-admin-1/_admin-runtime.nix` (the `/srv/data` operator ACL and its reconcile unit; the `admin/quantum` service leaf, its host file, and the Quantum SSH registrations were deleted with the workload's retirement, TD-07)
-
-Maintenance requirement: changes to active architecture paths, trust boundaries, or operator/CI commands must update canonical docs in the same change window. For features that distinguish deployed infrastructure from end-to-end validated behavior (e.g. AudioMuse first-run setup, Navidrome plugin configuration, Symfonium validation), docs must clearly separate the deployment-complete state from the E2E-accepted state.
-
-Current operator/validation entrypoints that docs should track when they change:
-
-- `just check`
-- `just tofu-sync`
-- `just tofu-runtime`
-- `tests/check-web-services-policy.sh`
-- `scripts/export-web-services-policy.sh`
-- `scripts/render-opentofu-cloudflare-runtime.sh`
-- `TD-24` (`open`, low) — the capture-ordering seam between backup producers and the capture backend is expressed by name: `modules/database/postgres.nix` orders its pg_dumpall export before capture by defining `systemd.services."restic-backups-${config.services.state-backups.backupName}"`, and producers write into `services.state-backups.stagingRoot` (vaultwarden does the same for its SQLite export). Both are neutral-half consumers gated on `services.state-backups.enable`, and the declaration surface lives in `modules/backups/state-backups/_consumer.nix`, so registration itself no longer depends on the aspect. A second capture backend would need a neutral capture-target contract (units to order before, staging area) instead of the restic job name. Retirement: a second backend, or that contract.
-- `TD-21` (`resolved by modular-postgres-instances`, D-058) — the shared PostgreSQL substrate was a monolith: one consumer-shaped option block per database client (`niks3`/`paperless`/`audiomuse`/`litellm`), so a new consumer meant editing the substrate and a second cluster had no expression at all. It is now a mechanism (`modules/database/postgres.nix`, with the declaration-only contract `modules/database/postgres/_consumer.nix`) rendering from `instances.<name>` plus a consumer registry, with the cluster placed by the aspect published from that same file and consumers registering from their own modules. The retired `litellm` consumer is deleted; niks3 no longer double-declares its database; endpoints resolve per instance through `repo.internal.postgres.<instance>`; and a runbook namespace move (`services.postgres-shared` → `services.postgres`) accompanies it. Refined after review: the credential moved into the registration (`password = { file, key }`), so one file and key are authoritative for both sides; extension packages are contributed in nixpkgs' own shape (`extensions = ps: [ ps.pgvector ]`) and composed by the mechanism, with the SQL in an idempotent `setupSQL`; and AudioMuse's database moved to `home-forge` beside its compute, which removed the last cross-host registration and the hand-synced credential pair along with it (the operator migration path is `docs/runbooks/postgres-consumer-migration.md`). Remaining, recorded rather than hidden: out-of-repository consumers are a future `nix-fleet` registration policy question, and the retired provider-side secret file (`secrets/services/postgres-shared.yaml`) is now read by nothing — deleting it is an operator action.
-- `TD-25` (`open`, low) — per-client identity credential files: one encrypted file currently serves every OAuth2 client of a host (`secrets/hosts/<host>/oidc.yaml`), so relocating a workload means re-encrypting that file and editing two explicit bindings — the client map in `modules/identity/_secret-sources.nix` and the consuming host's `secretFiles.oidc`. The credential belongs to the provider↔client relationship, so a per-client file encrypted to the provider host plus the host running that client would make relocation a single re-encrypt. Operator-owned (secrets and `.sops.yaml` readership are the operator's to decide) and deliberately not coupled to the contract-topology change (`make-oidc-contract-intrinsic`, D-059, which retired the `identity-client` bundle — superseded rather than deprecated, so no compatibility alias exists — and left both credential bindings explicit). Trigger: the next workload move between hosts, or a new client whose secret would widen an existing file's readership.
-- `TD-26` (`resolved`) — consuming the shared nix-fleet aspects: nix-fleet publishes `beszel-agent`, `builder-access`, `nh-gc`, `niks3-cache`, `niks3-publisher`, `notify`, `podman-prune` and `tailscale`; every one is now consumed through convention contributors (`modules/flake/tailscale.nix`, `modules/flake/observability-agent.nix` → `beszel-agent`, `modules/flake/builder-access.nix`, `modules/cache/niks3-cache.nix` → the shared `services.niks3-cache.s3.*` surface, `modules/cache/cache-publisher.nix` → `niks3-publisher`, `modules/notifications/notify.nix` → `notify`) — and the two maintenance capabilities `nh-gc` (fleet-wide, selected in `modules/flake/base.nix`, replacing the local `programs.nh.clean` wiring and its `nh-clean` registration) and `podman-prune`, verified per host on structured observables (option values, `sops.secrets`, systemd unit wiring) with only the intended deltas: the `beszel-agent` namespace rename, the newly bound `services.builder-access.hosts`, upstream's `ControlPath` socket name, `secretFiles.apiToken` replacing `hostSecretFile`, the retired activation-time post-deploy closure push with `pkgs/nix-path-filter`, and upstream's notification redesign (native `OnFailure=`/`OnSuccess=` events replacing `svc-monitor`, `services.notify.events.<unit>` replacing the local `monitor.units` registry, and the local daemon/CLI packages replaced by nix-fleet's).
-- `TD-27` (`open`, low) — extraction candidates for nix-fleet: `modules/flake/networking.nix` is the strongest (it renders native networkd config from typed `fleet.networking` facts and names no host), followed by `modules/flake/base.nix` (boot-loader and `/build` tmpfs facts; needs its `policy/globals.nix` values turned into typed options first), `modules/flake/provenance.nix` (generic `environment.etc."nixos-source"` publication) and `modules/flake/base-host-recovery.nix` (generic reboot/rescue units; its secret and user conventions are homelab-shaped). Retirement: the mechanism lives in nix-fleet and the local file becomes a convention contributor, as with the six shared aspects.
-- `TD-28` (`resolved`) — the internal-contract registry (`modules/contracts/internal.nix`, HIC-4, D-056) was retired in favour of the service policy's private-endpoint projection (D-062). It carried two contracts; PostgreSQL's half became dead when D-058 moved the fleet to per-host clusters and AudioMuse followed its compute, leaving one live endpoint and ~300 lines of reflective machinery (`capabilityPath`, `listen.{path,kind}`, cross-host configuration traversal, a 260-line suite, a flake output). `niks3-write` is now declared once in `policy/web-services.nix` (`tailscale-only`, `declarePublic = false`), reaching consumers as `repo.web.catalog."niks3-write".endpoint` with `publicUrl`/`publicHost = null`; the provider derives its listen address from the same declaration, so port drift is unrepresentable. The generic provider-capability check became a concrete assertion in `tests/check-web-service-catalog.sh`, and `modules/music/music.nix` lost its unreachable remote-PostgreSQL fallback in favour of a named assertion. Recorded rather than hidden: the private entry sits under the edge host's service key (the hosts axis means "ingress host that owns this topology"), and `policy/web-services.nix`'s name undersells its content — both tolerated to avoid churn without semantics (D-062).
-- `TD-29` (`dormant`, low) — two bespoke tailnet fronts predate the provider-rendered mechanism
-  (D-063): `modules/admin/cockpit-tailscale-serve.nix` and the `tailscale-serve-termix` unit inside
-  `modules/admin/termix.nix` each hand-roll `tailscale serve --yes --bg --https=…` with their own
-  teardown and daemon-wait semantics. Both aspects are now unselected — cockpit was deselected with
-  the Authentik cutover and termix with the OIDC client retirement — so the duplication is not live,
-  and converging it buys nothing until a host selects either. Retirement: whichever aspect is selected
-  first declares its route with `exposureMode = "tailscale-serve"` and deletes its local front,
-  verified per host.
-- `TD-30` (`resolved`, D-082) — the build path was deploy-rs plus nixbuild.net. The fleet inventory declared every host's build capacity and the canonical `ci` builder set (nix-fleet, D-066) while CI still remote-built host toplevels against `ssh-ng://eu.nixbuild.net` and the deploy workflows prebuilt profiles the same way. CI now builds the nix-standard `.#checks` target through nix-fleet's reusable `build-push-cache` workflow, with the canonical coordinator key authorized by the `build-account` aspect on all three hosts and publication to the fleet cache; each host's activatable profile is published as `checks.<system>.host-<host>` (with `packages.host-*` mirroring the same derivations unfiltered, which is what `just prebuild-local` resolves) so CI's target and the deploy surface cannot drift; and the deploy path only activates, verifying the exact profile is substitutable before it does. `.github/actions/setup-nixbuild` is deleted, and the `nix flake check --no-build` gate is gone because evaluating the flake realises degoog's unsubstitutable bun2nix import-from-derivation. Host scheduling stays off (`nix.buildMachines` unpopulated, as upstream also leaves it), and `trusted-substituters` keeps nix-fleet's `ssh-ng://eu.nixbuild.net` entry with no local consumer — an upstream leftover rather than local debt. Outstanding evidence, tracked by the change rather than by this entry: the first manual dispatch must show a real uncached build on each architecture followed by signature-checked substitution, since a green workflow alone cannot distinguish "CI built it" from "CI found it cached".
-- `TD-31` (`resolved`) — the interim consumption of nix-fleet's fleet feature is gone twice over: nix-fleet v2 deleted the cross-class realization entirely and publishes facts plus pure projections (`flake.lib.buildProfile`). The contributor imports `flakeModules.fleet`, closes over this evaluation's `config.fleet`, and projects trust for the hosts that offer build capability (D-068); the scaffold ratchet asserts that shape. The feature also contributes `checks.fleet-render` and the CI builder bundles (`packages.ci`, `packages.arm-expensive`) in this repository's evaluation; adopting those bundles as the CI build path is `TD-30`. One upstream leak remains: `packages.fixture` still arrives from nix-fleet's own fixture profile.
+Scratchpad for what is in flight and what to try next. Durable rationale belongs in
+`docs/decisions.md` (D-nnn); completed work belongs in `docs/context-history.md`. An item leaves
+this file when it lands or when a decision replaces it — nothing here is a record.
+
+## In flight
+
+### Deploy the pending generations
+
+The three hosts carry work that is evaluated but not activated. Deploy order is
+`la-admin-1` → `oci-melb-1` → `home-forge`, except that nixbot's cache-trust rule reaches
+`oci-melb-1` and its service reaches `home-forge`, so those two are ordered against each other.
+
+- `oci-melb-1` — the last two activations rolled back. Both causes are fixed in this tree: the
+  `nixbuild` provisioning role was created `NOLOGIN` while peer consumers hold no password, and
+  `podman-inbox-zero` never passed its readiness probe because the standalone server binds the
+  container hostname rather than loopback. `activationTimeout` is now 900s because a switch on
+  this host costs ~200s before the first container starts.
+- `home-forge` — nixbot, plus the activation whose `ExecStartPost` retry budget ran out on a
+  failed unit and forced a rollback.
+- `la-admin-1` — nothing blocks it.
+
+### nixbot acceptance
+
+The service runs; the first real PR build is the acceptance run. What is unproven live, in the
+order it fails cheapest, is in `docs/runbooks/nixbot.md`; the two that matter here are that the
+`checks` attribute builds on both architectures through the fleet's builders, and that a main
+push runs `cache-retain` and moves both rolling pins.
+
+## Open decisions
+
+### Dependency pin posture
+
+Two nixpkgs instances are in play: ours (via nix-fleet) and `authentik-nix`'s own. Making
+`authentik-nix` follow ours was measured and rejected — it invalidates nix-community's cache and
+costs +200 builds on the host that runs Authentik (D-134). The paperless pin is gone and nixbot
+tracks upstream `main` (D-134); `degoog` and `bun2nix` stay release-pinned so Renovate can track
+them and a lockfile change shows up as a failing `check-degoog-bun-deps`.
+
+### Gatus probe paths and the Access service token
+
+Every route still declares `health.path = "/"`, which behind a service token is the application's
+login page: `200` for Grafana and Homepage, `302` for Paperless. Moving each route to an endpoint
+that answers without application authentication, and deciding whether the probe class is the
+public URL or the catalog endpoint, precedes turning on strict service-token authentication —
+otherwise those routes go red for a reason that is not an outage.
+
+### Identity: enforcement beyond the session gate
+
+The login gate withholds a session; a session that predates an address change still passes into
+applications. Closing that needs an application policy (`email_verified_address == email`,
+`policy_engine_mode = "all"`), off for the console clients so a broken mailbox stays repairable.
+Two smaller items stay deferred with their reasons recorded: a courtesy prompt for an
+already-signed-in unverified user (a redirect stage cannot template `next`), and MFA enrolment at
+registration (the stage's `configuration_stages` relation makes the configure path a chooser).
+
+### Perimeter authority
+
+Either Access stays the perimeter and its per-route policies collapse to one coarse rule, or
+route-level authorization moves to the origin and Access keeps only the host gate. Not blocking;
+revisit at the second enrolled person or the first route that genuinely diverges.
+
+### SparkyFitness
+
+The backend runs from a fork pin because upstream strips the issuer's trailing slash and no
+Authentik issuer matches — upstream tracks it as
+[#2772](https://github.com/CodeWithCJ/SparkyFitness/issues/2772); revert when a release carries the
+fix. Separately, its nginx rate-limits by client IP and every request arrives from the proxy:
+decide whether to set a real-IP header together with the trusted-hop count once acceptance shows
+the limit firing on ordinary traffic.
+
+## Bounded follow-ups
+
+`TD-` identifiers are the ones still live; resolved entries were dropped from this file once their
+decision landed.
+
+- `TD-09` — Cockpit resolves its identity from the `"cockpit-admin"` route key, which no longer
+  exists; re-enabling it means re-declaring the route rather than relying on the override.
+- `TD-10` — monitoring residuals: `ExecStopPost` labelling success after a failure, shallow
+  self-monitoring hardening, and the real-service predicate excluding arbitrary units.
+- `TD-11` — `tests/check-identity-contract-directionality.sh` is still one file serving several
+  contracts; split it with shared fixtures rather than growing it.
+- `TD-17` — the support quartet (`provenance`, `oci-images`, `fleet-packages`, `web-policy`) stays
+  in `modules/flake/`; move it only on real ownership pressure.
+- `TD-24` — the capture-ordering seam is expressed by restic's unit name; a second capture backend
+  would need a neutral capture-target contract.
+- `TD-25` — one encrypted `oidc.yaml` per host serves every client of that host, so moving a
+  workload re-encrypts and re-binds; per-client files would make relocation one re-encrypt.
+  Operator-owned, trigger is the next workload move.
+- `TD-27` — nix-fleet extraction candidates, strongest first: `networking.nix`, then `base.nix`
+  (after its policy values become typed options), `provenance.nix`, `base-host-recovery.nix`.
+- `TD-29` — Cockpit and Termix each hand-roll a `tailscale serve` front; both aspects are
+  unselected, so converge whichever is selected first.
+- Windows VM lifecycle: an idle reaper plus socket-activated RDP, gated on proving a graceful
+  `windows-vm-stop` first.
+- The blueprint gate calls `Importer.validate()` and then polls the applied hash; collapsing them
+  needs an experiment on the VM harness, because the gate must still tell a rejected blueprint
+  from a stale one.
+- `AGENTS.md` and the jj skill should each state the commit rhythm once — a fix to written lines
+  goes back through `absorb`, a new concern through `split` — without restating the mechanics.
+
+## Known ceilings
+
+- `authentik-nix` tracks upstream `main` with no `follows` and no Renovate manager, so a
+  `nix flake update` can move it and upstream may reshape blueprint fields that only fail at
+  apply time. Accepted; following our nixpkgs is measurably worse (D-134).
+- Senders share one domain and one relay, so a blocklist or reputation hit reaches all of them.
+  Revisit if one service's volume starts affecting the others (`docs/mail.md`).

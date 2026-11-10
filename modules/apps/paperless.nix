@@ -1,5 +1,4 @@
-{ inputs, ... }:
-{
+_: {
   flake.modules.nixos.paperless =
     {
       lib,
@@ -117,15 +116,6 @@
       };
 
       config = lib.mkMerge [
-        # The nixpkgs module applies its own override on top of this one.
-        {
-          nixpkgs.overlays = [
-            (_final: prev: {
-              paperless-ngx =
-                inputs.nixpkgs-paperless.legacyPackages.${prev.stdenv.hostPlatform.system}.paperless-ngx;
-            })
-          ];
-        }
         { services.paperless.enable = true; }
 
         {

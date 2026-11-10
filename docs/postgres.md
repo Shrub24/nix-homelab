@@ -38,7 +38,7 @@ services.postgres.consumers.example = {
 };
 ```
 
-An additional login gets `LOGIN`, its declared password, and HBA rows for `database` only, followed by its own catch-all `reject`. It never owns the database, is never a member of the owning role, and is never granted `CREATEROLE` or superuser. Every role and credential of a consumer exists before its `setupSQL` runs, so setup SQL may grant to the additional login.
+An additional login gets `LOGIN`, its declared password, and HBA rows for `database` only, followed by its own catch-all `reject`. It never owns the database, is never a member of the owning role, and is never granted `CREATEROLE` or superuser. Every role and credential of a consumer exists before its `setupSQL` runs, so setup SQL may grant to the additional login. The owning role is always a login as well: a role without `LOGIN` refuses peer authentication.
 
 Rotating a password means editing the secret and redeploying: the substrate's `sops.secrets` entries name `postgresql-provision.service` in `restartUnits`, and that unit re-applies the passwords it owns.
 

@@ -48,8 +48,9 @@ _: {
       provisionEtcName = "postgres/provision.sh";
       provisionScriptPath = "/etc/${provisionEtcName}";
 
+      # A peer consumer owns its role without a credential, and still needs it created and usable.
       provisionable = lib.filter (
-        c: c.setupSQL != "" || hasCredential c || c.additionalRoles != { }
+        c: c.setupSQL != "" || hasCredential c || c.additionalRoles != { } || c.auth == "peer"
       ) consumers;
 
       # The trampoline reads its script from /etc, so a stale definition still runs the current consumer set.
@@ -105,17 +106,14 @@ _: {
       psql = "${config.services.postgresql.finalPackage}/bin/psql";
 
       # Converged here, not via ensureDatabases: a start from a stale definition would skip a new consumer.
-      # Any role other than the consumer's owner is a login; the owner is one only when the consumer
-      # authenticates with a password.
+      # A role without LOGIN cannot connect by any method, peer included.
       ensureRole = c: role: ''
         if [ "$(${psql} -tAc ${lib.escapeShellArg "SELECT 1 FROM pg_roles WHERE rolname = '${role}'"})" != "1" ]; then
           ${psql} -tAc ${lib.escapeShellArg "CREATE ROLE \"${role}\""} ||
             { echo "services.postgres.consumers.${c.name}: failed to create role '${role}'" >&2; exit 1; }
         fi
-        ${lib.optionalString (role != c.role || c.auth == "scram") ''
-          ${psql} -tAc ${lib.escapeShellArg "ALTER ROLE \"${role}\" LOGIN"} ||
-            { echo "services.postgres.consumers.${c.name}: failed to enable login for role '${role}'" >&2; exit 1; }
-        ''}
+        ${psql} -tAc ${lib.escapeShellArg "ALTER ROLE \"${role}\" LOGIN"} ||
+          { echo "services.postgres.consumers.${c.name}: failed to enable login for role '${role}'" >&2; exit 1; }
       '';
 
       ensureDatabase = c: ''

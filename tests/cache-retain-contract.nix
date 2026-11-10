@@ -48,6 +48,8 @@ assert lib.assertMsg (
   && builtins.elem (toString arm) dependencyPaths
   && builtins.elem (toString (lib.getDev config.flake.nixosConfigurations.home-forge.config.nix.package)) dependencyPaths
 ) "cache-retain must depend on both roots and the Nix CLI used by niks3";
+assert lib.assertMsg (provider.jwksUrl == "${mintedIssuer}/.well-known/jwks.json")
+  "the cache must fetch nixbot's keys without discovery, so a coordinator outage cannot stop it starting";
 assert lib.assertMsg (
   provider.issuer == mintedIssuer
   && provider.audience == cache.cacheUrl

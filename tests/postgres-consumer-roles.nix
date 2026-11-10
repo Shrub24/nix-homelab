@@ -51,6 +51,18 @@ pkgs.testers.runNixOSTest {
         allowedCIDRs = [ "127.0.0.1/32" ];
       };
 
+      users.groups.peerapp = { };
+      users.users.peerapp = {
+        isSystemUser = true;
+        group = "peerapp";
+      };
+
+      services.postgres.consumers.peer = {
+        database = "peerdb";
+        role = "peerapp";
+        auth = "peer";
+      };
+
       sops.secrets = lib.mkForce { };
 
       system.activationScripts.postgresRolePasswords.text = ''
@@ -81,6 +93,13 @@ pkgs.testers.runNixOSTest {
 
     assert psql("app_owner", "owner-initial", "appdb", "SELECT current_user") == "app_owner"
     assert psql("app_login", "login-initial", "appdb", "SELECT current_user") == "app_login"
+    # A role without LOGIN refuses every auth method, peer included.
+    assert (
+        machine.succeed(
+            "sudo -u peerapp ${pkgs.postgresql_17}/bin/psql -d peerdb -tAc 'SELECT current_user'"
+        ).strip()
+        == "peerapp"
+    )
     machine.succeed("systemctl restart postgresql-provision.service")
     machine.wait_for_unit("postgresql-provision.service")
     assert (

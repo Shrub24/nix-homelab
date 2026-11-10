@@ -9,12 +9,6 @@ let
   builders = profile.resolveBuildProfile config.fleet "ci";
 in
 {
-  flake-file.inputs.nixbot = {
-    url = "github:Mic92/nixbot";
-    inputs.nixpkgs.follows = "nixpkgs";
-    inputs.treefmt-nix.follows = "treefmt-nix";
-  };
-
   flake.modules.nixos.nixbot =
     {
       config,
@@ -92,7 +86,7 @@ in
             appSecretKeyFile = runtimePath "github_app_key";
             webhookSecretFile = runtimePath "webhook_secret";
             oauthSecretFile = runtimePath "oauth_secret";
-            repoAllowlist = [ "Shrub24/nix-homelab" ];
+            repoAllowlist = builtins.attrNames (import ../../policy/ci-repositories.nix);
           };
           oidc.enable = false;
           proxyAuthHeader = null;

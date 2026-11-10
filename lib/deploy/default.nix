@@ -22,6 +22,8 @@ let
       profiles.system = {
         user = "root";
         remoteBuild = host.remoteBuild or false;
+        # The 240s default is shorter than a switch on these hosts on its own.
+        activationTimeout = 900;
         path = deploy-rs.lib.${host.system}.activate.nixos nixosConfigurations.${name};
       };
     };

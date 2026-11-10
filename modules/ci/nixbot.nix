@@ -10,7 +10,7 @@ let
 in
 {
   flake-file.inputs.nixbot = {
-    url = "github:Mic92/nixbot/88246b4cfa43c4fb1c9cf6f78b875b3a312d31e7";
+    url = "github:Mic92/nixbot";
     inputs.nixpkgs.follows = "nixpkgs";
     inputs.treefmt-nix.follows = "treefmt-nix";
   };
@@ -143,8 +143,6 @@ in
         services.postgres.consumers.nixbot = {
           database = "nixbot";
           auth = "peer";
-          # Peer-only consumers otherwise render no provisioning unit for our startup dependency.
-          setupSQL = "SELECT 1;";
         };
         services.state-backups.services.nixbot = {
           mode = "live";

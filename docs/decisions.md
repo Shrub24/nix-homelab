@@ -3626,3 +3626,63 @@ nothing. The updater's publish call needs the forge, so it is exercised live rat
 the decision path (aborted publishes nothing, an unchanged tree touches nothing, the batch runs
 without the token) is checked. The flake now publishes `herculesCI`: it was absent from the
 default-deny surface, so nixbot would have seen no effects at all.
+
+## D-133: The test suite asserts behaviour the fleet owns
+
+**Decision:** a test may assert a coupling or a fail-closed behaviour this repository owns. It may
+not restate configuration, repeat a check Nix already fails on verbosely, or assert that a
+superseded state is gone. Guards are proven non-vacuous against a hostile fixture.
+
+**Reason:** the suite had grown into migration archaeology. `check-dendritic-scaffold-contract.sh`
+was 1,698 lines, most of it asserting that evacuated roots stayed evacuated and replaying Stage
+5/6/7 mutations, plus per-host facts (`bootLoader`, `tsMtu`) that belong to the host record and
+registry-key assertions that made adding a host a test edit. Its negative mutations for unknown
+deploy references re-implemented `modules/flake/deploy.nix`'s own `throwIf`. A test that fails when
+a correct change lands is worse than no test, because the repair is to weaken it.
+
+The one invariant Nix cannot see — `pg_hba` format and ordering, which takes the cluster down
+rather than degrading it — moved to `check-postgres-hba-safety.sh`, which proves each case against
+a hostile fixture: a maskless address, an allow row after a role's catch-all `reject`, and a
+registered consumer with no granted row.
+
+**Rejected:** keeping the archaeology behind a flag (it still has to be maintained); deriving the
+assertions from the same expressions they check (a tautology that cannot fail).
+
+**Consequences:** `check-web-service-catalog.sh` asserts shape invariants (no catalog entry carries
+the edge's own routing fields, every entry carries a dialable endpoint, both a published and a
+withheld entry exist) instead of literal URLs, so a policy edit no longer edits the test.
+`check-shell-account-contract.sh` asserts the relationship (root and rescue must not resolve to the
+operator shell) rather than three literal shell names. Tests that still execute real code against
+hostile arguments — the backup surface, the two helper scripts, the build-account trust boundary,
+the telemetry view guard, the source-tracking guard — stay as they are. The resolved `TD-` entries
+left `docs/plan.md`, which is now open intent only; each one's rationale lives in the decision that
+resolved it, so a `TD-` id quoted from an older decision body refers to this record rather than to
+a live plan item.
+
+## D-134: Paperless follows the fleet's nixpkgs, and nixbot tracks upstream main
+
+**Decision:** the `nixpkgs-paperless` input and its overlay are removed, so `paperless-ngx` comes
+from the fleet's nixpkgs. nixbot's input is declared as `github:Mic92/nixbot` rather than pinned to
+a commit. `authentik-nix` keeps its own nixpkgs and stays unfollowed. `degoog` and `bun2nix` stay
+release-pinned, where Renovate's custom regular expressions track the tag.
+
+**Reason:** D-117 pinned paperless because 3.3.3 had no aarch64 build anywhere. paperless-ngx
+3.3.4 at the fleet's current revision is on `cache.nixos.org` for both `x86_64-linux` and
+`aarch64-linux`, so the pin's premise is gone. Removing it also removes a second nixpkgs instance:
+measured against the public caches only, `oci-melb-1` drops from 370 built / 2551 fetched to
+351 built / 1789 fetched, because the duplicate Python and Django closure disappears.
+
+`authentik-nix` is the opposite case and was measured rather than assumed. Making it follow our
+nixpkgs triples the cost on the host that runs Authentik — 351 built / 1742 fetched becomes
+551 built / 2139 fetched — because nix-community's cache holds it built against its own pin.
+
+**Rejected:** keeping the paperless pin until the fleet cache holds the newer package (the fleet
+cache is not a substitute for a public one, and the pin costs a whole nixpkgs instance on the host
+that has to download the most); making `authentik-nix` follow for consistency (consistency with
+nothing — it is a different pin by design, and the measurement says so).
+
+**Consequences:** a paperless bump now arrives with the fleet's nixpkgs rather than with an
+explicit pin. A nixbot bump arrives with `nix flake update` and Renovate, so upstream changes reach
+us without a repo edit — the `prApproval` options this repository configures are the ones upstream
+carries, and a new upstream option or a renamed one fails evaluation rather than silently
+defaulting.

@@ -12,11 +12,14 @@ _: {
       cfg = config.services.inbox-zero;
       globals = import ../../policy/globals.nix;
       secretHelpers = import ../../lib/secrets.nix { inherit lib; };
+      readiness = import ../containers/_readiness.nix { inherit lib; };
       route = config.repo.web.catalog.inbox-zero or null;
 
       # Upstream's start script listens on 3000 inside the container. The host
       # side is the route's loopback port, so the edge reaches it as `direct`.
       containerPort = 3000;
+      # Podman also publishes the container name as an /etc/hosts alias.
+      containerName = "inbox-zero";
       serviceHost = globals.serviceNetwork.hostName;
       serviceAddress = globals.serviceNetwork.address;
       networkName = "inbox-zero-net";
@@ -201,35 +204,42 @@ _: {
           virtualisation = {
             podman.enable = true;
 
-            oci-containers.containers.inbox-zero = {
-              autoStart = true;
-              image = config.repo.ociImages.inboxZero;
-              extraOptions = [
-                "--network=${networkName}"
-                # The database is the fleet's service address; a bridged container
-                # cannot dial the host's loopback.
-                "--add-host=${serviceHost}:${serviceAddress}"
-              ];
-              # Loopback publish: the socket stays edge-local, so the route is `direct`.
-              ports = [ "127.0.0.1:${toString route.upstreamPort}:${toString containerPort}" ];
-              environment = {
-                NODE_ENV = "production";
-                NEXT_PUBLIC_BASE_URL = route.publicUrl;
-                # Upstream recommends this for personal self-hosting.
-                NEXT_PUBLIC_BYPASS_PREMIUM_CHECKS = "true";
-                QUEUE_BACKEND = "internal";
-                # The web process calls its own internal handlers inside its namespace.
-                INTERNAL_API_URL = "http://127.0.0.1:${toString containerPort}";
-                DEFAULT_LLMS = "openai-compatible:${model}";
-                DEFAULT_DECISION_MODEL = "systemone-compatible:${decisionModel}";
-                SYSTEMONE_COMPATIBLE_URL = systemOneUrl;
-                DEFAULT_DECISION_MODEL_ENABLED = "true";
-                DECISION_MODEL_COLD_EMAIL_ENABLED = "true";
-                OPENAI_COMPATIBLE_MODEL = model;
-                OPENAI_COMPATIBLE_BASE_URL = bifrost;
-              };
-              environmentFiles = [ environmentFile ];
-            };
+            oci-containers.containers.inbox-zero = lib.mkMerge [
+              # The image ships no curl; /api/health answers without the deep-check key.
+              (readiness.mkReadyProbe {
+                cmd = "wget -q -O /dev/null http://${containerName}:${toString containerPort}/api/health";
+                startPeriod = "60s";
+              })
+              {
+                autoStart = true;
+                image = config.repo.ociImages.inboxZero;
+                extraOptions = [
+                  "--network=${networkName}"
+                  # The database is the fleet's service address; a bridged container
+                  # cannot dial the host's loopback.
+                  "--add-host=${serviceHost}:${serviceAddress}"
+                ];
+                # Loopback publish: the socket stays edge-local, so the route is `direct`.
+                ports = [ "127.0.0.1:${toString route.upstreamPort}:${toString containerPort}" ];
+                environment = {
+                  NODE_ENV = "production";
+                  NEXT_PUBLIC_BASE_URL = route.publicUrl;
+                  # Upstream recommends this for personal self-hosting.
+                  NEXT_PUBLIC_BYPASS_PREMIUM_CHECKS = "true";
+                  QUEUE_BACKEND = "internal";
+                  # Unset, upstream falls back to NEXT_PUBLIC_BASE_URL and self-calls take the edge.
+                  INTERNAL_API_URL = "http://${containerName}:${toString containerPort}";
+                  DEFAULT_LLMS = "openai-compatible:${model}";
+                  DEFAULT_DECISION_MODEL = "systemone-compatible:${decisionModel}";
+                  SYSTEMONE_COMPATIBLE_URL = systemOneUrl;
+                  DEFAULT_DECISION_MODEL_ENABLED = "true";
+                  DECISION_MODEL_COLD_EMAIL_ENABLED = "true";
+                  OPENAI_COMPATIBLE_MODEL = model;
+                  OPENAI_COMPATIBLE_BASE_URL = bifrost;
+                };
+                environmentFiles = [ environmentFile ];
+              }
+            ];
           };
 
           systemd = {
@@ -268,13 +278,19 @@ _: {
                   "postgresql-provision.service"
                   "podman-network-${networkName}.service"
                 ];
-                serviceConfig.RestartSec = "15s";
+                serviceConfig = {
+                  RestartSec = "15s";
+                  # podman sets it to 0, so an unpassed probe would hold the activation open.
+                  TimeoutStartSec = lib.mkForce 180;
+                };
               };
 
               inbox-zero-watch-renewal = {
                 description = "Renew Inbox Zero Gmail watches";
                 wants = [ "podman-inbox-zero.service" ];
                 after = [ "podman-inbox-zero.service" ];
+                # A switch-time start would race the restarting container; the timer picks it up.
+                restartIfChanged = false;
                 serviceConfig = {
                   Type = "oneshot";
                   EnvironmentFile = environmentFile;
@@ -286,6 +302,7 @@ _: {
                 description = "Run Inbox Zero scheduled actions";
                 wants = [ "podman-inbox-zero.service" ];
                 after = [ "podman-inbox-zero.service" ];
+                restartIfChanged = false;
                 serviceConfig = {
                   Type = "oneshot";
                   EnvironmentFile = environmentFile;

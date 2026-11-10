@@ -1,31 +1,35 @@
-# The repository's nixbot effects in one output: main-push retention and the
-# scheduled update transaction. The bodies live beside this file, because
-# flake-parts cannot merge two functions into one output.
-{
-  config,
-  inputs,
-  lib,
-  ...
-}:
+# The repository's nixbot effects, from nix-fleet's shared module: main-push
+# retention and the scheduled update transaction.
+{ config, inputs, ... }:
 let
-  pkgs = inputs.nixpkgs.legacyPackages.${config.nixos.hosts.home-forge.system};
-  effects = inputs.nixbot.lib.effects { inherit pkgs; };
-  args = {
-    inherit
-      config
-      lib
-      pkgs
-      effects
-      ;
-  };
-  cacheRetain = import ./_cache-retain.nix args;
-  packageUpdates = import ./_package-updates.nix args;
+  home-forge = config.flake.nixosConfigurations.home-forge.config;
+  system = config.nixos.hosts.home-forge.system;
+  policy = import ../../policy/nixbot.nix;
 in
 {
-  flake.herculesCI =
-    { primaryRepo, ... }:
-    {
-      onPush.default.outputs.effects = cacheRetain primaryRepo;
-      onSchedule.package-updates = packageUpdates primaryRepo;
+  imports = [ inputs.nix-fleet.flakeModules.nixbotEffects ];
+
+  nixbotEffects = {
+    inherit system;
+    nixPackage = home-forge.nix.package;
+    cacheRetain = {
+      enable = true;
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+      cacheUrl = config.flake.nixosConfigurations.oci-melb-1.config.services.niks3-cache.cacheUrl;
+      writeEndpoint = home-forge.repo.web.catalog."niks3-write".endpoint.url;
+      niks3Package = config.flake.packages.${system}.niks3;
     };
+    packageUpdates = {
+      enable = true;
+      when = {
+        minute = 43;
+        hour = [ 4 ];
+        dayOfWeek = [ "Mon" ];
+      };
+      autoMerge = policy.updateAutoMerge;
+    };
+  };
 }

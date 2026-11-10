@@ -79,23 +79,9 @@
             ]
           ) ciRepositories;
         };
-        oidc.providers.nixbot = {
+        nixbot = {
           issuer = route.publicUrl;
-          audience = config.services.niks3-cache.cacheUrl;
-          # Discovery at startup would tie this cache's boot to nixbot being up.
-          jwksUrl = "${route.publicUrl}/.well-known/jwks.json";
-          rules = [
-            {
-              boundClaims = {
-                repository = [ "Shrub24/nix-homelab" ];
-                ref = [ "refs/heads/main" ];
-                event = [ "push" ];
-                effect = [ "default.cache-retain" ];
-              };
-              scopes = [ "write" ];
-              pins = [ "nix-homelab-main-*" ];
-            }
-          ];
+          repositories = import ../../policy/ci-repositories.nix;
         };
         # Listen port comes from the private service policy, shared with every publisher.
         httpAddr = lib.mkDefault "0.0.0.0:${toString niks3WritePort}";

@@ -22,6 +22,7 @@
     };
     sops-nix.follows = "nix-fleet/sops-nix";
     niks3.follows = "nix-fleet/niks3";
+    nixbot.follows = "nix-fleet/nixbot";
     # Formatting: the mode emits the `checks.<system>.treefmt` gate the fleet's
     # validator builds, from the settings declared in `modules/flake/treefmt.nix`.
     treefmt-nix.follows = "nix-fleet/treefmt-nix";

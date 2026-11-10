@@ -416,16 +416,17 @@
         "flake-parts": "flake-parts_3",
         "import-tree": "import-tree",
         "niks3": "niks3",
+        "nixbot": "nixbot",
         "nixpkgs": "nixpkgs_2",
         "sops-nix": "sops-nix",
         "treefmt-nix": "treefmt-nix_3"
       },
       "locked": {
-        "lastModified": 1794207319,
-        "narHash": "sha256-HFh4n2Ixw10JNm2NUy4t6EF9p+zuzN7xsjPav3kXVOQ=",
+        "lastModified": 1794556097,
+        "narHash": "sha256-Y95ojFlI/HAz8tiETz26JprlesZLvpiXnll8icQMIbw=",
         "owner": "Shrub24",
         "repo": "nix-fleet",
-        "rev": "4c431da5ac48ba3514c56830872f81a35c959c0b",
+        "rev": "a02b1c18c66138ee9104cd7e00a4bc1c5f01ff45",
         "type": "github"
       },
       "original": {
@@ -457,9 +458,11 @@
     "nixbot": {
       "inputs": {
         "nixpkgs": [
+          "nix-fleet",
           "nixpkgs"
         ],
         "treefmt-nix": [
+          "nix-fleet",
           "treefmt-nix"
         ]
       },
@@ -596,7 +599,10 @@
         ],
         "nix-fleet": "nix-fleet",
         "nix-index-database": "nix-index-database",
-        "nixbot": "nixbot",
+        "nixbot": [
+          "nix-fleet",
+          "nixbot"
+        ],
         "nixpkgs": [
           "nix-fleet",
           "nixpkgs"

@@ -42,13 +42,7 @@
       url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nixbot = {
-      url = "github:Mic92/nixbot";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        treefmt-nix.follows = "treefmt-nix";
-      };
-    };
+    nixbot.follows = "nix-fleet/nixbot";
     nixpkgs.follows = "nix-fleet/nixpkgs";
     sops-nix.follows = "nix-fleet/sops-nix";
     traktor-m3u-sync = {

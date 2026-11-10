@@ -124,7 +124,6 @@ in
             GEMINI_API_KEY=${config.sops.placeholder.bifrost_gemini_api_key}
             DEEPSEEK_API_KEY=${config.sops.placeholder.bifrost_deepseek_api_key}
             OPENCODE_API_KEY=${config.sops.placeholder.bifrost_opencode_api_key}
-            OPENCODE_API_KEY_2=${config.sops.placeholder.bifrost_opencode_api_key_2}
             OPENROUTER_API_KEY=${config.sops.placeholder.bifrost_openrouter_api_key}
             VOYAGE_API_KEY=${config.sops.placeholder.bifrost_voyage_api_key}
             MERGE_GATEWAY_API_KEY=${config.sops.placeholder.bifrost_merge_gateway_api_key}
@@ -157,10 +156,6 @@ in
           bifrost_opencode_api_key = {
             key = "bifrost/opencode_api_key";
             path = "/run/secrets/bifrost.opencode_api_key";
-          };
-          bifrost_opencode_api_key_2 = {
-            key = "bifrost/opencode_api_key_2";
-            path = "/run/secrets/bifrost.opencode_api_key_2";
           };
           bifrost_openrouter_api_key = {
             key = "bifrost/openrouter_api_key";

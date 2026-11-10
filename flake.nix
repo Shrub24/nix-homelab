@@ -16,7 +16,7 @@
       };
     };
     degoog = {
-      url = "github:degoog-org/degoog/1.1.0";
+      url = "github:degoog-org/degoog/1.1.1";
       inputs = {
         flake-parts.follows = "flake-parts";
         nixpkgs.follows = "nixpkgs";

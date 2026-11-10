@@ -107,11 +107,10 @@ Before maintenance, pause/disable the project. Until retirement, keep the curren
 ```sh
 nix build --no-link .#checks.x86_64-linux.nixbot-contract .#checks.x86_64-linux.cache-retain
 nix build --no-link .#checks.x86_64-linux.nixbot-package
-nix build --no-link .#checks.x86_64-linux.repository-contracts
 nix flake check --no-build --all-systems --option allow-import-from-derivation false
 just checks all
 nix build --no-link .#checks.x86_64-linux.treefmt
 openspec validate deploy-nixbot --strict
 ```
 
-The selected-module fixture uses synthetic credentials to validate real configuration and named failures, not to authenticate. The cache-effect check runs the real script with a stubbed external client to verify failure propagation, order and unchanged restart, plus evaluated trust constraints. The isolated suite preserves the existing mutation-heavy shell contracts in its own writable Nix store. None establishes live login, signed-token acceptance, remote nixbot execution, production publication or cutover.
+The selected-module fixture uses synthetic credentials to validate real configuration and named failures, not to authenticate. The cache-effect check runs the real script with a stubbed external client to verify failure propagation, order and unchanged restart, plus evaluated trust constraints. The mutation-heavy shell contracts are not a `checks` member; `just checks all` and the `repo` job run them through `scripts/run-repository-contracts.sh`. None establishes live login, signed-token acceptance, remote nixbot execution, production publication or cutover.

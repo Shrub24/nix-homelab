@@ -24,10 +24,12 @@
       # repository with no effects at all.
       herculesCI.enable = true;
 
-      # nix-fleet's test fixture is upstream's surface, not this repository's:
-      # nothing here, and none of its reusable workflows, reads it through this
-      # flake. Restoring it is this one line.
+      # nix-fleet's test fixtures are upstream's surface, not this repository's:
+      # nothing here, and none of its reusable workflows, reads them through this
+      # flake. Restoring one is that one line.
       packages.any.attr.fixture.enable = false;
+      checks.any.attr.fleet-render.enable = false;
+      checks.any.attr.ci-tailscale.enable = false;
     };
   };
 }

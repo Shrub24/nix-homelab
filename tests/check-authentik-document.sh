@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Behavioural checks for the directional identity contracts: the OIDC client
-# contract is intrinsic and provider-neutral, the provider reads policy rather
-# than consumer configuration, and host authentication resolves independently
-# of the active application provider. Targeted evaluations only: never reads or
-# decrypts secret ciphertext, never touches .sops.yaml, never builds.
+# The document Authentik applies, rendered from policy: the seeded roster, the
+# invitation-gated enrollment flow, group and role semantics, and the brand. The
+# invariants here are the ones no evaluation fails on — a role bound to a group
+# its application does not admit, a superuser flag on an ancestor group, an
+# enrollment flow that admits a stranger.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 fail() {
-  echo "check-identity-contract-directionality: $*" >&2
+  echo "check-authentik-document: $*" >&2
   exit 1
 }
 
@@ -26,62 +26,10 @@ make_copy() {
     -cf - . | tar -C "$dest" -xf -
 }
 
-report() { # $1 flake ref, $2 apply expression
-  nix eval --no-write-lock-file --raw --apply "$2" "$1"
-}
-
-WORK="$(mktemp -d /tmp/identity-contract.XXXXXX)"
+WORK="$(mktemp -d /tmp/authentik-document.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
 # 1. The client contract alone resolves endpoints and starts nothing. Explicit
-# override of the provider URL keeps this probe independent of policy.
-probe_dir="$WORK/fragment"
-mkdir -p "$probe_dir"
-cat >"$probe_dir/flake.nix" <<EOF2
-{
-  inputs.repo.url = "path:$ROOT";
-  outputs = { self, repo }: {
-    report = let
-      sys = repo.inputs.nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        modules = [
-          (import "$ROOT/modules/identity/_oidc.nix")
-          {
-            services.identity.oidc.providerUrl = "https://probe-id.example";
-            networking.hostName = "probe-host";
-            system.stateVersion = "25.11";
-          }
-        ];
-      };
-      c = sys.config;
-    in {
-      clients = c.services.identity.oidc.clients;
-    };
-  };
-}
-EOF2
-fragment="$(nix eval --raw --impure --no-write-lock-file --expr \
-  "builtins.toJSON ((builtins.getFlake (toString $probe_dir)).report)")" ||
-  fail "the intrinsic client contract alone does not evaluate"
-
-python3 - "$fragment" <<'PYEOF' || fail "intrinsic client contract observables violated"
-import json, sys
-
-got = json.loads(sys.argv[1])
-errors = []
-if not got.get("clients"):
-    errors.append("no clients resolved from policy")
-if errors:
-    print("; ".join(errors), file=sys.stderr)
-    sys.exit(1)
-PYEOF
-
-# 2. A remote client host resolves the same contract with no provider selected:
-# the contract is intrinsic, not a side effect of the provider's aspect.
-report ".#nixosConfigurations.oci-melb-1.config" \
-  'c: c.services.identity.oidc.clients.paperless.issuerUrl' > /dev/null ||
-  fail "a remote client host resolves no client contract"
-
 # 3. Fixture: Authentik with its runtime credentials supplied and a controlled roster.
 authentik="$WORK/authentik"
 mkdir -p "$authentik"
@@ -449,40 +397,5 @@ case "$undeclared_out" in
 *) fail "expected the named undeclared-group error, got: $(printf '%s' "$undeclared_out" | tail -3)" ;;
 esac
 
-# 4. Cloudflare Access federates with the same client contract. A cutover that moved the
-# provider without moving the Access IdP would leave every Access-gated route unreachable,
-# so the infrastructure input is checked against the contract rather than trusted.
-# Read from a host that composes the contract: the provider host runs no OIDC client of
-# its own, so the namespace is absent there by design.
-idp_json="$(report ".#nixosConfigurations.oci-melb-1.config" 'c: let k = c.services.identity.oidc.clients."cloudflare-access"; in builtins.toJSON {
-  name = k.providerName;
-  authUrl = k.authorizationUrl;
-  tokenUrl = k.tokenUrl;
-  certsUrl = k.jwksUrl;
-}')" || fail "the Cloudflare Access client does not resolve"
-python3 - "$idp_json" "$ROOT/opentofu/cloudflare/foundation/config.auto.tfvars" <<'PYEOF' || fail "Cloudflare Access must federate with the client contract"
-import json, re, sys
 
-contract = json.loads(sys.argv[1])
-tfvars = open(sys.argv[2]).read()
-
-def value(key):
-    match = re.search(rf'^{key}\s*=\s*"([^"]*)"', tfvars, re.MULTILINE)
-    return match.group(1) if match else None
-
-errors = []
-for key, want in (
-    ("idp_name", contract["name"]),
-    ("idp_auth_url", contract["authUrl"]),
-    ("idp_token_url", contract["tokenUrl"]),
-    ("idp_certs_url", contract["certsUrl"]),
-):
-    got = value(key)
-    if got != want:
-        errors.append(f"{key}: opentofu declares {got!r}, the client contract resolves {want!r}")
-if errors:
-    print("; ".join(errors), file=sys.stderr)
-    sys.exit(1)
-PYEOF
-
-echo "check-identity-contract-directionality: PASS"
+echo "check-authentik-document: PASS"

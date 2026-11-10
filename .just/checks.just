@@ -1,7 +1,6 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
 set no-cd
 
-# The same shell contracts run locally and inside checks.repository-contracts.
 all:
   @nix build --no-link ".#checks.$(nix eval --raw --impure --expr builtins.currentSystem).check-flake-file"
   @./tests/check-ssh-host-fingerprint.sh
@@ -15,7 +14,8 @@ all:
   @python3 tests/check-ingress-public-pages.py
   @./tests/check-web-service-catalog.sh
   @./tests/phase-la-admin-contract.sh
-  @./tests/check-identity-contract-directionality.sh
+  @./tests/check-identity-client-contract.sh
+  @./tests/check-authentik-document.sh
   @./tests/check-shell-account-contract.sh
   @./tests/check-backup-surface-contract.sh
   @./tests/check-container-service-address.sh

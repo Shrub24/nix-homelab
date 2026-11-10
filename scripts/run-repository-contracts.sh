@@ -9,7 +9,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ./tests/check-web-services-policy.sh
 ./tests/check-web-service-catalog.sh
 ./tests/phase-la-admin-contract.sh
-./tests/check-identity-contract-directionality.sh
+./tests/check-identity-client-contract.sh
+./tests/check-authentik-document.sh
 ./tests/check-postgres-hba-safety.sh
 ./tests/check-container-service-address.sh
 ./tests/check-shell-account-contract.sh

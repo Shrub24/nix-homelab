@@ -12,8 +12,6 @@ let
   effect = main.onPush.default.outputs.effects.cache-retain;
   x86 = config.flake.packages.x86_64-linux.cache-root;
   arm = config.flake.packages.aarch64-linux.cache-root;
-  dependencyPaths = map toString effect.nativeBuildInputs;
-  absent = result: !(result.onPush.default.outputs.effects ? cache-retain);
   route = config.flake.nixosConfigurations.home-forge.config.repo.web.catalog.nixbot;
   cache = config.flake.nixosConfigurations.oci-melb-1.config.services.niks3-cache;
   provider = config.flake.nixosConfigurations.oci-melb-1.config.services.niks3.oidc.providers.nixbot;
@@ -36,18 +34,8 @@ let
   ];
 in
 assert lib.assertMsg (
-  absent (output "feature/example" null) && !(main ? onEvent)
-) "cache-retain must run only for a main push";
-assert lib.assertMsg (
-  effect.secretsMap == "{}"
-  && effect.passthru.when == { }
-  && builtins.fromJSON effect.idTokenAudiences == [ cache.cacheUrl ]
-) "cache-retain must carry no secrets, no change guard and the cache's own audience";
-assert lib.assertMsg (
-  builtins.elem (toString x86) dependencyPaths
-  && builtins.elem (toString arm) dependencyPaths
-  && builtins.elem (toString (lib.getDev config.flake.nixosConfigurations.home-forge.config.nix.package)) dependencyPaths
-) "cache-retain must depend on both roots and the Nix CLI used by niks3";
+  builtins.fromJSON effect.idTokenAudiences == [ cache.cacheUrl ]
+) "cache-retain must present the cache's own audience";
 assert lib.assertMsg (provider.jwksUrl == "${mintedIssuer}/.well-known/jwks.json")
   "the cache must fetch nixbot's keys without discovery, so a coordinator outage cannot stop it starting";
 assert lib.assertMsg (

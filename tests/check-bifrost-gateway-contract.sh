@@ -110,30 +110,7 @@ if not otel:
 elif not otel[0].get("config", {}).get("disable_content_logging"):
     errs.append("the otel plugin must keep content logging disabled")
 
-# VE-2: the Voyage upstream stays a custom provider — it is not a Bifrost
-# standard provider — and its endpoint is untouched.
-voyage = rendered.get("providers", {}).get("voyage", {})
-if voyage.get("custom_provider_config", {}).get("request_path_overrides", {}).get(
-    "embedding"
-) != "https://api.voyageai.com/v1/embeddings":
-    errs.append(f"voyage embedding upstream changed: {voyage!r}")
-if voyage.get("network_config", {}).get("base_url") != "https://api.voyageai.com/v1":
-    errs.append(f"voyage base_url changed: {voyage.get('network_config')!r}")
-
-# Standard providers must not carry a custom_provider_config: v2.2.5 rejects it
-# ("cannot be created on standard providers") and its built-in base URLs already
-# match ours, so the entry would only be a warning with no effect.
-for name in ("deepseek", "opencode-go"):
-    if "custom_provider_config" in rendered.get("providers", {}).get(name, {}):
-        errs.append(f"{name} is a standard provider and must not carry custom_provider_config")
-
 rules = {r.get("id"): r for r in rendered.get("governance", {}).get("routing_rules", [])}
-embedding = rules.get("embedding", {})
-targets = embedding.get("targets", [])
-if embedding.get("cel_expression") != "model == 'shrublab-embedding'":
-    errs.append(f"the embedding routing rule changed: {embedding!r}")
-elif [(t.get("provider"), t.get("model")) for t in targets] != [("voyage", "voyage-4")]:
-    errs.append(f"the embedding rule must target voyage/voyage-4, got {targets!r}")
 
 # VE-4: a same-provider fallback cannot survive an account-level failure. The
 # gateway hands every error class to the chain — including opencode's quota

@@ -368,7 +368,7 @@ Current admin-service shape:
 
 - `la-admin-1` composes its admin capabilities from independently selected aspects: `identity-provider` (sole owner of the active provider's runtime and provisioning, and the OIDC provisioning secret-source map — placed on `oci-melb-1` since D-120), `cockpit`, and the individual workload aspects `termix`, `vaultwarden`, `homepage`, `gatus`, `beszel`, and `webhook`; there is no `admin-hub` aspect and no `applications.admin` namespace (D-054)
 - admin workloads consume the canonical OIDC contract and never configure the provider; shared endpoint data comes from web policy
-- Quantum is fully retired rather than disabled: the service leaf, `modules/hosts/la-admin-1/quantum.nix`, the `/srv/data` operator ACL/reconcile unit, the reserved SSH secret registrations, the Kanidm catalog entry, the `policy/identity.nix` client, and the OIDC client registration are all removed, and `tests/check-identity-contract-directionality.sh` fails if any of them returns. Any future re-enable lands as a self-contained aspect consuming canonical identity contracts and does not restore admin-hub coupling
+- Quantum is fully retired rather than disabled: the service leaf, `modules/hosts/la-admin-1/quantum.nix`, the `/srv/data` operator ACL/reconcile unit, the reserved SSH secret registrations, the Kanidm catalog entry, the `policy/identity.nix` client, and the OIDC client registration are all removed. Any future re-enable lands as a self-contained aspect consuming canonical identity contracts and does not restore admin-hub coupling
 
 Current Cockpit shape:
 

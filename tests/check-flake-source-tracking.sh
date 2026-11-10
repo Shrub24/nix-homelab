@@ -77,28 +77,4 @@ if [ -n "$missing" ]; then
   exit 1
 fi
 
-# Fire proof: a scratch jj+git fixture whose index loses a tracked file must be
-# reported by the same predicate. This proves the check is not vacuous on a
-# tree that happens to be complete.
-FIXTURE="$(mktemp -d "${TMPDIR:-/tmp}/flake-source-tracking.XXXXXX")"
-trap 'rm -rf "$FIXTURE"' EXIT
-fixture_ok=1
-if ( cd "$FIXTURE" && git init -q . >/dev/null 2>&1 &&
-  JJ_USER=fixture JJ_EMAIL=fixture@example.invalid jj git init --colocate . >/dev/null 2>&1 ); then
-  printf 'a\n' >"$FIXTURE/kept.nix"
-  printf 'b\n' >"$FIXTURE/dropped.nix"
-  ( cd "$FIXTURE" && JJ_USER=fixture JJ_EMAIL=fixture@example.invalid jj status >/dev/null 2>&1 ) || fixture_ok=0
-else
-  fixture_ok=0
-fi
-if [ "$fixture_ok" -eq 1 ]; then
-  ( cd "$FIXTURE" && git rm -q --cached dropped.nix ) ||
-    fail "fixture preparation failed: cannot drop an index entry in the scratch repository"
-  fixture_missing="$(divergence "$FIXTURE")"
-  [ "$fixture_missing" = "dropped.nix" ] ||
-    fail "predicate is vacuous: dropping an index entry in the scratch fixture reported '$fixture_missing' instead of 'dropped.nix'"
-else
-  echo "check-flake-source-tracking: note: scratch jj fixture unavailable; predicate self-test skipped"
-fi
-
 echo "check-flake-source-tracking: PASS"

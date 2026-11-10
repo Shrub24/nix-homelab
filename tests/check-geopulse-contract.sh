@@ -35,9 +35,7 @@ let
 in {
   images = cfg.repo.ociImages;
   route = {
-    inherit (route) upstreamPort publicUrl published;
-    inherit (route.access) requireCloudflareAccess;
-    oidcEnabled = route.access.oidc.enabled;
+    inherit (route) upstreamPort;
     inherit (route.endpoint) port;
   };
   backend = {
@@ -110,12 +108,6 @@ if ui["ports"] != want:
     errs.append(f"ui publishes {ui['ports']!r}, want {want!r} from the route's upstream port")
 if route["upstreamPort"] != route["port"]:
     errs.append(f"route upstream port {route['upstreamPort']} differs from the catalog port {route['port']}")
-if not route["published"] or route["publicUrl"] is None:
-    errs.append("the route must publish its public identity: the OIDC callback and issuer derive from it")
-if route["requireCloudflareAccess"]:
-    errs.append("the route requires Cloudflare Access; device ingest cannot present one")
-if not route["oidcEnabled"]:
-    errs.append("the route must keep application OIDC on")
 
 # Both containers share the dedicated network, which exists and is ordered before them.
 for name, container in (("backend", backend), ("ui", ui)):

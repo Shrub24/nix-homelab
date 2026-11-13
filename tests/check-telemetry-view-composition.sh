@@ -51,7 +51,6 @@ let
     views = host.fleet.telemetry.outputViews;
     route = "ai";
     resolvedRoutes = host.services.telemetry.resolvedRoutePipelines;
-    resolvedPipelines = host.services.telemetry.resolvedPipelines;
     sops = {
       secrets = host.sops.secrets;
       env = host.sops.templates."otel-collector.env".content;

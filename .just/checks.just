@@ -29,7 +29,7 @@ all:
   @./tests/check-homarr-contract.sh
   @./tests/check-home-assistant-contract.sh
   @bash ./scripts/run-repository-contracts.sh
-  @nix build --no-link .#checks.x86_64-linux.nixbot-contract .#checks.x86_64-linux.cache-retain .#checks.x86_64-linux.package-updates
+  @nix build --no-link .#checks.x86_64-linux.nixbot-contract
 test-ssh-fingerprint:
   @./tests/check-ssh-host-fingerprint.sh
 

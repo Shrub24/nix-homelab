@@ -90,7 +90,11 @@
         gc.olderThan = "168h";
         nixbot = {
           issuer = route.publicUrl;
-          repositories = import ../../policy/ci-repositories.nix;
+          owners = [ (import ../../policy/nixbot.nix).github.owner ];
+          # Owner-wide grants cover every default-branch repository; only a repository retaining another branch needs its own.
+          repositories = lib.filterAttrs (_: repository: (repository.branch or "main") != "main") (
+            import ../../policy/ci-repositories.nix
+          );
         };
         # Listen port comes from the private service policy, shared with every publisher.
         httpAddr = lib.mkDefault "0.0.0.0:${toString niks3WritePort}";

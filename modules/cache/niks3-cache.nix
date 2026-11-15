@@ -10,6 +10,7 @@
     }:
     let
       globals = import ../../policy/globals.nix;
+      ciInstance = import ../../ci/instance.nix;
       s3 = globals.s3 or { };
       s3Host = builtins.replaceStrings [ "https://" "http://" ] [ "" "" ] (s3.endpoint or "");
       # Shared claims read the same in both GitHub subject forms; the workflow is bound per rule, because publish and pin are different powers.
@@ -37,6 +38,13 @@
       imports = [
         inputs.niks3.nixosModules.niks3
         inputs.nix-fleet.modules.nixos.niks3-cache
+      ];
+
+      assertions = [
+        {
+          assertion = config.services.niks3-cache.cacheUrl == ciInstance.cacheUrl;
+          message = "ci: instance.cacheUrl disagrees with the cache route";
+        }
       ];
 
       services.niks3-cache = {
@@ -79,6 +87,7 @@
             ]
           ) ciRepositories;
         };
+        gc.olderThan = "168h";
         nixbot = {
           issuer = route.publicUrl;
           repositories = import ../../policy/ci-repositories.nix;

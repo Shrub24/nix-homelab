@@ -1,3 +1,0 @@
-attribute = "checks"
-build_branches = []
-effects_on_pull_requests = false

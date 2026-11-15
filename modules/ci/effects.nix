@@ -1,29 +1,31 @@
-# The repository's nixbot effects, from nix-fleet's shared module: main-push
-# retention and the scheduled update transaction.
+# This repository's CI interface, from nix-fleet's `ci` module: main-push and
+# tag retention, and the scheduled update transaction. The operator plane
+# (`ciFederation`) reconciles the enrolled repositories from the same list that
+# drives the cache's trust rules and the controller's allowlist.
 { config, inputs, ... }:
 let
-  home-forge = config.flake.nixosConfigurations.home-forge.config;
-  system = config.nixos.hosts.home-forge.system;
+  inherit (config.flake.nixosConfigurations) home-forge;
   policy = import ../../policy/nixbot.nix;
+  instance = import ../../ci/instance.nix;
 in
 {
-  imports = [ inputs.nix-fleet.flakeModules.nixbotEffects ];
+  imports = [
+    inputs.nix-fleet.flakeModules.ci
+    inputs.nix-fleet.flakeModules.ciFederation
+  ];
 
-  nixbotEffects = {
-    inherit system;
-    nixPackage = home-forge.nix.package;
-    cacheRetain = {
-      enable = true;
+  ci = {
+    inherit instance;
+    nixPackage = home-forge.config.nix.package;
+    niks3Package = config.flake.packages.${instance.system}.niks3;
+    retention = {
       systems = [
         "x86_64-linux"
         "aarch64-linux"
       ];
-      cacheUrl = config.flake.nixosConfigurations.oci-melb-1.config.services.niks3-cache.cacheUrl;
-      writeEndpoint = home-forge.repo.web.catalog."niks3-write".endpoint.url;
-      niks3Package = config.flake.packages.${system}.niks3;
+      generations = 3;
     };
-    packageUpdates = {
-      enable = true;
+    updates = {
       when = {
         minute = 43;
         hour = [ 4 ];
@@ -31,5 +33,12 @@ in
       };
       autoMerge = policy.updateAutoMerge;
     };
+  };
+
+  ciFederation = {
+    repositories = import ../../policy/ci-repositories.nix;
+    appId = policy.github.appId;
+    installationId = null;
+    nixbotUrl = home-forge.config.repo.web.catalog.nixbot.publicUrl;
   };
 }

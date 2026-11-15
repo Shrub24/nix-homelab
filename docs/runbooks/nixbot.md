@@ -14,7 +14,7 @@ The UI is `https://nixbot.shrublab.xyz`. GitHub OAuth authorizes control and pri
 
 Only `Shrub24/nix-homelab` is admitted. Do not add an owner allowlist: upstream ORs it with the repository list, admitting sibling repositories. In-repository branches build with stock admission; untrusted forks wait for Approve CI. OWNER, MEMBER and COLLABORATOR are trusted associations. Evaluation uses two workers at 3072 MiB and disables IFD.
 
-`nixbot.toml` selects `checks` with no additional build/effect branches and `effects_on_pull_requests = false`. There are no event effects, per-repository effects secrets, writable mountables or deploy keys. Every effect declares an explicitly empty secrets map.
+There is no `nixbot.toml`: nixbot's defaults build `checks` and run effects on the default branch and tags only. There are no event effects, per-repository effects secrets, writable mountables or deploy keys. Every effect declares an explicitly empty secrets map.
 
 ## Operator preparation
 
@@ -32,7 +32,7 @@ Native upload uses `niks3 push --stdin` against the private catalog endpoint. Up
 
 ## Cache reconciliation
 
-`onPush.default.outputs.effects.cache-retain` exists only for an untagged main push. It has lock `cache`, audience `https://cache.shrublab.xyz`, an explicit empty secrets map and dependencies on niks3 and both architecture `cache-root` outputs. For each root it pushes, then creates `nix-homelab-main-<system>`. Pin creation refuses an absent root. A failed push stops the effect; it must not produce a success status for an unreconciled pin.
+`onPush.default.outputs.effects.cache-retain` exists only for an untagged main push, and `cache-release` for a pushed tag. It has lock `cache`, audience `https://cache.shrublab.xyz`, an explicit empty secrets map and dependencies on niks3 and both architecture `cache-root` outputs. For each root it pushes, then creates `nix-homelab-main-<system>`. Pin creation refuses an absent root. A failed push stops the effect; it must not produce a success status for an unreconciled pin.
 
 Both commands use `--auth-token-script "nixbot-id-token https://cache.shrublab.xyz --json"`. The pinned client's pins help text omits this supported flag; a parser/token-resolution probe confirmed support. No temporary token file or static effect credential is needed.
 
@@ -105,7 +105,7 @@ Before maintenance, pause/disable the project. Until retirement, keep the curren
 ## Local validation
 
 ```sh
-nix build --no-link .#checks.x86_64-linux.nixbot-contract .#checks.x86_64-linux.cache-retain
+nix build --no-link .#checks.x86_64-linux.nixbot-contract
 nix build --no-link .#checks.x86_64-linux.nixbot-package
 nix flake check --no-build --all-systems --option allow-import-from-derivation false
 just checks all

@@ -5,6 +5,7 @@
 }:
 let
   policy = import ../../policy/nixbot.nix;
+  ciInstance = import ../../ci/instance.nix;
   profile = inputs.nix-fleet.lib.buildProfile;
   builders = profile.resolveBuildProfile config.fleet "ci";
 in
@@ -69,6 +70,14 @@ in
           {
             assertion = localPostgres != null;
             message = "services.nixbot: select postgres and declare this host's cluster.";
+          }
+          {
+            assertion = config.repo.web.catalog."niks3-write".endpoint.url == ciInstance.writeEndpoint;
+            message = "ci: instance.writeEndpoint disagrees with the niks3-write catalog entry";
+          }
+          {
+            assertion = pkgs.stdenv.hostPlatform.system == ciInstance.system;
+            message = "ci: instance.system disagrees with the controller's system";
           }
         ];
 

@@ -95,7 +95,9 @@ in
             appSecretKeyFile = runtimePath "github_app_key";
             webhookSecretFile = runtimePath "webhook_secret";
             oauthSecretFile = runtimePath "oauth_secret";
-            repoAllowlist = builtins.attrNames (import ../../policy/ci-repositories.nix);
+            # Discovery is by owner; ci-enrol's list decides which projects build.
+            userAllowlist = [ policy.github.owner ];
+            repoAllowlist = [ ];
           };
           oidc.enable = false;
           proxyAuthHeader = null;

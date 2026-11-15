@@ -38,7 +38,6 @@ in
   ciFederation = {
     repositories = import ../../policy/ci-repositories.nix;
     appId = policy.github.appId;
-    installationId = null;
     nixbotUrl = home-forge.config.repo.web.catalog.nixbot.publicUrl;
   };
 }

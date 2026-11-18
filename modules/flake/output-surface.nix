@@ -24,8 +24,6 @@
       # repository with no effects at all.
       herculesCI.enable = true;
 
-      # nix-fleet's fixture check is upstream's surface, not this repository's.
-      checks.any.attr.fleet-render.enable = false;
     };
   };
 }

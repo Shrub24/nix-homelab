@@ -83,6 +83,12 @@
           ];
           max-jobs = 2;
           cores = 0;
+          # Backstop for nix-fleet's hourly collector, whose `keepRecent = "1d"`
+          # pins a burst of fresh paths until it ages out: the daemon collects
+          # once free space drops under 4 GiB, up to 10 GiB free. Sized for the
+          # ~40 GB roots of the VPS hosts.
+          min-free = 4 * 1024 * 1024 * 1024;
+          max-free = 10 * 1024 * 1024 * 1024;
         };
 
         # nix.conf is world-readable, so the token reaches the daemon through an included file.

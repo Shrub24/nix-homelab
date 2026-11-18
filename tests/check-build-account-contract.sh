@@ -9,7 +9,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-HOSTS=(oci-melb-1 la-admin-1 home-forge)
+HOSTS=(oci-melb-1 home-forge)
 export NIXBOT_PUBLIC_KEY
 NIXBOT_PUBLIC_KEY="$(nix eval --raw --file "$ROOT/policy/nixbot.nix" --apply 'p: p.builderPublicKey')"
 

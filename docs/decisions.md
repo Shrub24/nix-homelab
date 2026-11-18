@@ -3730,3 +3730,43 @@ enrolled, never by an edit here.
 - `tests/check-build-account-contract.sh`
 - D-082 (its Actions build plane), D-132
 
+
+## D-136: la-admin-1 is not a builder, and the daemon backstops a full store
+
+**Context:** On 2026-11-23 nixbot dispatched two waves of CI builds to `la-admin-1` through the
+`ci` profile, adding about 15 GB of closures for other hosts to its 39 GB root and filling it. The
+hourly `fast-nix-gc` could not reclaim them: `keepRecent = "1d"` treats every path registered in
+the last day as a root, so the disk stayed full until the burst aged out. With the disk full,
+Vector's disk buffer hit ENOSPC, and Vector exited 0 after its 60-second graceful-shutdown limit.
+`Restart=always` relaunched it into the same error. Each cycle took about a minute, longer than
+systemd's 5-starts-in-10s limit, so the loop ran for four hours without tripping that limit or
+sending a failure event. The provider throttled the host's CPU in response. The builds themselves
+used little CPU.
+
+**Decision:**
+
+- `la-admin-1` carries no `capabilities.nixBuilder` and is not a member of nix-fleet's `ci`
+  profile. It no longer selects `build-account`, so it has no keyless trusted dispatch account. CI
+  builds on `home-forge` and `oci-melb-1`.
+- `base` sets `min-free = 4 GiB` and `max-free = 10 GiB` on every host. This is the consumer-owned
+  backstop that nix-fleet's `nix-gc` contract leaves to small-disk hosts. The daemon's collection
+  ignores `keepRecent`, so a burst can no longer pin the disk full.
+- nix-fleet's Vector unit uses the podman aspect's 3600/5 start limit, so the loop stops within
+  six cycles and the failure event fires once.
+
+**Rejected:** lowering `la-admin-1`'s `maxJobs` (the disk fills from the size of the closures, not
+from concurrency); capping Vector's buffer (it was already capped, and ENOSPC came from the
+filesystem); shortening `keepRecent` fleet-wide (it protects a fresh build's dependencies on every
+host to fix one host).
+
+**Consequences:** a host whose store drops under 4 GiB free stalls its current build while the
+daemon collects garbage. A Vector that hits its start limit stays stopped until
+`systemctl reset-failed vector && systemctl start vector`; journald keeps the records, and the
+journal checkpoint resumes from the last record read.
+
+**References:**
+
+- nix-fleet `modules/fleet/inventory.nix`, `modules/telemetry/vector.nix`,
+  `docs/contracts/nix-gc.md`
+- `modules/flake/base.nix`, `modules/hosts/la-admin-1/default.nix`,
+  `tests/check-build-account-contract.sh`

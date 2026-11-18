@@ -13,21 +13,6 @@
       ciInstance = import ../../ci/instance.nix;
       s3 = globals.s3 or { };
       s3Host = builtins.replaceStrings [ "https://" "http://" ] [ "" "" ] (s3.endpoint or "");
-      # Shared claims read the same in both GitHub subject forms; the workflow is bound per rule, because publish and pin are different powers.
-      ciClaims = workflow: {
-        repository_owner_id = [ "20262061" ];
-        ref = [ "refs/heads/main" ];
-        job_workflow_ref = [ "Shrub24/nix-fleet/.github/workflows/${workflow}@*" ];
-      };
-      # One reserved pin namespace per repository.
-      ciRepositories = [
-        "nix-fleet"
-        "nix-homelab"
-        "nix-dotfiles"
-        "memex"
-        "Pi-Bolt.nix"
-        "agent-radar"
-      ];
       niks3WritePort = config.repo.web.catalog."niks3-write".endpoint.port;
       route = config.repo.web.catalog.nixbot;
       # The scrape binding exists only where nix-fleet's telemetry registry does.
@@ -54,47 +39,10 @@
         };
         secretFiles.host = lib.mkDefault ../../secrets/services/niks3.yaml;
         cacheUrl = lib.mkDefault "https://cache.${globals.domain}";
-        # CI federation: GitHub OIDC tokens push, R2 serves reads. Claims are bound, not `sub`, and
-        # one rule per repository reserves its pin namespace because a pin is not scoped.
-        oidc.providers.github = {
-          issuer = "https://token.actions.githubusercontent.com";
-          audience = "https://cache.${globals.domain}";
-          rules = lib.concatMap (
-            repository:
-            let
-              bound = claims: {
-                boundClaims = claims // {
-                  repository = [ "Shrub24/${repository}" ];
-                };
-              };
-            in
-            [
-              (
-                bound (ciClaims "build-push-cache.yml")
-                // {
-                  scopes = [ "write" ];
-                  pins = [ ];
-                }
-              )
-              # Pins are gated by name, not scope: a pins-only rule would be rejected, so each rule keeps `write`.
-              (
-                bound (ciClaims "pin-cache.yml")
-                // {
-                  scopes = [ "write" ];
-                  pins = [ "${repository}-main-*" ];
-                }
-              )
-            ]
-          ) ciRepositories;
-        };
         gc.olderThan = "168h";
         nixbot = {
           issuer = route.publicUrl;
           owners = [ (import ../../policy/nixbot.nix).github.owner ];
-          # Owner-wide grants cover every default-branch repository; only a repository retaining another branch needs its own.
-          repositories = lib.filterAttrs (_: repository: (repository.branch or "main") != "main") (
-            import ../../policy/ci-repositories.nix
-          );
         };
         # Listen port comes from the private service policy, shared with every publisher.
         httpAddr = lib.mkDefault "0.0.0.0:${toString niks3WritePort}";

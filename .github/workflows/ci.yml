@@ -1,15 +1,9 @@
-# Validation: the fleet's reusable validator plus this repository's own contract
-# tests. Actions no longer build or publish anything; nixbot builds on this
-# repository's own machines and keeps the cache from there.
-#
-# `fleet` runs nix-fleet's validate.yml at the pinned revision: formatting
-# (`checks.<system>.treefmt`), an evaluation of every output on both systems with
-# import-from-derivation disabled, and the generated flake/lock consistency check.
-# `repo` runs the contract tests, which no fleet workflow knows about.
+# The repository's mutation-heavy contract tests, which cannot be `checks`: they
+# mutate a source tree and realise fixtures. nixbot builds `checks` itself.
 name: ci
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
   workflow_dispatch:
@@ -19,13 +13,6 @@ concurrency:
 permissions:
   contents: read
 jobs:
-  fleet:
-    uses: Shrub24/nix-fleet/.github/workflows/validate.yml@v3
-    permissions:
-      contents: read
-    with:
-      revision: ${{ github.event.pull_request.head.sha || github.sha }}
-      generated_files: check
   repo:
     runs-on: ubuntu-latest
     steps:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build-account contract: every host accepts the canonical CI coordinator key,
+# Build-account contract: every host accepts exactly the nixbot controller's key,
 # and ssh-ng's dispatch account has the trusted-user permission required for its
 # remote store operations.
 #
@@ -13,11 +13,6 @@ HOSTS=(oci-melb-1 la-admin-1 home-forge)
 export NIXBOT_PUBLIC_KEY
 NIXBOT_PUBLIC_KEY="$(nix eval --raw --file "$ROOT/policy/nixbot.nix" --apply 'p: p.builderPublicKey')"
 
-# The canonical coordinator key's fingerprint, from nix-fleet's
-# fleet.ci.sshPublicKey. Pinning it here is the anchor that lets this check
-# fail: a rotated or substituted key changes it and demands a deliberate update.
-readonly COORDINATOR_FINGERPRINT="SHA256:fDt1gCUVVZpK2y6HPV/jTuZiuR8z3nM1+3oYYy6GpCs"
-
 # Supports validating an unpublished upstream fix without changing flake.lock.
 NIX_EVAL_ARGS=(eval --impure --json --no-write-lock-file)
 if [ -n "${NIX_FLEET_OVERRIDE:-}" ]; then
@@ -28,9 +23,6 @@ fail() {
   echo "check-build-account-contract: $*" >&2
   exit 1
 }
-
-KEY_FILE="$(mktemp)"
-trap 'rm -f "$KEY_FILE"' EXIT
 
 # Projection of the evaluated account, plus a mutated copy with no authorized
 # key, from one evaluation so both come from the same configuration.
@@ -79,14 +71,8 @@ if account["extraGroups"]:
     sys.exit("account carries extra groups: %r" % account["extraGroups"])
 if account["accountName"] not in account["trustedUsers"]:
     sys.exit("dispatch account %r is absent from trusted-users %r" % (account["accountName"], account["trustedUsers"]))
-extra = os.environ.get("NIXBOT_PUBLIC_KEY", "")
-if extra and keys.count(extra) != 1:
-    sys.exit("dedicated nixbot coordinator key missing or duplicated")
-actions_keys = [key for key in keys if key != extra]
-if len(actions_keys) != 1:
-    sys.exit("expected exactly the Actions key plus the enabled nixbot key: %r" % keys)
-if not actions_keys[0].startswith("ssh-ed25519 "):
-    sys.exit("Actions key is not ed25519")
+if keys != [os.environ["NIXBOT_PUBLIC_KEY"]]:
+    sys.exit("expected exactly the nixbot controller key: %r" % keys)
 if account["buildMachines"] and not account["nixbotCoordinator"]:
     sys.exit("a non-coordinator host schedules build machines")
 print("ok")
@@ -109,14 +95,6 @@ for host in "${HOSTS[@]}"; do
   if printf '%s' "$untrusted" | validate >/dev/null 2>&1; then
     fail "$host: validator accepted a dispatch account absent from trusted-users"
   fi
-
-  # The authorized key must be the canonical coordinator key.
-  printf '%s' "$real" | python3 -c 'import json,os,sys; print(next(k for k in json.load(sys.stdin)["keys"] if k != os.environ.get("NIXBOT_PUBLIC_KEY", "")))' >"$KEY_FILE" ||
-    fail "$host: authorized key is not readable"
-  fingerprint="$(ssh-keygen -lf "$KEY_FILE" | awk '{print $2}')" ||
-    fail "$host: authorized key is not a valid public key"
-  [ "$fingerprint" = "$COORDINATOR_FINGERPRINT" ] ||
-    fail "$host: authorized key fingerprint $fingerprint is not the canonical coordinator key"
 done
 
 echo "check-build-account-contract: PASS (${HOSTS[*]})"

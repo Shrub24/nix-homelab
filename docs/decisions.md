@@ -2364,7 +2364,7 @@ What was outstanding was the probe, not the default.
 
 ## D-082: The CI build plane is nix-fleet's builder contract, and `.#checks` is what CI builds
 
-**Status:** Accepted; trusted-users fix pinned, builder activation pending
+**Status:** Superseded by D-135 for the Actions build path; the trusted-users binding stands
 
 **Context:**
 
@@ -2451,7 +2451,7 @@ needs trusted-user authority for ssh-ng's store operation.
 
 - `modules/flake/build-account.nix`, `modules/flake/deploy.nix`, `modules/flake/packages.nix`
 - `.github/workflows/{ci,deploy,deploy-host}.yml`, `tests/check-build-account-contract.sh`
-- `openspec/changes/adopt-fleet-ci-builders/`
+- `openspec/changes/adopt-fleet-ci-builders/` (deleted with D-135)
 - `docs/decisions.md` D-035 (superseded), D-065, D-066, D-068
 - `docs/plan.md` TD-30 (the debt this closes)
 
@@ -3686,3 +3686,42 @@ explicit pin. A nixbot bump arrives with `nix flake update` and Renovate, so ups
 us without a repo edit — the `prApproval` options this repository configures are the ones upstream
 carries, and a new upstream option or a renamed one fails evaluation rather than silently
 defaulting.
+
+## D-135: The Actions build path is gone, and enrolment is a command
+
+**Context:** D-082 made the fleet's machines the build plane through nix-fleet's reusable
+`build-push-cache` workflow, with the canonical coordinator key (`fleet.ci.sshPublicKey`) as each
+build account's only key, and D-132 moved building, retention and the update pull request to
+nixbot. What remained of the Actions path was the coordinator key on every builder, the
+`github` OIDC provider minting two Actions-shaped cache rules for six repositories, and `ci.yml`'s
+call into nix-fleet's `validate.yml`. nix-fleet then deleted that whole stack, including
+`fleet.ci.sshPublicKey`, so none of it had anything left to serve.
+
+**Decision:**
+
+- The build account accepts only the nixbot controller's key
+  (`modules/ci/nixbot-build-account.nix`); `modules/flake/build-account.nix` only selects the
+  aspect.
+- The cache's only OIDC provider is `nixbot`, trusting the owner's main and tag effects.
+- `ci.yml` runs only the mutating contract tests (`just checks all`), which cannot be `checks`;
+  nixbot builds `checks`. Deployment stays on `deploy.yml` and `deploy-host.yml`.
+- Enrolment is `nix run .#ci-enrol -- [--withdraw] [OWNER/REPO]` against the state nixbot and
+  GitHub already hold. `policy/ci-repositories.nix` is deleted: enrolling a repository is not an
+  instance change and needs no deploy.
+
+**Rejected:** keeping the Actions path as a fallback (its callers were already broken, so it was
+debt, not a fallback); a declarative enrolment list applied on activation (it needs a standing admin
+credential on home-forge) or applied by hand (a mirror that changes nothing until someone runs the
+command).
+
+**Consequences:** removing a builder's old key takes effect when each host is deployed. A
+repository other than this one gets nixbot builds by adopting nix-fleet's `ci` module and being
+enrolled, never by an edit here.
+
+**References:**
+
+- `modules/flake/build-account.nix`, `modules/ci/nixbot-build-account.nix`,
+  `modules/cache/niks3-cache.nix`, `modules/ci/effects.nix`, `.github/workflows/ci.yml`
+- `tests/check-build-account-contract.sh`
+- D-082 (its Actions build plane), D-132
+

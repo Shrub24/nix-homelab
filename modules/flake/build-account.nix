@@ -1,21 +1,8 @@
-# The inbound build account: nix-fleet owns the mechanism, and the canonical coordinator
-# key is the only one authorized. Read config.fleet; a second fleet import fails evaluation.
+# The inbound build account: nix-fleet owns the mechanism. The key it accepts is
+# the nixbot controller's, authorized in modules/ci/nixbot-build-account.nix.
+{ inputs, ... }:
 {
-  config,
-  inputs,
-  ...
-}:
-let
-  coordinatorPublicKey = config.fleet.ci.sshPublicKey;
-in
-{
-  flake.modules.nixos.build-account =
-    { config, ... }:
-    {
-      imports = [ inputs.nix-fleet.modules.nixos.build-account ];
-
-      users.users.${config.services.build-account.name}.openssh.authorizedKeys.keys = [
-        coordinatorPublicKey
-      ];
-    };
+  flake.modules.nixos.build-account = {
+    imports = [ inputs.nix-fleet.modules.nixos.build-account ];
+  };
 }

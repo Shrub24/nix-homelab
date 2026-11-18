@@ -124,7 +124,7 @@ The former `modules/core/` and `modules/profiles/` directories were deleted in d
 - Main reconciliation: nix-fleet's `ci` module, configured in `modules/ci/effects.nix`, publishes the main-push `cache-retain` effect over both architecture retention roots, keeps three earlier roots as `<pin>-1…-3`, and pins each pushed tag under `nix-homelab-release-<tag>-<system>`. It pushes before moving `nix-homelab-main-<system>` pins, using scoped workload identity. Restart reruns reconciliation; it never activates a host. `modules/cache/niks3-cache.nix` binds that identity to repository, main ref, push event and exact effect name.
 - Cutover is pending: the coordinator is disabled until operator preparation and ordered activation, and local checks are not live acceptance (D-113). The superseded Actions callers are already gone: pipeline/promote/accept/candidate-sweep, `fleet-build.yml`, `verify-cache.yml` and the scheduled producer were deleted, so nixbot owns validation-adjacent building, cache reconciliation and the update pull request (D-132).
 - Retained Actions surface: `ci.yml` (validation only) plus `deploy.yml` and `deploy-host.yml`. Deployment keeps its existing credentials, substitute-only profile check and serial order; nixbot receives no deploy authority.
-- Builder membership and capacity derive from nix-fleet's canonical `ci` profile. The separate nixbot key is authorized locally alongside the existing coordinator key; this change edits no nix-fleet files.
+- Builder membership and capacity derive from nix-fleet's canonical `ci` profile; the build account accepts only the nixbot key, authorized in `modules/ci/nixbot-build-account.nix`.
 
 ## Data Flow
 

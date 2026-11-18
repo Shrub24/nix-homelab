@@ -5,7 +5,7 @@
 }:
 let
   policy = import ../../policy/nixbot.nix;
-  ciInstance = import ../../ci/instance.nix;
+  inherit (inputs.nix-fleet.lib.ci) instance;
   profile = inputs.nix-fleet.lib.buildProfile;
   builders = profile.resolveBuildProfile config.fleet "ci";
 in
@@ -72,12 +72,12 @@ in
             message = "services.nixbot: select postgres and declare this host's cluster.";
           }
           {
-            assertion = config.repo.web.catalog."niks3-write".endpoint.url == ciInstance.writeEndpoint;
-            message = "ci: instance.writeEndpoint disagrees with the niks3-write catalog entry";
+            assertion = route.publicUrl == instance.nixbotUrl;
+            message = "ci: the nixbot route disagrees with nix-fleet's nixbot service record";
           }
           {
-            assertion = pkgs.stdenv.hostPlatform.system == ciInstance.system;
-            message = "ci: instance.system disagrees with the controller's system";
+            assertion = pkgs.stdenv.hostPlatform.system == instance.system;
+            message = "ci: the controller's system disagrees with nix-fleet's fleet.ci.controller";
           }
         ];
 
@@ -90,12 +90,12 @@ in
           admins = policy.github.admins;
           github = {
             enable = true;
-            appId = policy.github.appId;
+            inherit (instance) appId;
             oauthId = policy.github.oauthId;
             appSecretKeyFile = runtimePath "github_app_key";
             webhookSecretFile = runtimePath "webhook_secret";
             oauthSecretFile = runtimePath "oauth_secret";
-            # Discovery is by owner; ci-enrol's list decides which projects build.
+            # Discovery is by owner; `ci-enrol` decides which projects build.
             userAllowlist = [ policy.github.owner ];
             repoAllowlist = [ ];
           };

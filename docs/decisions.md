@@ -3705,9 +3705,14 @@ call into nix-fleet's `validate.yml`. nix-fleet then deleted that whole stack, i
 - The cache's only OIDC provider is `nixbot`, trusting the owner's main and tag effects.
 - `ci.yml` runs only the mutating contract tests (`just checks all`), which cannot be `checks`;
   nixbot builds `checks`. Deployment stays on `deploy.yml` and `deploy-host.yml`.
-- Enrolment is `nix run .#ci-enrol -- [--withdraw] [OWNER/REPO]` against the state nixbot and
-  GitHub already hold. `policy/ci-repositories.nix` is deleted: enrolling a repository is not an
-  instance change and needs no deploy.
+- Enrolment is `ci-enrol [--withdraw] [OWNER/REPO]` (nix-fleet's `packages.ci-enrol`, installed
+  on the operator's workstation) against the state nixbot and GitHub already hold.
+  `policy/ci-repositories.nix` is deleted: enrolling a repository is not an instance change and
+  needs no deploy.
+- The instance's facts (cache URL, write endpoint, nixbot URL, App id, controller) are
+  nix-fleet's canonical `lib.ci.instance`. `ci/`, the descriptor subflake, is deleted: it restated
+  service facts nix-fleet already held and made every repository depend on this one. This
+  repository asserts its cache and nixbot routes agree with those records.
 
 **Rejected:** keeping the Actions path as a fallback (its callers were already broken, so it was
 debt, not a fallback); a declarative enrolment list applied on activation (it needs a standing admin

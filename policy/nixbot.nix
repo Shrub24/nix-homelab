@@ -1,6 +1,5 @@
 {
   github = {
-    appId = 5492536;
     oauthId = "Iv23li2ikULpKoDTZbEF";
     # The one owner whose repositories nixbot discovers and the cache trusts.
     owner = "Shrub24";

@@ -1,22 +1,17 @@
 # This repository's CI interface, from nix-fleet's `ci` module: main-push and
-# tag retention, and the scheduled update transaction. `ciFederation` supplies
-# the instance facts `nix run .#ci-enrol -- [OWNER/REPO]` enrols repositories with.
+# tag retention, and the scheduled update transaction. The instance is nix-fleet's
+# canonical `lib.ci.instance`.
 { config, inputs, ... }:
 let
   inherit (config.flake.nixosConfigurations) home-forge;
   policy = import ../../policy/nixbot.nix;
-  instance = import ../../ci/instance.nix;
 in
 {
-  imports = [
-    inputs.nix-fleet.flakeModules.ci
-    inputs.nix-fleet.flakeModules.ciFederation
-  ];
+  imports = [ inputs.nix-fleet.flakeModules.ci ];
 
   ci = {
-    inherit instance;
     nixPackage = home-forge.config.nix.package;
-    niks3Package = config.flake.packages.${instance.system}.niks3;
+    niks3Package = config.flake.packages.${config.ci.instance.system}.niks3;
     retention = {
       systems = [
         "x86_64-linux"
@@ -32,10 +27,5 @@ in
       };
       autoMerge = policy.updateAutoMerge;
     };
-  };
-
-  ciFederation = {
-    appId = policy.github.appId;
-    nixbotUrl = home-forge.config.repo.web.catalog.nixbot.publicUrl;
   };
 }

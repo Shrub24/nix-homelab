@@ -85,7 +85,7 @@ The former `modules/core/`, `modules/profiles/`, `modules/shared/`, and `modules
 **`modules/ci/`:**
 
 - Purpose: The homelab nixbot CI pilot, disabled by `policy/nixbot.nix` until operator preparation.
-- Contains: `nixbot.nix` (upstream runtime, GitHub auth, PostgreSQL, backups, credential wiring and native niks3 integration), `nixbot-build-account.nix` (dedicated coordinator authorization derived from canonical profile membership), `effects.nix` (this repository's values for nix-fleet's `ci` and `ciFederation` modules, which own the effects and the enrolment app), and `checks.nix` (the nixbot contract, body in `tests/`). The CI instance descriptor is `ci/instance.nix`, exposed by the input-free `ci/flake.nix`; the repository list is `policy/ci-repositories.nix`.
+- Contains: `nixbot.nix` (upstream runtime, GitHub auth, PostgreSQL, backups, credential wiring and native niks3 integration), `nixbot-build-account.nix` (dedicated coordinator authorization derived from canonical profile membership), `effects.nix` (this repository's values for nix-fleet's `ci` module, which owns the effects), and `checks.nix` (the nixbot contract, body in `tests/`). The CI instance (cache, write endpoint, nixbot URL, App id) is nix-fleet's canonical `lib.ci.instance`; homelab asserts its routes agree.
 - Operator guide: `docs/runbooks/nixbot.md`. There is no `nixbot.toml`: nixbot's defaults apply.
 
 **`modules/ai/`:**

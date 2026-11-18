@@ -10,7 +10,6 @@
     }:
     let
       globals = import ../../policy/globals.nix;
-      ciInstance = import ../../ci/instance.nix;
       s3 = globals.s3 or { };
       s3Host = builtins.replaceStrings [ "https://" "http://" ] [ "" "" ] (s3.endpoint or "");
       niks3WritePort = config.repo.web.catalog."niks3-write".endpoint.port;
@@ -27,8 +26,8 @@
 
       assertions = [
         {
-          assertion = config.services.niks3-cache.cacheUrl == ciInstance.cacheUrl;
-          message = "ci: instance.cacheUrl disagrees with the cache route";
+          assertion = config.services.niks3-cache.cacheUrl == inputs.nix-fleet.lib.ci.instance.cacheUrl;
+          message = "ci: the cache route disagrees with nix-fleet's niks3-write service record";
         }
       ];
 

@@ -19,13 +19,6 @@ in
       ];
       generations = 3;
     };
-    updates = {
-      when = {
-        minute = 43;
-        hour = [ 4 ];
-        dayOfWeek = [ "Mon" ];
-      };
-      autoMerge = policy.updateAutoMerge;
-    };
+    updates.autoMerge = policy.updateAutoMerge;
   };
 }

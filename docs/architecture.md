@@ -309,7 +309,7 @@ Ownership model:
 Automation boundaries:
 
 - Renovate runs on a schedule and opens PRs for flake input and OCI image updates.
-- The scheduled update transaction is nixbot's `onSchedule.package-updates` effect (nix-fleet's `ci` module, configured in `modules/ci/effects.nix`): weekly at 04:43 UTC it runs `update-packages --refresh-inputs` in the checkout, so the refreshed lock and the refreshed package pins land in one commit, pushes `automation/package-updates`, and opens or updates that branch's pull request with the generated report as its body before requesting auto-merge. A run that changed nothing leaves the branch and the pull request alone, and the effect holds the `package-updates` lock so two runs cannot refresh from a moving base. Refresh is not acceptance: the validation gate decides on that PR.
+- The scheduled update transaction is nixbot's `onSchedule.package-updates` effect (nix-fleet's `ci` module, configured in `modules/ci/effects.nix`): on nix-fleet's consumer slot (Monday and Thursday 07:43 UTC, after nix-fleet's own daily 03:43 run) it runs `update-packages --refresh-inputs` in the checkout, so the refreshed lock and the refreshed package pins land in one commit, pushes `automation/package-updates`, and opens or updates that branch's pull request with the generated report as its body before requesting auto-merge. A run that changed nothing leaves the branch and the pull request alone, and the effect holds the `package-updates` lock so two runs cannot refresh from a moving base. Refresh is not acceptance: the validation gate decides on that PR.
 - No path pushes dependency updates directly to `main`, and neither writes `flake.lock` outside Renovate.
 
 Operator commands:

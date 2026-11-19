@@ -422,11 +422,11 @@
         "treefmt-nix": "treefmt-nix_3"
       },
       "locked": {
-        "lastModified": 1795052654,
-        "narHash": "sha256-yVRRmBA9p85yD3Iei+fQFCrD5F91OJj4RVymSe7H56A=",
+        "lastModified": 1795105804,
+        "narHash": "sha256-dmUKlKe75MixcDmfdR1836m0lceC5QzLCpSVF9VVD0c=",
         "owner": "Shrub24",
         "repo": "nix-fleet",
-        "rev": "2a40afad9bd37bb17574f684168afe9d08604dee",
+        "rev": "debb13a6e36308c60062caf91453de3dac920762",
         "type": "github"
       },
       "original": {

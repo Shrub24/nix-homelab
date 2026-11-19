@@ -159,5 +159,10 @@ in
     options = [ "bind" ];
   };
 
+  # Build trees live on /srv/storage too: the default under /nix/var/nix/builds
+  # shares the 41G /nix partition, and an aarch64 otelcol-contrib build alone
+  # exhausts the space left there.
+  nix.settings.build-dir = "/srv/storage/nix-builds";
+
   system.stateVersion = "25.11";
 }

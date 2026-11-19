@@ -13,9 +13,11 @@ let
     url = "https://github.com/winfsp/winfsp/releases/download/v2.1/winfsp-2.1.25156.msi";
     hash = "sha256-Bzpw4A93Qj40vtmLhuYA3vkzk7pYIiBPrFeikyTbn3o=";
   };
+  # MinGW build: the 26.2.x MSVC artifact regressed upstream and ships no
+  # OpenGL DLLs; upstream's own workaround is the MinGW x64 build.
   mesaSrc = fetchurl {
-    url = "https://github.com/pal1000/mesa-dist-win/releases/download/26.2.7/mesa3d-26.2.7-release-msvc.7z";
-    hash = "sha256-5hFT+xqOWLnYC0AwMM2mGer/vd2f+Zs0FjuZbq0D1ZY=";
+    url = "https://github.com/pal1000/mesa-dist-win/releases/download/26.2.7/mesa3d-26.2.7-release-mingw.7z";
+    hash = "sha256-GcdKrXsJ5oJHO43kw1tH5kmN6XtxyuVRGiMbjrAvKyI=";
   };
 
   updater = writeShellApplication {

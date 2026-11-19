@@ -14,8 +14,8 @@ let
     hash = "sha256-Bzpw4A93Qj40vtmLhuYA3vkzk7pYIiBPrFeikyTbn3o=";
   };
   mesaSrc = fetchurl {
-    url = "https://github.com/pal1000/mesa-dist-win/releases/download/26.2.0/mesa3d-26.2.0-release-msvc.7z";
-    hash = "sha256-3LJxnvNG2rW2Cfyxk6XxPPxLBQLj9N4a1D00lHdAL0c=";
+    url = "https://github.com/pal1000/mesa-dist-win/releases/download/26.2.7/mesa3d-26.2.7-release-msvc.7z";
+    hash = "sha256-5hFT+xqOWLnYC0AwMM2mGer/vd2f+Zs0FjuZbq0D1ZY=";
   };
 
   updater = writeShellApplication {

@@ -20,7 +20,9 @@ FILE = Path("pkgs/windows-dj-setup/default.nix")
 
 # WinFsp tags are `v2.1`; the stable release version is in the MSI asset name.
 WINFSP_ASSET = re.compile(r"winfsp-([0-9]+\.[0-9]+\.[0-9]+)\.msi")
-MESA_ASSET = re.compile(r"mesa3d-([0-9]+\.[0-9]+\.[0-9]+)-release-msvc\.7z")
+# MinGW artifact: the 26.2.x MSVC build ships no OpenGL DLLs, so the GL
+# fallback pin follows the MinGW release upstream recommends.
+MESA_ASSET = re.compile(r"mesa3d-([0-9]+\.[0-9]+\.[0-9]+)-release-mingw\.7z")
 
 WINFSP_RELEASES = "https://api.github.com/repos/winfsp/winfsp/releases?per_page=30"
 MESA_RELEASES = (

@@ -79,6 +79,10 @@ in
             assertion = pkgs.stdenv.hostPlatform.system == instance.system;
             message = "ci: the controller's system disagrees with nix-fleet's fleet.ci.controller";
           }
+          {
+            assertion = config.fleet.foundation.githubToken;
+            message = "services.nixbot: effects' forge-read secret is github/token; enable fleet.foundation.githubToken.";
+          }
         ];
 
         services.nixbot = {
@@ -160,6 +164,18 @@ in
         programs.ssh.knownHosts = profile.knownHosts remoteBuilders;
         programs.ssh.extraConfig = profile.sshConfig remoteBuilders;
         sops.secrets = secrets.mkSecretsFromMap cfg.secretFiles.host secretMap;
+
+        # The update effect's `forge-read`: the daemon's zero-scope token, which only
+        # lifts the anonymous GitHub API rate limit. One file covers every repository
+        # of the owner; nixbot reads it as a credential, so root ownership is enough.
+        sops.templates."nixbot-effect-secrets.json" = {
+          content = builtins.toJSON {
+            forge-read.data.token = config.sops.placeholder."github/token";
+          };
+          restartUnits = [ "nixbot.service" ];
+        };
+        services.nixbot.effects.perRepoSecretFiles."github:${policy.github.owner}/*" =
+          config.sops.templates."nixbot-effect-secrets.json".path;
       };
     };
 }

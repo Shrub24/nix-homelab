@@ -11,7 +11,7 @@
     # tracks (renovate.json). A tag bump that changes `bun.lock` must regenerate
     # `pkgs/degoog/bun.nix` in the same change, or the fixed-output hash fails
     # with no hint at the cause.
-    url = "github:degoog-org/degoog/1.1.1";
+    url = "github:degoog-org/degoog/1.2.0";
     inputs.nixpkgs.follows = "nixpkgs";
     inputs.flake-parts.follows = "flake-parts";
   };

@@ -11,7 +11,7 @@
 
   karakeepWeb = "ghcr.io/karakeep-app/karakeep:0.34.1@sha256:69ae5315c618b7c14c1af3e34c6e211acdb231793af424ecd1cab0b70691d987";
 
-  karakeepChrome = "ghcr.io/karakeep-app/karakeep-chrome:156.0.8078.47-r1@sha256:4ad61127638dd27bfe685222787c5780dd1d083d23a7658c39af657775814c44";
+  karakeepChrome = "ghcr.io/karakeep-app/karakeep-chrome:158.0.8127.88-r1@sha256:4f23c2630fbcea09c4a8a5272490855f2dd25686017ab379fbec78615782782d";
 
   karakeepMeilisearch = "docker.io/getmeili/meilisearch:v1.55.0@sha256:ff546679970126f8822e15d1b6a06bfbff1f2ce2e43f810cfb5258012f92de5c";
 
@@ -35,7 +35,7 @@
 
   hindsight = "ghcr.io/vectorize-io/hindsight:1.2.0-slim@sha256:c7d494c309fde53d07e79158be08d7a61f3f309b23cc417c7e4b0b8fc8adc77a";
 
-  tududi = "docker.io/chrisvel/tududi:1.9.7@sha256:bd1191e04b1c4b32fb8fa68199bd6982520f89eed9445cc91f886fbbebd2086c";
+  tududi = "docker.io/chrisvel/tududi:2.1.5@sha256:071a7794b440d72f2ec432b893324630716f6a84121b276587bcfab20be4dff7";
 
   # GeoPulse ships the backend as a GraalVM native binary and the UI as nginx plus the built
   # SPA; both are multi-arch indexes, and `-native` targets armv8-a, which is Ampere A1.

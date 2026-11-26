@@ -10,14 +10,14 @@
 }:
 let
   winfspSrc = fetchurl {
-    url = "https://github.com/winfsp/winfsp/releases/download/v2.1/winfsp-2.1.25156.msi";
-    hash = "sha256-Bzpw4A93Qj40vtmLhuYA3vkzk7pYIiBPrFeikyTbn3o=";
+    url = "https://github.com/winfsp/winfsp/releases/download/v2.2/winfsp-2.2.26323.msi";
+    hash = "sha256-Ns4B+e7bvmhCt/tL7cedfU9xmD6KzraHe0agezMcfhk=";
   };
   # MinGW build: the 26.2.x MSVC artifact regressed upstream and ships no
   # OpenGL DLLs; upstream's own workaround is the MinGW x64 build.
   mesaSrc = fetchurl {
-    url = "https://github.com/pal1000/mesa-dist-win/releases/download/26.2.7/mesa3d-26.2.7-release-mingw.7z";
-    hash = "sha256-GcdKrXsJ5oJHO43kw1tH5kmN6XtxyuVRGiMbjrAvKyI=";
+    url = "https://github.com/pal1000/mesa-dist-win/releases/download/26.3.1/mesa3d-26.3.1-release-mingw.7z";
+    hash = "sha256-x9jDn0OiSKBt67VSPTn6y1jQ4CngM07Um/0jJz5ICc8=";
   };
 
   updater = writeShellApplication {
@@ -37,7 +37,7 @@ stdenv.mkDerivation {
   pname = "windows-dj-setup";
   # WinFsp carries the version: it is the primary pin and the pair's setup order,
   # and its release is what `checkUpdate` reports. Mesa is refreshed with it.
-  version = "2.1.25156";
+  version = "2.2.26323";
   dontUnpack = true;
   nativeBuildInputs = [ p7zip ];
 
